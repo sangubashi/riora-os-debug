@@ -1,0 +1,113 @@
+.screen {
+  background: var(--bg);
+  min-height: -webkit-fill-available;
+  min-height: 100dvh;
+  min-height: 100dvh;
+  padding-bottom: max(88px, calc(72px + env(safe-area-inset-bottom)));
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  position: relative; /* モーダルの z-index 基準 */
+}
+
+/* ── 背景コンテンツラッパー ── */
+/* モーダルが開いた時にこの div にだけ filter をかける          */
+/* filter: blur を掛けると position:fixed の子が影響を受けるので */
+/* このラッパーには fixed 要素を含めない                        */
+.bgContent {
+  transition: filter 0.28s ease, transform 0.28s ease;
+}
+
+.bgBlurred {
+  filter: blur(3px) brightness(0.85);
+  transform: scale(0.97);
+  /* 背景が操作できないようにする */
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ── Block 3: リオラエリア ── */
+.rioraWrap { margin: 12px 16px 0; }
+
+/* ── Block 2: 今日の予約 ── */
+.section {
+  margin-top: 20px;
+  padding: 0 16px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.sectionTitle {
+  font-family: 'Playfair Display', serif;
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--brown);
+  letter-spacing: 0.04em;
+}
+
+.sectionCount {
+  font-size: 11px;
+  color: #C0A8A0;
+  letter-spacing: 0.04em;
+}
+
+.appointmentList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.empty {
+  text-align: center;
+  padding: 48px 20px;
+  color: #C0A8A0;
+  font-size: 14px;
+  line-height: 2.2;
+}
+
+/* ── 管理者: LINE配信管理 ── */
+.adminArea {
+  padding: 0 16px 4px;
+}
+
+.lineAdminBtn {
+  width: 100%;
+  min-height: 52px;
+  border-radius: 50px;
+  border: 1.5px solid var(--pink-dark);
+  background: transparent;
+  color: var(--pink-dark);
+  font-family: 'Noto Sans JP', sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.lineAdminBtn:active {
+  background: var(--pink-main);
+}
+
+/* ── ログアウト ── */
+.logoutArea {
+  text-align: center;
+  padding: 28px 0 8px;
+}
+
+.logoutBtn {
+  background: none;
+  border: none;
+  font-size: 12px;
+  color: #C0A8A0;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  padding: 12px 32px;
+  transition: color 0.2s;
+}
+
+.logoutBtn:active { color: var(--pink-dark); }

@@ -1,0 +1,107 @@
+.card {
+  margin: 16px;
+  background: #fff;
+  border-radius: var(--r);
+  padding: 24px;
+  box-shadow: var(--card-shadow);
+}
+
+.name {
+  font-family: 'Playfair Display', serif;
+  font-size: 24px;
+  font-weight: 400;
+  color: var(--brown);
+  margin-bottom: 4px;
+}
+
+.visits {
+  font-size: 11px;
+  color: #C0A8A0;
+  margin-bottom: 16px;
+  letter-spacing: 0.06em;
+}
+
+.tagRow {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.tag {
+  font-size: 10px;
+  padding: 4px 12px;
+  border-radius: 50px;
+  background: var(--pink-main);
+  color: var(--pink-dark);
+  letter-spacing: 0.04em;
+}
+
+.aiSection {
+  background: linear-gradient(135deg, #FFF8FA 0%, #FFFCF8 100%);
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--pink-main);
+}
+
+.aiHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.aiIcon {
+  font-size: 16px;
+}
+
+.aiTitle {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--pink-dark);
+}
+
+.aiPoint {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(247, 214, 224, 0.5);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--brown);
+}
+
+.aiPoint:last-child {
+  border-bottom: none;
+}
+
+.aiDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  flex-shrink: 0;
+  margin-top: 6px;
+}
+
+.ngSection {
+  background: linear-gradient(135deg, #FFF5F5 0%, #FFFAF8 100%);
+  border-radius: 16px;
+  padding: 14px;
+  border: 1px solid rgba(217, 130, 146, 0.25);
+}
+
+.ngTitle {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: #D07080;
+  margin-bottom: 8px;
+}
+
+.ngText {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #8A6060;
+}

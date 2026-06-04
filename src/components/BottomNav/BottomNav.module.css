@@ -1,0 +1,45 @@
+.nav {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 430px;
+  background: #fff;
+  /* ホームインジケーター対応 */
+  padding: 10px 24px max(20px, env(safe-area-inset-bottom));
+  display: flex;
+  gap: 10px;
+  box-shadow: 0 -4px 20px rgba(90, 62, 54, 0.06);
+  border-top: 1px solid rgba(247, 214, 224, 0.5);
+  z-index: 100;
+}
+
+.btn {
+  flex: 1;
+  min-height: 48px;
+  padding: 0 10px;
+  border-radius: 50px;
+  border: none;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.btn:active {
+  transform: scale(0.96);
+}
+
+.outline {
+  background: transparent;
+  border: 1.5px solid var(--pink-dark);
+  color: var(--pink-dark);
+}
+
+.primary {
+  background: linear-gradient(135deg, var(--pink-dark) 0%, var(--pink-sub) 100%);
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(217, 130, 146, 0.35);
+}

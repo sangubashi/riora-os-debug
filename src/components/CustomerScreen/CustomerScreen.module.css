@@ -1,0 +1,45 @@
+.screen {
+  background: var(--bg);
+  min-height: -webkit-fill-available;
+  min-height: 100dvh;
+  padding-bottom: 100px;
+  animation: fadeUp 0.5s ease both;
+}
+
+.backHeader {
+  background: #fff;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 2px 16px rgba(90, 62, 54, 0.05);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.backBtn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--pink-main);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  cursor: pointer;
+  color: var(--brown);
+  transition: 0.2s;
+}
+
+.backBtn:active {
+  transform: scale(0.92);
+}
+
+.backTitle {
+  font-family: 'Playfair Display', serif;
+  font-size: 17px;
+  font-weight: 400;
+  color: var(--brown);
+}

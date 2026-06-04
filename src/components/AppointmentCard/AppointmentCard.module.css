@@ -1,0 +1,141 @@
+.card {
+  background: #fff;
+  border-radius: 20px;
+  /* 左アクセントボーダー分を padding で吸収 */
+  padding: 18px 20px 16px 22px;
+  box-shadow: var(--card-shadow);
+  cursor: pointer;
+  transition: box-shadow 0.2s, transform 0.15s;
+  animation: fadeUp 0.4s ease both;
+  position: relative;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.card:active {
+  transform: scale(0.985);
+  box-shadow: var(--card-shadow-hover);
+}
+
+/* ── 顧客タイプ別の左アクセントバー ── */
+.card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  /* CSS カスタムプロパティで色を切り替え */
+  background: var(--accent-color, var(--pink-main));
+  border-radius: 20px 0 0 20px;
+}
+
+/* ── 名前 + バッジ ── */
+.topRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+  gap: 8px;
+}
+
+.name {
+  font-family: 'Playfair Display', serif;
+  font-size: 19px;
+  font-weight: 400;
+  color: var(--brown);
+  line-height: 1.2;
+}
+
+.visitBadge {
+  font-size: 10px;
+  background: var(--pink-main);
+  color: var(--pink-dark);
+  padding: 3px 10px;
+  border-radius: 20px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── 顧客タイプバッジ ── */
+.typeBadge {
+  display: inline-block;
+  font-size: 10px;
+  padding: 4px 11px;
+  border-radius: 20px;
+  letter-spacing: 0.04em;
+  margin-bottom: 10px;
+  border-width: 1px;
+  border-style: solid;
+}
+
+/* タイプ別カラー */
+.type-cautious { background: #FFF0F4; color: #C0607A; border-color: #F7D6E0; }
+.type-emotional { background: #FFF8EC; color: #A07020; border-color: #EAD8A0; }
+.type-results  { background: #EFF5ED; color: #3E7040; border-color: #B8D8B0; }
+.type-trust    { background: #F5EEE8; color: #8B5A40; border-color: #DEC8B8; }
+.type-vip      {
+  background: linear-gradient(135deg, #FAF0DC 0%, #FFF8EC 100%);
+  color: #9A7020;
+  border-color: #E7C68B;
+}
+
+/* ── 区切り ── */
+.divider {
+  height: 1px;
+  background: rgba(247, 214, 224, 0.5);
+  margin: 0 0 12px;
+}
+
+/* ── AI 一行提案 ── */
+.aiRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-bottom: 14px;
+}
+
+.aiIcon {
+  font-size: 13px;
+  flex-shrink: 0;
+  line-height: 1.7;
+}
+
+.aiText {
+  font-size: 13px;
+  color: var(--brown);
+  line-height: 1.7;
+  letter-spacing: 0.02em;
+}
+
+/* ── CTA ── */
+.ctaBtn {
+  width: 100%;
+  min-height: 50px;
+  padding: 14px 20px;
+  border-radius: 50px;
+  border: none;
+  background: linear-gradient(135deg, var(--pink-dark) 0%, var(--pink-sub) 100%);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-shadow: 0 4px 14px rgba(217, 130, 146, 0.35);
+  transition: 0.2s;
+}
+
+.ctaBtn:active {
+  transform: scale(0.97);
+  box-shadow: 0 2px 8px rgba(217, 130, 146, 0.2);
+}
+
+.ctaArrow {
+  opacity: 0.85;
+  font-size: 14px;
+}

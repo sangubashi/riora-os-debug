@@ -1,0 +1,147 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
+/* ── 吹き出し ── */
+.bubble {
+  position: relative;
+  border-radius: 16px;
+  padding: 10px 14px;
+  max-width: 220px;
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+.bubbleNormal {
+  background: linear-gradient(135deg, #FFF5F8, #FFF8EC);
+  border: 1.5px solid rgba(212, 165, 116, 0.3);
+  box-shadow: 0 4px 16px rgba(217, 130, 146, 0.12);
+}
+
+.bubbleAngry {
+  background: linear-gradient(135deg, #FFF0F0, #FFE8E8);
+  border: 1.5px solid rgba(220, 80, 80, 0.28);
+  box-shadow: 0 4px 16px rgba(220, 80, 80, 0.15);
+}
+
+.bubbleText {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--brown, #5A3E36);
+  margin: 0;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+
+.bubbleTail {
+  position: absolute;
+  bottom: -9px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+}
+
+.tailNormal {
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 10px solid #FFF5F8;
+}
+
+.tailAngry {
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 10px solid #FFF0F0;
+}
+
+/* ── 画像コンテナ ── */
+.imgContainer {
+  position: relative;
+  border-radius: 50%;
+  overflow: hidden;
+  border-width: 2.5px;
+  border-style: solid;
+  flex-shrink: 0;
+  filter: drop-shadow(0 8px 20px rgba(0, 0, 0, 0.14));
+}
+
+.containerNormal {
+  border-color: #F5E6E8;
+  background: #FFF5F8;
+}
+
+.containerAngry {
+  border-color: #FFCDD2;
+  background: #FFF0F0;
+  box-shadow: 0 0 0 3px rgba(220, 80, 80, 0.12);
+}
+
+/* ── くま画像 ── */
+.bear {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  display: block;
+}
+
+/* 通常モード：フロートアニメーション */
+.bearNormal {
+  animation: float 3.5s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px);  }
+  50%       { transform: translateY(-5px); }
+}
+
+/* 怒りモード：シェイクアニメーション */
+.bearAngry {
+  animation: shake 0.45s ease-in-out infinite;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0)    rotate(0deg);    }
+  20%       { transform: translateX(-3px) rotate(-2.5deg); }
+  40%       { transform: translateX(3px)  rotate(2.5deg);  }
+  60%       { transform: translateX(-2px) rotate(-1.5deg); }
+  80%       { transform: translateX(2px)  rotate(1.5deg);  }
+}
+
+/* ── 🐾 バッジ ── */
+.pawBadge {
+  position: absolute;
+  top: -6px;
+  right: -2px;
+  font-size: 20px;
+  line-height: 1;
+  opacity: 0.8;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.15));
+}
+
+/* ── モードラベル ── */
+.modeLabel {
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.1);
+}
+
+.modeLabelNormal {
+  color: #9F7E6C;
+}
+
+.modeLabelAngry {
+  color: #C0404A;
+}

@@ -1,0 +1,55 @@
+.card {
+  background: #fff;
+  border-radius: 20px;
+  padding: 14px 12px;
+  box-shadow: var(--card-shadow);
+  position: relative;
+  transition: 0.2s;
+}
+
+.card:active {
+  transform: scale(0.97);
+}
+
+.paw {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.label {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: #C0A8A0;
+  margin-bottom: 6px;
+}
+
+.value {
+  font-family: 'Playfair Display', serif;
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--brown);
+  line-height: 1;
+}
+
+.valueWide {
+  font-size: 17px;
+}
+
+.diff {
+  font-size: 9px;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.diffDown {
+  color: #D98292;
+}
+
+.diffUp {
+  color: #8BAD8E;
+}

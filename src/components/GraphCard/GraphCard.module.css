@@ -1,0 +1,67 @@
+.card {
+  margin: 10px 16px 0;
+  background: #fff;
+  border-radius: var(--r);
+  padding: 20px;
+  box-shadow: var(--card-shadow);
+  animation: fadeUp 0.5s 0.2s ease both;
+}
+
+.title {
+  font-family: 'Playfair Display', serif;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--brown);
+  margin-bottom: 16px;
+}
+
+.chartWrapper {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+.axes {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 100px;
+  margin-right: 4px;
+}
+
+.axisVal {
+  font-size: 8px;
+  color: #D0B8B0;
+  text-align: right;
+}
+
+.barChart {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  height: 100px;
+  flex: 1;
+}
+
+.barCol {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  height: 100%;
+  justify-content: flex-end;
+}
+
+.barFill {
+  width: 100%;
+  border-radius: 6px 6px 0 0;
+  min-height: 4px;
+  transition: height 0.6s ease;
+}
+
+.barLbl {
+  font-size: 8px;
+  color: #C0A8A0;
+  letter-spacing: 0.04em;
+}

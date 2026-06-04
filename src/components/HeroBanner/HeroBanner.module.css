@@ -1,0 +1,75 @@
+.banner {
+  margin: 16px 16px 0;
+  background: linear-gradient(135deg, var(--brown) 0%, #8B5A50 50%, #C07870 100%);
+  border-radius: var(--r);
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 12px 32px rgba(90, 62, 54, 0.20);
+  animation: fadeUp 0.5s ease both;
+}
+
+.banner::before {
+  content: '';
+  position: absolute;
+  top: -30px;
+  right: -30px;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(247, 214, 224, 0.15) 0%, transparent 65%);
+  pointer-events: none;
+}
+
+.company {
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  color: rgba(255, 255, 255, 0.55);
+  margin-bottom: 4px;
+}
+
+.period {
+  font-family: 'Playfair Display', serif;
+  font-size: 26px;
+  font-weight: 500;
+  color: #fff;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  margin-bottom: 14px;
+}
+
+.periodSub {
+  font-size: 13px;
+  font-weight: 400;
+  opacity: 0.75;
+}
+
+.dashboardBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, var(--pink-sub) 0%, var(--pink-dark) 100%);
+  color: #fff;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 9px 18px;
+  border-radius: 50px;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(217, 130, 146, 0.4);
+  transition: 0.2s;
+}
+
+.dashboardBtn:active {
+  transform: scale(0.96);
+}
+
+.bear {
+  position: absolute;
+  right: -8px;
+  bottom: -8px;
+  width: 120px;
+  height: 120px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15));
+}

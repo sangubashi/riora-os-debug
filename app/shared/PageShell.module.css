@@ -1,0 +1,174 @@
+.screen {
+  max-width: 428px;
+  margin: 0 auto;
+  min-height: 100dvh;
+  padding: max(24px, calc(20px + env(safe-area-inset-top))) 20px 32px;
+  background: #F9EEE9;
+  color: var(--brown);
+  animation: fadeUp 0.35s ease both;
+  font-family: 'Noto Sans JP', sans-serif;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 18px;
+}
+
+.salonName {
+  font-family: 'Playfair Display', serif;
+  font-size: 10px;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: rgba(92, 64, 51, 0.74);
+}
+
+.staffName {
+  font-size: 20px;
+  font-weight: 300;
+  letter-spacing: 0.35px;
+}
+
+.backBtn,
+.logoutBtn,
+.linkBtn {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(92, 64, 51, 0.16);
+  border-radius: 999px;
+  padding: 10px 16px;
+  color: var(--brown);
+  font-size: 12px;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.backBtn:hover,
+.logoutBtn:hover,
+.linkBtn:hover {
+  transform: translateY(-1px);
+}
+
+.pageTitle {
+  margin-top: 18px;
+  font-size: 32px;
+  font-weight: 500;
+  line-height: 1.05;
+}
+
+.pageSubtitle {
+  margin-top: 10px;
+  font-size: 14px;
+  color: var(--sub-text);
+  line-height: 1.8;
+  max-width: 360px;
+}
+
+.cardGrid {
+  display: grid;
+  gap: 14px;
+  margin-top: 24px;
+}
+
+.card {
+  padding: 22px;
+  border-radius: 28px;
+  background: #fff;
+  box-shadow: var(--card-shadow);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+}
+
+.cardHeading {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(92, 64, 51, 0.72);
+}
+
+.cardValue {
+  margin-top: 16px;
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--brown);
+  line-height: 1.15;
+}
+
+.cardText {
+  margin-top: 12px;
+  color: var(--sub-text);
+  font-size: 13px;
+  line-height: 1.75;
+}
+
+.actionArea {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.actionButton {
+  border: 0;
+  border-radius: 22px;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #F5D6DB, #F2B6C6);
+  color: var(--brown);
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 18px 32px rgba(92, 64, 51, 0.08);
+}
+
+.emptyState {
+  padding: 26px 18px;
+  border-radius: 28px;
+  text-align: center;
+  background: #FFF2F0;
+  color: var(--sub-text);
+  box-shadow: var(--card-shadow);
+}
+
+.warningLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #C05060;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  background: rgba(245, 214, 219, 0.9);
+  border-radius: 999px;
+  color: var(--brown);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.messageCard {
+  margin-top: 14px;
+  padding: 18px;
+  border-radius: 24px;
+  background: #FCF0EE;
+  color: var(--brown);
+  line-height: 1.75;
+}
+
+.messageCard strong {
+  color: var(--brown);
+}
+
+.sectionRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.sectionBlock {
+  margin-top: 16px;
+}

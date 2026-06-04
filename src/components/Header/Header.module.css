@@ -1,0 +1,62 @@
+.header {
+  background: #fff;
+  /* Dynamic Island / ノッチ対応 */
+  padding-top: max(14px, env(safe-area-inset-top));
+  padding-left: max(20px, env(safe-area-inset-left));
+  padding-right: max(20px, env(safe-area-inset-right));
+  padding-bottom: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 16px rgba(90, 62, 54, 0.05);
+}
+
+.topRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.logo {
+  height: 26px;
+  object-fit: contain;
+  /* ヘッダー白背景にも馴染ませる（白×白=白で自然に消える） */
+  mix-blend-mode: multiply;
+}
+
+.icons {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--pink-main);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s;
+}
+
+.icon:active {
+  transform: scale(0.90);
+  background: var(--pink-sub);
+}
+
+.greeting {
+  font-size: 12px;
+  color: #B0968C;
+  letter-spacing: 0.04em;
+}
+
+.greetingName {
+  font-weight: 500;
+  color: var(--brown);
+}

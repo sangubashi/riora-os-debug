@@ -1,0 +1,219 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────────
+   Reset & base elements — kept inside @layer base so that
+   Tailwind utility classes (mx-auto, px-*, etc.) in @layer utilities
+   always take priority over these resets.
+   ──────────────────────────────────────────────────────────────── */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    /* safe-area をカスタム変数に保持（JS からも参照可能） */
+    --sat: env(safe-area-inset-top,    0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+    --sal: env(safe-area-inset-left,   0px);
+    --sar: env(safe-area-inset-right,  0px);
+    height: 100%;
+    /* iOS Safari の 100vh バグ対策 */
+    height: -webkit-fill-available;
+    overscroll-behavior: none;
+    overflow-x: hidden;
+    /* iOS Safari テキストサイズ自動調整を無効化 */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  html, body {
+    font-family: 'Inter', 'Noto Sans JP', sans-serif !important;
+    color: #5C4033;
+  }
+
+  body {
+    height: 100%;
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+    font-weight: 400;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+    overscroll-behavior: none;
+  }
+
+  /* iOS Safari でのフォーカスズーム防止: font-size を16px以上に */
+  input, textarea, select {
+    font-family: 'Inter', 'Noto Sans JP', sans-serif !important;
+    font-size: 16px !important;
+  }
+
+  button {
+    font-family: 'Inter', 'Noto Sans JP', sans-serif !important;
+    /* iOS でのタップ300ms遅延を排除 */
+    touch-action: manipulation;
+    /* タップ時のテキスト選択を防止 */
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: pointer;
+  }
+}
+
+/* ── CSS custom properties (unlayered — fine for variables) ── */
+:root {
+  --bg:          #FFF8F7;
+  --card:        #FFFFFF;
+  --pink-main:   #F5D6DB;
+  --pink-sub:    #F2B6C6;
+  --pink-dark:   #D98292;
+  --accent:      #E8A7B4;
+  --brown:       #5C4033;
+  --sub-text:    #9F7E6C;
+  --border:      #F3E3E6;
+  --beige:       #FAF4F1;
+  --gold:        #E7C68B;
+  --gold2:       #C9A055;
+  --success:     #34D399;
+
+  --card-shadow:       0 8px 30px rgba(92, 64, 51, 0.06);
+  --card-shadow-hover: 0 12px 40px rgba(92, 64, 51, 0.10);
+
+  --sat: env(safe-area-inset-top);
+  --sab: env(safe-area-inset-bottom);
+  --sal: env(safe-area-inset-left);
+  --sar: env(safe-area-inset-right);
+
+  --r: 24px;
+}
+
+/* ── App shell (used by KPI / LINE / menu pages) ── */
+.appShell {
+  min-height: 100vh;
+  width: 100%;
+  background: var(--bg);
+}
+
+.appShellHeader {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: max(52px, calc(env(safe-area-inset-top) + 16px)) 20px 16px;
+  background: rgba(255, 248, 247, 0.94);
+  border-bottom: 1px solid rgba(243, 227, 230, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.appShellBrand {
+  font-family: 'Playfair Display', serif;
+  font-size: 11px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--brown);
+}
+
+.appShellNav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.appShellNavLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(245, 214, 219, 0.7);
+  color: var(--brown);
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 600;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.appShellNavLink:hover {
+  transform: translateY(-1px);
+  background: rgba(245, 214, 219, 0.95);
+}
+
+.appShellMain {
+  min-height: calc(100vh - 74px);
+}
+
+button, input, textarea, select {
+  font-family: inherit;
+}
+
+/* webkit スクロールバー非表示 */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* iOS Safariのモーメンタムスクロール */
+.scroll-momentum {
+  -webkit-overflow-scrolling: touch;
+  overflow-y: auto;
+}
+
+/* iOS Safe Area ユーティリティ */
+.pb-safe { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+.pb-safe-nav { padding-bottom: calc(68px + max(12px, env(safe-area-inset-bottom))); }
+
+/* モーダル open 時に背景スクロールを止めるクラス */
+.scroll-locked {
+  overflow: hidden;
+  height: 100%;
+  width: 100%;
+  position: fixed;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-4px); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+@keyframes tsunFloat {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50%       { transform: translateY(-6px) rotate(1deg); }
+}
+
+@keyframes celebIn {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.55); }
+  65%  { transform: translate(-50%, -50%) scale(1.06); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes celebOut {
+  0%   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(0.75) translateY(-8px); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}

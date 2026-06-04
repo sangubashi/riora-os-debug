@@ -1,0 +1,41 @@
+.area {
+  margin: 16px 16px 0;
+  background: #fff;
+  border-radius: var(--r);
+  padding: 18px 20px;
+  box-shadow: var(--card-shadow);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  animation: fadeUp 0.5s 0.1s ease both;
+}
+
+.img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  flex-shrink: 0;
+  filter: drop-shadow(0 4px 12px rgba(90, 62, 54, 0.12));
+  animation: float 3s ease-in-out infinite;
+}
+
+.bubble {
+  background: linear-gradient(135deg, #FFF5F8 0%, #FFFAF8 100%);
+  border-radius: 16px 16px 16px 4px;
+  padding: 12px 14px;
+  flex: 1;
+  border: 1px solid var(--pink-main);
+}
+
+.name {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--pink-dark);
+  margin-bottom: 4px;
+}
+
+.msg {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--brown);
+}
