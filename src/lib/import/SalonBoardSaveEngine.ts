@@ -26,7 +26,7 @@ async function upsertCustomer(c: SalonBoardCustomer): Promise<{
   // nameHash で既存顧客を検索
   const { data: existing } = await supabase
     .from('customers')
-    .select('id, visit_count, total_sales')
+    .select('id, visit_count, total_spent')
     .eq('customer_hash_id', c.nameHash)
     .maybeSingle()
 
@@ -44,12 +44,12 @@ async function upsertCustomer(c: SalonBoardCustomer): Promise<{
     const { error } = await supabase
       .from('customers')
       .update({
-        visit_count:   Math.max(existing.visit_count ?? 0, c.visits),
-        total_sales:   Math.max(existing.total_sales ?? 0, c.totalSales),
-        avg_price:     c.avgSales,
-        is_vip:        phase === 'vip',
-        customer_type: phase === 'vip' ? 'VIP' : phase === 'risk' ? 'リスク' : 'レギュラー',
-        last_visit:    c.lastVisitDate,
+        visit_count:      Math.max(existing.visit_count ?? 0, c.visits),
+        total_spent:      Math.max(existing.total_spent ?? 0, c.totalSales),
+        churn_risk_score: c.phase === 'risk' ? 70 : 10,
+        is_vip:           phase === 'vip',
+        customer_type:    phase === 'vip' ? 'VIP型' : phase === 'risk' ? '慎重・不安型' : '信頼構築型',
+        last_visit_date:  c.lastVisitDate,
       })
       .eq('id', existing.id)
     return { id: existing.id, created: false, error: error?.message ?? null }
@@ -58,17 +58,14 @@ async function upsertCustomer(c: SalonBoardCustomer): Promise<{
   const { data, error } = await supabase
     .from('customers')
     .insert({
-      customer_hash_id:   c.nameHash,
-      name:               c.displayName,
-      visit_count:        c.visits,
-      total_sales:        c.totalSales,
-      avg_price:          c.avgSales,
-      churn_risk:         c.phase === 'risk' ? 70 : 10,
-      is_vip:             phase === 'vip',
-      customer_type:      phase === 'vip' ? 'VIP' : phase === 'risk' ? 'リスク' : 'レギュラー',
-      last_visit:         c.lastVisitDate,
-      line_response_rate: 50,
-      vip_rank:           phase === 'vip' ? 3 : 0,
+      customer_hash_id: c.nameHash,
+      name:             c.displayName,
+      visit_count:      c.visits,
+      total_spent:      c.totalSales,
+      churn_risk_score: c.phase === 'risk' ? 70 : 10,
+      is_vip:           phase === 'vip',
+      customer_type:    phase === 'vip' ? 'VIP型' : phase === 'risk' ? '慎重・不安型' : '信頼構築型',
+      last_visit_date:  c.lastVisitDate,
     })
     .select('id')
     .single()
