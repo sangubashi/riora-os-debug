@@ -1,7 +1,9 @@
-import { supabase } from './supabase';
+import { supabase, DEMO_MODE } from './supabase';
 import type { LineCampaign, CampaignStatus } from '../types';
 
 export async function fetchCampaigns(status?: CampaignStatus): Promise<LineCampaign[]> {
+  if (DEMO_MODE) return [];
+
   let query = supabase
     .from('line_campaigns')
     .select('*')
@@ -15,6 +17,8 @@ export async function fetchCampaigns(status?: CampaignStatus): Promise<LineCampa
 }
 
 export async function approveCampaign(id: string): Promise<void> {
+  if (DEMO_MODE) return;
+
   const { data: { user } } = await supabase.auth.getUser();
   const { error } = await supabase
     .from('line_campaigns')
@@ -24,6 +28,8 @@ export async function approveCampaign(id: string): Promise<void> {
 }
 
 export async function updateCampaignMessage(id: string, body: string): Promise<void> {
+  if (DEMO_MODE) return;
+
   const { error } = await supabase
     .from('line_campaigns')
     .update({ body })
@@ -32,9 +38,12 @@ export async function updateCampaignMessage(id: string, body: string): Promise<v
 }
 
 export async function deleteCampaign(id: string): Promise<void> {
+  if (DEMO_MODE) return;
+
   const { error } = await supabase
     .from('line_campaigns')
     .delete()
     .eq('id', id);
   if (error) throw new Error(error.message);
 }
+

@@ -34,9 +34,9 @@ const MOCK_RESERVATIONS: ReservationWithCustomer[] = [
       customer_type: 'VIP型',
       is_vip: true,
       visit_count: 8,
-      total_spent: 192000,
       churn_risk_score: 12,
       last_visit_date: new Date(Date.now() - 14 * 86400000).toISOString().split('T')[0],
+      total_spent: 0,
     },
   },
   {
@@ -56,9 +56,9 @@ const MOCK_RESERVATIONS: ReservationWithCustomer[] = [
       customer_type: '感情重視型',
       is_vip: false,
       visit_count: 3,
-      total_spent: 36000,
       churn_risk_score: 18,
       last_visit_date: new Date(Date.now() - 45 * 86400000).toISOString().split('T')[0],
+      total_spent: 0,
     },
   },
   {
@@ -78,9 +78,9 @@ const MOCK_RESERVATIONS: ReservationWithCustomer[] = [
       customer_type: '効果重視型',
       is_vip: false,
       visit_count: 9,
-      total_spent: 148000,
       churn_risk_score: 22,
       last_visit_date: new Date(Date.now() - 18 * 86400000).toISOString().split('T')[0],
+      total_spent: 0,
     },
   },
   {
@@ -100,9 +100,9 @@ const MOCK_RESERVATIONS: ReservationWithCustomer[] = [
       customer_type: '慎重・不安型',
       is_vip: false,
       visit_count: 5,
-      total_spent: 40000,
       churn_risk_score: 76,
       last_visit_date: new Date(Date.now() - 62 * 86400000).toISOString().split('T')[0],
+      total_spent: 0,
     },
   },
   {
@@ -122,9 +122,9 @@ const MOCK_RESERVATIONS: ReservationWithCustomer[] = [
       customer_type: 'VIP型',
       is_vip: true,
       visit_count: 18,
-      total_spent: 342000,
       churn_risk_score: 5,
       last_visit_date: new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0],
+      total_spent: 0,
     },
   },
 ]
@@ -226,37 +226,6 @@ export const useHomeStore = create<HomeState>((set) => ({
       const mapped = (data as unknown as ReservationWithCustomer[]).filter(
         (r) => r.customer != null
       )
-
-      // customers.total_spent が 0 の場合、customer_visits.sales から集計して補完
-      const customerIds = mapped
-        .map(r => r.customer_id)
-        .filter((id): id is string => !!id)
-
-      if (customerIds.length > 0) {
-        const { data: visitRows } = await supabase
-          .from('customer_visits')
-          .select('customer_id, sales, retail_sales')
-          .in('customer_id', customerIds)
-
-        if (visitRows?.length) {
-          const spentMap = new Map<string, number>()
-          visitRows.forEach(v => {
-            const prev = spentMap.get(v.customer_id) ?? 0
-            spentMap.set(v.customer_id, prev + (v.sales ?? 0) + (v.retail_sales ?? 0))
-          })
-
-          set({
-            reservations: mapped.map(r => {
-              const fromVisits = spentMap.get(r.customer_id ?? '') ?? 0
-              if (fromVisits > 0 && (r.customer.total_spent ?? 0) === 0) {
-                return { ...r, customer: { ...r.customer, total_spent: fromVisits } }
-              }
-              return r
-            }),
-          })
-          return
-        }
-      }
 
       set({ reservations: mapped })
     } catch {

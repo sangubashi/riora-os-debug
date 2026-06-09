@@ -9,8 +9,8 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
-import IPhoneDiagPanel  from '@/components/test/IPhoneDiagPanel'
-import LineTestButton   from '@/components/test/LineTestButton'
+import IPhoneDiagPanel from '@/components/test/IPhoneDiagPanel'
+import LineTestButton from '@/components/test/LineTestButton'
 
 // ─── 型 ──────────────────────────────────────────────────────────────────────
 
@@ -282,10 +282,10 @@ export default async function TestPage() {
           <p>❌ テーブルエラー → Supabase SQL Editor で migration SQL を実行</p>
         </div>
 
-        {/* ─── LINE テスト送信 ─── */}
-        <Card title="📨 LINE テスト送信" status="warn">
-          <p style={{ fontSize: '12px', color: '#9E8090', lineHeight: 1.6 }}>
-            ENV に <code>LINE_CHANNEL_ACCESS_TOKEN</code> / <code>LINE_TEST_USER_ID</code> / <code>SUPABASE_SERVICE_ROLE_KEY</code> を設定後に押してください。
+        {/* ─── LINE 送信テスト ─── */}
+        <Card title="📨 LINE 送信テスト" status="ok">
+          <p style={{ fontSize: '12px', color: '#9E8090', marginBottom: '4px' }}>
+            ENV の LINE_TEST_USER_ID 宛にテストメッセージを送信し、line_send_logs に記録します。
           </p>
           <LineTestButton />
         </Card>

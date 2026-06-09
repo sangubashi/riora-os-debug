@@ -7,7 +7,7 @@ dotenv.config({ path: '.env' })
 
 const url     = process.env.NEXT_PUBLIC_SUPABASE_URL
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-const svcKey  = process.env.SUPABASE_SERVICE_KEY
+const svcKey  = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 console.log('── 環境変数チェック ──')
 if (!url || !anonKey) { console.error('❌ NEXT_PUBLIC_ 変数が未設定'); process.exit(1) }

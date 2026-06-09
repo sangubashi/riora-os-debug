@@ -41,6 +41,12 @@ CREATE POLICY "authenticated_select" ON public.line_send_logs
 CREATE POLICY "service_role_insert" ON public.line_send_logs
   FOR INSERT TO service_role WITH CHECK (true);
 
+-- テーブルレベル権限（RLSポリシーだけでは不十分。GRANTが無いとPostgRESTが
+-- "permission denied" / "table not found in schema cache" を返す）
+GRANT USAGE ON SCHEMA public TO authenticated, service_role;
+GRANT SELECT ON TABLE public.line_send_logs TO authenticated;
+GRANT SELECT, INSERT ON TABLE public.line_send_logs TO service_role;
+
 COMMENT ON TABLE  public.line_send_logs IS 'LINE送信ログ。mode=test はテスト送信専用レコード。';
 COMMENT ON COLUMN public.line_send_logs.mode IS 'test: テスト送信, production: 本番送信';
 COMMENT ON COLUMN public.line_send_logs.metadata IS '将来拡張: AI model名・prompt_id・campaign_id 等を格納';

@@ -1,9 +1,12 @@
 'use client'
-import { useEffect, useMemo } from 'react'
+import React, { useEffect, useMemo } from 'react'
 import { useRouter }   from 'next/navigation'
 import { motion }      from 'framer-motion'
 import { RefreshCw, MessageCircle, TrendingDown, Sparkles, Lightbulb } from 'lucide-react'
 import { useKpiStore, type KpiKey } from '@/store/useKpiStore'
+import { useCustomerStore }         from '@/store/useCustomerStore'
+import { buildAnalysisInput }       from '@/lib/analytics/ImprovementAnalyzer'
+import { calcImprovementImpact }    from '@/lib/analytics/ImprovementImpactCalculator'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useKpiSqlStore } from '@/store/useKpiSqlStore'
 import { useDashboardStore } from '@/store/useDashboardStore'
@@ -20,7 +23,64 @@ import ProductAnalyticsPanel from './ProductAnalyticsPanel'
 import VipPatternPanel from './VipPatternPanel'
 import StoreLearningPanel from './StoreLearningPanel'
 import SalonBoardImportPanel from './SalonBoardImportPanel'
+import ChurnPreventionPanel from './phase2/ChurnPreventionPanel'
+import VipPromotionPanel    from './phase2/VipPromotionPanel'
+import StaffImprovementPanel from './phase2/StaffImprovementPanel'
+import SalesForecastPanel    from './phase2/SalesForecastPanel'
 import AppBottomNav     from '@/components/phase1/AppBottomNav'
+
+// ─── AI改善サマリーカード（概要タブ最上部） ────────────────────────────────────
+
+function AiImprovementSummary() {
+  const { current } = useKpiStore()
+  const customers   = useCustomerStore(s => s.customers)
+  const P_COLOR: Record<string, string> = {
+    critical: '#EF476F', high: '#F56E8B', medium: '#FFD166', low: '#74C69D',
+  }
+  const { topItem, totalImpact } = useMemo(() => {
+    const inp = buildAnalysisInput({
+      nextReserveRate:  current.nextReserveRate,
+      repeatRate:       current.repeatRate,
+      lineResponseRate: current.lineResponseRate,
+      avgSpend:         current.avgSpend,
+      vipRate:          current.vipRate,
+      customers,
+    })
+    return calcImprovementImpact({
+      ...inp,
+      monthlyVisits:   customers.length || 1,
+      avgSpend:        current.avgSpend || 14000,
+      avgProductPrice: 4500,
+    })
+  }, [current, customers])
+
+  if (!topItem) return null
+  const color = P_COLOR[topItem.priority] ?? '#F56E8B'
+
+  return (
+    <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+      style={{ margin: '0 16px 12px', background: '#fff', border: `1px solid ${color}44`, borderRadius: '16px', padding: '12px 14px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+        <div>
+          <p style={{ fontSize: '10px', color: '#C8A8B0', marginBottom: '3px' }}>今月の改善余地</p>
+          <p style={{ fontSize: '22px', fontWeight: 700, color: '#52B788', fontFamily: 'Inter, sans-serif' }}>
+            +{totalImpact >= 10000 ? `¥${Math.round(totalImpact / 10000)}万` : `¥${totalImpact.toLocaleString()}`}
+            <span style={{ fontSize: '11px', color: '#C8A8B0', fontWeight: 400 }}>/月</span>
+          </p>
+        </div>
+        <span style={{ fontSize: '9px', padding: '2px 8px', borderRadius: '999px', background: color + '22', color, border: `1px solid ${color}44`, fontWeight: 600 }}>
+          最優先: {topItem.label}
+        </span>
+      </div>
+      <p style={{ fontSize: '11px', color: '#9F7E6C', lineHeight: 1.6, paddingLeft: '4px', borderLeft: `2px solid ${color}` }}>
+        推奨: {topItem.recommendation}
+      </p>
+      <p style={{ fontSize: '9px', color: '#C8A8B0', marginTop: '6px', textAlign: 'right' }}>
+        詳細は「📊 改善分析」タブで確認
+      </p>
+    </motion.div>
+  )
+}
 
 // ─── KPI構成 ─────────────────────────────────────────────────────────────────
 
@@ -81,6 +141,7 @@ const TODAY = new Date().toLocaleDateString('ja-JP', {
 
 export default function KpiDashboard() {
   const router = useRouter()
+  const [mainTab, setMainTab] = React.useState<'overview' | 'churn' | 'vip' | 'staff' | 'forecast'>('overview')
   const {
     current, previousDay, previousMonth,
     weeklyData, insights,
@@ -199,6 +260,45 @@ export default function KpiDashboard() {
           }}
         />
       )}
+
+      {/* ════════ メインタブ ════════ */}
+      <div style={{
+        display: 'flex', gap: '6px', padding: '0 16px 12px',
+        overflowX: 'auto', scrollbarWidth: 'none',
+      }}>
+        {([
+          { key: 'overview',  label: '概要' },
+          { key: 'churn',     label: '🚨 失客防止' },
+          { key: 'vip',       label: '👑 VIP化' },
+          { key: 'staff',     label: '📊 改善分析' },
+          { key: 'forecast',  label: '📈 売上予測' },
+        ] as const).map(({ key, label }) => (
+          <button key={key} onClick={() => setMainTab(key)}
+            style={{
+              flexShrink: 0, fontSize: '11px', padding: '5px 14px',
+              borderRadius: '999px',
+              border: `1px solid ${mainTab === key ? '#F56E8B' : '#F0E8E8'}`,
+              background: mainTab === key ? 'rgba(245,110,139,0.10)' : 'transparent',
+              color: mainTab === key ? '#F56E8B' : '#C8A8B0',
+              fontWeight: mainTab === key ? 700 : 400,
+              cursor: 'pointer', transition: 'all 0.15s',
+            }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ════════ Phase2 タブコンテンツ ════════ */}
+      {mainTab === 'churn'    && <ChurnPreventionPanel />}
+      {mainTab === 'vip'      && <VipPromotionPanel />}
+      {mainTab === 'staff'    && <StaffImprovementPanel />}
+      {mainTab === 'forecast' && <SalesForecastPanel />}
+
+      {/* ════════ 概要タブ（既存コンテンツ） ════════ */}
+      {mainTab === 'overview' && <>
+
+      {/* ════════ AI改善サマリー ════════ */}
+      <AiImprovementSummary />
 
       {/* ════════ ヒーローKPI ════════ */}
       <div className="px-4 mb-5">
@@ -470,6 +570,8 @@ export default function KpiDashboard() {
       </motion.div>
 
       <KpiDetailSheet />
+      </> /* overview end */}
+
       <AppBottomNav />
     </div>
   )

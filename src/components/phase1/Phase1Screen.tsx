@@ -50,7 +50,7 @@ function toPhase1(r: ReservationWithCustomer): Phase1Reservation {
     customerName:       r.customer.name,
     customerType:       (r.customer.customer_type as CustomerType) || 'VIP型',
     visitCount:         r.customer.visit_count,
-    totalSpent:         0,
+    totalSpent:         r.customer.total_spent ?? 0,
     aiScore:            Math.max(0, 100 - r.customer.churn_risk_score),
     isVip:              r.customer.is_vip,
     churnRisk:          r.customer.churn_risk_score,

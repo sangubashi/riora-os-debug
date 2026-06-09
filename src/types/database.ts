@@ -50,7 +50,7 @@ export interface Reservation {
 export interface ReservationWithCustomer extends Reservation {
   customer: Pick<
     Customer,
-    'name' | 'customer_type' | 'is_vip' | 'visit_count' | 'churn_risk_score' | 'last_visit_date'
+    'name' | 'customer_type' | 'is_vip' | 'visit_count' | 'churn_risk_score' | 'last_visit_date' | 'total_spent'
   >
 }
 

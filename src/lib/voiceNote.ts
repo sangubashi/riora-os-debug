@@ -229,14 +229,22 @@ async function runInsightPipeline(params: InsightPipelineParams): Promise<void> 
     })
     params.onStageUpdate?.('summary', { tags, summary })
 
+    // 4b. InsightGenerator で次回提案・NGワード・購入傾向を抽出
+    const { generateInsightsFromNotes } = await import('@/lib/voiceInsight/InsightGenerator')
+    const generated = generateInsightsFromNotes([{ transcript, summary, insight_tags: tags }])
+
     // 5. DB 最終確定（全フィールド一括）
     const { error: updateErr } = await supabase.from('voice_notes')
       .update({
         transcript,
         summary,
-        insight_tags:    tags,
-        analysis_status: 'completed',
-        analyzed_at:     new Date().toISOString(),
+        insight_tags:     tags,
+        next_suggestion:  generated.suggestions[0]?.treatment ?? null,
+        ng_topics:        generated.ngAlerts.map(n => ({ tag: n.tag, topic: n.topic, severity: n.severity })),
+        buy_tendency:     generated.buyTendencies.map(b => ({ tag: b.tag, style: b.style })),
+        insight_summary:  generated.summary,
+        analysis_status:  'completed',
+        analyzed_at:      new Date().toISOString(),
       })
       .eq('id', voiceNoteId)
 

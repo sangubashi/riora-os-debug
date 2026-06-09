@@ -5,3 +5,10 @@ dist/
 
 .vercel
 .next/
+
+# ビルドキャッシュ
+tsconfig.tsbuildinfo
+
+# PWAアイコン元画像（素材フォルダ）
+public/icons1/
+public/icons2/

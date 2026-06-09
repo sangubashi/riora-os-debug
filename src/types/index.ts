@@ -217,6 +217,7 @@ export interface VoiceNote {
 // ─── AIインサイトタグ（PHASE 3） ─────────────────────────────────────────────
 
 export const INSIGHT_TAG_LABELS: Record<string, string> = {
+  // 肌悩み（既存）
   dryness_concern:   '乾燥気になる',
   price_sensitive:   '価格感度高め',
   event_before:      'イベント前需要',
@@ -227,6 +228,21 @@ export const INSIGHT_TAG_LABELS: Record<string, string> = {
   aging_concern:     'エイジング意識',
   redness_concern:   '赤み気になる',
   busy_lifestyle:    '多忙ライフスタイル',
+  // 次回提案（新規）
+  suggest_peel:      'ピーリング提案',
+  suggest_whitening: 'ホワイトニング提案',
+  suggest_premium:   'プレミアム提案',
+  suggest_homecare:  'ホームケア提案',
+  suggest_rebook:    '早期予約提案',
+  // NGワード（新規）
+  ng_price:          'NG:価格言及注意',
+  ng_compare:        'NG:比較言及注意',
+  ng_time:           'NG:時間プレッシャー注意',
+  // 購入傾向（新規）
+  buy_impulse:       '衝動買い傾向',
+  buy_compare:       '比較検討派',
+  buy_loyal:         'リピート購入派',
+  buy_trial:         'お試し好み',
 }
 
 export type InsightTag = keyof typeof INSIGHT_TAG_LABELS
@@ -692,6 +708,83 @@ export interface CustomerVisit {
 
 /** customer_visits INSERT 用（id / created_at は DB 自動生成） */
 export type CustomerVisitInsert = Omit<CustomerVisit, 'id' | 'created_at'>
+
+// ─── AI改善フィードバックログ ─────────────────────────────────────────────────
+
+export type CoachActionType  = 'rebook_proposal' | 'product_suggest' | 'vip_upgrade' | 'line_follow' | 'other'
+export type ActionResultType = 'success' | 'fail' | 'pending'
+
+export interface ImprovementActionLog {
+  id:                        string
+  staff_name:                string
+  action_type:               CoachActionType
+  customer_id:               string | null
+  customer_name:             string
+  metric:                    string
+  created_at:                string
+  completed_at:              string | null
+  result_type:               ActionResultType | null
+  revenue_generated:         number    // 予測売上
+  revenue_generated_actual:  number | null  // 実売上（attribution後）
+  attribution_linked_at:     string | null
+  success:                   boolean
+  notes:                     string | null
+}
+
+export type ImprovementActionLogInsert = Omit<ImprovementActionLog, 'id' | 'created_at'>
+
+export interface ImprovementRevenueLink {
+  id:            string
+  action_log_id: string
+  customer_id:   string | null
+  visit_id:      string | null
+  revenue:       number
+  created_at:    string
+}
+
+export type ImprovementRevenueLinkInsert = Omit<ImprovementRevenueLink, 'id' | 'created_at'>
+
+// ─── LINE ユーザー名寄せ ──────────────────────────────────────────────────────
+
+export interface LineUserId {
+  id:              string
+  line_user_id:    string
+  display_name:    string
+  picture_url:     string | null
+  customer_id:     string | null
+  is_staff:        boolean
+  staff_name:      string | null
+  is_test_account: boolean
+  followed_at:     string
+  unfollowed_at:   string | null
+  linked_at:       string | null
+  created_at:      string
+  updated_at:      string
+}
+
+// ─── LINE 送信キュー ──────────────────────────────────────────────────────────
+
+export type LineSendMode   = 'test' | 'staff_notify' | 'semi' | 'auto'
+export type LineSendStatus = 'pending' | 'approved' | 'sent' | 'failed' | 'skipped'
+
+export interface LineSendQueue {
+  id:            string
+  customer_id:   string | null
+  customer_name: string
+  line_user_id:  string
+  message_body:  string
+  send_mode:     LineSendMode
+  status:        LineSendStatus
+  approved_by:   string | null
+  approved_at:   string | null
+  scheduled_at:  string | null
+  triggered_by:  string | null
+  template_id:   string | null
+  error_message: string | null
+  sent_at:       string | null
+  created_at:    string
+  updated_at:    string
+}
 
 // ─── SalonBoard CSV 取込 ──────────────────────────────────────────────────────
 

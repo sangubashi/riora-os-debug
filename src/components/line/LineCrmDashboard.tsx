@@ -185,6 +185,17 @@ export default function LineCrmDashboard() {
             style={{ background:'linear-gradient(135deg, #D98292, #F2B6C6)' }}>
             <Plus size={16} />
           </motion.button>
+          <a href="/line/approve"
+            style={{
+              marginLeft: '6px',
+              width: '64px', height: '32px', borderRadius: '999px',
+              border: '1px solid #52B788', background: '#F0FFF8',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '10px', fontWeight: 700, color: '#52B788',
+              textDecoration: 'none', flexShrink: 0,
+            }}>
+            承認 →
+          </a>
         </div>
 
         {/* Tabs */}
