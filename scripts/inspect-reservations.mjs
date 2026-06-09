@@ -1,7 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
+import { config } from 'dotenv'
+config({ path: '.env.local' })
 
-const URL  = 'REDACTED_URL'
-const KEY  = 'REDACTED'
+const URL  = process.env.NEXT_PUBLIC_SUPABASE_URL
+const KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY
+if (!URL || !KEY) {
+  console.error('Missing env: NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY')
+  process.exit(1)
+}
 
 const admin = createClient(URL, KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
