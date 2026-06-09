@@ -13,6 +13,10 @@ export default function ClientShell({ children }: { children: React.ReactNode })
   useEffect(() => {
     initialize()
 
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {})
+    }
+
     // PHASE7: グローバルエラーキャッチ（接客中に白画面にしない）
     const onUnhandled = (e: PromiseRejectionEvent) => {
       prodLog('error', '[Global] unhandledRejection', e.reason)

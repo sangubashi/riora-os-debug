@@ -10,8 +10,11 @@ export const metadata: Metadata = {
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'black-translucent',  // safe-area を有効化するために必須
+    statusBarStyle: 'black-translucent',
     title: 'Riora',
+  },
+  icons: {
+    apple: '/apple-touch-icon.png',
   },
 }
 
@@ -20,15 +23,15 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  viewportFit: 'cover',   // env(safe-area-inset-*) を有効化
+  viewportFit: 'cover',
+  themeColor: '#F56E8B',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ja">
       <head>
-        {/* 明示的 viewport meta: viewportFit=cover で safe-area を確実に有効化 */}
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
