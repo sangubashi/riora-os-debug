@@ -1,0 +1,54 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { UUID, Visit } from '../../types/riora.types';
+import type { IVisitRepo } from '../interfaces';
+import { toBrainVisitInsert, toVisit, type BrainVisitRow } from './mappers';
+
+const VISIT_COLUMNS =
+  'id, store_id, customer_id, staff_id, menu_id, visit_date, visit_count_at, is_nomination, ' +
+  'treatment_amount, retail_amount, retail_category, homecare_purchased, homecare_declined, ' +
+  'next_booking_made, no_booking_reason, voice_memo_url, visit_score';
+
+export class VisitRepo implements IVisitRepo {
+  constructor(private readonly client: SupabaseClient) {}
+
+  async recentByCustomer(customerId: UUID, n: number): Promise<Visit[]> {
+    const { data, error } = await this.client
+      .from('brain_visits')
+      .select(VISIT_COLUMNS)
+      .eq('customer_id', customerId)
+      .is('deleted_at', null)
+      .order('visit_date', { ascending: false })
+      .limit(n);
+
+    if (error) {
+      throw new Error(`VisitRepo.recentByCustomer failed: ${error.message}`);
+    }
+    return ((data ?? []) as unknown as BrainVisitRow[]).map(toVisit);
+  }
+
+  async create(visit: Omit<Visit, 'id'>): Promise<Visit> {
+    const { data, error } = await this.client
+      .from('brain_visits')
+      .insert(toBrainVisitInsert(visit))
+      .select(VISIT_COLUMNS)
+      .single();
+
+    if (error) {
+      throw new Error(`VisitRepo.create failed: ${error.message}`);
+    }
+    return toVisit(data as unknown as BrainVisitRow);
+  }
+
+  async countByCustomer(customerId: UUID): Promise<number> {
+    const { count, error } = await this.client
+      .from('brain_visits')
+      .select('id', { count: 'exact', head: true })
+      .eq('customer_id', customerId)
+      .is('deleted_at', null);
+
+    if (error) {
+      throw new Error(`VisitRepo.countByCustomer failed: ${error.message}`);
+    }
+    return count ?? 0;
+  }
+}
