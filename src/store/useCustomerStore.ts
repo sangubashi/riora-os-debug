@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { supabase, DEMO_MODE } from '@/lib/supabase'
+import { supabase, DEMO_MODE, VOICE_NOTES_LIVE } from '@/lib/supabase'
 import type { UserRole } from '@/types/database'
 
 // ─── 型 ──────────────────────────────────────────────────────────────────────
@@ -72,7 +72,7 @@ function daysAgo(dateStr: string | null): number {
 }
 
 function isMockMode(): boolean {
-  if (DEMO_MODE) return true
+  if (DEMO_MODE && !VOICE_NOTES_LIVE) return true
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   return !url || !key || url === '' || key === ''
@@ -120,6 +120,11 @@ export const useCustomerStore = create<CustomerState>((set) => ({
       console.log('[CustomerStore] session:', session ? 'あり' : 'なし', '/ uid:', uid ?? 'なし')
 
       if (!session || !uid) {
+        if (DEMO_MODE) {
+          console.warn('[CustomerStore] DEMO_MODE: 未認証 → MOCK_CUSTOMERSにフォールバック')
+          set({ customers: MOCK_CUSTOMERS, isLoading: false, debug: { ...INIT_DEBUG, isMock: true, rawCount: MOCK_CUSTOMERS.length } })
+          return
+        }
         set({ customers: [], debug: { ...INIT_DEBUG, errorMsg: '未認証' } })
         return
       }
@@ -151,12 +156,22 @@ export const useCustomerStore = create<CustomerState>((set) => ({
       }
       if (!data?.length) {
         console.warn('[CustomerStore] customers: 0件返却（RLSポリシーまたはデータなし）')
+        if (DEMO_MODE) {
+          console.warn('[CustomerStore] DEMO_MODE: DBデータ0件 → MOCK_CUSTOMERSにフォールバック')
+          set({ customers: MOCK_CUSTOMERS, isLoading: false, debug: { ...INIT_DEBUG, isMock: true, rawCount: MOCK_CUSTOMERS.length } })
+          return
+        }
         set({ customers: [], debug: { ...INIT_DEBUG, authUid: uid, role, hasSession: true, errorMsg: 'データ0件' } })
         return
       }
 
-      // ④ フィルタ（fail-closed: profile取得失敗時は空表示）
+      // ④ フィルタ（fail-closed: profile取得失敗時は空表示 / DEMO_MODEはMOCKにフォールバック）
       if (!role) {
+        if (DEMO_MODE) {
+          console.warn('[CustomerStore] DEMO_MODE: profiles取得失敗 → MOCK_CUSTOMERSにフォールバック')
+          set({ customers: MOCK_CUSTOMERS, isLoading: false, debug: { ...INIT_DEBUG, isMock: true, rawCount: MOCK_CUSTOMERS.length } })
+          return
+        }
         console.warn('[CustomerStore] profiles取得失敗 → fail-closed: 顧客表示を空にします')
         set({
           customers: [],
@@ -171,6 +186,12 @@ export const useCustomerStore = create<CustomerState>((set) => ({
         : data.filter(r => String(r.assigned_staff_id) === String(uid))
 
       console.log(`[CustomerStore] DB取得: ${data.length}件 / フィルタ後: ${filtered.length}件 (canSeeAll=${canSeeAll})`)
+
+      if (!filtered.length && DEMO_MODE) {
+        console.warn('[CustomerStore] DEMO_MODE: staffフィルタ後0件 → MOCK_CUSTOMERSにフォールバック')
+        set({ customers: MOCK_CUSTOMERS, isLoading: false, debug: { ...INIT_DEBUG, isMock: true, rawCount: MOCK_CUSTOMERS.length } })
+        return
+      }
 
       // ⑤ RPC で reservations 集計（失敗しても customers 表示は継続）
       let rpcError: string | null = null

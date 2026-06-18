@@ -4,7 +4,7 @@
  * Falls back to mock data when Supabase is not configured.
  */
 import { create } from 'zustand'
-import { supabase, DEMO_MODE } from '@/lib/supabase'
+import { supabase, DEMO_MODE, VOICE_NOTES_LIVE } from '@/lib/supabase'
 import type { ReservationWithCustomer } from '@/types/database'
 import type { UserRole } from '@/types/database'
 
@@ -140,6 +140,7 @@ const MOCK_CHURN_RISK_COUNT = 3
 
 interface HomeState {
   reservations: ReservationWithCustomer[]
+  isFallback: boolean   // 本日0件 → 直近5件を表示中
   todaySales: number
   yesterdaySales: number
   churnRiskCount: number
@@ -153,7 +154,7 @@ interface HomeState {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function isMockMode(): boolean {
-  if (DEMO_MODE) return true
+  if (DEMO_MODE && !VOICE_NOTES_LIVE) return true
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   return !url || !key || url === '' || key === ''
@@ -167,13 +168,39 @@ function todayRange(): { start: string; end: string } {
   return { start: start.toISOString(), end: end.toISOString() }
 }
 
+const RESERVATION_SELECT = `
+  id,
+  customer_id,
+  staff_id,
+  menu,
+  price,
+  scheduled_at,
+  duration_minutes,
+  status,
+  is_new_customer,
+  notes,
+  created_at,
+  customer:customers (
+    name,
+    customer_type,
+    is_vip,
+    visit_count,
+    churn_risk_score,
+    last_visit_date,
+    total_spent
+  )
+`
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
+const MOCK = isMockMode()
+
 export const useHomeStore = create<HomeState>((set) => ({
-  reservations:   DEMO_MODE ? MOCK_RESERVATIONS  : [],
-  todaySales:     DEMO_MODE ? MOCK_TODAY_SALES   : 0,
-  yesterdaySales: DEMO_MODE ? MOCK_YESTERDAY_SALES : 0,
-  churnRiskCount: DEMO_MODE ? MOCK_CHURN_RISK_COUNT : 0,
+  reservations:   MOCK ? MOCK_RESERVATIONS    : [],
+  isFallback:     false,
+  todaySales:     MOCK ? MOCK_TODAY_SALES     : 0,
+  yesterdaySales: MOCK ? MOCK_YESTERDAY_SALES : 0,
+  churnRiskCount: MOCK ? MOCK_CHURN_RISK_COUNT : 0,
   isLoading: false,
 
   fetchTodayReservations: async (role: UserRole, uid: string) => {
@@ -185,30 +212,7 @@ export const useHomeStore = create<HomeState>((set) => ({
 
       let query = supabase
         .from('reservations')
-        .select(
-          `
-          id,
-          customer_id,
-          staff_id,
-          menu,
-          price,
-          scheduled_at,
-          duration_minutes,
-          status,
-          is_new_customer,
-          notes,
-          created_at,
-          customer:customers (
-            name,
-            customer_type,
-            is_vip,
-            visit_count,
-            churn_risk_score,
-            last_visit_date,
-            total_spent
-          )
-        `
-        )
+        .select(RESERVATION_SELECT)
         .gte('scheduled_at', start)
         .lte('scheduled_at', end)
         .order('scheduled_at', { ascending: true })
@@ -220,14 +224,37 @@ export const useHomeStore = create<HomeState>((set) => ({
 
       const { data, error } = await query.limit(50)
 
-      if (error || !data) return
+      if (error) return
 
       // Supabase returns the related record as an object when joined via FK
-      const mapped = (data as unknown as ReservationWithCustomer[]).filter(
+      let mapped = ((data ?? []) as unknown as ReservationWithCustomer[]).filter(
         (r) => r.customer != null
       )
+      let isFallback = false
 
-      set({ reservations: mapped })
+      // 本日の予約が0件 → 直近5件をフォールバック表示
+      if (mapped.length === 0) {
+        let fallbackQuery = supabase
+          .from('reservations')
+          .select(RESERVATION_SELECT)
+          .order('scheduled_at', { ascending: false })
+          .limit(5)
+
+        if (role === 'staff') {
+          fallbackQuery = fallbackQuery.eq('staff_id', uid)
+        }
+
+        const { data: fallbackData, error: fallbackError } = await fallbackQuery
+
+        if (!fallbackError && fallbackData) {
+          mapped = (fallbackData as unknown as ReservationWithCustomer[])
+            .filter((r) => r.customer != null)
+            .sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at))
+          isFallback = mapped.length > 0
+        }
+      }
+
+      set({ reservations: mapped, isFallback })
     } catch {
       // Fallback to mock on error
     } finally {

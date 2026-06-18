@@ -15,7 +15,6 @@ import {
   fetchVoiceNotes,
   deleteVoiceNote,
   getVoiceNoteUrl,
-  formatDuration,
   type VoiceNoteRow,
 } from '@/lib/voiceNote'
 import { INSIGHT_TAG_LABELS } from '@/types'
@@ -26,6 +25,7 @@ import {
   type StreamingInsight,
 } from '@/lib/voice/streamPipeline'
 import type { InsightTag } from '@/types'
+import VoiceNotesList from './VoiceNotesList'
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -71,7 +71,7 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
   // 過去メモをロード
   const loadNotes = useCallback(async () => {
     setNotesLoading(true)
-    const rows = await fetchVoiceNotes(customerId, 5)
+    const rows = await fetchVoiceNotes(customerId, 10)
     setPastNotes(rows)
     setNotesLoading(false)
   }, [customerId])
@@ -143,8 +143,9 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
           },
           onComplete: () => {
             setProcessingStage('done')
-            // 分析完了をリロードで反映
+            // 分析完了をリロードで反映（過去メモ一覧 + AIタイムライン）
             void loadNotes()
+            onSaved()
           },
           onError: (_err, fallback) => {
             setProcessingStage('done')
@@ -405,69 +406,15 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
         )}
       </div>
 
-      {/* ── 過去メモ一覧 ── */}
-      {notesLoading ? (
-        <p style={{ fontSize: '12px', color: '#A0BCD8', textAlign: 'center', padding: '4px 0' }}>読み込み中…</p>
-      ) : pastNotes.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '10px 0 4px' }}>
-          <div style={{ fontSize: '18px', marginBottom: '5px', opacity: 0.35 }}>🎙️</div>
-          <p style={{ fontSize: '12px', color: '#A0BCD8', lineHeight: 1.6 }}>
-            音声メモはありません<br/>
-            <span style={{ fontSize: '11px', color: '#B8D0E0' }}>接客後に録音すると自動でAI分析されます</span>
-          </p>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {pastNotes.map(note => {
-            const isPlaying  = playingId === note.id
-            const isDeleting = deletingId === note.id
-            return (
-              <div key={note.id}
-                style={{ background: '#fff', borderRadius: '14px', padding: '10px 12px', border: '1px solid #C8DCF0', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                {/* 再生ボタン */}
-                <button onClick={() => handlePlay(note)}
-                  style={{ width: '34px', height: '34px', borderRadius: '50%', border: 'none', background: isPlaying ? '#E84050' : '#4878A8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, fontSize: '14px' }}>
-                  {isPlaying ? '⏸' : '▶'}
-                </button>
-
-                {/* メタ情報 */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: '11px', color: '#4878A8', fontFamily: 'Inter, sans-serif', fontWeight: 600 }}>
-                    {note.displayAt}
-                  </p>
-                  {note.duration_sec !== null && (
-                    <p style={{ fontSize: '10px', color: '#A0BCD8' }}>
-                      {formatDuration(note.duration_sec)}
-                    </p>
-                  )}
-                  {note.summary && (
-                    <p style={{ fontSize: '11px', color: '#688098', marginTop: '2px', lineHeight: 1.5, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' } as React.CSSProperties}>
-                      {note.summary}
-                    </p>
-                  )}
-                  {/* PHASE3: insight_tags 表示 */}
-                  {note.insight_tags && note.insight_tags.length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '5px' }}>
-                      {(note.insight_tags as InsightTag[]).slice(0, 3).map(tag => (
-                        <span key={tag} style={{ fontSize: '10px', padding: '2px 7px', borderRadius: '999px', background: '#E8F0FA', color: '#4878A8', fontWeight: 500 }}>
-                          {INSIGHT_TAG_LABELS[tag] ?? tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* 削除ボタン */}
-                <button onClick={() => handleDelete(note)}
-                  disabled={isDeleting}
-                  style={{ width: '30px', height: '30px', borderRadius: '50%', border: 'none', background: '#F8F0F0', color: '#C07080', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isDeleting ? 'default' : 'pointer', flexShrink: 0, fontSize: '13px', opacity: isDeleting ? 0.5 : 1 }}>
-                  {isDeleting ? '…' : '×'}
-                </button>
-              </div>
-            )
-          })}
-        </div>
-      )}
+      {/* ── 過去メモ一覧（最新10件 / AI解析結果） ── */}
+      <VoiceNotesList
+        notes={pastNotes}
+        loading={notesLoading}
+        playingId={playingId}
+        deletingId={deletingId}
+        onPlay={handlePlay}
+        onDelete={handleDelete}
+      />
     </div>
   )
 })

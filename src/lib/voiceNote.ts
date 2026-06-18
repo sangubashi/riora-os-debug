@@ -4,14 +4,9 @@
  * Storage パス: voice-notes/{staffId}/{customerId}/{timestamp}.webm
  * iPhone Safari: MediaRecorder は audio/mp4 を優先使用
  */
-import { supabase, DEMO_MODE } from '@/lib/supabase'
+import { supabase, DEMO_MODE, VOICE_NOTES_LIVE } from '@/lib/supabase'
 import { withRetry, prodLog } from '@/lib/stability'
 import { logAction } from '@/lib/actionLog'
-import { transcribeAudio } from '@/lib/voiceInsight/mockTranscript'
-import { extractInsightTags } from '@/lib/voiceInsight/extractInsightTags'
-import { summarizeTranscript } from '@/lib/voiceInsight/summarizeTranscript'
-import { extractMemoryCandidates, saveMemoryItems } from '@/lib/aiMemory'
-import { normalizeTranscript } from '@/lib/voice/domainDictionary'
 import type { VoiceNote } from '@/types'
 
 // ─── MIME type（iPhone Safari 対応） ─────────────────────────────────────────
@@ -93,8 +88,10 @@ function saveLocalFallback(params: {
 export async function uploadVoiceNote(params: UploadVoiceNoteParams): Promise<UploadResult> {
   const { blob, staffId, customerId, reservationId, durationSec } = params
 
-  // DEMO_MODE: ストレージ・DB を呼ばずダミー成功を返す
-  if (DEMO_MODE) {
+  console.log('[VOICE_NOTES_LIVE] uploadVoiceNote開始', { customerId, staffId, reservationId, durationSec })
+
+  // DEMO_MODE: ストレージ・DB を呼ばずダミー成功を返す（VOICE_NOTES_LIVE時は実DBへ進む）
+  if (DEMO_MODE && !VOICE_NOTES_LIVE) {
     return { voiceNoteId: `demo-vn-${Date.now()}`, storagePath: 'demo/path.mp4', error: null }
   }
 
@@ -123,6 +120,8 @@ export async function uploadVoiceNote(params: UploadVoiceNoteParams): Promise<Up
     return { voiceNoteId: null, storagePath: null, error: uploadResult.error.message }
   }
 
+  console.log('[VOICE_NOTES_LIVE] Storageアップロード成功', { path })
+
   // 2. DB レコード作成
   const { data: row, error: dbErr } = await supabase
     .from('voice_notes')
@@ -143,8 +142,11 @@ export async function uploadVoiceNote(params: UploadVoiceNoteParams): Promise<Up
     return { voiceNoteId: null, storagePath: path, error: dbErr?.message ?? 'DB保存失敗' }
   }
 
-  // 3. インサイト生成パイプライン（非同期・失敗してもアップロード成功扱い）
-  void runInsightPipeline({
+  console.log('[VOICE_NOTES_LIVE] voice_notes insert成功', { voiceNoteId: row.id })
+
+  // 3. AI解析パイプライン: /api/voice/pipeline へ非同期呼び出し
+  //    fire-and-forget — レスポンスを待たずにアップロード成功を返す
+  void callPipelineApi({
     voiceNoteId:   row.id,
     storagePath:   path,
     durationSec,
@@ -154,7 +156,7 @@ export async function uploadVoiceNote(params: UploadVoiceNoteParams): Promise<Up
   })
 
   // 4. action_log: voice_note_created
-  await logAction({
+  const logResult = await logAction({
     customerId,
     staffId,
     actionType:    'voice_note_created',
@@ -166,132 +168,58 @@ export async function uploadVoiceNote(params: UploadVoiceNoteParams): Promise<Up
     },
   })
 
+  if (logResult.error) {
+    console.log('[VOICE_NOTES_LIVE] customer_action_logs insert失敗', logResult.error)
+  } else {
+    console.log('[VOICE_NOTES_LIVE] customer_action_logs insert成功')
+  }
+
   return { voiceNoteId: row.id, storagePath: path, error: null }
 }
 
-// ─── インサイト生成パイプライン ───────────────────────────────────────────────
+// ─── サーバーサイド AI パイプライン呼び出し ──────────────────────────────────
 
-interface InsightPipelineParams {
+async function callPipelineApi(params: {
   voiceNoteId:   string
   storagePath:   string
   durationSec:   number
   customerId:    string
   staffId:       string
   reservationId: string | null
-  /** STEP4: 段階的更新コールバック（UI への optimistic 通知用） */
-  onStageUpdate?: (stage: 'tags' | 'summary' | 'complete', data: {
-    tags?:    string[]
-    summary?: string
-  }) => void
-}
-
-/**
- * 音声保存後に非同期で実行される解析パイプライン。
- * transcript → summary → insight_tags → DB更新 → action_log
- *
- * 将来: transcribeAudio を Whisper API に差し替えるだけで本番化できる。
- */
-async function runInsightPipeline(params: InsightPipelineParams): Promise<void> {
-  const { voiceNoteId, storagePath, durationSec, customerId, staffId } = params
-  // onStageUpdate は params から直接参照（分割代入しない）
-
+}): Promise<void> {
   try {
-    // 1. analysis_status を processing に更新
-    await supabase.from('voice_notes')
-      .update({ analysis_status: 'processing' })
-      .eq('id', voiceNoteId)
-
-    // 2. 文字起こし（現在はmock / 将来Whisper差し替えポイント）
-    const { transcript: rawTranscript } = await transcribeAudio({
-      storagePath,
-      durationSec,
-      useLiveAI: false,
-    })
-
-    // 2b. Domain Dictionary で補正（Whisper誤変換を修正）
-    const transcript = normalizeTranscript(rawTranscript ?? '')
-
-    // 3. タグ抽出 → 0.5秒以内に最初の反応を返す（optimistic）
-    const { tags } = extractInsightTags([transcript])
-    params.onStageUpdate?.('tags', { tags })
-
-    // 3b. tags だけ先にDB保存（analysis_status は processing のまま）
-    await supabase.from('voice_notes')
-      .update({ insight_tags: tags })
-      .eq('id', voiceNoteId)
-
-    // 4. サマリー生成 → silent update
-    const { summary } = summarizeTranscript({
-      transcript,
-      tags,
-      durationSec,
-      useLiveAI: false,
-    })
-    params.onStageUpdate?.('summary', { tags, summary })
-
-    // 4b. InsightGenerator で次回提案・NGワード・購入傾向を抽出
-    const { generateInsightsFromNotes } = await import('@/lib/voiceInsight/InsightGenerator')
-    const generated = generateInsightsFromNotes([{ transcript, summary, insight_tags: tags }])
-
-    // 5. DB 最終確定（全フィールド一括）
-    const { error: updateErr } = await supabase.from('voice_notes')
-      .update({
-        transcript,
-        summary,
-        insight_tags:     tags,
-        next_suggestion:  generated.suggestions[0]?.treatment ?? null,
-        ng_topics:        generated.ngAlerts.map(n => ({ tag: n.tag, topic: n.topic, severity: n.severity })),
-        buy_tendency:     generated.buyTendencies.map(b => ({ tag: b.tag, style: b.style })),
-        insight_summary:  generated.summary,
-        analysis_status:  'completed',
-        analyzed_at:      new Date().toISOString(),
-      })
-      .eq('id', voiceNoteId)
-
-    if (updateErr) {
-      prodLog('warn', '[voiceInsight] DB update failed', updateErr.message)
-      await supabase.from('voice_notes')
-        .update({ analysis_status: 'failed' })
-        .eq('id', voiceNoteId)
+    const { data: { session } } = await supabase.auth.getSession()
+    const token = session?.access_token
+    if (!token) {
+      prodLog('warn', '[voiceNote] callPipelineApi: no session token')
       return
     }
 
-    // 6. AI Memory: transcript から記憶を抽出して保存（Silent）
-    const memText = [transcript, summary].filter(Boolean).join(' ')
-    if (memText.length > 10) {
-      const memoryCandidates = extractMemoryCandidates(memText)
-      if (memoryCandidates.length > 0) {
-        void saveMemoryItems(customerId, memoryCandidates)
-      }
-    }
-
-    // 7. action_log: voice_insight_generated
-    await logAction({
-      customerId,
-      staffId,
-      actionType:    'voice_insight_generated',
-      actionPayload: {
-        voice_note_id: voiceNoteId,
-        tag_count:     tags.length,
-        tags,
+    const res = await fetch('/api/voice/pipeline', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
       },
+      body: JSON.stringify(params),
     })
 
-    params.onStageUpdate?.('complete', { tags, summary })
-    prodLog('info', `[voiceInsight] 完了 id=${voiceNoteId.slice(0, 8)}… tags=[${tags.join(',')}]`)
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }))
+      prodLog('error', '[voiceNote] pipeline API error:', err)
+    } else {
+      const result = await res.json()
+      prodLog('info', `[voiceNote] pipeline 完了: customer_notes ${result.analysis?.customerNotes?.length ?? 0}件`)
+    }
   } catch (e) {
-    prodLog('error', '[voiceInsight] pipeline error', e)
-    await supabase.from('voice_notes')
-      .update({ analysis_status: 'failed' })
-      .eq('id', voiceNoteId)
-      .then(() => {/* ignore cleanup error */})
+    prodLog('error', '[voiceNote] callPipelineApi failed:', e)
   }
 }
 
 // ─── 署名付きURL取得（再生用） ────────────────────────────────────────────────
 
 export async function getVoiceNoteUrl(storagePath: string): Promise<string | null> {
-  if (DEMO_MODE) return null   // Supabase Storage を呼ばない
+  if (DEMO_MODE && !VOICE_NOTES_LIVE) return null   // Supabase Storage を呼ばない
 
   const { data, error } = await supabase.storage
     .from('voice-notes')
@@ -310,7 +238,7 @@ export async function getVoiceNoteUrl(storagePath: string): Promise<string | nul
 // ─── 削除 ────────────────────────────────────────────────────────────────────
 
 export async function deleteVoiceNote(voiceNoteId: string, storagePath: string): Promise<{ error: string | null }> {
-  if (DEMO_MODE) return { error: null }   // Supabase を呼ばない
+  if (DEMO_MODE && !VOICE_NOTES_LIVE) return { error: null }   // Supabase を呼ばない
 
   // DB から削除（CASCADE で storage_path は残るが管理上削除）
   const { error: dbErr } = await supabase
@@ -343,11 +271,11 @@ export interface VoiceNoteRow extends VoiceNote {
 }
 
 export async function fetchVoiceNotes(customerId: string, limit = 5): Promise<VoiceNoteRow[]> {
-  if (DEMO_MODE) return []   // Supabase を呼ばない
+  if (DEMO_MODE && !VOICE_NOTES_LIVE) return []   // Supabase を呼ばない
 
   const { data, error } = await supabase
     .from('voice_notes')
-    .select('id, customer_id, staff_id, reservation_id, storage_path, transcript, summary, insight_tags, duration_sec, created_at')
+    .select('id, customer_id, staff_id, reservation_id, storage_path, transcript, summary, insight_tags, duration_sec, analysis_status, created_at')
     .eq('customer_id', customerId)
     .order('created_at', { ascending: false })
     .limit(limit)

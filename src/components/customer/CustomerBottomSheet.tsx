@@ -21,6 +21,7 @@ import { toast } from 'sonner';
 // ── Zustand ──────────────────────────────────────────────────────────────────
 import { useStaffStore } from '@/store/useStaffStore';
 import { useNewCustomerSheetStore } from '@/store/useNewCustomerSheetStore';
+import { useAuthStore } from '@/store/useAuthStore';
 
 // ── Supabase ─────────────────────────────────────────────────────────────────
 import { supabase, DEMO_MODE } from '@/lib/supabase';
@@ -56,6 +57,21 @@ import {
   type AdaptivePriorityInput,
 } from '@/lib/adaptivePriority';
 import { useStoreLearnings } from '@/hooks/useStoreLearnings';
+import {
+  fetchBookingPrompt,
+  generateAndSave,
+  type BookingPrompt,
+} from '@/lib/bookingPrompt'
+import {
+  fetchHandover,
+  generateAndSaveHandover,
+  type HandoverNote,
+} from '@/lib/handover'
+import {
+  fetchContraindications,
+  generateAndSaveContraindications,
+  type Contraindication,
+} from '@/lib/contraindication';
 
 // ── コンポーネント層 ──────────────────────────────────────────────────────────
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -69,6 +85,10 @@ import CustomerRiskCard from '@/components/customer/CustomerRiskCard';
 import ServiceReplayCard from '@/components/customer/ServiceReplayCard';
 import StoreLearningSection from '@/components/customer/StoreLearningSection';
 import VoiceMemoSection from '@/components/customer/VoiceMemoSection';
+import CustomerNotesSection from '@/components/customer/CustomerNotesSection';
+import BookingPromptSection from '@/components/customer/BookingPromptSection';
+import HandoverSection from '@/components/customer/HandoverSection';
+import ContraindicationSection from '@/components/customer/ContraindicationSection';
 
 // ─── 定数 ────────────────────────────────────────────────────────────────────
 
@@ -131,10 +151,14 @@ export default function CustomerBottomSheet({
     selectedCustomer:    storeCustomer,
     selectedReservation: storeReservation,
     aiSuggestion,
-    currentStaffId,
+    currentStaffId: currentStaffIdFromStore,
     setSelectedCustomer,
     setSelectedReservation,
   } = useStaffStore();
+
+  // セッション uid を staffId として使用（useStaffStore.currentStaffId は未設定のため）
+  const { session } = useAuthStore();
+  const currentStaffId = currentStaffIdFromStore ?? session?.user?.id ?? null;
 
   // PHASE10: 隔離された専用 store から activeSession を取得
   // useStaffStore の activeSession とは完全に独立
@@ -229,6 +253,22 @@ export default function CustomerBottomSheet({
   // ── Priority / Timeline refresh ─────────────────────────────────────────────
   const [insightRefreshKey,  setInsightRefreshKey]  = useState(0);
   const [timelineRefreshKey, setTimelineRefreshKey] = useState(0);
+  const [notesRefreshKey,    setNotesRefreshKey]    = useState(0);
+
+  // ── Booking Prompt ───────────────────────────────────────────────────────────
+  const [bookingPrompt,         setBookingPrompt]         = useState<BookingPrompt | null>(null);
+  const [bookingPromptLoading,  setBookingPromptLoading]  = useState(false);
+  const [bookingPromptCollapsed, setBookingPromptCollapsed] = useState(false);
+
+  // ── AI Handover ──────────────────────────────────────────────────────────────
+  const [handover,          setHandover]          = useState<HandoverNote | null>(null);
+  const [handoverLoading,   setHandoverLoading]   = useState(false);
+  const [handoverCollapsed, setHandoverCollapsed] = useState(false);
+
+  // ── Contraindications ────────────────────────────────────────────────────────
+  const [contraindications,         setContraindications]         = useState<Contraindication[]>([]);
+  const [contraindicationsLoading,  setContraindicationsLoading]  = useState(false);
+  const [contraindicationsCollapsed, setContraindicationsCollapsed] = useState(false);
 
   // ── Smart Completion Hint ─────────────────────────────────────────────────────
   const [completionHint, setCompletionHint] = useState<string | null>(null);
@@ -251,6 +291,13 @@ export default function CustomerBottomSheet({
     setRecentActions([]);
     setInsightRefreshKey(0);
     setTimelineRefreshKey(0);
+    setNotesRefreshKey(0);
+    setBookingPrompt(null);
+    setBookingPromptCollapsed(false);
+    setHandover(null);
+    setHandoverCollapsed(false);
+    setContraindications([]);
+    setContraindicationsCollapsed(false);
     setAllDone(false);
     setServiceReplay(null);
     resetActiveSession();
@@ -304,6 +351,48 @@ export default function CustomerBottomSheet({
     }
 
     loadRecentActions(c.id);
+
+    // Booking Prompt 自動取得・未生成なら生成
+    void (async () => {
+      setBookingPromptLoading(true);
+      const existing = await fetchBookingPrompt(c.id, r?.id ?? null);
+      if (existing) {
+        setBookingPrompt(existing);
+        setBookingPromptLoading(false);
+      } else {
+        const generated = await generateAndSave(c.id, r?.id ?? null);
+        setBookingPrompt(generated);
+        setBookingPromptLoading(false);
+      }
+    })();
+
+    // AI Handover 自動取得・未生成なら生成
+    void (async () => {
+      setHandoverLoading(true);
+      const existing = await fetchHandover(c.id, r?.id ?? null);
+      if (existing) {
+        setHandover(existing);
+        setHandoverLoading(false);
+      } else {
+        const generated = await generateAndSaveHandover(c.id, r?.id ?? null);
+        setHandover(generated);
+        setHandoverLoading(false);
+      }
+    })();
+
+    // Contraindications 自動取得・未生成なら生成
+    void (async () => {
+      setContraindicationsLoading(true);
+      const existing = await fetchContraindications(c.id);
+      if (existing.length > 0) {
+        setContraindications(existing);
+        setContraindicationsLoading(false);
+      } else {
+        const generated = await generateAndSaveContraindications(c.id, r?.id ?? null);
+        setContraindications(generated);
+        setContraindicationsLoading(false);
+      }
+    })();
   }, [c?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── ロード ────────────────────────────────────────────────────────────────
@@ -942,6 +1031,36 @@ export default function CustomerBottomSheet({
                         </button>
                       </div>
 
+                      {/* Today's AI Brief */}
+                      <ErrorBoundary label="BookingPromptSection" silentFail>
+                        <BookingPromptSection
+                          prompt={bookingPrompt}
+                          loading={bookingPromptLoading}
+                          collapsed={bookingPromptCollapsed}
+                          onToggle={() => setBookingPromptCollapsed(p => !p)}
+                        />
+                      </ErrorBoundary>
+
+                      {/* AI Handover */}
+                      <ErrorBoundary label="HandoverSection" silentFail>
+                        <HandoverSection
+                          handover={handover}
+                          loading={handoverLoading}
+                          collapsed={handoverCollapsed}
+                          onToggle={() => setHandoverCollapsed(p => !p)}
+                        />
+                      </ErrorBoundary>
+
+                      {/* Contraindications */}
+                      <ErrorBoundary label="ContraindicationSection" silentFail>
+                        <ContraindicationSection
+                          items={contraindications}
+                          loading={contraindicationsLoading}
+                          collapsed={contraindicationsCollapsed}
+                          onToggle={() => setContraindicationsCollapsed(p => !p)}
+                        />
+                      </ErrorBoundary>
+
                       {/* KPI 横3列 */}
                       <div className="grid grid-cols-3 gap-2">
                         {[
@@ -957,6 +1076,14 @@ export default function CustomerBottomSheet({
                           </div>
                         ))}
                       </div>
+
+                      {/* AI ノート（Voice Memo → AI解析 → カテゴリ別自動生成） */}
+                      <ErrorBoundary label="CustomerNotesSection" silentFail>
+                        <CustomerNotesSection
+                          customerId={c.id}
+                          refreshKey={notesRefreshKey}
+                        />
+                      </ErrorBoundary>
 
                       {/* AI インサイト */}
                       {visible('aiInsight') && (
@@ -1068,7 +1195,7 @@ export default function CustomerBottomSheet({
                       <ActionButtonGroup />
 
                       {/* 音声メモ */}
-                      <div className="bg-[#F0F5FA] rounded-[22px] overflow-hidden">
+                      <div className="bg-[#F0F5FA] rounded-[22px] overflow-hidden flex-shrink-0">
                         <button onClick={() => toggleSection('voice')}
                           className="w-full flex items-center justify-between px-4 py-3.5 bg-transparent border-none cursor-pointer">
                           <p className="text-[11px] tracking-[0.18em] text-[#4878A8] font-semibold">🎙️ 音声メモ</p>
@@ -1091,6 +1218,20 @@ export default function CustomerBottomSheet({
                                 loadRecentActions(c.id);
                                 setInsightRefreshKey(p => p + 1);
                                 setTimelineRefreshKey(p => p + 1);
+                                // AI分析完了後に customer_notes・booking_prompt・handover を再取得
+                                setTimeout(() => setNotesRefreshKey(p => p + 1), 2000);
+                                setTimeout(async () => {
+                                  const updated = await fetchBookingPrompt(c.id, r.id);
+                                  if (updated) setBookingPrompt(updated);
+                                }, 3500);
+                                setTimeout(async () => {
+                                  const updated = await fetchHandover(c.id, r.id);
+                                  if (updated) setHandover(updated);
+                                }, 4500);
+                                setTimeout(async () => {
+                                  const updated = await fetchContraindications(c.id);
+                                  if (updated.length > 0) setContraindications(updated);
+                                }, 5500);
                               }}
                               onSuggestion={(hint) => showHint(hint)}
                               onRecordingStateChange={(isRecording) => {

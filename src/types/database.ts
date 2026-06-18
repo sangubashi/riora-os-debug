@@ -12,6 +12,8 @@ export interface Profile {
   staff_name: string
   display_name: string | null
   created_at: string
+  /** 多店舗展開用（将来対応）。未指定時はデフォルト店舗 */
+  store_id?: string
 }
 
 export interface Customer {
@@ -31,6 +33,8 @@ export interface Customer {
   memo: string | null
   created_at: string
   updated_at: string
+  /** 多店舗展開用（将来対応）。未指定時はデフォルト店舗 */
+  store_id?: string
 }
 
 export interface Reservation {
@@ -45,6 +49,8 @@ export interface Reservation {
   is_new_customer: boolean
   notes: string | null
   created_at: string
+  /** 多店舗展開用（将来対応）。未指定時はデフォルト店舗 */
+  store_id?: string
 }
 
 export interface ReservationWithCustomer extends Reservation {

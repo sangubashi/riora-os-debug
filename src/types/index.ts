@@ -112,6 +112,8 @@ export interface Customer {
   homecare_notes?: string | null;
   recommended_cycle_days?: number | null;
   last_product_purchase?: Record<string, unknown> | null;
+  /** 多店舗展開用（将来対応）。未指定時はデフォルト店舗 */
+  store_id?: string;
 }
 
 /** reservations テーブルの行（フロント表示用） */
@@ -129,6 +131,8 @@ export interface Reservation {
   days_since_last_visit: number;
   customer_type: CustomerType;
   customer?: Customer;
+  /** 多店舗展開用（将来対応）。未指定時はデフォルト店舗 */
+  store_id?: string;
 }
 
 export interface TreatmentRecord {
@@ -197,20 +201,129 @@ export interface CustomerActionLog {
   action_type:    ActionType
   action_payload: Record<string, unknown> | null
   created_at:     string
+  /** 多店舗展開用（将来対応）。未指定時はデフォルト店舗 */
+  store_id?:      string
 }
 
 // ─── 音声メモ（PHASE 2） ─────────────────────────────────────────────────────
 
+export type VoiceNoteAnalysisStatus = 'pending' | 'processing' | 'completed' | 'failed'
+
 export interface VoiceNote {
+  id:              string
+  customer_id:     string
+  staff_id:        string | null
+  reservation_id:  string | null
+  storage_path:    string
+  transcript:      string | null
+  summary:         string | null
+  insight_tags:    string[] | null
+  duration_sec:    number | null
+  analysis_status: VoiceNoteAnalysisStatus
+  created_at:      string
+  /** 多店舗展開用（将来対応）。未指定時はデフォルト店舗 */
+  store_id?:       string
+}
+
+// ─── Booking Prompt（来店前 AI 接客ブリーフ） ────────────────────────────────────
+
+export interface BookingPrompt {
+  id:                    string
+  customer_id:           string
+  reservation_id:        string | null
+  store_id:              string | null
+  summary:               string
+  recommended_topics:    string[]
+  recommended_proposals: string[]
+  risk_flags:            string[]
+  confidence:            number
+  generated_at:          string
+  created_at:            string
+}
+
+// ─── Contraindication AI（禁忌・注意事項） ───────────────────────────────────────
+
+export type ContraindicationSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
+
+export const CONTRAINDICATION_SEVERITY_ORDER: ContraindicationSeverity[] = [
+  'CRITICAL', 'HIGH', 'MEDIUM', 'LOW',
+]
+
+export const CONTRAINDICATION_SEVERITY_LABEL: Record<ContraindicationSeverity, string> = {
+  CRITICAL: '施術禁止',
+  HIGH:     '要確認',
+  MEDIUM:   '注意',
+  LOW:      '配慮',
+}
+
+export const CONTRAINDICATION_SEVERITY_COLOR: Record<ContraindicationSeverity, { bg: string; text: string; border: string }> = {
+  CRITICAL: { bg: '#FFF0F2', text: '#C00020', border: '#F0B0B8' },
+  HIGH:     { bg: '#FFF4EC', text: '#C06010', border: '#F0C898' },
+  MEDIUM:   { bg: '#FFFBF0', text: '#A07020', border: '#E8D890' },
+  LOW:      { bg: '#F0FAF7', text: '#208060', border: '#A0D8C0' },
+}
+
+export interface Contraindication {
+  id:              string
+  customer_id:     string
+  reservation_id:  string | null
+  store_id:        string | null
+  severity:        ContraindicationSeverity
+  title:           string
+  description:     string | null
+  recommendation:  string | null
+  source:          string | null
+  source_note_id:  string | null
+  confidence:      number
+  generated_at:    string
+  created_at:      string
+}
+
+// ─── AI Handover（担当スタッフ引継ぎノート） ─────────────────────────────────────
+
+export interface HandoverNote {
+  id:                  string
+  customer_id:         string
+  reservation_id:      string | null
+  store_id:            string | null
+  summary:             string
+  customer_context:    string[]
+  open_tasks:          string[]
+  recommended_actions: string[]
+  risk_flags:          string[]
+  confidence:          number
+  generated_at:        string
+  created_at:          string
+}
+
+// ─── カスタマーノート（AI自動生成 / 手動メモ） ──────────────────────────────────
+
+export type NoteCategory = 'Family' | 'Work' | 'Health' | 'Preference' | 'Event'
+
+export const NOTE_CATEGORY_LABELS: Record<NoteCategory, string> = {
+  Family:     '家族',
+  Work:       '仕事',
+  Health:     '健康',
+  Preference: '好み・趣味',
+  Event:      'イベント',
+}
+
+export const NOTE_CATEGORY_ICONS: Record<NoteCategory, string> = {
+  Family:     '👨‍👩‍👧',
+  Work:       '💼',
+  Health:     '💊',
+  Preference: '⭐',
+  Event:      '🎉',
+}
+
+export interface CustomerNote {
   id:             string
   customer_id:    string
   staff_id:       string | null
-  reservation_id: string | null
-  storage_path:   string
-  transcript:     string | null
-  summary:        string | null
-  insight_tags:   string[] | null
-  duration_sec:   number | null
+  note:           string
+  category:       NoteCategory | null
+  source:         'voice_note' | 'manual'
+  voice_note_id:  string | null
   created_at:     string
 }
 
@@ -311,12 +424,13 @@ export const MEMORY_CATEGORY_LABELS: Record<MemoryItem['category'], string> = {
 
 /** 顧客タイムラインイベント */
 export interface TimelineEvent {
-  id:         string
-  created_at: string
-  kind:       'visit' | 'line' | 'product' | 'voice' | 'insight' | 'action'
-  label:      string
-  detail?:    string
-  icon:       string
+  id:            string
+  created_at:    string
+  kind:          'visit' | 'line' | 'product' | 'voice' | 'insight' | 'action'
+  label:         string
+  detail?:       string
+  insight_tags?: string[] | null
+  icon:          string
 }
 
 /** 音声メモ停止後の Silent Automation 結果 */
