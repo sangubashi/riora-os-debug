@@ -195,7 +195,7 @@ async function callPipelineApi(params: {
       return
     }
 
-    const res = await fetch('/api/voice/pipeline', {
+    const res = await fetch('/api/voice-pipeline', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

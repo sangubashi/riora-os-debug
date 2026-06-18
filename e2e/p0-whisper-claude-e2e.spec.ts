@@ -99,7 +99,7 @@ test('P0-5: /api/voice/pipeline Whisper+Claude 一気通貫', async () => {
 
   // ── 5. POST /api/voice/pipeline (本番エンドポイント) ──
   const start = Date.now()
-  const pr = await fetch(`${APP}/api/voice/pipeline`, {
+  const pr = await fetch(`${APP}/api/voice-pipeline`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
     body: JSON.stringify({
