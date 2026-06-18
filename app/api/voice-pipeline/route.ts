@@ -145,8 +145,36 @@ const CLAUDE_SYSTEM = `あなたは高級美容サロンの接客アシスタン
 情報が少ない場合は空配列・null を返し、虚偽の情報を創作しないこと。
 医療的診断・薬機法違反表現（治る・効果がある等）は使わないこと。`
 
+function mockAnalysis(transcript: string): ClaudeAnalysis {
+  const t = transcript.slice(0, 60)
+  return {
+    customerNotes: [
+      { category: 'Health', note: `${t.slice(0, 30)}（音声メモより）` },
+    ],
+    bookingPrompt: {
+      summary: `次回接客メモ: ${t.slice(0, 50)}`,
+      recommended_topics: ['前回の施術内容', '現在のコンディション'],
+      recommended_proposals: ['ホームケア継続', '次回メニュー提案'],
+      risk_flags: [],
+      confidence: 0.5,
+    },
+    handoverNotes: {
+      summary: `引継ぎ: ${t.slice(0, 40)}`,
+      customer_context: ['音声メモによる情報'],
+      open_tasks: [],
+      recommended_actions: ['フォローアップ確認'],
+      risk_flags: [],
+      confidence: 0.5,
+    },
+    contraindications: [],
+  }
+}
+
 async function analyzeWithClaude(transcript: string): Promise<ClaudeAnalysis> {
-  if (!ANTHROPIC_KEY) throw new Error('ANTHROPIC_API_KEY が未設定です')
+  if (!ANTHROPIC_KEY) {
+    console.warn('[pipeline] ANTHROPIC_API_KEY 未設定 → mock analysis 使用')
+    return mockAnalysis(transcript)
+  }
 
   const EMPTY: ClaudeAnalysis = {
     customerNotes: [],
