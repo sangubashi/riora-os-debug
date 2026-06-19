@@ -23,14 +23,12 @@ import type { Customer as BSCustomer,
 import TagFilterBar,  { type TagFilterKey }                     from './TagFilterBar'
 import ReservationCard, { type Phase1Reservation,
                            type CustomerType }                  from './ReservationCard'
-import CustomerPage                                             from './CustomerPage'
 import AIProposalView                                           from './AIProposalView'
 import ServiceLogView                                           from './ServiceLogView'
 import LineUnreadSheet, { LINE_UNREAD_COUNT }                   from './LineUnreadSheet'
 import AppBottomNav                                             from './AppBottomNav'
 
-import CustomerDetailSheet from '@/components/phase1/CustomerDetailSheet'
-// 統合版 BottomSheet（長押し導線専用）
+// 顧客タップ時の統一導線：音声メモ・AI提案・履歴を含む統合版シート
 import CustomerBottomSheet from '@/components/customer/CustomerBottomSheet'
 import { useNewCustomerSheetStore } from '@/store/useNewCustomerSheetStore'
 
@@ -126,7 +124,7 @@ function dateLabel() {
 
 // ─── アプリビュー ─────────────────────────────────────────────────────────────
 
-type AppView = 'home' | 'customer_page' | 'ai_proposal' | 'service_log'
+type AppView = 'home' | 'ai_proposal' | 'service_log'
 
 // ─── メインコンポーネント ─────────────────────────────────────────────────────
 
@@ -145,12 +143,12 @@ export default function Phase1Screen() {
   const [activeTag,     setActiveTag]     = useState<TagFilterKey>('all')
   const [view,          setView]          = useState<AppView>('home')
   const [selected,      setSelected]      = useState<Phase1Reservation | null>(null)
-  const [sheetOpen,     setSheetOpen]     = useState(false)
   const [lineSheetOpen, setLineSheetOpen] = useState(false)
 
   // ── Supabase: 実データ取得 ────────────────────────────────────────────────
   const {
     reservations: rawReservations,
+    isFallback,
     todaySales,
     yesterdaySales,
     churnRiskCount,
@@ -168,7 +166,11 @@ export default function Phase1Screen() {
     fetchedRef.current = true
 
     const uid  = session?.user?.id ?? null
-    const role = (session?.user?.user_metadata?.role as 'owner' | 'staff' | null) ?? null
+    const role = (
+      (session?.user?.app_metadata?.role as 'owner' | 'staff' | null) ??
+      (session?.user?.user_metadata?.role as 'owner' | 'staff' | null) ??
+      null
+    )
 
     // デバッグ: 未ログインでもデモデータで表示
     Promise.allSettled([
@@ -203,20 +205,11 @@ export default function Phase1Screen() {
   }), [reservations])
 
   // ── ハンドラ ──────────────────────────────────────────────────────────────
-  function handleCardTap(r: Phase1Reservation)               { setSelected(r); setSheetOpen(true) }
-  /** 長押し → 統合版 BottomSheet を開く（既存 onTap とは完全に別導線） */
-  function handleCardLongPress(r: Phase1Reservation) {
-    const customer    = toCustomer(r)
-    const reservation = toReservation(r)
-    console.log('[TIMELINE_DEBUG]', {
-      reservationId:          r.id,
-      reservationCustomerId:  r.customerId,
-      bottomSheetCustomerId:  customer.id,
-    })
-    openNewSheet(customer, reservation)
+  /** タップ → 統合版 BottomSheet を開く（音声メモ・AI提案・履歴を含む唯一の詳細導線） */
+  function handleCardTap(r: Phase1Reservation) {
+    setSelected(r)
+    openNewSheet(toCustomer(r), toReservation(r))
   }
-  function handleServiceLogFromSheet(r: Phase1Reservation)   { setSelected(r); setView('service_log') }
-  function handleAiProposal(r: Phase1Reservation)            { setSelected(r); setView('ai_proposal') }
   function handleServiceLog(r: Phase1Reservation)            { setSelected(r); setView('service_log') }
   function goHome()                                          { setView('home') }
 
@@ -254,7 +247,7 @@ export default function Phase1Screen() {
               SALON RIORA
             </p>
             <h1 className="text-[22px] font-semibold leading-tight" style={{ color: '#4A2C2A' }}>
-              今日の予約
+              {isFallback ? '直近の予約' : '今日の予約'}
             </h1>
             <p className="text-[13px] mt-0.5" style={{ color: '#9E8090' }}>
               {dateLabel()}
@@ -289,7 +282,7 @@ export default function Phase1Screen() {
         {/* サマリーチップ */}
         <div className="flex gap-2 px-5 pb-3">
           {[
-            { label: '本日の予約', value: `${reservations.length}件`, color: '#F5A0B5' },
+            { label: isFallback ? '直近の予約' : '本日の予約', value: `${reservations.length}件`, color: '#F5A0B5' },
             { label: 'VIP 来店',   value: `${reservations.filter(r => r.isVip).length}名`, color: '#D4A96A' },
             { label: '要注意',     value: `${churnRiskCount}名`, color: churnRiskCount > 0 ? '#E84050' : '#52C87A' },
           ].map(chip => (
@@ -390,7 +383,6 @@ export default function Phase1Screen() {
                 reservation={r}
                 index={i}
                 onTap={handleCardTap}
-                onLongPress={handleCardLongPress}
               />
           ))
         )}
@@ -406,20 +398,10 @@ export default function Phase1Screen() {
         onClose={() => setLineSheetOpen(false)}
       />
 
-      {/* ── 既存 CustomerDetailSheet（タップで開く・旧UI維持） ──────────────── */}
-      {sheetOpen && view === 'home' && selected && (
-        <CustomerDetailSheet
-          reservation={selected}
-          isOpen={sheetOpen}
-          onClose={() => setSheetOpen(false)}
-          onServiceLog={handleServiceLogFromSheet}
-        />
-      )}
-
-      {/* ── 統合版 CustomerBottomSheet（長押しで開く・完全別導線） ─────────────
+      {/* ── 統合版 CustomerBottomSheet（タップで開く・唯一の詳細導線） ─────────
           state: useNewCustomerSheetStore で完全隔離
           viewport: 100dvh + env(safe-area-inset-bottom) 対応
-          z-index: 60（既存シートより上に表示）
+          z-index: 60
       ──────────────────────────────────────────────────────────────────── */}
       {newSheetOpen && newSheetCustomer && newSheetReservation && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 60 }}>
@@ -431,16 +413,8 @@ export default function Phase1Screen() {
         </div>
       )}
 
-      {/* 顧客個別ページ / AI提案 / 接客ログ */}
+      {/* AI提案 / 接客ログ */}
       <AnimatePresence>
-        {view === 'customer_page' && selected && (
-          <CustomerPage
-            key="customer-page"
-            reservation={selected}
-            onBack={goHome}
-            onAiProposal={handleAiProposal}
-          />
-        )}
         {view === 'ai_proposal' && selected && (
           <AIProposalView
             key="ai-proposal"

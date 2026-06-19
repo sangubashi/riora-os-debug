@@ -1,5 +1,4 @@
 'use client'
-import { useRef } from 'react'
 /**
  * ReservationCard — QVTE6013.PNG 完全再現
  *
@@ -52,24 +51,12 @@ interface Props {
   reservation:  Phase1Reservation
   index:        number
   onTap:        (r: Phase1Reservation) => void
-  /** 長押しで統合版 BottomSheet を開く（既存 onTap と完全に別導線） */
-  onLongPress?: (r: Phase1Reservation) => void
 }
 
-export default function ReservationCard({ reservation: r, index, onTap, onLongPress }: Props) {
+export default function ReservationCard({ reservation: r, index, onTap }: Props) {
   const color    = TYPE_COLOR[r.customerType]
   const isDanger = r.churnRisk > 65 || r.daysSinceLastVisit >= 60
   const tags     = r.lineTags ?? defaultTags(r.customerType)
-
-  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  function handlePressStart() {
-    if (!onLongPress) return
-    pressTimer.current = setTimeout(() => { onLongPress(r) }, 600)
-  }
-  function handlePressEnd() {
-    if (pressTimer.current) clearTimeout(pressTimer.current)
-  }
 
   return (
     <motion.button
@@ -78,9 +65,6 @@ export default function ReservationCard({ reservation: r, index, onTap, onLongPr
       transition={{ delay: index * 0.05, duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
       whileTap={{ scale: 0.985 }}
       onClick={() => onTap(r)}
-      onPointerDown={handlePressStart}
-      onPointerUp={handlePressEnd}
-      onPointerLeave={handlePressEnd}
       className="text-left mx-4 mb-3 block"
       style={{ width: 'calc(100% - 2rem)' }}
     >
