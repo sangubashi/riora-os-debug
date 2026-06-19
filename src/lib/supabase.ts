@@ -3,6 +3,9 @@ import { createClient } from '@supabase/supabase-js'
 // デモモード: true = モックデータ使用（長押し導線検証用）
 export const DEMO_MODE = true
 
+// Voice Memo機能のみ実DB保存を有効化する（DEMO_MODE=trueのまま維持）
+export const VOICE_NOTES_LIVE = true
+
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL
 const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
