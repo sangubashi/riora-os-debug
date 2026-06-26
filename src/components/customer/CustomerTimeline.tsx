@@ -11,7 +11,7 @@ import { useState, useEffect, useCallback, memo} from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { fetchCustomerTimeline, formatTimelineAt } from '@/lib/aiTimeline'
 import { fetchCustomerMemories } from '@/lib/aiMemory'
-import { MEMORY_CATEGORY_LABELS } from '@/types'
+import { MEMORY_CATEGORY_LABELS, INSIGHT_TAG_LABELS, type InsightTag } from '@/types'
 import type { TimelineEvent, MemoryItem } from '@/types'
 
 interface CustomerTimelineProps {
@@ -119,6 +119,15 @@ const CustomerTimelineInner = function CustomerTimeline({ customerId, refreshKey
                           <p style={{ fontSize: '11px', color: '#9F7E6C', marginTop: '2px', lineHeight: 1.5, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' } as React.CSSProperties}>
                             {ev.detail}
                           </p>
+                        )}
+                        {ev.insight_tags && ev.insight_tags.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+                            {(ev.insight_tags as InsightTag[]).slice(0, 3).map(tag => (
+                              <span key={tag} style={{ fontSize: '9px', padding: '1px 7px', borderRadius: '999px', background: '#FFF8F7', color: '#C8A58C', border: '1px solid #F5E6E8', fontWeight: 600, letterSpacing: '0.06em' }}>
+                                {INSIGHT_TAG_LABELS[tag] ?? tag}
+                              </span>
+                            ))}
+                          </div>
                         )}
                       </div>
                     </motion.div>

@@ -297,8 +297,14 @@ export async function POST(req: NextRequest) {
     // ── 3. Whisper 文字起こし ──
     let transcript = ''
     if (OPENAI_KEY) {
-      transcript = await transcribeWithWhisper(audioBuffer, mimeType)
-      console.log(`[pipeline] Whisper transcript (${transcript.length}文字): ${transcript.slice(0, 60)}…`)
+      try {
+        transcript = await transcribeWithWhisper(audioBuffer, mimeType)
+        console.log(`[pipeline] Whisper transcript (${transcript.length}文字): ${transcript.slice(0, 60)}…`)
+      } catch (whisperErr) {
+        // 無効音声フォーマット・短すぎる音声等は空文字で続行（Claudeが空分析を返す）
+        console.warn('[pipeline] Whisper 失敗 → 空transcript で続行:', (whisperErr as Error).message)
+        transcript = ''
+      }
     } else {
       // OPENAI_KEY 未設定時のフォールバック（録音秒数ベースのモック）
       console.warn('[pipeline] OPENAI_API_KEY 未設定 → mock transcript 使用')

@@ -126,7 +126,8 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
 
     if (error) {
       setProcessingStage('idle')
-      prodLog('warn', '[VoiceMemoSection] 保存失敗 — silent fallback')
+      prodLog('warn', '[VoiceMemoSection] 保存失敗', error)
+      toast.error('保存に失敗しました。もう一度お試しください。')
       return
     }
 
@@ -190,7 +191,10 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
     audioRef.current = audio
     audio.onended = () => setPlayingId(null)
     audio.onerror = () => { toast.error('再生に失敗しました'); setPlayingId(null) }
-    audio.play()
+    audio.play().catch(() => {
+      toast.error('再生に失敗しました')
+      setPlayingId(null)
+    })
     setPlayingId(note.id)
   }, [playingId])
 
@@ -370,10 +374,11 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
 
             {/* ブラウザネイティブ再生コントロール */}
             <audio
-              src={audioUrl}
+              src={audioUrl ?? undefined}
               controls
-              preload="metadata"
+              preload="none"
               style={{ width: '100%', height: '36px', outline: 'none', borderRadius: '8px' }}
+              onError={() => prodLog('warn', '[VoiceMemoSection] audio load error — format may be unsupported')}
             />
 
             {/* 保存 / 撮り直し */}

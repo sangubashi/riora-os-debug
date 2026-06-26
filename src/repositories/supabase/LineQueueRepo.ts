@@ -48,4 +48,18 @@ export class LineQueueRepo implements ILineQueueRepo {
     if (!data) return null;
     return toLineQueueItem(data as unknown as BrainLineQueueRow);
   }
+
+  async recentByCustomer(customerId: UUID, n: number): Promise<LineQueueItem[]> {
+    const { data, error } = await this.client
+      .from('brain_line_send_queue')
+      .select(QUEUE_COLUMNS)
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false })
+      .limit(n);
+
+    if (error) {
+      throw new Error(`LineQueueRepo.recentByCustomer failed: ${error.message}`);
+    }
+    return ((data ?? []) as unknown as BrainLineQueueRow[]).map(toLineQueueItem);
+  }
 }

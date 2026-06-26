@@ -38,11 +38,10 @@ export type {
 } from './useLineStore'
 
 export type {
-  SalonMenuItem,
-  MenuOptionItem,
-  MenuCategory,
+  MenuAnalyticsRow,
+  MenuAnalyticsSummary,
+  DailyRevenuePoint,
   FilterTab,
-  SortKey,
 } from './useMenuStore'
 
 export type {

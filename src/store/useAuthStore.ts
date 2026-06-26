@@ -5,6 +5,10 @@
  * ② サインイン / サインアウト
  * ③ 招待管理（オーナー用）
  * ④ ログインセッション永続化
+ * ⑤ ロール情報の一元管理（profiles.role。ログイン後・初期化後に必ずここへ反映する。
+ *    role状態を他ストアで重複管理しないこと）
+ * ⑥ DEMO_MODE時の自動サインイン（認証基盤側に集約。ClientShell等の呼び出し側は
+ *    DEMO_MODEを意識しない）
  *
  * セキュリティ設計:
  *   ・未招待メールはサインアップ拒否（DB Trigger + クライアント双方でガード）
@@ -15,6 +19,17 @@ import { create } from 'zustand'
 import { supabase, DEMO_MODE } from '@/lib/supabase'
 import type { User, Session } from '@supabase/supabase-js'
 import type { UserRole } from './useDashboardStore'
+
+// DEMO_MODE時に自動サインインするテストユーザー(本番運用時はDEMO_MODE=falseにすること。
+// このクレデンシャルは使われなくなる)。認証基盤(本ストア)に集約し、呼び出し側
+// (ClientShell等)はDEMO_MODEを直接参照しない。
+const DEMO_CREDENTIALS = {
+  email:    'admin@salon-riora.jp',
+  password: 'riora2026',
+} as const
+
+// 自動サインインの二重実行防止(ストア自体はシングルトンのためモジュールスコープで保持)。
+let demoSignInAttempted = false
 
 // ─── 型定義 ──────────────────────────────────────────────────────────────────
 
@@ -33,12 +48,19 @@ export interface StaffInvitation {
 export interface AuthState {
   user:         User | null
   session:      Session | null
+  /** profiles.role から取得したロール。ログイン後・初期化後に必ず反映される
+   *  単一の管理場所(他ストアでのロール保持は禁止)。 */
+  role:         UserRole
   isLoading:    boolean
   initialized:  boolean   // initialize() 完了フラグ
   error:        string | null
 
   // セッション初期化
   initialize:   () => Promise<void>
+
+  // DEMO_MODE時のみテストユーザーへ自動サインインする(本番ではno-op)。
+  // 呼び出し側はDEMO_MODEを意識せず、initialized後に呼ぶだけでよい。
+  attemptDemoAutoSignIn: () => Promise<void>
 
   // サインアップ（招待確認 → Supabase signUp）
   signUp: (params: {
@@ -70,11 +92,51 @@ export interface AuthState {
   revokeInvitation: (id: string) => Promise<void>
 }
 
+/** profiles.role を取得する(取得失敗時はnull・呼び出し側でfail-closedに扱う)。 */
+async function fetchRole(uid: string): Promise<UserRole> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', uid)
+    .single()
+
+  if (error || !data) {
+    console.warn('[AuthStore] profiles.role取得失敗:', error?.message)
+    return null
+  }
+  return (data.role as UserRole) ?? null
+}
+
+/**
+ * DEMO_MODE時のテストユーザーへの自動サインインを実行する(本番=DEMO_MODE falseは
+ * no-op)。demoSignInAttemptedで同時多発実行のみを防ぎ、完了後は必ずリセットする
+ * (ログアウト後に再度呼ばれても自動サインインが機能するように)。
+ * 成功時は最新のSessionを返す(呼び出し側でstoreへの反映を行う)。
+ */
+async function performDemoSignIn(): Promise<Session | null> {
+  if (!DEMO_MODE) return null
+  if (demoSignInAttempted) return null
+  demoSignInAttempted = true
+
+  try {
+    const { error } = await supabase.auth.signInWithPassword(DEMO_CREDENTIALS)
+    if (error) {
+      console.warn('[DEMO] 自動サインイン失敗:', error.message,
+        '— admin@salon-riora.jp が Supabase Auth に登録されているか確認してください')
+      return null
+    }
+    return await supabase.auth.getSession().then(({ data }) => data.session).catch(() => null)
+  } finally {
+    demoSignInAttempted = false
+  }
+}
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   user:        null,
   session:     null,
+  role:        null,
   isLoading:   false,
   initialized: false,
   error:       null,
@@ -82,7 +144,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   // ── セッション初期化 ─────────────────────────────────────────────────────────
   initialize: async () => {
     if (get().initialized) return
-    if (DEMO_MODE) { set({ initialized: true, isLoading: false }); return }
 
     set({ isLoading: true })
 
@@ -96,12 +157,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     )
 
     try {
-      const session = await Promise.race([sessionPromise, timeoutPromise])
+      let session = await Promise.race([sessionPromise, timeoutPromise])
+
+      // DEMO_MODE時: セッションが無ければここで自動サインインを完了させてから
+      // initialized を立てる(ClientShellの未ログインリダイレクトと競合させないため。
+      // initialized=true かつ session=null という不安定な中間状態を作らない)。
+      if (!session && DEMO_MODE) {
+        session = await performDemoSignIn()
+      }
+
       set({ session, user: session?.user ?? null })
+      if (session?.user) {
+        set({ role: await fetchRole(session.user.id) })
+      }
 
       // onAuthStateChange は一度だけ登録（重複防止）
       supabase.auth.onAuthStateChange((_event, newSession) => {
         set({ session: newSession, user: newSession?.user ?? null })
+        if (newSession?.user) {
+          fetchRole(newSession.user.id).then(role => set({ role }))
+        } else {
+          set({ role: null })
+        }
       })
     } catch (e) {
       // エラーが起きても initialized を true にして画面を進める
@@ -110,6 +187,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } finally {
       // ここが必ず実行されることを保証
       set({ isLoading: false, initialized: true })
+    }
+  },
+
+  // ── DEMO_MODE自動サインイン(認証基盤に集約。本番=DEMO_MODE falseではno-op) ──────
+  // initialize()の初回実行は上記(performDemoSignIn)で完了済みのため、本メソッドは
+  // ログアウト後の再ログイン等、initialized=true後にsessionが失われた場合に使う。
+  attemptDemoAutoSignIn: async () => {
+    if (!DEMO_MODE) return
+    if (!get().initialized) return
+    if (get().session) return
+
+    const session = await performDemoSignIn()
+    if (session) {
+      set({ session, user: session.user })
+      set({ role: await fetchRole(session.user.id) })
     }
   },
 
@@ -175,6 +267,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       // initialized も true にセット（initialize() が先に呼ばれていない場合の保険）
       set({ user: data.user, session: data.session, initialized: true })
+      if (data.user) {
+        set({ role: await fetchRole(data.user.id) })
+      }
       return { success: true }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'ログインに失敗しました。'
@@ -190,7 +285,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true })
     try {
       await supabase.auth.signOut()
-      set({ user: null, session: null })
+      set({ user: null, session: null, role: null })
     } finally {
       set({ isLoading: false })
     }

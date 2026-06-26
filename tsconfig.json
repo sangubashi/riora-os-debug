@@ -40,6 +40,8 @@
   ],
   "exclude": [
     "node_modules",
-    "supabase/functions"
+    "supabase/functions",
+    "voice-v1.1",
+    "scripts"
   ]
 }

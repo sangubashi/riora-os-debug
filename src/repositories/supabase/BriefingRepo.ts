@@ -35,4 +35,38 @@ export class BriefingRepo implements IBriefingRepo {
     const customerName = (customer as { name: string } | null)?.name ?? '';
     return toBriefingEntry(fireLog as unknown as BrainFireLogRow, customerName);
   }
+
+  async insert(input: {
+    storeId: UUID; customerId: UUID; visitId: UUID | null;
+    decisionRecord: Record<string, unknown>; explanation: string;
+  }): Promise<BriefingEntry> {
+    const { data, error } = await this.client
+      .from('brain_pattern_fire_log')
+      .insert({
+        store_id: input.storeId,
+        customer_id: input.customerId,
+        visit_id: input.visitId,
+        decision_record: input.decisionRecord,
+        explanation: input.explanation,
+      })
+      .select(FIRE_LOG_COLUMNS)
+      .single();
+
+    if (error) {
+      throw new Error(`BriefingRepo.insert failed: ${error.message}`);
+    }
+
+    const { data: customer, error: customerError } = await this.client
+      .from('brain_customers')
+      .select('name')
+      .eq('id', input.customerId)
+      .maybeSingle();
+
+    if (customerError) {
+      throw new Error(`BriefingRepo.insert failed: ${customerError.message}`);
+    }
+
+    const customerName = (customer as { name: string } | null)?.name ?? '';
+    return toBriefingEntry(data as unknown as BrainFireLogRow, customerName);
+  }
 }

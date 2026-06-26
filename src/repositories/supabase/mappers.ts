@@ -6,7 +6,9 @@
 // ================================================================
 
 import type {
+  AIInsight,
   BriefingEntry,
+  BusinessSettings,
   Candidate,
   CellKey,
   CellStats,
@@ -19,7 +21,10 @@ import type {
   LineQueueItem,
   LineQueueStatus,
   LineSendQueuePayload,
+  Menu,
+  MenuRole,
   NoBookingReason,
+  OpsLog,
   OutcomeLite,
   ProposalKind,
   RevisionRecord,
@@ -30,8 +35,12 @@ import type {
   ScenarioPriority,
   ScoringWeights,
   SoftFeatureSpec,
+  Staff,
   StaffStyle,
+  Store,
+  Subscription,
   Visit,
+  VisitSource,
 } from '../../types/riora.types';
 import type { StyleAffinityTable, BrainEvent, BrainEventType } from '../../types/brain.types';
 
@@ -178,6 +187,9 @@ export interface BrainCustomerRow {
   churn_score: number | string;
   churn_reason: string | null;
   consent_anonymized_learning: boolean;
+  prefecture?: string | null;
+  city?: string | null;
+  external_key_hash?: string | null;
 }
 
 export function toCustomer(row: BrainCustomerRow): Customer {
@@ -198,6 +210,31 @@ export function toCustomer(row: BrainCustomerRow): Customer {
     churnScore: Number(row.churn_score),
     churnReason: row.churn_reason,
     consentAnonymizedLearning: row.consent_anonymized_learning,
+    prefecture: row.prefecture ?? null,
+    city: row.city ?? null,
+    externalKeyHash: row.external_key_hash ?? null,
+  };
+}
+
+/** CSV取込で新規brain_customers行を作るためのinsert行(snake_case)。 */
+export function toBrainCustomerInsert(input: {
+  storeId: string;
+  name: string;
+  ageGroup: string | null;
+  firstVisitDate: string | null;
+  prefecture: string | null;
+  city: string | null;
+  externalKeyHash: string | null;
+}): Record<string, unknown> {
+  return {
+    store_id: input.storeId,
+    name: input.name,
+    age_group: input.ageGroup,
+    first_visit_date: input.firstVisitDate,
+    prefecture: input.prefecture,
+    city: input.city,
+    external_key_hash: input.externalKeyHash,
+    consent_anonymized_learning: false,
   };
 }
 
@@ -221,6 +258,7 @@ export interface BrainVisitRow {
   no_booking_reason: NoBookingReason | null;
   voice_memo_url: string | null;
   visit_score: number;
+  source?: VisitSource;
 }
 
 export function toVisit(row: BrainVisitRow): Visit {
@@ -242,6 +280,7 @@ export function toVisit(row: BrainVisitRow): Visit {
     noBookingReason: row.no_booking_reason,
     voiceMemoUrl: row.voice_memo_url,
     visitScore: row.visit_score,
+    ...(row.source !== undefined ? { source: row.source } : {}),
   };
 }
 
@@ -264,6 +303,25 @@ export function toBrainVisitInsert(visit: Omit<Visit, 'id'>): Record<string, unk
     no_booking_reason: visit.noBookingReason,
     voice_memo_url: visit.voiceMemoUrl,
     visit_score: visit.visitScore,
+    ...(visit.source !== undefined ? { source: visit.source } : {}),
+  };
+}
+
+/** CSV取込が既存visit(staff_input由来)をreconciledへ突合更新するためのpatch行(snake_case)。 */
+export function toBrainVisitReconcileUpdate(input: {
+  staffId: string;
+  menuId: string;
+  isNomination: boolean;
+  treatmentAmount: number;
+  retailAmount: number;
+}): Record<string, unknown> {
+  return {
+    staff_id: input.staffId,
+    menu_id: input.menuId,
+    is_nomination: input.isNomination,
+    treatment_amount: input.treatmentAmount,
+    retail_amount: input.retailAmount,
+    source: 'reconciled' satisfies VisitSource,
   };
 }
 
@@ -410,6 +468,50 @@ export interface BrainDashboardRow {
   funnel: Record<string, unknown>;
   staff_matrix: Record<string, unknown>;
   ai_insights: unknown[];
+  dm_to_booking_rate: number | string | null;
+  repeat_30: number | string | null;
+  repeat_60: number | string | null;
+  repeat_90: number | string | null;
+  new_ratio: number | string | null;
+  nomination_rate: number | string | null;
+  month_profit_est: number | null;
+  vip_customer_ids: string[];
+  relation_triggers: Record<string, unknown>;
+  occupancy: Record<string, unknown>;
+  visit_count: number | null;
+}
+
+/** DashboardDailyUpsertInput → brain_dashboard_daily upsert行(snake_case)。 */
+export function toBrainDashboardDailyUpsert(input: {
+  storeId: string;
+  snapshotDate: string;
+  monthlySales: number;
+  forecastSales: number;
+  breakevenPoint: number | null;
+  monthProfitEst: number | null;
+  visitCount: number;
+  repeat30: number | null;
+  repeat60: number | null;
+  repeat90: number | null;
+  nominationRate: number | null;
+  aiInsights?: AIInsight[];
+}): Record<string, unknown> {
+  const row: Record<string, unknown> = {
+    store_id: input.storeId,
+    snapshot_date: input.snapshotDate,
+    monthly_sales: input.monthlySales,
+    forecast_sales: input.forecastSales,
+    breakeven_point: input.breakevenPoint,
+    month_profit_est: input.monthProfitEst,
+    visit_count: input.visitCount,
+    repeat_30: input.repeat30,
+    repeat_60: input.repeat60,
+    repeat_90: input.repeat90,
+    nomination_rate: input.nominationRate,
+  };
+  // aiInsights未指定の場合はai_insights列をSETしない(既存値を保持する・他のW19列と同じ方針)。
+  if (input.aiInsights !== undefined) row.ai_insights = input.aiInsights;
+  return row;
 }
 
 export function toDashboardSnapshot(row: BrainDashboardRow): DashboardSnapshot {
@@ -426,7 +528,59 @@ export function toDashboardSnapshot(row: BrainDashboardRow): DashboardSnapshot {
     funnel: row.funnel,
     staffMatrix: row.staff_matrix,
     aiInsights: row.ai_insights,
+    dmToBookingRate: row.dm_to_booking_rate === null ? null : Number(row.dm_to_booking_rate),
+    repeat30: row.repeat_30 === null ? null : Number(row.repeat_30),
+    repeat60: row.repeat_60 === null ? null : Number(row.repeat_60),
+    repeat90: row.repeat_90 === null ? null : Number(row.repeat_90),
+    newRatio: row.new_ratio === null ? null : Number(row.new_ratio),
+    nominationRate: row.nomination_rate === null ? null : Number(row.nomination_rate),
+    monthProfitEst: row.month_profit_est,
+    visitCount: row.visit_count,
+    vipCustomerIds: row.vip_customer_ids,
+    relationTriggers: row.relation_triggers,
+    occupancy: row.occupancy,
   };
+}
+
+// === brain_business_settings → BusinessSettings ===
+
+export interface BrainBusinessSettingsRow {
+  store_id: string;
+  month: string;
+  sales_target: number;
+  fixed_costs: Record<string, unknown> | null;
+  variable_cost_rate: number | string;
+  seat_capacity: Record<string, unknown> | null;
+  variable_rates: Record<string, unknown> | null;
+}
+
+export function toBusinessSettings(row: BrainBusinessSettingsRow): BusinessSettings {
+  return {
+    storeId: row.store_id,
+    month: row.month,
+    salesTarget: row.sales_target,
+    fixedCosts: row.fixed_costs,
+    variableCostRate: Number(row.variable_cost_rate),
+    seatCapacity: row.seat_capacity,
+    variableRates: row.variable_rates,
+  };
+}
+
+/** BusinessSettingsUpsertInput(camelCase) → brain_business_settings UPSERT行(snake_case)。undefinedのキーは含めない(SET対象外)。 */
+export function fromBusinessSettingsUpsert(input: {
+  storeId: string;
+  month: string;
+  salesTarget?: number;
+  fixedCosts?: Record<string, number | null>;
+  variableCostRate?: number;
+  variableRates?: Record<string, number | null>;
+}): Record<string, unknown> {
+  const row: Record<string, unknown> = { store_id: input.storeId, month: input.month };
+  if (input.salesTarget !== undefined) row.sales_target = input.salesTarget;
+  if (input.fixedCosts !== undefined) row.fixed_costs = input.fixedCosts;
+  if (input.variableCostRate !== undefined) row.variable_cost_rate = input.variableCostRate;
+  if (input.variableRates !== undefined) row.variable_rates = input.variableRates;
+  return row;
 }
 
 // === brain_pattern_fire_log(+brain_customers.name) → BriefingEntry ===
@@ -479,6 +633,134 @@ export interface BrainBrandRevisionRow {
   decided_by: string | null;
   decided_at: string | null;
   created_at: string;
+}
+
+// === brain_stores → Store(CSV Import: external_key_hash生成用のanon_salt取得) ===
+
+export interface BrainStoreRow {
+  id: string;
+  name: string;
+  anon_id: string;
+  anon_salt: string;
+  cluster: string | null;
+  price_tier: string | null;
+  brain_subscription: boolean;
+  learning_mode: boolean;
+}
+
+export function toStore(row: BrainStoreRow): Store {
+  return {
+    id: row.id,
+    name: row.name,
+    anonId: row.anon_id,
+    anonSalt: row.anon_salt,
+    cluster: row.cluster ?? '',
+    priceTier: row.price_tier ?? '',
+    brainSubscription: row.brain_subscription,
+    learningMode: row.learning_mode,
+  };
+}
+
+// === brain_staff ↔ Staff(CSV Import: staffResolver.StaffRow解決の入力) ===
+
+export interface BrainStaffRow {
+  id: string;
+  store_id: string;
+  name: string;
+  style: StaffStyle;
+  is_active: boolean;
+  name_aliases?: string[];
+}
+
+export function toStaff(row: BrainStaffRow): Staff {
+  return {
+    id: row.id,
+    storeId: row.store_id,
+    name: row.name,
+    style: row.style,
+    isActive: row.is_active,
+    nameAliases: row.name_aliases ?? [],
+  };
+}
+
+// === brain_menus → Menu(CSV Import: menuResolver突合の入力) ===
+
+export interface BrainMenuRow {
+  id: string;
+  store_id: string;
+  name: string;
+  price: number;
+  role: MenuRole;
+  target_types: CustomerType[];
+}
+
+export function toMenu(row: BrainMenuRow): Menu {
+  return {
+    id: row.id,
+    storeId: row.store_id,
+    name: row.name,
+    price: row.price,
+    role: row.role,
+    targetTypes: row.target_types,
+  };
+}
+
+// === brain_subscriptions → Subscription(画面③顧客資産・MD-3のLTV算出に使用) ===
+
+export interface BrainSubscriptionRow {
+  id: string;
+  store_id: string;
+  customer_id: string;
+  plan_name: string;
+  monthly_price: number;
+  started_at: string;
+  cancelled_at: string | null;
+  cancel_reason: Subscription['cancelReason'];
+}
+
+export function toSubscription(row: BrainSubscriptionRow): Subscription {
+  return {
+    id: row.id,
+    storeId: row.store_id,
+    customerId: row.customer_id,
+    planName: row.plan_name,
+    monthlyPrice: row.monthly_price,
+    startedAt: row.started_at,
+    cancelledAt: row.cancelled_at,
+    cancelReason: row.cancel_reason,
+  };
+}
+
+// === brain_ops_logs ↔ OpsLog(CSV Import実行結果の監査ログ) ===
+
+export interface BrainOpsLogRow {
+  id: string;
+  store_id: string;
+  kind: string;
+  actor_id: string | null;
+  detail: Record<string, unknown>;
+  created_at: string;
+}
+
+export function toOpsLog(row: BrainOpsLogRow): OpsLog {
+  return {
+    id: row.id,
+    storeId: row.store_id,
+    kind: row.kind,
+    actorId: row.actor_id,
+    detail: row.detail,
+    createdAt: row.created_at,
+  };
+}
+
+/** OpsLog(idなし) → brain_ops_logs insert行(snake_case)。detailはPIIゼロ契約(呼び出し側責務)。 */
+export function toBrainOpsLogInsert(log: Omit<OpsLog, 'id' | 'createdAt'>): Record<string, unknown> {
+  return {
+    store_id: log.storeId,
+    kind: log.kind,
+    actor_id: log.actorId,
+    detail: log.detail,
+  };
 }
 
 export function toRevisionRecord(

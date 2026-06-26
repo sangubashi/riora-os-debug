@@ -280,12 +280,9 @@ export default function CustomersScreen() {
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerRow | null>(null)
 
   useEffect(() => {
-    // DEMO_MODE: session 不問で即時実行（MOCK_CUSTOMERS を返す）
-    if (DEMO_MODE) {
-      fetchCustomers()
-      return
-    }
-    if (authInitialized && session) {
+    if (!authInitialized) return
+    // DEMO_MODE: 認証完了後にセッション有無に関わらず実行（失敗時はMOCKにフォールバック）
+    if (DEMO_MODE || session) {
       fetchCustomers()
     }
   }, [authInitialized, session, fetchCustomers])

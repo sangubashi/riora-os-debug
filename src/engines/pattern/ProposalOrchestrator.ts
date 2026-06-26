@@ -13,10 +13,14 @@
 //     patternId(UUID)→candidates(patternCode/stepNoでの絞込み)へのマッピングは
 //     CandidateRepo/PatternContextBuilder層の責務として残す(候補集合
 //     candidatesは呼出側で既に絞込済のものを渡す想定)。
-//   - PatternContextBuilder(ContextBundle -> PatternContext)
+//   - PatternContextBuilder(ContextBundle -> PatternContext)は
+//     src/engines/pattern/PatternContextBuilder.tsに実装済(AI提案本物化タスク)。
+//     呼出側(API層)がContextBundleからPatternContextを組み立てて渡す。
 //   - ScriptComposer(adjustedScriptのstyle別合成。現状はbaseScriptを暫定使用)
-//   - ExplainabilityEngine(decisiveFactor/DecisionRecord。現状はnull/固定文言)
-//   - NextActionGenerator(candidateDate算出。現状はnull)
+//   - ExplainabilityEngine.ts/NextActionGenerator.tsは実装済(AI提案本物化タスク)
+//     であり、本ファイルのtoFiredProposal()・generateFinalProposalSet()から
+//     呼び出す(decisiveFactor/explanation/candidateDateは実データで算出する。
+//     固定文言ではない・該当データが無い場合のみ正直に「提案なし」を返す)。
 //   - LineScenarioConnector(dm重複排除・Pin停止。現状はresolution.dmを
 //     最小限のQueuedScenarioへ素通し)
 //
@@ -47,6 +51,8 @@ import { ConflictResolver } from './ConflictResolver';
 import { PatternMatcher } from './PatternMatcher';
 import { PatternScorer } from './PatternScorer';
 import { StaffAdjustmentEngine } from './StaffAdjustmentEngine';
+import { computeDecisiveFactor, explainResolution } from './ExplainabilityEngine';
+import { computeCandidateDate } from './NextActionGenerator';
 
 export interface GeneratorDeps {
   statsRepo: IStatsRepo;
@@ -88,7 +94,7 @@ export function emptyFinalProposalSet(): FinalProposalSet {
   };
 }
 
-/** ScoredCandidate -> FiredProposal。adjustedScript/decisiveFactorは範囲外の暫定値(ファイル冒頭コメント参照)。 */
+/** ScoredCandidate -> FiredProposal。adjustedScript(style別合成)はScriptComposer範囲外のため暫定値。 */
 function toFiredProposal(
   sc: ScoredCandidate,
   ctx: PatternContext,
@@ -109,7 +115,7 @@ function toFiredProposal(
     priority: sc.candidate.priorityClass,
     isMandatory,
     fireScore: sc.fireScore,
-    decisiveFactor: null,
+    decisiveFactor: computeDecisiveFactor(sc),
   };
 }
 
@@ -156,17 +162,23 @@ export class ProposalOrchestrator {
       // 6. 枠詰め+タイブレーク+不変条件
       const resolution = this.deps.resolver.resolve(scored, ctx, stats, affinity, overrides);
 
-      // 7. 出力契約(v2.0 §2)へ整形
+      const mandatory = resolution.inStore.mandatory
+        ? toFiredProposal(resolution.inStore.mandatory, ctx, affinity, this.deps.staffAdjust, true)
+        : null;
+      const secondary = resolution.inStore.secondary
+        ? toFiredProposal(resolution.inStore.secondary, ctx, affinity, this.deps.staffAdjust, false)
+        : null;
+
+      // 7. 出力契約(v2.0 §2)へ整形。explanation/candidateDateは実データ
+      // (ScoredCandidate内訳・実候補コード)から決定論的に算出する(固定文言ではない)。
       return {
         inStore: {
-          mandatory: resolution.inStore.mandatory ? toFiredProposal(resolution.inStore.mandatory, ctx, affinity, this.deps.staffAdjust, true) : null,
-          secondary: resolution.inStore.secondary
-            ? toFiredProposal(resolution.inStore.secondary, ctx, affinity, this.deps.staffAdjust, false)
-            : null,
-          candidateDate: null,
+          mandatory,
+          secondary,
+          candidateDate: computeCandidateDate(ctx, mandatory?.proposalKind ?? null),
         },
         dm: resolution.dm ? toQueuedScenario(resolution.dm, ctx) : null,
-        explanation: FALLBACK_EXPLAIN_TEXTS,
+        explanation: explainResolution({ mandatory: resolution.inStore.mandatory, secondary: resolution.inStore.secondary, resolution }),
         decisionRecordId: null,
       };
     } catch (e) {

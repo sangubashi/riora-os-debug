@@ -10,13 +10,12 @@ const url = process.env.NEXT_PUBLIC_SUPABASE_URL
 const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 // ── anon key 形式チェック（起動時に診断） ────────────────────────────────────
-// 正しい形式: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... (JWT)
-// 古い形式:   sb_publishable_... (非対応)
-if (typeof window !== 'undefined' && key && !key.startsWith('eyJ')) {
+// 対応形式: eyJhbGci... (JWT) または sb_publishable_... (Supabase 新形式)
+if (typeof window !== 'undefined' && key && !key.startsWith('eyJ') && !key.startsWith('sb_')) {
   console.error(
     '[Supabase] ⚠️ ANON KEY の形式が正しくありません。\n' +
     'Supabase Dashboard → Settings → API → anon public キーをコピーしてください。\n' +
-    '正しい形式: eyJhbGci... で始まる JWT 形式\n' +
+    '対応形式: eyJhbGci... (JWT) または sb_publishable_... (新形式)\n' +
     `現在の形式: ${key.slice(0, 20)}...`
   )
 }

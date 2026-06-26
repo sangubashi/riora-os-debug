@@ -12,10 +12,11 @@
 export type CustomerType = 'A_acne' | 'B_pore' | 'C_sensitive' | 'D_aging' | 'E_bridal';
 export type StaffStyle = 'evidence' | 'theory' | 'empathy';
 export type ProposalKind = 'homecare' | 'rebooking' | 'subscription' | 'upsell' | 'pack' | 'none';
-export type MenuRole = 'entry' | 'pore' | 'sensitive' | 'peeling' | 'lifting';
+export type MenuRole = 'entry' | 'pore' | 'sensitive' | 'peeling' | 'lifting' | 'imported_other';
 export type NoBookingReason = 'considering' | 'unsure' | 'cold';
 export type RevisionStatus = 'proposed' | 'approved' | 'rejected' | 'auto_applied';
 export type PatternOrigin = 'manual' | 'ai_discovered' | 'brain_install';
+export type VisitSource = 'staff_input' | 'salonboard_import' | 'reconciled';
 
 // === Pattern Engine共通enum (Success Pattern Final Architecture v1.0) ===
 export type UUID = string;
@@ -57,6 +58,12 @@ export interface Customer {
   churnScore: number;
   churnReason: string | null;
   consentAnonymizedLearning: boolean;
+  /** CSV取込元(SalonBoard等)の都道府県。AddressTruncator仕様で番地以降は保持しない。 */
+  prefecture: string | null;
+  /** CSV取込元の市区町村まで。番地・建物名は保持しない。 */
+  city: string | null;
+  /** CSV取込元の会員番号等をsha256ハッシュ化した名寄せキー。store_id単位でUNIQUE。 */
+  externalKeyHash: string | null;
 }
 
 export interface Staff {
@@ -65,6 +72,8 @@ export interface Staff {
   name: string;
   style: StaffStyle;
   isActive: boolean;
+  /** SalonBoard CSV取込時の担当者名表記ゆれ辞書(brain_staff.name_aliases)。 */
+  nameAliases: string[];
 }
 
 export interface Menu {
@@ -115,6 +124,17 @@ export interface Visit {
   noBookingReason: NoBookingReason | null;
   voiceMemoUrl: string | null;
   visitScore: number;
+  /** 来店データの出自。省略時はDB既定値('staff_input')が適用される。 */
+  source?: VisitSource;
+}
+
+export interface OpsLog {
+  id: string;
+  storeId: string;
+  kind: string;
+  actorId: string | null;
+  detail: Record<string, unknown>;
+  createdAt: string;
 }
 
 export interface SkinRecord {
@@ -129,14 +149,6 @@ export interface SkinRecord {
   dullnessLevel: number | null;
   firmnessLevel: number | null;
   primaryDelta: number | null;
-}
-
-export interface BusinessSettings {
-  storeId: string;
-  month: string;
-  salesTarget: number;
-  fixedCosts: number | null;
-  variableCostRate: number;
 }
 
 export interface SuccessPattern {
@@ -633,6 +645,24 @@ export interface LineQueueItem {
 // Repository層: Dashboard / Briefing / Revision 契約型 (P0 API Layer v1.0)
 // ================================================================
 
+/**
+ * brain_dashboard_daily.ai_insightsの1要素(画面①経営TOP「今日の一手」AI Warning)。
+ * AIWarningEngine.ts(決定論ルール・LLM不使用)が生成する。
+ * DashboardSnapshot.aiInsightsは既存実装に合わせてunknown[]のまま維持し(読み取り側の
+ * 後方互換のため)、本型は生成側(AIWarningEngine/DashboardDailyUpsertInput)でのみ使用する。
+ */
+export type AIInsightSeverity = 'critical' | 'warning' | 'info';
+export type AIInsightActionType = 'contact_customer' | 'send_line' | 'review_staff' | 'upsell_campaign';
+
+export interface AIInsight {
+  title: string;
+  message: string;
+  severity: AIInsightSeverity;
+  /** この警告の対象となる顧客数(店舗全体の指標の場合は当月来店人数を母数として示す)。 */
+  targetCount: number;
+  actionType: AIInsightActionType;
+}
+
 /** brain_dashboard_dailyの最新スナップショット1件(camelCase)。GetDashboardの戻り値。 */
 export interface DashboardSnapshot {
   storeId: UUID;
@@ -647,6 +677,33 @@ export interface DashboardSnapshot {
   funnel: Record<string, unknown>;
   staffMatrix: Record<string, unknown>;
   aiInsights: unknown[];
+  /** DM経由の予約転換率(W19・画面①経営TOP KPI4)。 */
+  dmToBookingRate: number | null;
+  repeat30: number | null;
+  repeat60: number | null;
+  repeat90: number | null;
+  newRatio: number | null;
+  nominationRate: number | null;
+  /** 月次着地利益予測。fixed_costs未設定の月はnull(「設定待ち」表示)。 */
+  monthProfitEst: number | null;
+  vipCustomerIds: string[];
+  relationTriggers: Record<string, unknown>;
+  occupancy: Record<string, unknown>;
+  /** 当月の来店人数(MTD累計・ユニーク顧客数)。DashboardAggregatorが生成。 */
+  visitCount: number | null;
+}
+
+/** brain_business_settingsの1件(camelCase)。月次目標・固定費・変動費率(W19拡張含む)。 */
+export interface BusinessSettings {
+  storeId: UUID;
+  /** 対象月の1日(例: '2026-06-01')。 */
+  month: string;
+  salesTarget: number;
+  /** 固定費の内訳jsonb。未設定(null)の場合、損益分岐点・利益予測はnull。 */
+  fixedCosts: Record<string, unknown> | null;
+  variableCostRate: number;
+  seatCapacity: Record<string, unknown> | null;
+  variableRates: Record<string, unknown> | null;
 }
 
 /**

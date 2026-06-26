@@ -7,7 +7,8 @@
  * 新テーブル不要。
  */
 
-import { supabase, DEMO_MODE } from '@/lib/supabase'
+import { supabase, DEMO_MODE, VOICE_NOTES_LIVE } from '@/lib/supabase'
+import { fetchVoiceNotes } from '@/lib/voiceNote'
 import { ACTION_TYPE_LABELS } from '@/types'
 import type { TimelineEvent, ActionType } from '@/types'
 
@@ -63,8 +64,6 @@ const KIND_ICON: Record<TimelineEvent['kind'], string> = {
 function actionTypeToKind(type: string): TimelineEvent['kind'] {
   if (type === 'line_sent' || type === 'next_action_line') return 'line'
   if (type === 'product_recommended' || type === 'product_purchased' || type === 'next_action_product') return 'product'
-  if (type === 'voice_note_created') return 'voice'
-  if (type === 'voice_insight_generated') return 'insight'
   return 'action'
 }
 
@@ -74,13 +73,13 @@ export async function fetchCustomerTimeline(
   customerId: string,
   limit = 12
 ): Promise<TimelineEvent[]> {
-  // DEMO_MODE: Supabase を呼ばずダミーデータを返す
-  if (DEMO_MODE) return DEMO_TIMELINE.slice(0, limit)
+  // DEMO_MODE: Supabase を呼ばずダミーデータを返す（VOICE_NOTES_LIVE時は実データへ進む）
+  if (DEMO_MODE && !VOICE_NOTES_LIVE) return DEMO_TIMELINE.slice(0, limit)
 
   console.log('[TIMELINE_FETCH]', { customerId })
 
-  // customer_action_logs と voice_notes を並列取得
-  const [logsResult, voicesResult] = await Promise.allSettled([
+  // customer_action_logs と voice_notes（Voice Notes一覧と同じデータソース）を並列取得
+  const [logsResult, voiceNotes] = await Promise.allSettled([
     supabase
       .from('customer_action_logs')
       .select('id, action_type, action_payload, created_at')
@@ -88,19 +87,15 @@ export async function fetchCustomerTimeline(
       .order('created_at', { ascending: false })
       .limit(limit),
 
-    supabase
-      .from('voice_notes')
-      .select('id, duration_sec, summary, created_at')
-      .eq('customer_id', customerId)
-      .order('created_at', { ascending: false })
-      .limit(5),
+    fetchVoiceNotes(customerId, limit),
   ])
 
   const events: TimelineEvent[] = []
 
-  // action_logs → TimelineEvent
+  // action_logs → TimelineEvent（voice_* は voice_notes 側で表示するため除外）
   if (logsResult.status === 'fulfilled' && logsResult.value.data) {
     for (const row of logsResult.value.data) {
+      if (row.action_type === 'voice_note_created' || row.action_type === 'voice_insight_generated') continue
       const kind  = actionTypeToKind(row.action_type)
       const label = ACTION_TYPE_LABELS[row.action_type as ActionType] ?? row.action_type
       events.push({
@@ -113,27 +108,19 @@ export async function fetchCustomerTimeline(
     }
   }
 
-  // voice_notes → TimelineEvent（voice_note_created と重複しないよう id ベースで除外）
-  const voiceLogIds = new Set(
-    events.filter(e => e.kind === 'voice').map(e => e.id)
-  )
-
-  if (voicesResult.status === 'fulfilled' && voicesResult.value.data) {
-    for (const row of voicesResult.value.data) {
-      // action_logsにすでに voice_note_created があれば summary を detail に追加
-      if (!voiceLogIds.has(row.id)) {
-        const dur = row.duration_sec
-          ? `${Math.floor(row.duration_sec / 60) > 0 ? `${Math.floor(row.duration_sec / 60)}分` : ''}${row.duration_sec % 60}秒`
-          : null
-        events.push({
-          id:         row.id,
-          created_at: row.created_at as string,
-          kind:       'voice',
-          label:      '音声メモ追加',
-          detail:     row.summary ?? (dur ? `録音 ${dur}` : undefined),
-          icon:       '🎙️',
-        })
-      }
+  // voice_notes（解析完了済みのみ）→ TimelineEvent
+  if (voiceNotes.status === 'fulfilled') {
+    for (const note of voiceNotes.value) {
+      if (note.analysis_status !== 'completed') continue
+      events.push({
+        id:           note.id,
+        created_at:   note.created_at,
+        kind:         'voice',
+        label:        '音声メモ',
+        detail:       note.summary ?? undefined,
+        insight_tags: note.insight_tags,
+        icon:         '🎙️',
+      })
     }
   }
 
@@ -144,8 +131,8 @@ export async function fetchCustomerTimeline(
 
   console.log('[TIMELINE_RESULT]', {
     customerId,
-    actionLogs:  logsResult.status   === 'fulfilled' ? logsResult.value.data?.length   : 'error',
-    voiceNotes:  voicesResult.status  === 'fulfilled' ? voicesResult.value.data?.length : 'error',
+    actionLogs:  logsResult.status === 'fulfilled' ? logsResult.value.data?.length : 'error',
+    voiceNotes:  voiceNotes.status  === 'fulfilled' ? voiceNotes.value.length       : 'error',
     totalEvents: result.length,
   })
 

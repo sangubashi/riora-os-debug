@@ -3,6 +3,7 @@ import { useState, useCallback } from 'react';
 import type { StaffProfile } from '../../types';
 import { STAFF_PROFILES } from '../../data/constants';
 import { signIn } from '../../lib/auth';
+import { getRoleDisplayName } from 'app/lib/roles';
 import styles from './LoginScreen.module.css';
 
 interface Props {
@@ -70,7 +71,7 @@ export default function LoginScreen({ onLogin }: Props) {
               >
                 {profile.name}
                 <span className={styles.badge}>
-                  {profile.role === 'admin' ? 'ADMIN' : 'STAFF'}
+                  {getRoleDisplayName(profile.role)}
                 </span>
               </button>
             ))}

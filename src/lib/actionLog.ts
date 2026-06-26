@@ -2,7 +2,7 @@
  * actionLog.ts  —  customer_action_logs CRUD
  * 純粋な Supabase 操作のみ。UI依存なし。
  */
-import { supabase, DEMO_MODE } from '@/lib/supabase'
+import { supabase, DEMO_MODE, VOICE_NOTES_LIVE } from '@/lib/supabase'
 import { stableQuery, prodLog, Mutex } from '@/lib/stability'
 import type { ActionType, CustomerActionLog } from '@/types'
 
@@ -53,7 +53,9 @@ export async function logAction(params: LogActionParams): Promise<{ error: strin
   const { customerId, staffId, actionType, actionPayload } = params
 
   // DEMO_MODE: Supabase を呼ばない（401発生・/login遷移を防止）
-  if (DEMO_MODE) {
+  // VOICE_NOTES_LIVE時はvoice_*アクションのみ実DBへ進む（他の機能はDEMO_MODEのまま維持）
+  const isVoiceLiveAction = VOICE_NOTES_LIVE && actionType.startsWith('voice_')
+  if (DEMO_MODE && !isVoiceLiveAction) {
     prodLog('info', '[logAction] DEMO_MODE skip', { actionType })
     return { error: null }
   }

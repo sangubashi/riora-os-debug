@@ -20,6 +20,63 @@ export function normalizeSpaces(s: string): string {
   return s.trim().replace(/\s+/g, ' ')
 }
 
+// ─── 半角カナ→全角カナ(汎用Unicode変換・業務固有の辞書ではない) ────────────────────
+//
+// CSV出力元(POS/旧システム)によっては半角カタカナ(U+FF61-FF9F)で氏名・担当者名を
+// 出力する場合があり、正規表現の全角半角統一(toHalfWidth)だけでは救済できない
+// (toHalfWidthは全角ASCII→半角ASCIIのみを扱う・対象範囲が異なる)。
+// 濁点(ﾞ)/半濁点(ﾟ)の合成を含む標準的なUnicode変換であり、店舗固有の別名辞書ではない。
+
+const HALF_TO_FULL_KATAKANA: Record<string, string> = {
+  'ｦ': 'ヲ', 'ｧ': 'ァ', 'ｨ': 'ィ', 'ｩ': 'ゥ', 'ｪ': 'ェ', 'ｫ': 'ォ', 'ｬ': 'ャ', 'ｭ': 'ュ', 'ｮ': 'ョ', 'ｯ': 'ッ',
+  'ｰ': 'ー', 'ｱ': 'ア', 'ｲ': 'イ', 'ｳ': 'ウ', 'ｴ': 'エ', 'ｵ': 'オ',
+  'ｶ': 'カ', 'ｷ': 'キ', 'ｸ': 'ク', 'ｹ': 'ケ', 'ｺ': 'コ',
+  'ｻ': 'サ', 'ｼ': 'シ', 'ｽ': 'ス', 'ｾ': 'セ', 'ｿ': 'ソ',
+  'ﾀ': 'タ', 'ﾁ': 'チ', 'ﾂ': 'ツ', 'ﾃ': 'テ', 'ﾄ': 'ト',
+  'ﾅ': 'ナ', 'ﾆ': 'ニ', 'ﾇ': 'ヌ', 'ﾈ': 'ネ', 'ﾉ': 'ノ',
+  'ﾊ': 'ハ', 'ﾋ': 'ヒ', 'ﾌ': 'フ', 'ﾍ': 'ヘ', 'ﾎ': 'ホ',
+  'ﾏ': 'マ', 'ﾐ': 'ミ', 'ﾑ': 'ム', 'ﾒ': 'メ', 'ﾓ': 'モ',
+  'ﾔ': 'ヤ', 'ﾕ': 'ユ', 'ﾖ': 'ヨ',
+  'ﾗ': 'ラ', 'ﾘ': 'リ', 'ﾙ': 'ル', 'ﾚ': 'レ', 'ﾛ': 'ロ',
+  'ﾜ': 'ワ', 'ﾝ': 'ン',
+  '｡': '。', '｢': '「', '｣': '」', '､': '、', '･': '・',
+}
+
+const DAKUTEN_MAP: Record<string, string> = {
+  'カ': 'ガ', 'キ': 'ギ', 'ク': 'グ', 'ケ': 'ゲ', 'コ': 'ゴ',
+  'サ': 'ザ', 'シ': 'ジ', 'ス': 'ズ', 'セ': 'ゼ', 'ソ': 'ゾ',
+  'タ': 'ダ', 'チ': 'ヂ', 'ツ': 'ヅ', 'テ': 'デ', 'ト': 'ド',
+  'ハ': 'バ', 'ヒ': 'ビ', 'フ': 'ブ', 'ヘ': 'ベ', 'ホ': 'ボ',
+}
+
+const HANDAKUTEN_MAP: Record<string, string> = {
+  'ハ': 'パ', 'ヒ': 'ピ', 'フ': 'プ', 'ヘ': 'ペ', 'ホ': 'ポ',
+}
+
+/** 半角カタカナ(濁点・半濁点の合成含む)を全角カタカナへ変換する。半角カタカナを含まない文字列はそのまま返す。 */
+export function halfWidthKatakanaToFullWidth(s: string): string {
+  let result = ''
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i]
+    const base = HALF_TO_FULL_KATAKANA[ch]
+    if (!base) {
+      result += ch
+      continue
+    }
+    const next = s[i + 1]
+    if (next === 'ﾞ' && DAKUTEN_MAP[base]) {
+      result += DAKUTEN_MAP[base]
+      i++
+    } else if (next === 'ﾟ' && HANDAKUTEN_MAP[base]) {
+      result += HANDAKUTEN_MAP[base]
+      i++
+    } else {
+      result += base
+    }
+  }
+  return result
+}
+
 // ─── 顧客名正規化 ─────────────────────────────────────────────────────────────
 
 export function normalizeCustomerName(name: string): string {
@@ -33,15 +90,31 @@ export function normalizeCustomerName(name: string): string {
   return n.trim()
 }
 
-/** 照合キー用（さらに厳密化：スペース全除去 + ひらがな→カタカナ） */
+/** 照合キー用（さらに厳密化：スペース全除去 + 半角カナ→全角カナ + ひらがな→カタカナ） */
 export function toNameKey(name: string): string {
   let n = normalizeCustomerName(name)
+  // 半角カタカナ→全角カタカナ(CSV出力元による表記揺れ対策)
+  n = halfWidthKatakanaToFullWidth(n)
   // ひらがな→カタカナ
   n = n.replace(/[ぁ-ん]/g, c =>
     String.fromCharCode(c.charCodeAt(0) + 0x60))
   // スペース除去
   n = n.replace(/\s/g, '')
   return n
+}
+
+// ─── メニュー名正規化(brain_menus突合専用・menuResolver.tsが使用) ──────────────────
+//
+// normalizeTreatmentName()(下記)はTREATMENT_ALIAS辞書(店舗特有の別名)に依存するため
+// 別店舗/別メニュー体系では機能しない。menuResolver.tsの突合精度改善(Pass C)では
+// 辞書に依存しない汎用正規化(空白除去・全角半角統一・大文字小文字統一)のみを行う
+// 本関数を使う(暫定ハードコード禁止の方針に合わせ、別名辞書は追加しない)。
+
+/** メニュー名照合用の汎用正規化。前後/内部の空白を除去し、全角英数字・記号を半角化し、大文字小文字を統一する。 */
+export function normalizeForMenuMatch(name: string): string {
+  return toHalfWidth(name)
+    .replace(/\s+/g, '')
+    .toUpperCase()
 }
 
 // ─── 施術名正規化 ─────────────────────────────────────────────────────────────
@@ -93,12 +166,21 @@ export function detectTreatmentVariants(names: string[]): Map<string, string[]> 
 }
 
 // ─── 担当名正規化 ─────────────────────────────────────────────────────────────
+//
+// Pass D(スタッフ名寄せ精度検証)で判明した表記揺れ:
+//   - ローマ字の大文字小文字差("KAMEYAMA" / "kameyama") → toUpperCase()で統一(汎用)
+//   - 半角カタカナ表記("ﾅｶﾑﾗ") → halfWidthKatakanaToFullWidth()で統一(汎用)
+// 漢字の異体字(例: 外館/外舘)・ニックネーム・カナ⇔漢字⇔ローマ字の変換は
+// 文字コード上の汎用正規化では救済できない(辞書が無いと判定不可能)。これらは
+// brain_staff.name_aliases(画面⑥「未解決スタッフ一覧→紐付け」)で運用対応する方針とし、
+// 店舗固有の別名をコードへハードコードすることはしない。
 
 export function normalizeStaffName(name: string): string {
-  return toHalfWidth(name)
+  return halfWidthKatakanaToFullWidth(toHalfWidth(name))
     .trim()
     .replace(/\s+/g, '')
     .replace(/(スタッフ|担当|先生)$/, '')
+    .toUpperCase()
 }
 
 // ─── 重複顧客検出 ─────────────────────────────────────────────────────────────

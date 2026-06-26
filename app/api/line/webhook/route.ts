@@ -5,7 +5,8 @@
  * 処理するイベント:
  *   follow   → line_user_ids に userId / displayName / followed_at を保存
  *   unfollow → line_user_ids.unfollowed_at を更新
- *   message  → 将来実装（現時点は 200 返すのみ）
+ *   message  → line_send_logs に実際の受信本文を保存（direction=incoming）。
+ *              line_user_ids.customer_id が設定済みなら metadata.customer_id に解決結果を残す
  *   read     → 将来実装（現時点は 200 返すのみ）
  *
  * セキュリティ:
@@ -114,20 +115,38 @@ async function logWebhookEvent(
   userId: string,
   eventType: string,
   status: 'success' | 'failed',
-  extra: Record<string, unknown> = {}
+  extra: Record<string, unknown> = {},
+  messageBody?: string
 ) {
   try {
     const supabase = getSupabase()
     const { error } = await supabase.from('line_send_logs').insert({
       mode:         'test',
       recipient_id: userId || 'unknown',
-      message_body: `[WEBHOOK incoming] ${eventType}`,
+      message_body: messageBody ?? `[WEBHOOK incoming] ${eventType}`,
       status,
       metadata: { direction: 'incoming', event_type: eventType, ...extra },
     })
     if (error) console.error('[Webhook] log insert error:', error.message)
   } catch (e) {
     console.error('[Webhook] Failed to save log:', e)
+  }
+}
+
+// ─── line_user_idsからcustomer_id解決（実紐付け済みの場合のみ・無ければnull） ──
+
+async function resolveCustomerId(userId: string): Promise<string | null> {
+  try {
+    const supabase = getSupabase()
+    const { data } = await supabase
+      .from('line_user_ids')
+      .select('customer_id')
+      .eq('line_user_id', userId)
+      .maybeSingle()
+    return data?.customer_id ?? null
+  } catch (e) {
+    console.error('[Webhook] customer_id resolve failed:', e)
+    return null
   }
 }
 
@@ -190,6 +209,20 @@ async function handleUnfollow(event: LineUnfollowEvent) {
     .eq('line_user_id', userId)
 }
 
+/**
+ * 実際の受信本文をそのままline_send_logsへ保存する。
+ * テキスト以外(画像/スタンプ等)は本文が無いため種別名のみ記録(架空の本文は作らない)。
+ * 戻り値はlogWebhookEventに渡す{messageBody, customerId}（呼び出し元でmetadataに含める）。
+ */
+async function handleMessage(event: LineMessageEvent): Promise<{ messageBody: string; customerId: string | null }> {
+  const userId = event.source.userId ?? ''
+  const customerId = userId ? await resolveCustomerId(userId) : null
+  const messageBody = event.message.type === 'text' && event.message.text
+    ? event.message.text
+    : `[非テキストメッセージ: ${event.message.type}]`
+  return { messageBody, customerId }
+}
+
 // ─── メインハンドラー ─────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -242,8 +275,11 @@ export async function POST(req: NextRequest) {
       } else if (event.type === 'unfollow') {
         await handleUnfollow(event as LineUnfollowEvent)
         await logWebhookEvent(userId, 'unfollow', 'success', extra)
+      } else if (event.type === 'message') {
+        const { messageBody, customerId } = await handleMessage(event as LineMessageEvent)
+        await logWebhookEvent(userId, 'message', 'success', { ...extra, customer_id: customerId }, messageBody)
       } else {
-        // message / read 等は将来実装。受信ログだけ保存する
+        // read 等は将来実装。受信ログだけ保存する
         await logWebhookEvent(userId, event.type, 'success', extra)
       }
     } catch (e) {

@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:e2e": "playwright test --config=playwright.config.ts",
     "test:e2e:ui": "playwright test --config=playwright.config.ts --ui",
-    "backend:dev": "ts-node app/engine/generateSuggestion.ts"
+    "backend:dev": "ts-node app/engine/generateSuggestion.ts",
+    "csv-import:dry-run": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" scripts/csv-import-dry-run.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.0",
@@ -37,10 +38,12 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.5.0",
+    "iconv-lite": "^0.7.2",
     "postcss": "^8.5.14",
     "tailwindcss": "^4.3.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.5",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.8",
+    "xlsx": "^0.18.5"
   }
 }

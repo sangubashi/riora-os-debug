@@ -12,6 +12,9 @@ import { getSupportedMimeType } from '@/lib/voiceNote'
 
 export type RecorderStatus = 'idle' | 'requesting' | 'recording' | 'stopped' | 'error'
 
+// 録音は最大30秒で自動停止する
+const MAX_RECORDING_SEC = 30
+
 export interface UseVoiceRecorderReturn {
   status:       RecorderStatus
   durationSec:  number
@@ -142,10 +145,16 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
       setErrorMessage('録音中にエラーが発生しました')
     }
 
-    // タイマー開始
+    // タイマー開始（最大 MAX_RECORDING_SEC 秒で自動停止）
     setDurationSec(0)
     timerRef.current = setInterval(() => {
-      setDurationSec(prev => prev + 1)
+      setDurationSec(prev => {
+        const next = prev + 1
+        if (next >= MAX_RECORDING_SEC && mediaRecorderRef.current?.state === 'recording') {
+          mediaRecorderRef.current.stop()
+        }
+        return next
+      })
     }, 1000)
 
     recorder.start(200) // 200ms ごとにチャンクを生成（iPhone 対応）
