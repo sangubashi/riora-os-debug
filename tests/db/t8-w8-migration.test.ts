@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { PGlite } from '@electric-sql/pglite';
 import { applyMigrations, createTestDb } from './setup';
 
-const STORE_A = '00000000-0000-0000-0000-000000000001'; // 新富店 (seed_master.sql)
+const STORE_A = '00000000-0000-0000-0000-000000000001'; // 新富町店 (seed_master.sql)
 const STORE_B = '22222222-2222-2222-2222-222222222222';
 
 describe('W8 migration (20260612000008) 検証', () => {

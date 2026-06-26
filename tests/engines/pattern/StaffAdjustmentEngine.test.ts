@@ -73,6 +73,7 @@ function buildStaff(overrides: Partial<Staff> = {}): Staff {
     name: '鈴木',
     style: 'evidence',
     isActive: true,
+    nameAliases: [],
     ...overrides,
   };
 }

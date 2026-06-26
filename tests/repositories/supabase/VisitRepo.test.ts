@@ -191,4 +191,81 @@ describe('VisitRepo', () => {
       expect(builder.is).toHaveBeenCalledWith('deleted_at', null);
     });
   });
+
+  describe('sumSalesByStoreAndDate', () => {
+    it('treatment_amount+retail_amountの合計を返す', async () => {
+      const { client } = createSingleTableSupabaseMock({
+        data: [
+          { treatment_amount: 8000, retail_amount: 2000 },
+          { treatment_amount: 5000, retail_amount: 0 },
+        ],
+        error: null,
+      });
+      const repo = new VisitRepo(client);
+
+      const result = await repo.sumSalesByStoreAndDate('store-1', '2026-06-22');
+
+      expect(result).toBe(15000);
+    });
+
+    it('該当する訪問が無い場合は0を返す', async () => {
+      const { client } = createSingleTableSupabaseMock({ data: null, error: null });
+      const repo = new VisitRepo(client);
+
+      const result = await repo.sumSalesByStoreAndDate('store-1', '2026-06-22');
+
+      expect(result).toBe(0);
+    });
+
+    it('Supabaseがerrorを返した場合はVisitRepo.sumSalesByStoreAndDate failedで例外を投げる', async () => {
+      const { client } = createSingleTableSupabaseMock({ data: null, error: { message: 'db down' } });
+      const repo = new VisitRepo(client);
+
+      await expect(repo.sumSalesByStoreAndDate('store-1', '2026-06-22'))
+        .rejects.toThrow('VisitRepo.sumSalesByStoreAndDate failed: db down');
+    });
+
+    it('store_id・visit_date・deleted_at IS NULLでフィルタする', async () => {
+      const builder = createQueryBuilderMock({ data: [], error: null });
+      const client = createSupabaseMock(() => builder);
+      const repo = new VisitRepo(client);
+
+      await repo.sumSalesByStoreAndDate('store-1', '2026-06-22');
+
+      expect(builder.eq).toHaveBeenCalledWith('store_id', 'store-1');
+      expect(builder.eq).toHaveBeenCalledWith('visit_date', '2026-06-22');
+      expect(builder.is).toHaveBeenCalledWith('deleted_at', null);
+    });
+  });
+
+  describe('listByStore', () => {
+    it('store_idに紐づく全訪問をvisit_date昇順でVisit[]へ変換して返す', async () => {
+      const { client } = createSingleTableSupabaseMock({ data: [VISIT_ROW], error: null });
+      const repo = new VisitRepo(client);
+
+      const result = await repo.listByStore('store-1');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('visit-1');
+    });
+
+    it('store_id・deleted_at IS NULLでフィルタしvisit_date昇順で取得する', async () => {
+      const builder = createQueryBuilderMock({ data: [], error: null });
+      const client = createSupabaseMock(() => builder);
+      const repo = new VisitRepo(client);
+
+      await repo.listByStore('store-1');
+
+      expect(builder.eq).toHaveBeenCalledWith('store_id', 'store-1');
+      expect(builder.is).toHaveBeenCalledWith('deleted_at', null);
+      expect(builder.order).toHaveBeenCalledWith('visit_date', { ascending: true });
+    });
+
+    it('Supabaseがerrorを返した場合はVisitRepo.listByStore failedで例外を投げる', async () => {
+      const { client } = createSingleTableSupabaseMock({ data: null, error: { message: 'db down' } });
+      const repo = new VisitRepo(client);
+
+      await expect(repo.listByStore('store-1')).rejects.toThrow('VisitRepo.listByStore failed: db down');
+    });
+  });
 });

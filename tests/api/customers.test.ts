@@ -23,6 +23,9 @@ const CUSTOMER: Customer = {
   churnScore: 0.1,
   churnReason: null,
   consentAnonymizedLearning: true,
+  prefecture: null,
+  city: null,
+  externalKeyHash: null,
 };
 
 const VISIT: Visit = {

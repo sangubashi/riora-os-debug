@@ -16,7 +16,7 @@ export interface MockResult<T = unknown> {
   count?: number | null;
 }
 
-const CHAIN_METHODS = ['select', 'eq', 'in', 'or', 'order', 'limit', 'is', 'insert', 'update', 'delete'] as const;
+const CHAIN_METHODS = ['select', 'eq', 'in', 'or', 'order', 'limit', 'is', 'insert', 'update', 'upsert', 'delete', 'gte', 'lte'] as const;
 
 export function createQueryBuilderMock(result: MockResult): Record<string, unknown> {
   const builder: Record<string, unknown> = {};

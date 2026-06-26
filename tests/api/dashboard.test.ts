@@ -19,6 +19,17 @@ const DASHBOARD: DashboardSnapshot = {
   funnel: {},
   staffMatrix: {},
   aiInsights: [],
+  dmToBookingRate: 0.23,
+  repeat30: 0.5,
+  repeat60: 0.45,
+  repeat90: 0.4,
+  newRatio: 0.3,
+  nominationRate: 0.6,
+  monthProfitEst: -38000,
+  visitCount: 18,
+  vipCustomerIds: [],
+  relationTriggers: {},
+  occupancy: {},
 };
 
 const mockRepos = {

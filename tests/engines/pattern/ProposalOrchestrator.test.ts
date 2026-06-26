@@ -84,6 +84,7 @@ function buildStaff(overrides: Partial<Staff> = {}): Staff {
     name: '鈴木',
     style: 'evidence',
     isActive: true,
+    nameAliases: [],
     ...overrides,
   };
 }
@@ -184,6 +185,50 @@ describe('ProposalOrchestrator', () => {
 
     expect(statsRepo.loadCells).toHaveBeenCalledTimes(1);
     expect(statsRepo.loadCells).toHaveBeenCalledWith(['A1-step1:B_pore:evidence', 'B1-step1:B_pore:evidence']);
+  });
+
+  it('AI提案本物化: decisiveFactor/explanationが実データ(候補コード・FireScore)から算出される(固定文言・nullではない)', async () => {
+    const statsRepo = buildStatsRepo();
+    const orchestrator = new ProposalOrchestrator(buildDeps(statsRepo));
+
+    const sales = buildCandidate({ uid: 'cand-sales', code: 'A1-step1', proposalKind: 'homecare', isSales: true, priorityClass: 1 });
+    const input = buildInput({ candidates: [sales], weights: buildWeights({ w5: 1 }) });
+
+    const result = expectSuccess(await orchestrator.generateFinalProposalSet(input));
+
+    expect(result.inStore.mandatory?.decisiveFactor).not.toBeNull();
+    expect(result.inStore.mandatory?.decisiveFactor).toContain('点');
+    expect(result.explanation.staffLine1).toContain('A1-step1');
+    expect(result.explanation.staffAvoid).toContain('1件まで'); // isSales=trueのため
+    expect(result.explanation.managerQ1).toContain('A1-step1');
+  });
+
+  it('AI提案本物化: proposalKind=rebookingがmandatoryの場合、candidateDateを実データ(lastVisitDate+avgCycle)から算出する', async () => {
+    const statsRepo = buildStatsRepo();
+    const orchestrator = new ProposalOrchestrator(buildDeps(statsRepo));
+
+    const rebooking = buildCandidate({ uid: 'cand-rebooking', code: 'B1-step1', proposalKind: 'rebooking', isSales: false, priorityClass: 1 });
+    const input = buildInput({
+      candidates: [rebooking],
+      weights: buildWeights({ w5: 1 }),
+      ctx: buildCtx({ avgCycle: 28, raw: { typeConfidence: 0.8, csi: 0.5, skinDeltaTrend: 0, cycleRatio: 1, lastVisitDate: '2026-06-01' } }),
+    });
+
+    const result = expectSuccess(await orchestrator.generateFinalProposalSet(input));
+
+    expect(result.inStore.mandatory?.candidateCode).toBe('B1-step1');
+    expect(result.inStore.candidateDate).toBe('2026-06-29');
+  });
+
+  it('AI提案本物化: 候補が無い場合のexplanationは「提案なし」の実情を返す(固定の提案文言は作らない)', async () => {
+    const statsRepo = buildStatsRepo();
+    const orchestrator = new ProposalOrchestrator(buildDeps(statsRepo));
+    const input = buildInput({ candidates: [] });
+
+    const result = expectSuccess(await orchestrator.generateFinalProposalSet(input));
+
+    expect(result.inStore.mandatory).toBeNull();
+    expect(result.explanation.staffLine1).toContain('発火条件を満たす提案はありません');
   });
 
   it('Hard gateで全候補が除外される場合、mandatory/secondary/dmはnullで不変条件違反にならない', async () => {

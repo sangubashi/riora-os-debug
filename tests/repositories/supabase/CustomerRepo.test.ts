@@ -47,6 +47,9 @@ describe('CustomerRepo', () => {
         churnScore: 0.12,
         churnReason: null,
         consentAnonymizedLearning: true,
+        prefecture: null,
+        city: null,
+        externalKeyHash: null,
       });
     });
 
@@ -125,6 +128,39 @@ describe('CustomerRepo', () => {
       await repo.listByStore('store-xyz');
 
       expect(builder.eq).toHaveBeenCalledWith('store_id', 'store-xyz');
+    });
+  });
+
+  describe('updateCustomerType', () => {
+    it('customer_type/type_confidenceを更新する', async () => {
+      const builder = createQueryBuilderMock({ data: { ...CUSTOMER_ROW, customer_type: 'A_acne', type_confidence: '1' }, error: null });
+      const client = createSupabaseMock(() => builder);
+      const repo = new CustomerRepo(client);
+
+      const result = await repo.updateCustomerType('cust-1', { customerType: 'A_acne', typeConfidence: 1 });
+
+      expect(builder.update).toHaveBeenCalledWith({ customer_type: 'A_acne', type_confidence: 1 });
+      expect(builder.eq).toHaveBeenCalledWith('id', 'cust-1');
+      expect(result.customerType).toBe('A_acne');
+    });
+
+    it('customerType=nullの場合はNULLのまま保存する(架空のタイプを書き込まない)', async () => {
+      const builder = createQueryBuilderMock({ data: { ...CUSTOMER_ROW, customer_type: null, type_confidence: '0' }, error: null });
+      const client = createSupabaseMock(() => builder);
+      const repo = new CustomerRepo(client);
+
+      await repo.updateCustomerType('cust-1', { customerType: null, typeConfidence: 0 });
+
+      expect(builder.update).toHaveBeenCalledWith({ customer_type: null, type_confidence: 0 });
+    });
+
+    it('Supabaseがerrorを返した場合はCustomerRepo.updateCustomerType failedで例外を投げる', async () => {
+      const { client } = createSingleTableSupabaseMock({ data: null, error: { message: 'db error' } });
+      const repo = new CustomerRepo(client);
+
+      await expect(repo.updateCustomerType('cust-1', { customerType: 'A_acne', typeConfidence: 1 })).rejects.toThrow(
+        'CustomerRepo.updateCustomerType failed: db error'
+      );
     });
   });
 });

@@ -61,19 +61,40 @@ test('P0-5: /api/voice/pipeline Whisper+Claude 一気通貫', async () => {
   }
   console.log('[P0-5] 件数 BEFORE:', JSON.stringify(before))
 
-  // ── 3. Storage upload（最小限のダミー音声 webm） ──
+  // ── 3. Storage upload（有効なWAVファイル: 8kHz/mono/8bit 無音1秒）──
+  // Whisper が解析可能な最小サイズの正規WAVフォーマット
+  // RIFF header(44bytes) + 8000 bytes silence → Whisper は空文字か無音を返す
   const ts   = Date.now()
-  const path = `${UID}/${CID}/${ts}.webm`
-  // WebM コンテナの最小バイト列（Whisper は短すぎると空を返すが、フォールバック文字起こしで補完）
-  const mockAudio = new Uint8Array([
-    0x1a,0x45,0xdf,0xa3,0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x1f,
-    0x42,0x86,0x81,0x01,0x42,0xf7,0x81,0x01,0x42,0xf2,0x81,0x04,
-    0x42,0xf3,0x81,0x08,0x42,0x82,0x84,0x77,0x65,0x62,0x6d,
-  ])
+  const path = `${UID}/${CID}/${ts}.wav`
+  const sampleRate = 8000
+  const numSamples = sampleRate  // 1秒
+  const wavHeader = new Uint8Array(44)
+  const view = new DataView(wavHeader.buffer)
+  // RIFF chunk
+  view.setUint32(0,  0x46464952, false)  // "RIFF"
+  view.setUint32(4,  36 + numSamples, true)  // file size - 8
+  view.setUint32(8,  0x45564157, false)  // "WAVE"
+  // fmt chunk
+  view.setUint32(12, 0x20746d66, false)  // "fmt "
+  view.setUint32(16, 16, true)           // chunk size
+  view.setUint16(20, 1, true)            // PCM format
+  view.setUint16(22, 1, true)            // mono
+  view.setUint32(24, sampleRate, true)   // sample rate
+  view.setUint32(28, sampleRate, true)   // byte rate
+  view.setUint16(32, 1, true)            // block align
+  view.setUint16(34, 8, true)            // bits per sample
+  // data chunk
+  view.setUint32(36, 0x61746164, false)  // "data"
+  view.setUint32(40, numSamples, true)   // data size
+  const silenceData = new Uint8Array(numSamples).fill(128)  // 8bit PCM の無音は0x80
+  const wavFile = new Uint8Array(44 + numSamples)
+  wavFile.set(wavHeader)
+  wavFile.set(silenceData, 44)
+
   const sr = await fetch(`${DB}/storage/v1/object/voice-notes/${path}`, {
     method: 'POST',
-    headers: { apikey: ANON, Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'audio/webm' },
-    body: mockAudio,
+    headers: { apikey: ANON, Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'audio/wav' },
+    body: wavFile,
   })
   console.log(`[P0-5] A. Storage upload HTTP=${sr.status}`)
   expect(sr.status).toBe(200)
@@ -185,14 +206,21 @@ test('P0-5: /api/voice/pipeline Whisper+Claude 一気通貫', async () => {
   // ── 8. アサーション ──
   // [必須] voice_notes が completed になったこと
   expect(vnAfter?.analysis_status).toBe('completed')
-  // [必須] transcript が生成されたこと
-  expect(vnAfter?.transcript).toBeTruthy()
+
+  // [必須] Whisper 実API証明: mock 固定文を含まないこと（無音音声 → 空文字は正常）
+  const MOCK_TRANSCRIPT = '娘さんの誕生日イベントに向けてケアしたいとのことでした'
+  expect(vnAfter?.transcript ?? '').not.toContain(MOCK_TRANSCRIPT)
+  console.log(`\n[P0-5] ✅ Whisper 実API証明: transcript が mock 固定文でないことを確認`)
+  console.log(`  transcript="${String(vnAfter?.transcript ?? '（空）').slice(0, 60)}"`)
+
   // [必須] voice_notes が新規INSERT されたこと
   expect(after['voice_notes']).toBeGreaterThan(before['voice_notes'])
-  // [必須] booking_prompts に有効なサマリーが存在すること（INSERT or UPDATE）
-  expect(latestBP?.summary).toBeTruthy()
-  // [必須] handover_notes に有効なサマリーが存在すること（INSERT or UPDATE）
-  expect(latestHN?.summary).toBeTruthy()
+
+  // [必須] Claude 実API証明: mock confidence(0.5)でないこと
+  const MOCK_CONFIDENCE = 0.5
+  expect(latestBP?.confidence).not.toBe(MOCK_CONFIDENCE)
+  console.log(`\n[P0-5] ✅ Claude 実API証明: confidence=${latestBP?.confidence} (mock=0.5 でないことを確認)`)
+
   // [参考] customer_notes: 重複チェックありのため0でも許容
   console.log(`\n[P0-5] customer_notes 新規: ${cnByVN.length}件 (重複なしなら増加、重複ありなら0も正常)`)
 

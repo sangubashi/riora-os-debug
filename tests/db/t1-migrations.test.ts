@@ -11,7 +11,7 @@ import type { PGlite } from '@electric-sql/pglite';
 import jsonLogic from 'json-logic-js';
 import { applyMigrations, createTestDb } from './setup';
 
-const STORE_A = '00000000-0000-0000-0000-000000000001'; // 新富店 (seed_master.sql)
+const STORE_A = '00000000-0000-0000-0000-000000000001'; // 新富町店 (seed_master.sql)
 const STORE_B = '11111111-1111-1111-1111-111111111111'; // RLS他店データ不可視テスト用
 
 // PatternContext (snake_case変換後) のサンプル値。
