@@ -1,7 +1,7 @@
 -- ================================================================
 -- Riora Brain Phase1 - Step1: 成功パターン8件 + 各ステップシード
 --
--- store_id = NULL (ブランド標準パターン)。1号店「新富店」を含む全店舗が
+-- store_id = NULL (ブランド標準パターン)。1号店「新富町店」を含む全店舗が
 -- 参照可能。fire_condition / entry_condition は PatternContext
 -- (snake_case変換後) に対する json-logic-js ルール。
 --

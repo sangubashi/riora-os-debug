@@ -124,7 +124,7 @@ GRANT SELECT ON TABLE public.brain_pattern_step_stats TO authenticated, service_
 
 -- ---------------------------------------------------------------
 -- 8. brain_params シード(fire_score_weights / style_affinity / lifecycle_thresholds)
--- cluster='office_area'(新富店)。Phase1は参照のみ・Lv3起票で更新される。
+-- cluster='office_area'(新富町店)。Phase1は参照のみ・Lv3起票で更新される。
 -- ---------------------------------------------------------------
 INSERT INTO public.brain_params (key, cluster, version, value)
 VALUES
