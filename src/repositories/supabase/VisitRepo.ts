@@ -98,6 +98,18 @@ export class VisitRepo implements IVisitRepo {
     return ((data ?? []) as unknown as BrainVisitRow[]).map(toVisit);
   }
 
+  async updateMenuId(id: UUID, menuId: UUID): Promise<void> {
+    const { error } = await this.client
+      .from('brain_visits')
+      .update({ menu_id: menuId })
+      .eq('id', id)
+      .eq('source', 'salonboard_import') // 安全ガード: salonboard_import限定
+
+    if (error) {
+      throw new Error(`VisitRepo.updateMenuId failed: ${error.message}`)
+    }
+  }
+
   async reconcile(id: UUID, input: {
     staffId: UUID;
     menuId: UUID;

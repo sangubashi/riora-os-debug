@@ -183,6 +183,47 @@ export function normalizeStaffName(name: string): string {
     .toUpperCase()
 }
 
+// ─── SalonBoard長文メニュー名 キーワード抽出 (Pass L-2) ─────────────────────────
+//
+// SalonBoard はメニュー名をマーケティング長文で出力する
+//   例: 【春夏におすすめ！】毛穴ごっそり★脱いちご鼻！毛穴洗浄＆ヒト幹細胞導入
+// brain_menus は内部短縮名を使う
+//   例: 毛穴洗浄+ヒト幹19000
+// この2関数は「brain_menus の治療キーワードが SalonBoard 名に含まれるか」を
+// 判定するための正規化を行う。exact/normalized/partial_match の補完として
+// menuResolver.ts の keyword_match ステップが使用する。
+
+/** SalonBoard長文メニュー名をキーワード照合用に正規化する。
+ *  装飾文字・括弧・価格パターン・オプション：プレフィックスを除去し大文字化する。 */
+export function extractSalonBoardNormalized(name: string): string {
+  return toHalfWidth(name)
+    // 【...】 → 内容を保持して括弧のみ除去
+    .replace(/【([^】]*)】/g, '$1')
+    // オプション：/ オプション: プレフィックス除去
+    .replace(/^オプション[：:]\s*/, '')
+    // 価格パターン除去: \15000→\12000 / ¥19000 / 19000円
+    .replace(/[\\¥]\d{3,6}(→[\\¥]\d{3,6})?/g, '')
+    .replace(/\d{4,6}円?/g, '')
+    // 接続詞 → スペース（結合しないよう分離）
+    .replace(/[＆&・]/g, ' ')
+    // 装飾文字除去
+    .replace(/[★☆◎♪※♦♥◆●▲→×〇]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase()
+}
+
+/** brain_menus.name から照合キーワード配列を抽出する。
+ *  末尾の価格数字を除去し、+ 区切りで分割する。2文字以上のみ返す。 */
+export function extractBrainMenuKeywords(menuName: string): string[] {
+  const stripped = toHalfWidth(menuName)
+    .replace(/\d{4,6}$/, '') // 末尾4桁以上の数字（価格）を除去
+  return stripped
+    .split(/[+＋]/)
+    .map(k => k.trim().toUpperCase())
+    .filter(k => k.length >= 2)
+}
+
 // ─── 重複顧客検出 ─────────────────────────────────────────────────────────────
 
 export interface DuplicateSuspect {

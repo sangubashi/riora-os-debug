@@ -139,6 +139,12 @@ export interface IVisitRepo {
   /** brain_visitsをstore_id+visit_dateでtreatment_amount+retail_amountの合計を返す(deleted_at IS NULL)。画面①本日売上。 */
   sumSalesByStoreAndDate(storeId: UUID, visitDate: string): Promise<number>;
   /**
+   * brain_visits.menu_idをid指定で更新する(Pass L-2: メニュー再解決専用)。
+   * source='salonboard_import'の行のみ更新するDBガードをリポジトリ層で実施する。
+   * 他フィールド(staff_id/amount等)は変更しない。
+   */
+  updateMenuId(id: UUID, menuId: UUID): Promise<void>;
+  /**
    * brain_visitsをstore_idでvisit_date昇順に全件取得する(deleted_at IS NULL)。
    * DashboardAggregatorが月次集計(売上/来店人数/リピート率/指名率)の入力として
    * 1回だけ全件取得し、メモリ上で集計する(行ごとのDB問い合わせはしない)。

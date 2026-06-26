@@ -6,7 +6,11 @@
  *   2. normalized_match … 前後/内部空白除去・全角半角統一・大小文字統一後に完全一致
  *   3. partial_match    … 正規化後、どちらかの文字列が他方を部分文字列として含む
  *                          (例: "ハーブピーリング" ⊂ "ハーブピーリング90分")
- *   4. fallback_other   … 上記いずれにも一致せず、各店舗に1件存在するrole='imported_other'の
+ *   4. keyword_match    … SalonBoard長文名対応(Pass L-2)。brain_menus名を治療キーワードに分解し
+ *                          (例: "毛穴洗浄+ヒト幹19000" → ["毛穴洗浄","ヒト幹"])、全キーワードが
+ *                          CSV名の正規化済み文字列に含まれる場合にマッチ。複数候補があれば
+ *                          キーワード数が最多のメニューを選択(最小誤マッチ)。
+ *   5. fallback_other   … 上記いずれにも一致せず、各店舗に1件存在するrole='imported_other'の
  *                          フォールバック行へ集約(supabase/migrations/20260621_csv_import_fallback_menu_seed.sql参照)
  *   5. unresolved        … フォールバック行も無い場合(取込側でエラー行として扱う)
  *
@@ -21,7 +25,7 @@
  * インメモリのMapに変換してから解決する(行ごとのDB問い合わせはしない・staffResolver.tsと同じ方針)。
  */
 
-import { normalizeForMenuMatch } from './normalizer'
+import { normalizeForMenuMatch, extractSalonBoardNormalized, extractBrainMenuKeywords } from './normalizer'
 import type { Menu } from '../../types/riora.types'
 
 /** 部分一致を試みる最小文字数(正規化後)。極端に短い文字列同士の偶発一致を避けるためのガード。 */
@@ -64,10 +68,10 @@ export function buildMenuLookup(menus: Menu[]): MenuLookup {
   return { byRawName, byNormalizedName, normalizedEntries, fallbackMenuId, fallbackMenuName }
 }
 
-export type MenuResolutionMethod = 'exact_match' | 'normalized_match' | 'partial_match' | 'fallback_other'
+export type MenuResolutionMethod = 'exact_match' | 'normalized_match' | 'partial_match' | 'keyword_match' | 'fallback_other'
 
 export type MenuResolution =
-  | { status: 'matched';  menuId: string; menuName: string; method: 'exact_match' | 'normalized_match' | 'partial_match' }
+  | { status: 'matched';  menuId: string; menuName: string; method: 'exact_match' | 'normalized_match' | 'partial_match' | 'keyword_match' }
   | { status: 'fallback'; menuId: string; menuName: string; method: 'fallback_other' }
   | { status: 'unresolved' }
 
@@ -87,6 +91,23 @@ export function resolveMenuId(rawMenuName: string, lookup: MenuLookup): MenuReso
         return { status: 'matched', menuId: entry.id, menuName: entry.name, method: 'partial_match' }
       }
     }
+  }
+
+  // keyword_match: SalonBoard長文メニュー名対応(Pass L-2)
+  // brain_menus名をキーワード分解し、CSV名の正規化文字列に全キーワードが含まれれば一致とする。
+  // 複数候補はキーワード数最多（最も具体的）を優先。
+  const sbNorm = extractSalonBoardNormalized(rawMenuName)
+  const kwCandidates: { entry: MenuEntry; kwCount: number }[] = []
+  for (const { entry } of lookup.normalizedEntries) {
+    const kws = extractBrainMenuKeywords(entry.name)
+    if (kws.length > 0 && kws.every(kw => sbNorm.includes(kw))) {
+      kwCandidates.push({ entry, kwCount: kws.length })
+    }
+  }
+  if (kwCandidates.length > 0) {
+    kwCandidates.sort((a, b) => b.kwCount - a.kwCount)
+    const best = kwCandidates[0].entry
+    return { status: 'matched', menuId: best.id, menuName: best.name, method: 'keyword_match' }
   }
 
   if (lookup.fallbackMenuId) {

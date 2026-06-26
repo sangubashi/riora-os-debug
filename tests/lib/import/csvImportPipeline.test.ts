@@ -192,6 +192,10 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
           .reduce((sum, v) => sum + v.treatmentAmount + v.retailAmount, 0),
       listByStore: async (storeId) =>
         state.visits.filter(v => v.storeId === storeId).slice().sort((a, b) => a.visitDate.localeCompare(b.visitDate)),
+      updateMenuId: async (id, menuId) => {
+        const v = state.visits.find(x => x.id === id && x.source === 'salonboard_import')
+        if (v) v.menuId = menuId
+      },
     },
     opsLogRepo: {
       insert: async (log) => {

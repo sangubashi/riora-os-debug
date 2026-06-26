@@ -47,6 +47,7 @@ function createRepos(overrides: { customers?: Customer[]; visits?: Visit[]; menu
       reconcile: async (id) => ({ ...visit(), id }),
       sumSalesByStoreAndDate: async () => 0,
       listByStore: async () => overrides.visits ?? [],
+      updateMenuId: async () => {},
     },
     menuRepo: { listByStore: async () => overrides.menus ?? [] },
   };

@@ -81,7 +81,7 @@ export interface ValidationResult {
 }
 
 /** menuResolver.resolveMenuId()のMenuResolutionMethod + 'unresolved'(フォールバック行も無い場合)。 */
-export type MenuResolutionLogMethod = 'exact_match' | 'normalized_match' | 'partial_match' | 'fallback_other' | 'unresolved'
+export type MenuResolutionLogMethod = 'exact_match' | 'normalized_match' | 'partial_match' | 'keyword_match' | 'fallback_other' | 'unresolved'
 
 /**
  * CSV内に出現した一意なメニュー名ごとの解決結果(Pass C: 名寄せ精度改善の追跡用)。
