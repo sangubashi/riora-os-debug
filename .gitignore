@@ -1,5 +1,7 @@
 .env
 .env.local
+.env.local.*
+.env.vercel.*
 node_modules/
 dist/
 
@@ -8,6 +10,17 @@ dist/
 
 # ビルドキャッシュ
 tsconfig.tsbuildinfo
+
+# ランタイム状態
+.last_voice_note_id
+
+# Playwright 出力
+pw-out.txt
+pw-results.json
+test-results/
+
+# テストデータ（CSV取込実データ・PII含む可能性）
+test-data/
 
 # PWAアイコン元画像（素材フォルダ）
 public/icons1/
