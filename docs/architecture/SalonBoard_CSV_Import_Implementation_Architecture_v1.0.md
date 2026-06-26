@@ -1,4 +1,3 @@
-t
 # SalonBoard CSV Import Implementation Architecture v1.0
 
 **株式会社martylabo / Salon Riora — SalonBoard CSV取込 実装仕様(確定版)**

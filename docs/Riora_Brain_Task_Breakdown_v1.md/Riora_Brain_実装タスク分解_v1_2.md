@@ -122,7 +122,7 @@ tests/
 - 注意: Edge Functionは service_role で動作し RLS をバイパスする(関数内で store_id を明示フィルタすること)
 
 ### 20260612000006_seed_master.sql
-- stores 1件: 新富店(cluster='office_area', price_tier='standard', learning_mode=false ※1号店は自店学習が正)
+- stores 1件: 新富町店(cluster='office_area', price_tier='standard', learning_mode=false ※1号店は自店学習が正)
 - staff 3件: 鈴木/evidence、亀山/theory、外舘/empathy
 - menus 5件: ヒト幹15000/entry、毛穴洗浄+ヒト幹19000/pore、水素+ヒト幹18000/sensitive、ハーブピーリング9900/peeling、EMS+小顔19000/lifting(target_types込み)
 - business_settings 2026-06: sales_target=2500000, fixed_costs=NULL, variable_cost_rate=0.14
