@@ -1,17 +1,19 @@
 'use client'
+import { useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, MessageCircle, ChevronRight } from 'lucide-react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
+import { useLineUnreadStore } from '@/store/useLineUnreadStore'
 
-// ─── モック未返信データ ──────────────────────────────────────────────────────
-const MOCK_LINE_UNREADS = [
-  { id: '1', customerName: '山田 美沙',   lastMessage: '予約の変更について確認したいのですが…',  unreadCount: 3, timeAgo: '2時間前',  churnRisk: 76 },
-  { id: '2', customerName: '伊藤 さくら', lastMessage: '次回いつ頃空いていますか？',              unreadCount: 1, timeAgo: '5時間前',  churnRisk: 14 },
-  { id: '3', customerName: '鈴木 花子',   lastMessage: 'ありがとうございました！またよろしくお願いします', unreadCount: 2, timeAgo: '昨日', churnRisk: 18 },
-] as const
-
-export const LINE_UNREAD_COUNT = MOCK_LINE_UNREADS.reduce((s, c) => s + c.unreadCount, 0)
+function timeAgo(isoString: string): string {
+  const diff = Date.now() - new Date(isoString).getTime()
+  const minutes = Math.floor(diff / 60000)
+  if (minutes < 60) return `${minutes}分前`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}時間前`
+  return `${Math.floor(hours / 24)}日前`
+}
 
 interface Props {
   isOpen:  boolean
@@ -19,7 +21,12 @@ interface Props {
 }
 
 export default function LineUnreadSheet({ isOpen, onClose }: Props) {
-  const router = useRouter()
+  const router   = useRouter()
+  const { unreads, unreadCount, isLoading, fetchUnreads } = useLineUnreadStore()
+
+  useEffect(() => {
+    if (isOpen) fetchUnreads()
+  }, [isOpen]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function goToLine() {
     onClose()
@@ -69,12 +76,14 @@ export default function LineUnreadSheet({ isOpen, onClose }: Props) {
                 <div className="flex items-center gap-2">
                   <MessageCircle size={16} style={{ color: '#78C890' }} />
                   <h3 className="text-[15px] font-semibold text-salon-brown">未返信 LINE</h3>
-                  <span
-                    className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white"
-                    style={{ background: '#E84050' }}
-                  >
-                    {LINE_UNREAD_COUNT}
-                  </span>
+                  {unreadCount > 0 && (
+                    <span
+                      className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white"
+                      style={{ background: '#E84050' }}
+                    >
+                      {unreadCount}
+                    </span>
+                  )}
                 </div>
                 <button
                   onClick={onClose}
@@ -89,44 +98,53 @@ export default function LineUnreadSheet({ isOpen, onClose }: Props) {
                 className="flex-1 overflow-y-auto no-scrollbar"
                 style={{ scrollbarWidth: 'none' }}
               >
-                {MOCK_LINE_UNREADS.map((item, i) => (
-                  <motion.button
-                    key={item.id}
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.07 }}
-                    whileTap={{ backgroundColor: '#FFF5F8' }}
-                    onClick={goToLine}
-                    className="w-full flex items-center gap-3 px-5 py-4 border-b border-[#F5E6E8] text-left"
-                  >
-                    {/* アバター */}
-                    <div
-                      className="w-11 h-11 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center"
-                      style={{ background: 'linear-gradient(135deg, #FDF5F7, #F8EAF0)' }}
+                {isLoading ? (
+                  <div className="flex justify-center py-10">
+                    <div className="w-6 h-6 rounded-full border-2 border-[#78C890] border-t-transparent animate-spin" />
+                  </div>
+                ) : unreads.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 gap-2">
+                    <MessageCircle size={32} style={{ color: '#C8B8C0' }} />
+                    <p className="text-[13px]" style={{ color: '#9E8090' }}>未返信メッセージはありません</p>
+                  </div>
+                ) : (
+                  unreads.map((item, i) => (
+                    <motion.button
+                      key={item.recipientId}
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.07 }}
+                      whileTap={{ backgroundColor: '#FFF5F8' }}
+                      onClick={goToLine}
+                      className="w-full flex items-center gap-3 px-5 py-4 border-b border-[#F5E6E8] text-left"
                     >
-                      <Image src="/assets/rio-kuma.png" alt="くま" width={40} height={40} className="object-contain" />
-                    </div>
-
-                    {/* テキスト */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-[13px] font-semibold text-salon-brown">
-                          {item.customerName} 様
-                        </span>
-                        <span className="text-[10px] text-salon-brown-sub">{item.timeAgo}</span>
+                      {/* アバター */}
+                      <div
+                        className="w-11 h-11 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center"
+                        style={{ background: 'linear-gradient(135deg, #FDF5F7, #F8EAF0)' }}
+                      >
+                        <Image src="/assets/rio-kuma.png" alt="くま" width={40} height={40} className="object-contain" />
                       </div>
-                      <p className="text-[12px] text-salon-brown-sub truncate">{item.lastMessage}</p>
-                    </div>
 
-                    {/* 未読バッジ */}
-                    <span
-                      className="flex-shrink-0 min-w-[20px] h-5 rounded-full text-[10px] font-bold text-white flex items-center justify-center px-1.5"
-                      style={{ background: '#E84050' }}
-                    >
-                      {item.unreadCount}
-                    </span>
-                  </motion.button>
-                ))}
+                      {/* テキスト */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="text-[13px] font-semibold text-salon-brown">
+                            {item.name} 様
+                          </span>
+                          <span className="text-[10px] text-salon-brown-sub">{timeAgo(item.lastAt)}</span>
+                        </div>
+                        <p className="text-[12px] text-salon-brown-sub truncate">{item.lastMessage}</p>
+                      </div>
+
+                      {/* 未読インジケーター */}
+                      <div
+                        className="flex-shrink-0 w-2 h-2 rounded-full"
+                        style={{ background: '#E84050' }}
+                      />
+                    </motion.button>
+                  ))
+                )}
               </div>
 
               {/* LINE CRMを開くボタン */}

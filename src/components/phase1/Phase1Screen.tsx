@@ -10,9 +10,10 @@ import Image                                              from 'next/image'
 import { useRouter }                                      from 'next/navigation'
 
 // stores
-import { useHomeStore }  from '@/store/useHomeStore'
-import { useKpiStore }   from '@/store/useKpiStore'
-import { useAuthStore }  from '@/store/useAuthStore'
+import { useHomeStore }       from '@/store/useHomeStore'
+import { useKpiSqlStore }     from '@/store/useKpiSqlStore'
+import { useAuthStore }       from '@/store/useAuthStore'
+import { useLineUnreadStore } from '@/store/useLineUnreadStore'
 
 // types
 import type { ReservationWithCustomer }           from '@/types/database'
@@ -25,7 +26,7 @@ import ReservationCard, { type Phase1Reservation,
                            type CustomerType }                  from './ReservationCard'
 import AIProposalView                                           from './AIProposalView'
 import ServiceLogView                                           from './ServiceLogView'
-import LineUnreadSheet, { LINE_UNREAD_COUNT }                   from './LineUnreadSheet'
+import LineUnreadSheet                                          from './LineUnreadSheet'
 import AppBottomNav                                             from './AppBottomNav'
 
 // 顧客タップ時の統一導線：音声メモ・AI提案・履歴を含む統合版シート
@@ -41,7 +42,7 @@ function toPhase1(r: ReservationWithCustomer): Phase1Reservation {
     : 0
   return {
     id:                 r.id,
-    customerId:         r.customer_id,   // 予約IDではなく顧客IDを引き継ぐ
+    customerId:         r.customer_id,
     scheduledAt:        r.scheduled_at,
     durationMinutes:    r.duration_minutes,
     menu:               r.menu,
@@ -58,12 +59,10 @@ function toPhase1(r: ReservationWithCustomer): Phase1Reservation {
 }
 
 // ─── Phase1Reservation → CustomerBottomSheet 用 Customer / Reservation 変換 ──
-// Phase1Reservation は軽量 UI 型。CustomerBottomSheet が要求する
-// Customer / Reservation 型に変換して渡す。
 
 function toCustomer(r: Phase1Reservation): BSCustomer {
   return {
-    id:                    r.customerId,   // 顧客ID（予約IDではない）
+    id:                    r.customerId,
     name:                  r.customerName,
     visits:                r.visitCount,
     visit_count:           r.visitCount,
@@ -76,7 +75,7 @@ function toCustomer(r: Phase1Reservation): BSCustomer {
     customer_type:         r.customerType,
     vip_rank:              r.isVip ? 4 : (r.aiScore >= 80 ? 2 : 1),
     churn_risk:            r.churnRisk,
-    line_response_rate:    72,   // Phase1Reservation にない → デフォルト
+    line_response_rate:    0,   // 実データソースなし → 0
     next_visit_prediction: '',
     skin_tags:             [],
     recommended_cycle_days: null,
@@ -129,9 +128,8 @@ type AppView = 'home' | 'ai_proposal' | 'service_log'
 // ─── メインコンポーネント ─────────────────────────────────────────────────────
 
 export default function Phase1Screen() {
-  useRouter()   // ルーター（将来の遷移用に保持）
+  useRouter()
 
-  // ── 統合版 BottomSheet 専用 store（既存 state と完全隔離） ──────────────────
   const {
     isOpen:   newSheetOpen,
     customer: newSheetCustomer,
@@ -145,7 +143,7 @@ export default function Phase1Screen() {
   const [selected,      setSelected]      = useState<Phase1Reservation | null>(null)
   const [lineSheetOpen, setLineSheetOpen] = useState(false)
 
-  // ── Supabase: 実データ取得 ────────────────────────────────────────────────
+  // ── 実データストア ────────────────────────────────────────────────────────
   const {
     reservations: rawReservations,
     isFallback,
@@ -157,9 +155,10 @@ export default function Phase1Screen() {
     fetchChurnRiskCount,
   } = useHomeStore()
 
-  const { current }                  = useKpiStore()
-  const { session, initialized }     = useAuthStore()
-  const fetchedRef                   = useRef(false)
+  const { todaySales: sqlTodaySales, fetchAll: fetchKpiAll } = useKpiSqlStore()
+  const { unreadCount, fetchUnreads }                        = useLineUnreadStore()
+  const { session, initialized }                             = useAuthStore()
+  const fetchedRef                                           = useRef(false)
 
   useEffect(() => {
     if (fetchedRef.current) return
@@ -172,15 +171,19 @@ export default function Phase1Screen() {
       null
     )
 
-    // デバッグ: 未ログインでもデモデータで表示
     Promise.allSettled([
       ...(uid ? [fetchTodayReservations(role ?? 'staff', uid)] : []),
       fetchTodayKpi(),
       fetchChurnRiskCount(),
+      fetchKpiAll(),
+      fetchUnreads(),
     ])
   }, [initialized, session]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── KPI mini ─────────────────────────────────────────────────────────────
+  // 本日売上: brain_visits ベース（useKpiSqlStore） → 常時取得可
+  // dayDiff:  kpi_today ビュー（useHomeStore）      → 認証時のみ
+  const displaySales = sqlTodaySales > 0 ? sqlTodaySales : todaySales
   const dayDiff = yesterdaySales > 0
     ? +((( todaySales - yesterdaySales) / yesterdaySales) * 100).toFixed(1)
     : 0
@@ -205,13 +208,12 @@ export default function Phase1Screen() {
   }), [reservations])
 
   // ── ハンドラ ──────────────────────────────────────────────────────────────
-  /** タップ → 統合版 BottomSheet を開く（音声メモ・AI提案・履歴を含む唯一の詳細導線） */
   function handleCardTap(r: Phase1Reservation) {
     setSelected(r)
     openNewSheet(toCustomer(r), toReservation(r))
   }
-  function handleServiceLog(r: Phase1Reservation)            { setSelected(r); setView('service_log') }
-  function goHome()                                          { setView('home') }
+  function handleServiceLog(r: Phase1Reservation) { setSelected(r); setView('service_log') }
+  function goHome()                               { setView('home') }
 
   // ── レンダー ──────────────────────────────────────────────────────────────
   return (
@@ -222,7 +224,6 @@ export default function Phase1Screen() {
         maxWidth:    '430px',
         marginLeft:  'auto',
         marginRight: 'auto',
-        /* Safari: 100dvh で正確な高さ、フォールバックは 100svh → 100vh */
         height:      '100dvh',
         background:  'linear-gradient(160deg, #F8F1F3 0%, #FDF7F8 50%, #F8EFF0 100%)',
         fontFamily:  "'Inter', 'Noto Sans JP', sans-serif",
@@ -269,11 +270,11 @@ export default function Phase1Screen() {
                 style={{ border: '2.5px solid #F5E6E8', boxShadow: '0 4px 16px rgba(245,160,181,0.22)' }}
               />
             </motion.div>
-            {LINE_UNREAD_COUNT > 0 && (
+            {unreadCount > 0 && (
               <span
                 className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full text-[9px] text-white flex items-center justify-center font-bold"
                 style={{ background: '#E84050' }}>
-                {LINE_UNREAD_COUNT}
+                {unreadCount}
               </span>
             )}
           </motion.button>
@@ -316,20 +317,22 @@ export default function Phase1Screen() {
             <p className="text-[9px] tracking-widest" style={{ color: '#B09090' }}>本日売上</p>
             <p className="text-[15px] font-semibold tabular-nums leading-tight truncate"
               style={{ color: '#4A2C2A', fontFamily: 'Inter, sans-serif' }}>
-              ¥{(current.todaySales / 10000).toFixed(1)}万
+              ¥{(displaySales / 10000).toFixed(1)}万
             </p>
           </div>
-          <div className="flex items-center gap-0.5 text-[11px] font-semibold flex-shrink-0"
-            style={{ color: isUp ? '#34D399' : '#E84050' }}>
-            {isUp ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-            <span>{Math.abs(dayDiff)}%</span>
-          </div>
+          {dayDiff !== 0 && (
+            <div className="flex items-center gap-0.5 text-[11px] font-semibold flex-shrink-0"
+              style={{ color: isUp ? '#34D399' : '#E84050' }}>
+              {isUp ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+              <span>{Math.abs(dayDiff)}%</span>
+            </div>
+          )}
           <div className="w-px h-6 flex-shrink-0" style={{ background: '#F5E6E8' }} />
           <div className="flex-shrink-0 text-right">
-            <p className="text-[9px] tracking-widest" style={{ color: '#B09090' }}>稼働率</p>
+            <p className="text-[9px] tracking-widest" style={{ color: '#B09090' }}>LINE未返信</p>
             <p className="text-[15px] font-semibold tabular-nums leading-tight"
-              style={{ color: '#4A2C2A', fontFamily: 'Inter, sans-serif' }}>
-              {current.occupancyRate}%
+              style={{ color: unreadCount > 0 ? '#E84050' : '#4A2C2A', fontFamily: 'Inter, sans-serif' }}>
+              {unreadCount}件
             </p>
           </div>
         </div>
@@ -379,11 +382,6 @@ export default function Phase1Screen() {
         onClose={() => setLineSheetOpen(false)}
       />
 
-      {/* ── 統合版 CustomerBottomSheet（タップで開く・唯一の詳細導線） ─────────
-          state: useNewCustomerSheetStore で完全隔離
-          viewport: 100dvh + env(safe-area-inset-bottom) 対応
-          z-index: 60
-      ──────────────────────────────────────────────────────────────────── */}
       {newSheetOpen && newSheetCustomer && newSheetReservation && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 60 }}>
           <CustomerBottomSheet
