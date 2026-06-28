@@ -5,9 +5,13 @@ import type { WeeklyDatum } from '@/store/useKpiStore'
 type Props = { data: WeeklyDatum[] }
 
 export default function WeeklyGraph({ data }: Props) {
-  const maxSales  = Math.max(...data.map(d => d.sales))
-  const weekTotal = data.reduce((sum, d) => sum + d.sales, 0)
+  if (!data || data.length === 0) return null
+
+  const rawMax    = Math.max(...data.map(d => d.sales ?? 0))
+  const maxSales  = rawMax > 0 ? rawMax : 1
+  const weekTotal = data.reduce((sum, d) => sum + (d.sales ?? 0), 0)
   const todayData = data[data.length - 1]
+  const todaySales = todayData?.sales ?? 0
 
   return (
     <div className="mx-4 mb-5">
@@ -28,7 +32,7 @@ export default function WeeklyGraph({ data }: Props) {
         <div className="flex items-end gap-1.5 h-20 mb-3">
           {data.map((d, i) => {
             const isToday   = d.day === '今日'
-            const heightPct = Math.max((d.sales / maxSales) * 100, 4)
+            const heightPct = Math.max(((d.sales ?? 0) / maxSales) * 100, 4)
             return (
               <div key={i} className="flex-1 flex flex-col items-center gap-1.5">
                 <motion.div
@@ -61,7 +65,7 @@ export default function WeeklyGraph({ data }: Props) {
           <div>
             <p className="text-[9px] tracking-widest mb-0.5" style={{ color: '#C8B8C0' }}>TODAY</p>
             <p className="text-[17px] font-light tabular-nums" style={{ color: '#4A2C2A' }}>
-              ¥{(todayData.sales / 10000).toFixed(1)}万
+              ¥{(todaySales / 10000).toFixed(1)}万
             </p>
           </div>
           <div className="text-right">

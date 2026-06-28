@@ -153,12 +153,12 @@ export default function KpiDashboard() {
   // brain_visits 週次売上 → WeeklyDatum 変換
   const DAY_LABELS = ['日','月','火','水','木','金','土']
   const todayStr = new Date().toISOString().split('T')[0]
-  const sqlWeeklyData: WeeklyDatum[] = sqlStore.weeklySales.length > 0
-    ? sqlStore.weeklySales.map(p => {
+  const sqlWeeklyData: WeeklyDatum[] = (sqlStore.weeklySales ?? []).length > 0
+    ? (sqlStore.weeklySales ?? []).map(p => {
         const d = new Date(p.date)
         return {
           day:          p.date === todayStr ? '今日' : DAY_LABELS[d.getDay()],
-          sales:        p.sales,
+          sales:        p.sales ?? 0,
           reservations: 0,
         }
       })
@@ -317,7 +317,7 @@ export default function KpiDashboard() {
       </div>
 
       {/* ════════ 個人実績 ════════ */}
-      {sqlStore.staffPerformance.length > 0 && (
+      {(sqlStore.staffPerformance ?? []).length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -329,7 +329,7 @@ export default function KpiDashboard() {
             <span className="text-[10px] tracking-[0.22em] font-medium" style={{ color: '#C8B0B8' }}>個人実績（今月）</span>
           </div>
           <div className="flex flex-col gap-2">
-            {sqlStore.staffPerformance.map((s, i) => (
+            {(sqlStore.staffPerformance ?? []).map((s, i) => (
               <motion.div
                 key={s.staffId}
                 initial={{ opacity: 0, x: -8 }}
