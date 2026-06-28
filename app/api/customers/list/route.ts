@@ -85,7 +85,7 @@ export async function GET() {
         assignedStaffId:  c.assigned_staff_id ?? null,
         treatments:       [] as string[],
         staffName:        c.assigned_staff_id ? (staffMap[c.assigned_staff_id] ?? '') : '',
-        lineResponseRate: 50,
+        lineResponseRate: 0,
         hasNextRebook:    false,
       };
     }).sort((a, b) => b.totalSpent - a.totalSpent);

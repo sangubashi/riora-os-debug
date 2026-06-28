@@ -7,15 +7,10 @@ import type { UserRole } from '@/types/database'
 
 interface HomeState {
   reservations: ReservationWithCustomer[]
-  isFallback: boolean
-  todaySales: number
-  yesterdaySales: number
-  churnRiskCount: number
-  isLoading: boolean
+  isFallback:   boolean
+  isLoading:    boolean
 
   fetchTodayReservations: (role: UserRole, uid: string) => Promise<void>
-  fetchTodayKpi: () => Promise<void>
-  fetchChurnRiskCount: () => Promise<void>
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -54,12 +49,9 @@ const RESERVATION_SELECT = `
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useHomeStore = create<HomeState>((set) => ({
-  reservations:   [],
-  isFallback:     false,
-  todaySales:     0,
-  yesterdaySales: 0,
-  churnRiskCount: 0,
-  isLoading:      false,
+  reservations: [],
+  isFallback:   false,
+  isLoading:    false,
 
   fetchTodayReservations: async (role: UserRole, uid: string) => {
     set({ isLoading: true })
@@ -111,39 +103,6 @@ export const useHomeStore = create<HomeState>((set) => ({
       // silent: reservations stay empty
     } finally {
       set({ isLoading: false })
-    }
-  },
-
-  fetchTodayKpi: async () => {
-    try {
-      const { data, error } = await supabase
-        .from('kpi_today')
-        .select('today_sales, yesterday_sales')
-        .single()
-
-      if (error || !data) return
-
-      set({
-        todaySales:     Number(data.today_sales     ?? 0),
-        yesterdaySales: Number(data.yesterday_sales ?? 0),
-      })
-    } catch {
-      // silent
-    }
-  },
-
-  fetchChurnRiskCount: async () => {
-    try {
-      const { count, error } = await supabase
-        .from('customers')
-        .select('id', { count: 'exact', head: true })
-        .gt('churn_risk_score', 60)
-
-      if (error) return
-
-      set({ churnRiskCount: count ?? 0 })
-    } catch {
-      // silent
     }
   },
 }))

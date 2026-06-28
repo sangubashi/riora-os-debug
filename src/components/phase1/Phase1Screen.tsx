@@ -1,13 +1,21 @@
 'use client'
 /**
  * Phase1Screen — ホーム画面 + 全フロー制御
- * CustomerBottomSheet（統合版）に正式接続済み
+ *
+ * KPI数値の計算元:
+ *   本日売上      brain_visits (visit_date = today)  via /api/kpi/summary
+ *   昨日比        brain_visits (visit_date = yesterday) via /api/kpi/summary
+ *   要注意顧客数  brain_customers + brain_visits (最終来院 >90日)
+ *   LINE未返信    line_send_logs (lastDirection=incoming)
+ *
+ * 予約カードリストは reservations テーブル（今日の施術予定）を引き続き使用。
+ * brain_visits は過去来院履歴のため、当日スケジュール表示には reservations を使う。
  */
-import { useState, useMemo, useEffect, useRef }          from 'react'
-import { motion, AnimatePresence }                        from 'framer-motion'
-import { TrendingUp, TrendingDown }                       from 'lucide-react'
-import Image                                              from 'next/image'
-import { useRouter }                                      from 'next/navigation'
+import { useState, useMemo, useEffect, useRef } from 'react'
+import { motion, AnimatePresence }               from 'framer-motion'
+import { TrendingUp, TrendingDown }              from 'lucide-react'
+import Image                                     from 'next/image'
+import { useRouter }                             from 'next/navigation'
 
 // stores
 import { useHomeStore }       from '@/store/useHomeStore'
@@ -16,20 +24,19 @@ import { useAuthStore }       from '@/store/useAuthStore'
 import { useLineUnreadStore } from '@/store/useLineUnreadStore'
 
 // types
-import type { ReservationWithCustomer }           from '@/types/database'
+import type { ReservationWithCustomer }      from '@/types/database'
 import type { Customer as BSCustomer,
-              Reservation as BSReservation }      from '@/types'
+              Reservation as BSReservation } from '@/types'
 
 // phase1 コンポーネント
-import TagFilterBar,  { type TagFilterKey }                     from './TagFilterBar'
+import TagFilterBar,  { type TagFilterKey }  from './TagFilterBar'
 import ReservationCard, { type Phase1Reservation,
-                           type CustomerType }                  from './ReservationCard'
-import AIProposalView                                           from './AIProposalView'
-import ServiceLogView                                           from './ServiceLogView'
-import LineUnreadSheet                                          from './LineUnreadSheet'
-import AppBottomNav                                             from './AppBottomNav'
+                          type CustomerType } from './ReservationCard'
+import AIProposalView                         from './AIProposalView'
+import ServiceLogView                         from './ServiceLogView'
+import LineUnreadSheet                        from './LineUnreadSheet'
+import AppBottomNav                           from './AppBottomNav'
 
-// 顧客タップ時の統一導線：音声メモ・AI提案・履歴を含む統合版シート
 import CustomerBottomSheet from '@/components/customer/CustomerBottomSheet'
 import { useNewCustomerSheetStore } from '@/store/useNewCustomerSheetStore'
 
@@ -58,8 +65,6 @@ function toPhase1(r: ReservationWithCustomer): Phase1Reservation {
   }
 }
 
-// ─── Phase1Reservation → CustomerBottomSheet 用 Customer / Reservation 変換 ──
-
 function toCustomer(r: Phase1Reservation): BSCustomer {
   return {
     id:                    r.customerId,
@@ -67,15 +72,12 @@ function toCustomer(r: Phase1Reservation): BSCustomer {
     visits:                r.visitCount,
     visit_count:           r.visitCount,
     total_sales:           r.totalSpent,
-    avg_price:             r.visitCount > 0
-                             ? Math.round(r.totalSpent / r.visitCount) : 0,
-    last_visit:            new Date(
-                             Date.now() - r.daysSinceLastVisit * 86400000
-                           ).toISOString().slice(0, 10),
+    avg_price:             r.visitCount > 0 ? Math.round(r.totalSpent / r.visitCount) : 0,
+    last_visit:            new Date(Date.now() - r.daysSinceLastVisit * 86400000).toISOString().slice(0, 10),
     customer_type:         r.customerType,
     vip_rank:              r.isVip ? 4 : (r.aiScore >= 80 ? 2 : 1),
     churn_risk:            r.churnRisk,
-    line_response_rate:    0,   // 実データソースなし → 0
+    line_response_rate:    0,
     next_visit_prediction: '',
     skin_tags:             [],
     recommended_cycle_days: null,
@@ -113,15 +115,11 @@ function matchTag(r: Phase1Reservation, tag: TagFilterKey): boolean {
   }
 }
 
-// ─── 日付 ─────────────────────────────────────────────────────────────────────
-
 function dateLabel() {
   const d  = new Date()
   const wd = ['日','月','火','水','木','金','土'][d.getDay()]
   return `${d.getMonth()+1}月${d.getDate()}日(${wd})`
 }
-
-// ─── アプリビュー ─────────────────────────────────────────────────────────────
 
 type AppView = 'home' | 'ai_proposal' | 'service_log'
 
@@ -131,11 +129,11 @@ export default function Phase1Screen() {
   useRouter()
 
   const {
-    isOpen:   newSheetOpen,
-    customer: newSheetCustomer,
-    reservation: newSheetReservation,
-    open:     openNewSheet,
-    close:    closeNewSheet,
+    isOpen:       newSheetOpen,
+    customer:     newSheetCustomer,
+    reservation:  newSheetReservation,
+    open:         openNewSheet,
+    close:        closeNewSheet,
   } = useNewCustomerSheetStore()
 
   const [activeTag,     setActiveTag]     = useState<TagFilterKey>('all')
@@ -143,22 +141,19 @@ export default function Phase1Screen() {
   const [selected,      setSelected]      = useState<Phase1Reservation | null>(null)
   const [lineSheetOpen, setLineSheetOpen] = useState(false)
 
-  // ── 実データストア ────────────────────────────────────────────────────────
+  // ── データストア ──────────────────────────────────────────────────────────
+  const { reservations: rawReservations, isFallback, fetchTodayReservations } = useHomeStore()
+
   const {
-    reservations: rawReservations,
-    isFallback,
     todaySales,
     yesterdaySales,
     churnRiskCount,
-    fetchTodayReservations,
-    fetchTodayKpi,
-    fetchChurnRiskCount,
-  } = useHomeStore()
+    fetchAll: fetchKpiAll,
+  } = useKpiSqlStore()
 
-  const { todaySales: sqlTodaySales, fetchAll: fetchKpiAll } = useKpiSqlStore()
-  const { unreadCount, fetchUnreads }                        = useLineUnreadStore()
-  const { session, initialized }                             = useAuthStore()
-  const fetchedRef                                           = useRef(false)
+  const { unreadCount, fetchUnreads } = useLineUnreadStore()
+  const { session, initialized }      = useAuthStore()
+  const fetchedRef                    = useRef(false)
 
   useEffect(() => {
     if (fetchedRef.current) return
@@ -166,24 +161,20 @@ export default function Phase1Screen() {
 
     const uid  = session?.user?.id ?? null
     const role = (
-      (session?.user?.app_metadata?.role as 'owner' | 'staff' | null) ??
+      (session?.user?.app_metadata?.role  as 'owner' | 'staff' | null) ??
       (session?.user?.user_metadata?.role as 'owner' | 'staff' | null) ??
       null
     )
 
     Promise.allSettled([
       ...(uid ? [fetchTodayReservations(role ?? 'staff', uid)] : []),
-      fetchTodayKpi(),
-      fetchChurnRiskCount(),
       fetchKpiAll(),
       fetchUnreads(),
     ])
   }, [initialized, session]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── KPI mini ─────────────────────────────────────────────────────────────
-  // 本日売上: brain_visits ベース（useKpiSqlStore） → 常時取得可
-  // dayDiff:  kpi_today ビュー（useHomeStore）      → 認証時のみ
-  const displaySales = sqlTodaySales > 0 ? sqlTodaySales : todaySales
+  // ── KPI 計算（brain_visits ベース）────────────────────────────────────────
+  // dayDiff = (今日 - 昨日) / 昨日 × 100  ← 両値とも brain_visits
   const dayDiff = yesterdaySales > 0
     ? +((( todaySales - yesterdaySales) / yesterdaySales) * 100).toFixed(1)
     : 0
@@ -207,7 +198,6 @@ export default function Phase1Screen() {
     followup: reservations.filter(r => r.daysSinceLastVisit >= 30).length,
   }), [reservations])
 
-  // ── ハンドラ ──────────────────────────────────────────────────────────────
   function handleCardTap(r: Phase1Reservation) {
     setSelected(r)
     openNewSheet(toCustomer(r), toReservation(r))
@@ -283,9 +273,9 @@ export default function Phase1Screen() {
         {/* サマリーチップ */}
         <div className="flex gap-2 px-5 pb-3">
           {[
-            { label: isFallback ? '直近の予約' : '本日の予約', value: `${reservations.length}件`, color: '#F5A0B5' },
-            { label: 'VIP 来店',   value: `${reservations.filter(r => r.isVip).length}名`, color: '#D4A96A' },
-            { label: '要注意',     value: `${churnRiskCount}名`, color: churnRiskCount > 0 ? '#E84050' : '#52C87A' },
+            { label: isFallback ? '直近の予約' : '本日の予約', value: `${reservations.length}件`,  color: '#F5A0B5' },
+            { label: 'VIP 来店',                               value: `${reservations.filter(r => r.isVip).length}名`, color: '#D4A96A' },
+            { label: '要注意',                                 value: `${churnRiskCount}名`,          color: churnRiskCount > 0 ? '#E84050' : '#52C87A' },
           ].map(chip => (
             <div key={chip.label}
               className="flex-1 rounded-[14px] py-2 flex flex-col items-center"
@@ -308,16 +298,16 @@ export default function Phase1Screen() {
         <div
           className="flex items-center gap-2.5 rounded-2xl px-4 py-2.5"
           style={{
-            background:   'linear-gradient(135deg, rgba(245,160,181,0.10) 0%, rgba(255,255,255,0.96) 100%)',
-            border:       '1px solid rgba(245,160,181,0.22)',
-            boxShadow:    '0 2px 10px rgba(245,160,181,0.10)',
+            background:  'linear-gradient(135deg, rgba(245,160,181,0.10) 0%, rgba(255,255,255,0.96) 100%)',
+            border:      '1px solid rgba(245,160,181,0.22)',
+            boxShadow:   '0 2px 10px rgba(245,160,181,0.10)',
           }}>
           <span className="text-[16px] flex-shrink-0">💰</span>
           <div className="flex-1 min-w-0">
             <p className="text-[9px] tracking-widest" style={{ color: '#B09090' }}>本日売上</p>
             <p className="text-[15px] font-semibold tabular-nums leading-tight truncate"
               style={{ color: '#4A2C2A', fontFamily: 'Inter, sans-serif' }}>
-              ¥{(displaySales / 10000).toFixed(1)}万
+              ¥{(todaySales / 10000).toFixed(1)}万
             </p>
           </div>
           {dayDiff !== 0 && (
@@ -353,7 +343,6 @@ export default function Phase1Screen() {
           scrollbarWidth: 'none',
         }}>
 
-        {/* 予約カードリスト */}
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3">
             <Image src="/assets/rio-kuma.png" alt=""
@@ -363,11 +352,11 @@ export default function Phase1Screen() {
         ) : (
           filtered.map((r, i) => (
             <ReservationCard
-                key={r.id}
-                reservation={r}
-                index={i}
-                onTap={handleCardTap}
-              />
+              key={r.id}
+              reservation={r}
+              index={i}
+              onTap={handleCardTap}
+            />
           ))
         )}
       </div>
@@ -376,11 +365,7 @@ export default function Phase1Screen() {
 
       {/* ════════════ OVERLAYS ════════════ */}
 
-      {/* LINE未返信シート */}
-      <LineUnreadSheet
-        isOpen={lineSheetOpen}
-        onClose={() => setLineSheetOpen(false)}
-      />
+      <LineUnreadSheet isOpen={lineSheetOpen} onClose={() => setLineSheetOpen(false)} />
 
       {newSheetOpen && newSheetCustomer && newSheetReservation && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 60 }}>
@@ -392,7 +377,6 @@ export default function Phase1Screen() {
         </div>
       )}
 
-      {/* AI提案 / 接客ログ */}
       <AnimatePresence>
         {view === 'ai_proposal' && selected && (
           <AIProposalView
