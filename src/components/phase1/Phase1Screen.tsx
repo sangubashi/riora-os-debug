@@ -350,25 +350,6 @@ export default function Phase1Screen() {
           scrollbarWidth: 'none',
         }}>
 
-        {/* AI ADVICE バナー */}
-        <motion.div
-          initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="mx-4 mb-4 rounded-[20px] border border-[#F5E6E8] flex items-center gap-3 p-4"
-          style={{ background: '#FFFFFF', boxShadow: '0 2px 12px rgba(245,160,181,0.10)' }}>
-          <Image src="/assets/rio-kuma.png" alt="AI"
-            width={52} height={52} className="object-contain flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-[10px] font-semibold tracking-[0.18em] mb-1"
-              style={{ color: '#F5A0B5', fontFamily: 'Inter, sans-serif' }}>
-              AI ADVICE
-            </p>
-            <p className="text-[13px] leading-relaxed" style={{ color: '#4A2C2A' }}>
-              今日はリピートのお客様が多いので、前回の施術内容やお悩みをしっかり覚えていることをアピールしましょう ✨
-            </p>
-          </div>
-        </motion.div>
-
         {/* 予約カードリスト */}
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3">
