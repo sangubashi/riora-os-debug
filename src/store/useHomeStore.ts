@@ -1,7 +1,15 @@
+/**
+ * useHomeStore — 今日の予約リスト専用ストア
+ *
+ * 予約リスト: reservations テーブル（今日のスケジュール）
+ * 顧客統計:   brain_customers + brain_visits（累計売上・来店回数・最終来院日）
+ *             /api/customers/brain-stats 経由（service role・RLS bypass）
+ */
 import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
 import type { ReservationWithCustomer } from '@/types/database'
 import type { UserRole } from '@/types/database'
+import type { CustomerBrainStats } from '../../app/api/customers/brain-stats/route'
 
 // ─── Store types ──────────────────────────────────────────────────────────────
 
@@ -46,6 +54,32 @@ const RESERVATION_SELECT = `
   )
 `
 
+/**
+ * brain_* から取得した実データで ReservationWithCustomer を上書きする。
+ * 名前マッチが取れなかった場合は元の customers テーブル値をそのまま維持する。
+ */
+function enrichWithBrainStats(
+  reservations: ReservationWithCustomer[],
+  stats: Record<string, CustomerBrainStats>
+): ReservationWithCustomer[] {
+  return reservations.map(r => {
+    const s = stats[r.customer?.name ?? ''];
+    if (!s) return r;
+    return {
+      ...r,
+      customer: {
+        ...r.customer,
+        visit_count:      s.visitCount,
+        total_spent:      s.totalSpent,
+        last_visit_date:  s.lastVisitDate,
+        churn_risk_score: Math.round(s.churnScore * 100),
+        is_vip:           s.isVip,
+        customer_type:    s.customerType ?? r.customer?.customer_type,
+      },
+    };
+  });
+}
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useHomeStore = create<HomeState>((set) => ({
@@ -58,6 +92,7 @@ export const useHomeStore = create<HomeState>((set) => ({
     try {
       const { start, end } = todayRange()
 
+      // ── 1. 今日の予約を取得 ────────────────────────────────────────────
       let query = supabase
         .from('reservations')
         .select(RESERVATION_SELECT)
@@ -98,9 +133,26 @@ export const useHomeStore = create<HomeState>((set) => ({
         }
       }
 
+      // ── 2. brain_* で顧客統計を実データに差し替え ─────────────────────
+      if (mapped.length > 0) {
+        const nameSet = new Set(mapped.map(r => r.customer?.name).filter(Boolean) as string[])
+        const names: string[] = Array.from(nameSet)
+        try {
+          const res = await fetch(
+            `/api/customers/brain-stats?names=${encodeURIComponent(names.join(','))}`
+          )
+          if (res.ok) {
+            const json = await res.json() as { stats: Record<string, CustomerBrainStats> }
+            mapped = enrichWithBrainStats(mapped, json.stats)
+          }
+        } catch {
+          // brain 取得失敗時は customers テーブル値で継続
+        }
+      }
+
       set({ reservations: mapped, isFallback })
     } catch {
-      // silent: reservations stay empty
+      // silent
     } finally {
       set({ isLoading: false })
     }

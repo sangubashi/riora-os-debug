@@ -148,6 +148,7 @@ export default function Phase1Screen() {
     todaySales,
     yesterdaySales,
     churnRiskCount,
+    activeCustomerCount,
     fetchAll: fetchKpiAll,
   } = useKpiSqlStore()
 
@@ -273,9 +274,9 @@ export default function Phase1Screen() {
         {/* サマリーチップ */}
         <div className="flex gap-2 px-5 pb-3">
           {[
-            { label: isFallback ? '直近の予約' : '本日の予約', value: `${reservations.length}件`,  color: '#F5A0B5' },
-            { label: 'VIP 来店',                               value: `${reservations.filter(r => r.isVip).length}名`, color: '#D4A96A' },
-            { label: '要注意',                                 value: `${churnRiskCount}名`,          color: churnRiskCount > 0 ? '#E84050' : '#52C87A' },
+            { label: isFallback ? '直近の予約' : '本日の予約', value: `${reservations.length}件`,   color: '#F5A0B5' },
+            { label: '顧客数',                                  value: `${activeCustomerCount}名`,    color: '#D4A96A' },
+            { label: '要注意',                                  value: `${churnRiskCount}名`,          color: churnRiskCount > 0 ? '#E84050' : '#52C87A' },
           ].map(chip => (
             <div key={chip.label}
               className="flex-1 rounded-[14px] py-2 flex flex-col items-center"
