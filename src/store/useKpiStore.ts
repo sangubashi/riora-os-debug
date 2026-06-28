@@ -6,7 +6,7 @@
  * ・Supabase Realtime で daily_kpi_snapshots の変更をリアルタイム反映
  */
 import { create } from 'zustand'
-import { supabase, DEMO_MODE } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase'
 import { generateKpiHints } from '@/lib/phase8/kpiHintEngine'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 
@@ -57,66 +57,6 @@ export interface StaffRankItem {
   nextReserveCount:  number
   aiAdoptRate:       number
 }
-
-// ─── Mock fallback ────────────────────────────────────────────────────────────
-
-const MOCK_CURRENT: KpiSnapshot = {
-  todaySales:        128000,
-  monthlySales:      2840000,
-  nextReserveRate:   62,
-  avgSpend:          14200,
-  repeatRate:        78,
-  lineResponseRate:  84,
-  subscContinueRate: 91,
-  occupancyRate:     87,
-  vipRate:           23,
-}
-
-const MOCK_PREV_DAY: KpiSnapshot = {
-  todaySales:        105000,
-  monthlySales:      2720000,
-  nextReserveRate:   71,
-  avgSpend:          13800,
-  repeatRate:        80,
-  lineResponseRate:  79,
-  subscContinueRate: 91,
-  occupancyRate:     82,
-  vipRate:           21,
-}
-
-const MOCK_PREV_MONTH: KpiSnapshot = {
-  todaySales:        98000,
-  monthlySales:      2610000,
-  nextReserveRate:   66,
-  avgSpend:          13200,
-  repeatRate:        74,
-  lineResponseRate:  81,
-  subscContinueRate: 88,
-  occupancyRate:     79,
-  vipRate:           19,
-}
-
-const MOCK_WEEKLY: WeeklyDatum[] = [
-  { day: '月',  sales: 95000,  reservations: 7  },
-  { day: '火',  sales: 112000, reservations: 8  },
-  { day: '水',  sales: 88000,  reservations: 6  },
-  { day: '木',  sales: 134000, reservations: 9  },
-  { day: '金',  sales: 156000, reservations: 10 },
-  { day: '土',  sales: 198000, reservations: 13 },
-  { day: '今日', sales: 128000, reservations: 9  },
-]
-
-const MOCK_STAFF: StaffRankItem[] = [
-  { staffId: 'kameyama', name: '亀山 純香', todaySales: 52000, nextReserveCount: 4, aiAdoptRate: 92 },
-  { staffId: 'todate',   name: '外舘 裕子', todaySales: 44000, nextReserveCount: 3, aiAdoptRate: 87 },
-  { staffId: 'admin',    name: '中村 さな', todaySales: 32000, nextReserveCount: 2, aiAdoptRate: 74 },
-]
-
-const MOCK_INSIGHTS: AiInsight[] = [
-  { id: '1', type: 'warning', message: '次回予約率が昨日より9ポイント低下しています。施術終了時の提案タイミングを確認してください。', action: '提案テンプレートを見る' },
-  { id: '2', type: 'tip',     message: '施術終了15分前の次回提案の成功率が87%と最も高い傾向があります。', action: 'ベストプラクティスを確認' },
-  { id: '3', type: 'praise',  message: 'LINE返信率が先月比+3ポイント。お客様との関係構築が順調です！' },
-]
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
@@ -171,14 +111,15 @@ function isoMonthStart() {
 
 // ─── Create store ─────────────────────────────────────────────────────────────
 
+const ZERO_SNAPSHOT: KpiSnapshot = { todaySales: 0, monthlySales: 0, nextReserveRate: 0, avgSpend: 0, repeatRate: 0, lineResponseRate: 0, subscContinueRate: 0, occupancyRate: 0, vipRate: 0 }
+
 export const useKpiStore = create<KpiStore>((set, get) => ({
-  // 初期値: 未取得状態（DEMO_MODE時のみモック注入）
-  current:       DEMO_MODE ? MOCK_CURRENT       : { todaySales: 0, monthlySales: 0, nextReserveRate: 0, avgSpend: 0, repeatRate: 0, lineResponseRate: 0, subscContinueRate: 0, occupancyRate: 0, vipRate: 0 },
-  previousDay:   DEMO_MODE ? MOCK_PREV_DAY      : { todaySales: 0, monthlySales: 0, nextReserveRate: 0, avgSpend: 0, repeatRate: 0, lineResponseRate: 0, subscContinueRate: 0, occupancyRate: 0, vipRate: 0 },
-  previousMonth: DEMO_MODE ? MOCK_PREV_MONTH    : { todaySales: 0, monthlySales: 0, nextReserveRate: 0, avgSpend: 0, repeatRate: 0, lineResponseRate: 0, subscContinueRate: 0, occupancyRate: 0, vipRate: 0 },
-  weeklyData:    DEMO_MODE ? MOCK_WEEKLY        : [],
-  staffRanking:  DEMO_MODE ? MOCK_STAFF         : [],
-  insights:      DEMO_MODE ? MOCK_INSIGHTS      : [],
+  current:       { ...ZERO_SNAPSHOT },
+  previousDay:   { ...ZERO_SNAPSHOT },
+  previousMonth: { ...ZERO_SNAPSHOT },
+  weeklyData:    [],
+  staffRanking:  [],
+  insights:      [],
 
   selectedKpi:  null,
   isSheetOpen:  false,
@@ -192,7 +133,6 @@ export const useKpiStore = create<KpiStore>((set, get) => ({
 
   // ── fetchTodayKpi ───────────────────────────────────────────────
   fetchTodayKpi: async () => {
-    if (DEMO_MODE) { set({ lastFetchedAt: new Date().toISOString() }); return }
     set({ isLoading: true, error: null })
     try {
       const today = isoToday()
@@ -237,14 +177,14 @@ export const useKpiStore = create<KpiStore>((set, get) => ({
             repeatRate:        Number(todayRow.repeat_rate),
             lineResponseRate:  Number(todayRow.line_reply_rate),
             subscContinueRate: Number(todayRow.subscription_retention),
-            occupancyRate:     Number(todayRow.occupancy_rate ?? MOCK_CURRENT.occupancyRate),
-            vipRate:           Number(todayRow.vip_rate       ?? MOCK_CURRENT.vipRate),
+            occupancyRate:     Number(todayRow.occupancy_rate ?? 0),
+            vipRate:           Number(todayRow.vip_rate       ?? 0),
           },
         })
       }
 
       if (prevDayRow) {
-        set({ previousDay: { ...MOCK_PREV_DAY,
+        set({ previousDay: { ...ZERO_SNAPSHOT,
           todaySales:      prevDayRow.total_sales,
           nextReserveRate: Number(prevDayRow.next_booking_rate),
           avgSpend:        prevDayRow.avg_spend,
@@ -254,7 +194,7 @@ export const useKpiStore = create<KpiStore>((set, get) => ({
       }
 
       if (pmRow) {
-        set({ previousMonth: { ...MOCK_PREV_MONTH,
+        set({ previousMonth: { ...ZERO_SNAPSHOT,
           monthlySales:     pmTotal,
           nextReserveRate:  Number(pmRow.next_booking_rate),
           avgSpend:         pmRow.avg_spend,
@@ -273,7 +213,6 @@ export const useKpiStore = create<KpiStore>((set, get) => ({
 
   // ── fetchWeeklyData ─────────────────────────────────────────────
   fetchWeeklyData: async () => {
-    if (DEMO_MODE) return
     try {
       const monday = (() => {
         const d = new Date()
@@ -301,7 +240,6 @@ export const useKpiStore = create<KpiStore>((set, get) => ({
 
   // ── fetchStaffRanking ───────────────────────────────────────────
   fetchStaffRanking: async () => {
-    if (DEMO_MODE) return
     try {
       const { data } = await supabase
         .from('staff_daily_rankings')
@@ -327,7 +265,6 @@ export const useKpiStore = create<KpiStore>((set, get) => ({
 
   // ── fetchInsights ───────────────────────────────────────────────
   fetchInsights: async () => {
-    if (DEMO_MODE) return
     try {
       const { data } = await supabase
         .from('kpi_insights')
@@ -361,7 +298,6 @@ export const useKpiStore = create<KpiStore>((set, get) => ({
 
   // ── Realtime subscription ───────────────────────────────────────
   subscribeRealtime: () => {
-    if (DEMO_MODE) return
     const existing = get().realtimeChannel
     if (existing) return
 
@@ -389,7 +325,6 @@ export const useKpiStore = create<KpiStore>((set, get) => ({
   },
 
   unsubscribeRealtime: () => {
-    if (DEMO_MODE) return
     const ch = get().realtimeChannel
     if (ch) {
       supabase.removeChannel(ch)

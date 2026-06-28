@@ -6,7 +6,6 @@ import Image from 'next/image'
 import AppBottomNav from './AppBottomNav'
 import { useCustomerStore, type CustomerRow, type CustomerType } from '@/store/useCustomerStore'
 import { useAuthStore } from '@/store/useAuthStore'
-import { DEMO_MODE } from '@/lib/supabase'
 import { calcCustomerPhase, calcCustomerScore } from '@/lib/phase5/customerRiskEngine'
 import { CUSTOMER_PHASE_LABEL, CUSTOMER_PHASE_COLOR } from '@/types'
 import ChurnRiskRanking from './ChurnRiskRanking'
@@ -272,8 +271,8 @@ function CustomerDetailSheet({
 // ─── メイン画面 ───────────────────────────────────────────────────────────────
 
 export default function CustomersScreen() {
-  const { customers, isLoading, fetchCustomers, debug } = useCustomerStore()
-  const { initialized: authInitialized, session } = useAuthStore()
+  const { customers, isLoading, fetchCustomers } = useCustomerStore()
+  const { initialized: authInitialized } = useAuthStore()
   const [query,            setQuery]           = useState('')
   const [sortKey,          setSortKey]         = useState<'lastVisit' | 'score' | 'phase' | 'sales'>('lastVisit')
   const [phaseFilter,      setPhaseFilter]     = useState<string>('all')
@@ -281,11 +280,9 @@ export default function CustomersScreen() {
 
   useEffect(() => {
     if (!authInitialized) return
-    // DEMO_MODE: 認証完了後にセッション有無に関わらず実行（失敗時はMOCKにフォールバック）
-    if (DEMO_MODE || session) {
-      fetchCustomers()
-    }
-  }, [authInitialized, session, fetchCustomers])
+    // service role API 経由のため session 不問で取得
+    fetchCustomers()
+  }, [authInitialized, fetchCustomers])
 
   const PHASE_ORDER: Record<string, number> = { risk: 0, vip: 1, repeat: 2, growing: 3, new: 4 }
 
@@ -393,29 +390,6 @@ export default function CustomersScreen() {
         <p className="text-[13px] mt-0.5" style={{ color: '#9E8090' }}>
           {isLoading ? '読み込み中…' : `${customers.length}名登録`}
         </p>
-
-        {/* ── デバッグパネル ── */}
-        <div
-          className="mt-2 rounded-[10px] px-3 py-2 text-[10px] font-mono space-y-0.5"
-          style={{ background: '#1e1e2e', color: '#cdd6f4' }}
-        >
-          <div><span style={{ color: '#89b4fa' }}>session:</span> {debug.hasSession ? '✓ あり' : '✗ なし'}</div>
-          <div><span style={{ color: '#89b4fa' }}>auth.uid:</span> {debug.authUid ?? '未ログイン'}</div>
-          <div><span style={{ color: '#89b4fa' }}>role:</span> {debug.role ?? 'null'}</div>
-          <div><span style={{ color: '#89b4fa' }}>customers:</span> {debug.rawCount}件取得 / {customers.length}件表示</div>
-          <div>
-            <span style={{ color: '#89b4fa' }}>RPC集計:</span>{' '}
-            <span style={{ color: debug.statsCount > 0 ? '#a6e3a1' : '#f38ba8' }}>
-              {debug.statsCount > 0 ? `✓ ${debug.statsCount}顧客` : '✗ 0件'}
-            </span>
-          </div>
-          {debug.rpcError && (
-            <div style={{ color: '#f38ba8' }}>rpcError: {debug.rpcError}</div>
-          )}
-          {debug.errorMsg && (
-            <div style={{ color: '#f38ba8' }}>error: {debug.errorMsg}</div>
-          )}
-        </div>
 
         {/* 検索 */}
         <div

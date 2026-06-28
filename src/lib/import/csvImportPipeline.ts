@@ -177,9 +177,24 @@ async function matchCustomer(agg: SalonBoardCheckoutAggregate, ctx: ResolutionCo
   const nameCandidates = matchedByHash ? [] : findNameCandidates(agg.customerName, ctx.existingCustomers)
 
   if (!matchedByHash && nameCandidates.length > 0) {
-    const alreadyImportedId = await findAlreadyImportedCandidate(nameCandidates, dateOnly(agg.visitDateTime), repos)
+    const visitDate = dateOnly(agg.visitDateTime)
+
+    // 既存importedビジット照合: 同一顧客が同日のvisitを持つ場合(同一CSV再取込の冪等化)
+    const alreadyImportedId = await findAlreadyImportedCandidate(nameCandidates, visitDate, repos)
     if (alreadyImportedId) {
       return { hash, decision: { status: 'matched' as const, customerId: alreadyImportedId }, nameCandidates, isHashMatch }
+    }
+
+    // Pass N フォールバック③: 氏名 + 初回来店日
+    // 会員番号(external_key_hash)が無い場合に候補が1件のみ存在し、かつその顧客の
+    // 初回来店日がこの来店日以前であれば同一顧客への来店と判定してauto-matchする。
+    // これにより (a)同一CSV内で同一人物が異なる日付で複数行ある場合、
+    // (b)別CSVで同一人物の別日来店を取り込む場合、のどちらも重複顧客を生成しない。
+    if (hash === null && nameCandidates.length === 1) {
+      const sole = ctx.existingCustomers.find(c => c.id === nameCandidates[0].customerId)
+      if (sole?.firstVisitDate != null && sole.firstVisitDate <= visitDate) {
+        return { hash, decision: { status: 'matched' as const, customerId: sole.id }, nameCandidates, isHashMatch }
+      }
     }
   }
 

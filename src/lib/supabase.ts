@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 
-// デモモード: true = モックデータ使用（長押し導線検証用）
-export const DEMO_MODE = true
+// デモモード: false = 実データ使用
+export const DEMO_MODE = false
 
 // Voice Memo機能のみ実DB保存を有効化する（DEMO_MODE=trueのまま維持）
 export const VOICE_NOTES_LIVE = true

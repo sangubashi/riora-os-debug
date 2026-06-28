@@ -24,7 +24,7 @@ import { useNewCustomerSheetStore } from '@/store/useNewCustomerSheetStore';
 import { useAuthStore } from '@/store/useAuthStore';
 
 // ── Supabase ─────────────────────────────────────────────────────────────────
-import { supabase, DEMO_MODE } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 
 // ── 型 ────────────────────────────────────────────────────────────────────────
 import type {
@@ -305,22 +305,7 @@ export default function CustomerBottomSheet({
     setCompletionHint(null);
     if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
 
-    if (DEMO_MODE) {
-      // DEMO_MODE: Supabase を呼ばずローカルデータで完結
-      const tags = (c.skin_tags ?? []) as SkinTagKey[];
-      setSkinTags(tags);
-      setEditingTags(tags);
-      if (r) {
-        setHomecarePlan(generateHomecarePlan({
-          customerName:   c.name,
-          skinTags:       tags,
-          menuName:       r.menu,
-          daysAfterVisit: r.days_since_last_visit ?? 0,
-        }));
-      }
-    } else {
-      // 本番: Supabase からメモ・肌タグを取得
-      supabase
+    supabase
         .from('customer_notes')
         .select('note')
         .eq('customer_id', c.id)
@@ -348,7 +333,6 @@ export default function CustomerBottomSheet({
             }));
           }
         });
-    }
 
     loadRecentActions(c.id);
 
@@ -495,14 +479,9 @@ export default function CustomerBottomSheet({
     if (!c || tagSaving) return;
     setTagSaving(true);
 
-    if (!DEMO_MODE) {
-      const { error } = await supabase.from('customers').update({ skin_tags: editingTags }).eq('id', c.id);
-      setTagSaving(false);
-      if (error) { toast.error('タグの保存に失敗しました'); return; }
-    } else {
-      // DEMO_MODE: ローカルのみ
-      setTagSaving(false);
-    }
+    const { error } = await supabase.from('customers').update({ skin_tags: editingTags }).eq('id', c.id);
+    setTagSaving(false);
+    if (error) { toast.error('タグの保存に失敗しました'); return; }
 
     setSkinTags(editingTags);
     regeneratePlan(editingTags);
@@ -515,25 +494,19 @@ export default function CustomerBottomSheet({
     if (logSaving || logSaved || !c) return;
     setLogSaving(true);
 
-    if (!DEMO_MODE) {
-      // 本番: Supabase に保存
-      const { error } = await supabase.from('staff_logs').insert({
-        reservation_id: r?.id ?? null,
-        customer_id:    c.id,
-        staff_id:       currentStaffId ?? null,
-        ai_adopted:     logSelected.has('ai_adopted'),
-        next_reserved:  logSelected.has('next_reserved'),
-        option_sold:    logSelected.has('option_sold'),
-        retail_sold:    logSelected.has('retail_sold'),
-        churn_followed: logSelected.has('churn_followed'),
-        service_completed: true,
-      });
-      setLogSaving(false);
-      if (error) { toast.error('保存に失敗しました'); return; }
-    } else {
-      // DEMO_MODE: Supabase スキップ、ローカルのみ
-      setLogSaving(false);
-    }
+    const { error } = await supabase.from('staff_logs').insert({
+      reservation_id: r?.id ?? null,
+      customer_id:    c.id,
+      staff_id:       currentStaffId ?? null,
+      ai_adopted:     logSelected.has('ai_adopted'),
+      next_reserved:  logSelected.has('next_reserved'),
+      option_sold:    logSelected.has('option_sold'),
+      retail_sold:    logSelected.has('retail_sold'),
+      churn_followed: logSelected.has('churn_followed'),
+      service_completed: true,
+    });
+    setLogSaving(false);
+    if (error) { toast.error('保存に失敗しました'); return; }
 
     setLogSaved(true);
     toast.success('接客ログを保存しました 🌸', { duration: 2500 });
@@ -553,18 +526,12 @@ export default function CustomerBottomSheet({
     if (!memo.trim() || !c || memoSaving) return;
     setMemoSaving(true);
 
-    if (!DEMO_MODE) {
-      // 本番: Supabase に保存
-      const { error } = await supabase.from('customer_notes').insert({
-        customer_id: c.id, staff_id: currentStaffId,
-        note: memo.trim(), created_at: new Date().toISOString(),
-      });
-      setMemoSaving(false);
-      if (error) { toast.error('メモの保存に失敗しました'); return; }
-    } else {
-      // DEMO_MODE: Supabase スキップ、ローカルのみ
-      setMemoSaving(false);
-    }
+    const { error } = await supabase.from('customer_notes').insert({
+      customer_id: c.id, staff_id: currentStaffId,
+      note: memo.trim(), created_at: new Date().toISOString(),
+    });
+    setMemoSaving(false);
+    if (error) { toast.error('メモの保存に失敗しました'); return; }
 
     setSavedMemoText(memo.trim());
     setMemoEditing(false);

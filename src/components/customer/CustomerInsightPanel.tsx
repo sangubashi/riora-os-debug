@@ -6,7 +6,7 @@
  * 既存デザイントークンを完全踏襲。
  */
 import { useState, useEffect, useCallback, memo} from 'react'
-import { supabase, DEMO_MODE } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase'
 import { aggregateInsightTags } from '@/lib/voiceInsight/extractInsightTags'
 import { INSIGHT_TAG_LABELS } from '@/types'
 import type { InsightTag } from '@/types'
@@ -48,12 +48,6 @@ const CustomerInsightPanelInner = function CustomerInsightPanel({
 
   const load = useCallback(async () => {
     setLoading(true)
-
-    // DEMO_MODE: Supabase を呼ばない（placeholder.supabase.co 通信を防止）
-    if (DEMO_MODE) {
-      setLoading(false)
-      return
-    }
 
     const { data, error } = await supabase
       .from('voice_notes')

@@ -395,6 +395,90 @@ describe('csvImportPipeline', () => {
       expect(repos.state.visits).toHaveLength(1);
     });
 
+    // ── Pass N: CSV重複防止フォールバック③(氏名+初回来店日) ───────────────────
+    it('重複防止③: 会員番号なし・同一CSVに同一顧客が異なる日付で2件含まれても重複顧客を作らない', async () => {
+      const repos = createFakeRepos();
+      // 同一人物(井口悠)が06-06と06-11に来店した2行が同一CSVに存在するケース
+      const csv = buildCsv([
+        row({ checkoutId: 'N1', date: '2026-06-06', staff: '鈴木', customerName: '井口悠' }),
+        row({ checkoutId: 'N2', date: '2026-06-11', staff: '鈴木', customerName: '井口悠' }),
+      ]);
+
+      const result = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+
+      expect(result.ok).toBe(true);
+      // 顧客は1件のみ作成される(重複なし)
+      expect(repos.state.customers).toHaveLength(1);
+      // 来店は2件(06-06と06-11の各来店)
+      expect(repos.state.visits).toHaveLength(2);
+      if (result.ok) {
+        expect(result.report.newCustomers).toBe(1);
+        expect(result.report.updatedCustomers).toBe(1);
+        expect(result.report.visitsImported).toBe(2);
+      }
+    });
+
+    it('重複防止③: 会員番号なし・異なるCSVで同一顧客が別日に来ても重複顧客を作らない(cross-CSV)', async () => {
+      const repos = createFakeRepos();
+      // 1回目: 鈴木雅子が06-14に来店
+      const csv1 = buildCsv([
+        row({ checkoutId: 'N3', date: '2026-06-14', staff: '鈴木', customerName: '鈴木雅子' }),
+      ]);
+      // 2回目: 同一人物が06-17に来店した別CSVを取り込む
+      const csv2 = buildCsv([
+        row({ checkoutId: 'N4', date: '2026-06-17', staff: '鈴木', customerName: '鈴木雅子' }),
+      ]);
+
+      const first = await runImportPipeline({ storeId: STORE_ID, csvText: csv1, reviewDecisions: {} }, repos);
+      expect(first.ok).toBe(true);
+      expect(repos.state.customers).toHaveLength(1);
+      expect(repos.state.visits).toHaveLength(1);
+
+      const second = await runImportPipeline({ storeId: STORE_ID, csvText: csv2, reviewDecisions: {} }, repos);
+      expect(second.ok).toBe(true);
+      // 2回目も顧客は増えない
+      expect(repos.state.customers).toHaveLength(1);
+      // 来店は2件(06-14と06-17)
+      expect(repos.state.visits).toHaveLength(2);
+      if (second.ok) {
+        expect(second.report.newCustomers).toBe(0);
+        expect(second.report.updatedCustomers).toBe(1);
+        expect(second.report.visitsImported).toBe(1);
+      }
+    });
+
+    it('重複防止③: 会員番号なし・初回取込で顧客のみ作成(visit=0)されたあと再取込しても重複顧客を作らない', async () => {
+      // 鈴木雅子のケース再現: 初回バッチで顧客レコードが作られたがvisitが作られなかった状態
+      const repos = createFakeRepos();
+      // 初回バッチ: メニュー名不一致でvisitがスキップされた後に顧客だけ残ったシナリオを
+      // 直接stateに書き込んで再現する
+      repos.state.customers.push({
+        id: 'cust-ghost', storeId: STORE_ID, name: '鈴木雅子', ageGroup: null,
+        customerType: null, typeConfidence: 0, goalNote: null, weddingDate: null,
+        acquisitionChannel: null, firstVisitDate: '2026-06-14', assignedStaffId: null,
+        isSubscriber: false, subscribedAt: null, churnScore: 0, churnReason: null,
+        consentAnonymizedLearning: false, prefecture: null, city: null, externalKeyHash: null,
+      });
+
+      // 2回目: 同日付の来店を含むCSVを取り込む
+      const csv = buildCsv([
+        row({ checkoutId: 'N5', date: '2026-06-14', staff: '鈴木', customerName: '鈴木雅子' }),
+      ]);
+      const result = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+
+      expect(result.ok).toBe(true);
+      // 顧客は増えない(cust-ghostのまま)
+      expect(repos.state.customers).toHaveLength(1);
+      expect(repos.state.customers[0].id).toBe('cust-ghost');
+      // visitが1件作成される
+      expect(repos.state.visits).toHaveLength(1);
+      if (result.ok) {
+        expect(result.report.newCustomers).toBe(0);
+        expect(result.report.updatedCustomers).toBe(1);
+        expect(result.report.visitsImported).toBe(1);
+      }
+    });
+
     it('メニュー名が不一致でフォールバックも無い場合はその会計をスキップする(来店・顧客を作らない)', async () => {
       const repos = createFakeRepos({ menus: [
         { id: 'menu-1', storeId: STORE_ID, name: '全く違うメニュー', price: 5000, role: 'entry', targetTypes: [] },
@@ -509,10 +593,10 @@ describe('csvImportPipeline', () => {
   // Pass D: CSV Import完成(顧客/スタッフ名寄せ精度検証・ImportReport不足項目修正・品質レポート)
   // ──────────────────────────────────────────────────────────────────────────
   describe('runImportPipeline(Pass D: 顧客名寄せ精度・ImportReport・品質レポート)', () => {
-    it('実データで判明したリスクの再現: 会員番号なし+reviewDecisions未指定で同一人物が複数回来店すると複数の顧客レコードに分裂する', async () => {
-      // customerMatcher.tsの方針(自動マージしない)により、2回目以降の来店はneeds_reviewと
-      // 判定されるが、reviewDecisionsが指定されない場合は既定で'new'扱いとなり別人として
-      // 複数レコードが作られる(本番brain_customersで実際に6名×2件の重複が確認された事象の再現)。
+    it('Pass N修正後: 会員番号なし+reviewDecisions未指定でも同一人物の複数来店が重複顧客を作らない(氏名+初回来店日フォールバック)', async () => {
+      // Pass Dでは「複数の顧客レコードに分裂する」既知リスクとして記録していたが、
+      // Pass Nでフォールバック③(氏名+初回来店日)を実装したことにより修正された。
+      // 1件目でcustomer作成→2件目以降はfirstVisitDate≤visitDateで auto-matchされる。
       const repos = createFakeRepos();
       const csv = buildCsv([
         row({ checkoutId: 'A1', date: '2026-06-01', staff: '鈴木', customerName: '中村陽子' }),
@@ -524,11 +608,13 @@ describe('csvImportPipeline', () => {
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      // 「中村陽子」という1人のはずの顧客が3件の別レコードとして作成されてしまう(既知のリスク)
-      expect(repos.state.customers).toHaveLength(3);
-      expect(repos.state.customers.every(c => c.name === '中村陽子')).toBe(true);
-      expect(result.report.newCustomers).toBe(3);
-      // qualityReportが重複リスクを警告として可視化する
+      // Pass N修正: 1顧客・3来店として正しく取り込まれる
+      expect(repos.state.customers).toHaveLength(1);
+      expect(repos.state.customers[0].name).toBe('中村陽子');
+      expect(result.report.newCustomers).toBe(1);
+      expect(result.report.updatedCustomers).toBe(2);
+      expect(result.report.visitsImported).toBe(3);
+      // qualityReportはCSV行から計算するため引き続き重複名を警告する(運用者への注意喚起)
       expect(result.report.qualityReport.duplicateCustomerNames).toEqual([{ name: '中村陽子', occurrenceCount: 3 }]);
       expect(result.report.qualityReport.warnings).toContainEqual(
         expect.objectContaining({ type: 'duplicate_customer_name', count: 1 })
