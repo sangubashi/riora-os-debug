@@ -134,6 +134,7 @@ export const useHomeStore = create<HomeState>((set) => ({
       }
 
       // ── 2. brain_* で顧客統計を実データに差し替え ─────────────────────
+      // brain_customers 連携済みのみ表示（未連携顧客は除外）
       if (mapped.length > 0) {
         const nameSet = new Set(mapped.map(r => r.customer?.name).filter(Boolean) as string[])
         const names: string[] = Array.from(nameSet)
@@ -144,9 +145,13 @@ export const useHomeStore = create<HomeState>((set) => ({
           if (res.ok) {
             const json = await res.json() as { stats: Record<string, CustomerBrainStats> }
             mapped = enrichWithBrainStats(mapped, json.stats)
+            // brain_customers に存在しない顧客の予約を除外
+            mapped = mapped.filter(r =>
+              Object.prototype.hasOwnProperty.call(json.stats, r.customer?.name ?? '')
+            )
           }
         } catch {
-          // brain 取得失敗時は customers テーブル値で継続
+          // brain 取得失敗時は customers テーブル値で継続（フィルタなし）
         }
       }
 

@@ -67,6 +67,7 @@ export async function POST(req: Request) {
       status:       result.ok ? 'success' : 'failed',
       error_msg:    result.ok ? null : result.error,
       metadata:     {
+        direction: 'outgoing',
         endpoint: '/api/line/test-send',
         user_agent: req.headers.get('user-agent') ?? '',
       },

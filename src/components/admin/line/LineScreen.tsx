@@ -9,21 +9,23 @@
  * webhookのmessageイベント受信は本タスクで実装済みのため今後は実データが積み上がる)。
  */
 import { useState } from 'react'
-import { MessageCircle, Send, FileText, Loader2 } from 'lucide-react'
+import { MessageCircle, Send, FileText, FlaskConical, Loader2 } from 'lucide-react'
 import ChatListTab from './ChatListTab'
 import DeliveryHistoryTab from './DeliveryHistoryTab'
 import TemplateManagerTab from './TemplateManagerTab'
+import TestSendTab from './TestSendTab'
 
-type TabKey = 'chat' | 'history' | 'templates'
+type TabKey = 'chat' | 'history' | 'templates' | 'test'
 
 const TABS: { key: TabKey; label: string; icon: typeof MessageCircle }[] = [
-  { key: 'chat', label: 'チャット', icon: MessageCircle },
-  { key: 'history', label: '配信履歴', icon: Send },
+  { key: 'chat',      label: 'チャット',    icon: MessageCircle },
+  { key: 'history',   label: '配信履歴',    icon: Send },
   { key: 'templates', label: 'テンプレート', icon: FileText },
+  { key: 'test',      label: '送信テスト',   icon: FlaskConical },
 ]
 
 export default function LineScreen() {
-  const [tab, setTab] = useState<TabKey>('chat')
+  const [tab, setTab] = useState<TabKey>('test')
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '16px', maxWidth: '820px' }}>
@@ -50,9 +52,10 @@ export default function LineScreen() {
         ))}
       </div>
 
-      {tab === 'chat' && <ChatListTab />}
-      {tab === 'history' && <DeliveryHistoryTab />}
+      {tab === 'chat'      && <ChatListTab />}
+      {tab === 'history'   && <DeliveryHistoryTab />}
       {tab === 'templates' && <TemplateManagerTab />}
+      {tab === 'test'      && <TestSendTab />}
     </div>
   )
 }

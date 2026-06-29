@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo } from 'react'
 import { useRouter }   from 'next/navigation'
 import { motion }      from 'framer-motion'
-import { RefreshCw, MessageCircle, TrendingDown, Sparkles } from 'lucide-react'
+import { RefreshCw, MessageCircle, TrendingDown } from 'lucide-react'
 import { useKpiStore, type KpiKey } from '@/store/useKpiStore'
 import { useCustomerStore }         from '@/store/useCustomerStore'
 import { buildAnalysisInput }       from '@/lib/analytics/ImprovementAnalyzer'
@@ -316,49 +316,6 @@ export default function KpiDashboard() {
         </div>
       </div>
 
-      {/* ════════ 個人実績 ════════ */}
-      {(sqlStore.staffPerformance ?? []).length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.28 }}
-          className="mx-4 mb-5"
-        >
-          <div className="flex items-center gap-2 mb-2.5">
-            <Sparkles size={12} style={{ color: '#D98292' }} />
-            <span className="text-[10px] tracking-[0.22em] font-medium" style={{ color: '#C8B0B8' }}>個人実績（今月）</span>
-          </div>
-          <div className="flex flex-col gap-2">
-            {(sqlStore.staffPerformance ?? []).map((s, i) => (
-              <motion.div
-                key={s.staffId}
-                initial={{ opacity: 0, x: -8 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.30 + i * 0.06 }}
-                className="rounded-2xl px-4 py-3 flex items-center justify-between"
-                style={{ background: '#FFFFFF', border: '1px solid #F5E6E8', boxShadow: '0 2px 10px rgba(245,160,181,0.07)' }}
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-[9px] font-bold w-4 text-center" style={{ color: i === 0 ? '#D4A96A' : '#C8B0B8' }}>
-                    {i + 1}
-                  </span>
-                  <div>
-                    <p className="text-[13px] font-semibold" style={{ color: '#4A2C2A' }}>{s.staffName}</p>
-                    <p className="text-[10px]" style={{ color: '#9E8090' }}>
-                      {s.visitCount}件 · 指名{s.nominations}件
-                    </p>
-                  </div>
-                </div>
-                <p className="text-[15px] font-semibold tabular-nums" style={{ color: '#D98292' }}>
-                  ¥{s.totalSales >= 10000
-                    ? `${(s.totalSales / 10000).toFixed(1)}万`
-                    : s.totalSales.toLocaleString('ja-JP')}
-                </p>
-              </motion.div>
-            ))}
-          </div>
-        </motion.div>
-      )}
 
       {/* ════════ 今日のLINEアクション ════════ */}
       {lineActionTargets.length > 0 && (
