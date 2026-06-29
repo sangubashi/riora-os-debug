@@ -1,16 +1,15 @@
 /**
- * useHomeStore — 今日の予約リスト専用ストア（Pass V-1/V-2: brain_customers 完全統一）
+ * useHomeStore — 今日の予約リスト専用ストア（Pass V-2: service role API 経由）
  *
- * 予約リスト: reservations（brain_customer_id IS NOT NULL のみ取得）
- * 顧客情報:   brain_customers（FK JOIN via brain_customer_id）
- * 顧客統計:   brain_visits（累計売上・来店回数・最終来院日）
- *             /api/customers/brain-stats 経由（service role・RLS bypass）
+ * 予約リスト: /api/home/reservations（service role・RLSバイパス）
+ *   - brain_customer_id IS NOT NULL のみ
+ *   - brain_customers を FK JOIN
+ * 顧客統計: /api/customers/brain-stats（brain_visits 集計）
  *
+ * Supabase anon クライアントから brain_customers を直接 JOIN しない。
  * customers テーブルは一切参照しない。
- * brain_customer_id が NULL の予約はクエリ段階で除外する。
  */
 import { create } from 'zustand'
-import { supabase } from '@/lib/supabase'
 import type { ReservationWithBrainCustomer } from '@/types/database'
 import type { UserRole } from '@/types/database'
 import type { CustomerBrainStats } from '../../app/api/customers/brain-stats/route'
@@ -26,35 +25,6 @@ interface HomeState {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function todayRange(): { start: string; end: string } {
-  const start = new Date()
-  start.setHours(0, 0, 0, 0)
-  const end = new Date()
-  end.setHours(23, 59, 59, 999)
-  return { start: start.toISOString(), end: end.toISOString() }
-}
-
-const RESERVATION_SELECT = `
-  id,
-  brain_customer_id,
-  staff_id,
-  menu,
-  price,
-  scheduled_at,
-  duration_minutes,
-  status,
-  is_new_customer,
-  notes,
-  created_at,
-  brain_customer:brain_customers!brain_customer_id (
-    id,
-    name,
-    customer_type,
-    churn_score,
-    is_subscriber
-  )
-`
 
 /**
  * brain_visits 集計（brain-stats API）で ReservationWithBrainCustomer を上書きする。
@@ -93,64 +63,30 @@ export const useHomeStore = create<HomeState>((set) => ({
   fetchTodayReservations: async (role: UserRole, uid: string) => {
     set({ isLoading: true })
     try {
-      const { start, end } = todayRange()
-
-      // ── 1. 今日の予約を取得（brain_customer_id 連携済みのみ）─────────────
-      let query = supabase
-        .from('reservations')
-        .select(RESERVATION_SELECT)
-        .not('brain_customer_id', 'is', null)
-        .gte('scheduled_at', start)
-        .lte('scheduled_at', end)
-        .order('scheduled_at', { ascending: true })
-
-      if (role === 'staff') {
-        query = query.eq('staff_id', uid)
-      }
-
-      const { data, error } = await query.limit(50)
-      if (error) return
-
-      let mapped = ((data ?? []) as unknown as ReservationWithBrainCustomer[]).filter(
-        (r) => r.brain_customer != null
+      // ── 1. service role API で予約を取得（RLSバイパス）──────────────────
+      const res = await fetch(
+        `/api/home/reservations?role=${encodeURIComponent(role)}&uid=${encodeURIComponent(uid)}`
       )
-      let isFallback = false
+      if (!res.ok) return
 
-      if (mapped.length === 0) {
-        // ── 2. 今日の予約なし → brain_customer 連携済み最新5件 ───────────
-        let fallbackQuery = supabase
-          .from('reservations')
-          .select(RESERVATION_SELECT)
-          .not('brain_customer_id', 'is', null)
-          .order('scheduled_at', { ascending: false })
-          .limit(5)
+      const { reservations: raw, isFallback } =
+        await res.json() as { reservations: ReservationWithBrainCustomer[]; isFallback: boolean }
 
-        if (role === 'staff') {
-          fallbackQuery = fallbackQuery.eq('staff_id', uid)
-        }
+      let mapped = raw
 
-        const { data: fallbackData, error: fallbackError } = await fallbackQuery
-
-        if (!fallbackError && fallbackData) {
-          mapped = (fallbackData as unknown as ReservationWithBrainCustomer[])
-            .filter((r) => r.brain_customer != null)
-            .sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at))
-          isFallback = mapped.length > 0
-        }
-      }
-
-      // ── 3. brain_visits で顧客統計を実データに差し替え ────────────────
+      // ── 2. brain_visits で顧客統計を実データに差し替え ────────────────
       if (mapped.length > 0) {
         const nameSet = new Set(
           mapped.map(r => r.brain_customer?.name).filter(Boolean) as string[]
         )
-        const names: string[] = Array.from(nameSet)
+        const names = Array.from(nameSet)
         try {
-          const res = await fetch(
+          const statsRes = await fetch(
             `/api/customers/brain-stats?names=${encodeURIComponent(names.join(','))}`
           )
-          if (res.ok) {
-            const json = await res.json() as { stats: Record<string, CustomerBrainStats> }
+          if (statsRes.ok) {
+            const json =
+              await statsRes.json() as { stats: Record<string, CustomerBrainStats> }
             mapped = enrichWithBrainStats(mapped, json.stats)
           }
         } catch {
