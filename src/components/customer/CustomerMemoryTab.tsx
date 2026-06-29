@@ -1,28 +1,42 @@
 'use client'
 
 /**
- * CustomerMemoryTab — 「Customer Memory」管理タブ
+ * CustomerMemoryTab — Customer Memory 管理ページ（Phase 3）
  *
- * 機能: 一覧表示 / 新規追加 / 編集 / 削除
+ * 用途: 編集 / 削除（追加は CustomerMemorySection のインラインフォームを使用）
+ * デザイン: 既存 CustomerBottomSheet カードスタイルに統一
  *
- * 絶対ルール: このコンポーネントのデータを ProposalOrchestrator /
- * FireScore / AI提案 / LINE提案 へ渡さないこと。
+ * 絶対ルール: ProposalOrchestrator / FireScore / PatternEngine / LINE提案 へ
+ * import しないこと。content 参照禁止。
  */
 
 import { useEffect, useState, useCallback } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronLeft, Trash2, Edit2, Check, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { CustomerMemory, MemoryType, MemoryImportance } from '@/types/customerMemory'
 import {
-  MEMORY_TYPE_LABELS,
   MEMORY_TYPE_EMOJI,
+  MEMORY_TYPE_LABELS,
   IMPORTANCE_LABELS,
 } from '@/types/customerMemory'
+
+// ── Props ─────────────────────────────────────────────────────────────────────
 
 interface Props {
   customerId: string
   staffId:    string | null
   onBack:     () => void
+}
+
+// ── Form ─────────────────────────────────────────────────────────────────────
+
+interface EditForm {
+  content:      string
+  memory_type:  MemoryType
+  trigger_date: string
+  importance:   MemoryImportance
+  is_sensitive: boolean
 }
 
 const MEMORY_TYPES: MemoryType[] = [
@@ -31,47 +45,36 @@ const MEMORY_TYPES: MemoryType[] = [
 ]
 const IMPORTANCES: MemoryImportance[] = ['low', 'medium', 'high']
 
-const IMPORTANCE_COLOR: Record<MemoryImportance, string> = {
-  low:    '#C8A8B0',
-  medium: '#9F7E6C',
-  high:   '#F56E8B',
+const IMP_STYLE: Record<MemoryImportance, { bg: string; color: string }> = {
+  low:    { bg: 'rgba(159,126,108,0.12)', color: '#9F7E6C' },
+  medium: { bg: 'rgba(245,110,139,0.10)', color: '#F56E8B' },
+  high:   { bg: 'rgba(245,110,139,0.18)', color: '#C84060' },
 }
 
-interface FormState {
-  content:      string
-  memory_type:  MemoryType
-  trigger_date: string
-  importance:   MemoryImportance
-  is_sensitive: boolean
+const IMP_DOT: Record<MemoryImportance, string> = {
+  low: '#C8A8B0', medium: '#F5A0B8', high: '#E03060',
 }
 
-const EMPTY_FORM: FormState = {
-  content:      '',
-  memory_type:  'other',
-  trigger_date: '',
-  importance:   'medium',
-  is_sensitive: false,
-}
+// ── Component ─────────────────────────────────────────────────────────────────
 
-export default function CustomerMemoryTab({ customerId, staffId, onBack }: Props) {
+export default function CustomerMemoryTab({ customerId, onBack }: Props) {
   const [memories,  setMemories]  = useState<CustomerMemory[]>([])
-  const [loading,   setLoading]   = useState(false)
-  const [saving,    setSaving]    = useState(false)
+  const [loading,   setLoading]   = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [form,      setForm]      = useState<FormState>({ ...EMPTY_FORM })
+  const [form,      setForm]      = useState<EditForm | null>(null)
+  const [saving,    setSaving]    = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/customer-memories?customer_id=${encodeURIComponent(customerId)}`)
+      const res = await fetch(
+        `/api/customer-memories?customer_id=${encodeURIComponent(customerId)}`
+      )
       if (!res.ok) return
       const { memories: data } = await res.json() as { memories: CustomerMemory[] }
       setMemories(data)
-    } catch {
-      toast.error('読み込みに失敗しました')
-    } finally {
-      setLoading(false)
-    }
+    } catch { toast.error('読み込みに失敗しました') }
+    finally { setLoading(false) }
   }, [customerId])
 
   useEffect(() => { load() }, [load])
@@ -87,56 +90,30 @@ export default function CustomerMemoryTab({ customerId, staffId, onBack }: Props
     })
   }
 
-  function cancelEdit() {
-    setEditingId(null)
-    setForm({ ...EMPTY_FORM })
-  }
+  function cancelEdit() { setEditingId(null); setForm(null) }
 
-  async function handleSave() {
-    if (!form.content.trim()) {
-      toast.error('内容を入力してください')
-      return
-    }
+  async function handleUpdate() {
+    if (!editingId || !form) return
+    if (!form.content.trim()) { toast.error('内容を入力してください'); return }
     setSaving(true)
     try {
-      const payload = {
-        content:      form.content.trim(),
-        memory_type:  form.memory_type,
-        trigger_date: form.trigger_date || null,
-        importance:   form.importance,
-        is_sensitive: form.is_sensitive,
-      }
-
-      if (editingId) {
-        const res = await fetch(`/api/customer-memories/${editingId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-        if (!res.ok) throw new Error('update failed')
-        toast.success('更新しました')
-      } else {
-        const res = await fetch('/api/customer-memories', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            customer_id: customerId,
-            created_by:  staffId,
-            ...payload,
-          }),
-        })
-        if (!res.ok) throw new Error('create failed')
-        toast.success('保存しました')
-      }
-
-      setEditingId(null)
-      setForm({ ...EMPTY_FORM })
+      const res = await fetch(`/api/customer-memories/${editingId}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content:      form.content.trim(),
+          memory_type:  form.memory_type,
+          trigger_date: form.trigger_date || null,
+          importance:   form.importance,
+          is_sensitive: form.is_sensitive,
+        }),
+      })
+      if (!res.ok) throw new Error()
+      toast.success('更新しました')
+      cancelEdit()
       await load()
-    } catch {
-      toast.error('保存に失敗しました')
-    } finally {
-      setSaving(false)
-    }
+    } catch { toast.error('更新に失敗しました') }
+    finally { setSaving(false) }
   }
 
   async function handleDelete(id: string) {
@@ -147,192 +124,280 @@ export default function CustomerMemoryTab({ customerId, staffId, onBack }: Props
     if (editingId === id) cancelEdit()
   }
 
-  const isEditing = editingId !== null
+  const normal    = memories.filter(m => !m.is_sensitive)
+  const sensitive = memories.filter(m => m.is_sensitive)
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
+
       {/* ヘッダー */}
       <div className="flex-shrink-0 flex items-center justify-between px-5 pt-1 pb-3">
-        <button onClick={onBack}
-          className="flex items-center gap-1 bg-transparent border-none cursor-pointer text-[#C8A58C] text-sm">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1 bg-transparent border-none cursor-pointer text-[#C8A58C] text-sm"
+        >
           <ChevronLeft size={16} strokeWidth={2} />戻る
         </button>
         <div className="text-center">
           <p className="text-[11px] text-[#F56E8B] font-medium tracking-[0.12em] mb-0.5">
             覚えておくこと
           </p>
-          <p className="text-lg font-bold text-[#3d2218]">Customer Memory</p>
+          <p className="text-lg font-bold text-[#3d2218]">Memory 管理</p>
         </div>
-        <div className="w-12" />
+        <div className="w-14" />
       </div>
 
       {/* スクロール領域 */}
-      <div className="flex-1 min-h-0 overflow-y-auto"
+      <div
+        className="flex-1 min-h-0 overflow-y-auto"
         style={{
-          padding: '0 20px 24px',
+          padding: '4px 20px 24px',
           WebkitOverflowScrolling: 'touch',
           display: 'flex',
           flexDirection: 'column',
-          gap: '12px',
-        }}>
+          gap: '10px',
+        }}
+      >
+        {loading ? (
+          <p className="text-[12px] text-[#C8A8B0] text-center py-8">読み込み中…</p>
+        ) : memories.length === 0 ? (
+          <div className="text-center py-8">
+            <p className="text-[12px] text-[#C8A8B0]">まだ登録されていません</p>
+            <p className="text-[11px] text-[#D4C0C4] mt-1">
+              概要画面の「＋ Memory」から追加できます
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* 通常メモリー */}
+            {normal.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <p className="text-[9px] font-medium text-[#C8A8B0] tracking-widest px-1">
+                  メモリー
+                </p>
+                {normal.map(m => (
+                  <MemoryCard
+                    key={m.id}
+                    memory={m}
+                    isEditing={editingId === m.id}
+                    form={editingId === m.id ? form : null}
+                    saving={saving}
+                    onEdit={() => startEdit(m)}
+                    onCancel={cancelEdit}
+                    onUpdate={handleUpdate}
+                    onDelete={() => handleDelete(m.id)}
+                    onFormChange={setForm}
+                  />
+                ))}
+              </div>
+            )}
 
-        {/* 入力フォーム */}
-        <div className="rounded-[18px] p-4"
-          style={{ border: '1px solid #F5EEF0', background: '#FFFBFC' }}>
-          <p className="text-[11px] font-bold text-[#9F7E6C] mb-3 tracking-wide">
-            {isEditing ? '✏️ 編集' : '＋ 新規追加'}
-          </p>
+            {/* 触れない話題 */}
+            {sensitive.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <p className="text-[9px] font-medium text-[#B84050] tracking-widest px-1">
+                  ⚠ 触れない話題
+                </p>
+                {sensitive.map(m => (
+                  <MemoryCard
+                    key={m.id}
+                    memory={m}
+                    isEditing={editingId === m.id}
+                    form={editingId === m.id ? form : null}
+                    saving={saving}
+                    onEdit={() => startEdit(m)}
+                    onCancel={cancelEdit}
+                    onUpdate={handleUpdate}
+                    onDelete={() => handleDelete(m.id)}
+                    onFormChange={setForm}
+                    isSensitiveSection
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
 
+// ── MemoryCard サブコンポーネント ─────────────────────────────────────────────
+
+interface CardProps {
+  memory:          CustomerMemory
+  isEditing:       boolean
+  form:            EditForm | null
+  saving:          boolean
+  isSensitiveSection?: boolean
+  onEdit:          () => void
+  onCancel:        () => void
+  onUpdate:        () => void
+  onDelete:        () => void
+  onFormChange:    (f: EditForm | null) => void
+}
+
+function MemoryCard({
+  memory: m, isEditing, form, saving,
+  isSensitiveSection,
+  onEdit, onCancel, onUpdate, onDelete, onFormChange,
+}: CardProps) {
+  const emoji = MEMORY_TYPE_EMOJI[m.memory_type as MemoryType] ?? '📝'
+
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      {!isEditing ? (
+        <motion.div
+          key="view"
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          transition={{ duration: 0.12 }}
+          className="rounded-[14px] px-4 py-3 flex items-start gap-3"
+          style={{
+            border:     isSensitiveSection ? '1px solid rgba(210,50,50,0.14)' : '1px solid #F0E8E8',
+            background: isSensitiveSection ? 'rgba(210,50,50,0.04)' : '#FEFCFD',
+          }}
+        >
+          <span className="text-base flex-shrink-0 mt-0.5">{emoji}</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-[12.5px] text-[#5C4033] break-words leading-snug">
+              {m.content}
+            </p>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              <span
+                className="text-[9px] w-1.5 h-1.5 rounded-full inline-block"
+                style={{ background: IMP_DOT[m.importance], marginRight: '-4px' }}
+              />
+              <span className="text-[9px] text-[#C8A8B0]">
+                {IMPORTANCE_LABELS[m.importance]}
+              </span>
+              <span className="text-[9px] text-[#C8A8B0]">
+                {MEMORY_TYPE_LABELS[m.memory_type as MemoryType]}
+              </span>
+              {m.trigger_date && (
+                <span className="text-[9px] text-[#C8A8B0]">📅 {m.trigger_date}</span>
+              )}
+            </div>
+          </div>
+          <div className="flex gap-1.5 flex-shrink-0">
+            <button
+              onClick={onEdit}
+              className="w-7 h-7 rounded-full flex items-center justify-center border-none cursor-pointer"
+              style={{ background: '#F5EEF0' }}
+            >
+              <Edit2 size={11} color="#9F7E6C" />
+            </button>
+            <button
+              onClick={onDelete}
+              className="w-7 h-7 rounded-full flex items-center justify-center border-none cursor-pointer"
+              style={{ background: '#FFF0F2' }}
+            >
+              <Trash2 size={11} color="#E08090" />
+            </button>
+          </div>
+        </motion.div>
+
+      ) : (
+        <motion.div
+          key="edit"
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          transition={{ duration: 0.14 }}
+          className="rounded-[14px] px-4 py-3 flex flex-col gap-3"
+          style={{ border: '1.5px solid rgba(245,110,139,0.35)', background: '#FFFBFC' }}
+        >
           {/* 内容 */}
           <textarea
-            value={form.content}
-            onChange={e => setForm(p => ({ ...p, content: e.target.value }))}
-            placeholder="例：娘さんが受験中、ゴルフが趣味"
+            value={form?.content ?? ''}
+            onChange={e => form && onFormChange({ ...form, content: e.target.value })}
             rows={2}
-            className="w-full text-sm text-[#5C4033] bg-transparent border-none outline-none resize-none placeholder-[#D4B8BC] mb-3"
-            style={{ borderBottom: '1px solid #F0E8E8', paddingBottom: '8px' }}
+            autoFocus
+            className="w-full text-sm text-[#5C4033] bg-transparent border-none outline-none resize-none leading-relaxed"
+            style={{ borderBottom: '1px solid #F0E8E8', paddingBottom: '6px' }}
           />
 
           {/* カテゴリ */}
-          <div className="flex flex-wrap gap-1.5 mb-3">
+          <div className="flex flex-wrap gap-1.5">
             {MEMORY_TYPES.map(t => (
-              <button key={t}
-                onClick={() => setForm(p => ({ ...p, memory_type: t }))}
-                className="text-[10px] px-2.5 py-1 rounded-full border-none cursor-pointer transition-all"
+              <button
+                key={t}
+                onClick={() => form && onFormChange({ ...form, memory_type: t })}
+                className="text-[10px] px-2 py-0.5 rounded-full border-none cursor-pointer"
                 style={{
-                  background: form.memory_type === t ? 'rgba(245,110,139,0.12)' : '#F5EEF0',
-                  color:      form.memory_type === t ? '#F56E8B' : '#9F7E6C',
-                  fontWeight: form.memory_type === t ? 600 : 400,
-                }}>
-                {MEMORY_TYPE_EMOJI[t]} {MEMORY_TYPE_LABELS[t]}
+                  background: form?.memory_type === t ? 'rgba(245,110,139,0.12)' : '#F5EEF0',
+                  color:      form?.memory_type === t ? '#F56E8B' : '#9F7E6C',
+                  fontWeight: form?.memory_type === t ? 600 : 400,
+                }}
+              >
+                {MEMORY_TYPE_EMOJI[t]}{MEMORY_TYPE_LABELS[t]}
               </button>
             ))}
           </div>
 
           {/* 重要度 + 日付 */}
-          <div className="flex gap-3 mb-3">
+          <div className="flex gap-3">
             <div className="flex-1">
-              <p className="text-[10px] text-[#C8A8B0] mb-1">重要度</p>
               <div className="flex gap-1.5">
                 {IMPORTANCES.map(imp => (
-                  <button key={imp}
-                    onClick={() => setForm(p => ({ ...p, importance: imp }))}
+                  <button
+                    key={imp}
+                    onClick={() => form && onFormChange({ ...form, importance: imp })}
                     className="flex-1 text-[10px] py-1 rounded-full border-none cursor-pointer"
                     style={{
-                      background: form.importance === imp
-                        ? `rgba(245,110,139,${imp === 'high' ? '0.15' : imp === 'medium' ? '0.08' : '0.04'})`
-                        : '#F5EEF0',
-                      color:     form.importance === imp ? IMPORTANCE_COLOR[imp] : '#C8A8B0',
-                      fontWeight: form.importance === imp ? 700 : 400,
-                    }}>
+                      background: form?.importance === imp ? IMP_STYLE[imp].bg    : '#F5EEF0',
+                      color:      form?.importance === imp ? IMP_STYLE[imp].color : '#C8A8B0',
+                      fontWeight: form?.importance === imp ? 700 : 400,
+                    }}
+                  >
                     {IMPORTANCE_LABELS[imp]}
                   </button>
                 ))}
               </div>
             </div>
-            <div className="flex-1">
-              <p className="text-[10px] text-[#C8A8B0] mb-1">日付（任意）</p>
-              <input
-                type="date"
-                value={form.trigger_date}
-                onChange={e => setForm(p => ({ ...p, trigger_date: e.target.value }))}
-                className="w-full text-[11px] text-[#5C4033] bg-transparent border-none outline-none"
-                style={{ borderBottom: '1px solid #F0E8E8', paddingBottom: '4px' }}
-              />
-            </div>
+            <input
+              type="date"
+              value={form?.trigger_date ?? ''}
+              onChange={e => form && onFormChange({ ...form, trigger_date: e.target.value })}
+              className="flex-1 text-[11px] text-[#5C4033] bg-transparent border-none outline-none"
+              style={{ borderBottom: '1px solid #F0E8E8' }}
+            />
           </div>
 
-          {/* センシティブ */}
-          <label className="flex items-center gap-2 cursor-pointer mb-4">
+          {/* Sensitive */}
+          <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
-              checked={form.is_sensitive}
-              onChange={e => setForm(p => ({ ...p, is_sensitive: e.target.checked }))}
+              checked={form?.is_sensitive ?? false}
+              onChange={e => form && onFormChange({ ...form, is_sensitive: e.target.checked })}
               className="w-3.5 h-3.5 accent-[#F56E8B]"
             />
-            <span className="text-[11px] text-[#9F7E6C]">⚠ センシティブ（要配慮情報）</span>
+            <span className="text-[11px] text-[#9F7E6C]">⚠ センシティブ</span>
           </label>
 
-          {/* ボタン */}
+          {/* ボタン行 */}
           <div className="flex gap-2">
-            {isEditing && (
-              <button onClick={cancelEdit}
-                className="flex-shrink-0 flex items-center gap-1 text-[12px] px-3 py-2 rounded-full border-none cursor-pointer"
-                style={{ background: '#F5EEF0', color: '#9F7E6C' }}>
-                <X size={12} />キャンセル
-              </button>
-            )}
-            <button onClick={handleSave} disabled={saving}
-              className="flex-1 flex items-center justify-center gap-1.5 text-[12px] font-bold py-2.5 rounded-full border-none cursor-pointer"
+            <button
+              onClick={onCancel}
+              className="flex items-center gap-1 text-[11px] px-3 py-2 rounded-full border-none cursor-pointer"
+              style={{ background: '#F5EEF0', color: '#9F7E6C' }}
+            >
+              <X size={11} />キャンセル
+            </button>
+            <button
+              onClick={onUpdate}
+              disabled={saving}
+              className="flex-1 flex items-center justify-center gap-1 text-[12px] font-bold py-2 rounded-full border-none"
               style={{
                 background: saving ? '#E8D5D8' : '#F56E8B',
-                color: 'white',
-                boxShadow: saving ? 'none' : '0 4px 12px rgba(245,110,139,0.35)',
-              }}>
-              <Check size={14} />
-              {saving ? '保存中…' : isEditing ? '更新する' : '保存する'}
+                color:      'white',
+                cursor:     saving ? 'not-allowed' : 'pointer',
+                boxShadow:  saving ? 'none' : '0 4px 12px rgba(245,110,139,0.3)',
+              }}
+            >
+              <Check size={13} />
+              {saving ? '更新中…' : '更新する'}
             </button>
           </div>
-        </div>
-
-        {/* 一覧 */}
-        {loading ? (
-          <p className="text-[12px] text-[#C8A8B0] text-center py-4">読み込み中…</p>
-        ) : memories.length === 0 ? (
-          <p className="text-[12px] text-[#C8A8B0] text-center py-4">まだ登録されていません</p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {memories.map(m => (
-              <div key={m.id}
-                className="rounded-[14px] px-4 py-3 flex items-start gap-3"
-                style={{
-                  border: `1px solid ${editingId === m.id ? '#F56E8B' : '#F0E8E8'}`,
-                  background: m.is_sensitive ? '#FFF8F8' : '#FEFCFD',
-                  opacity: editingId !== null && editingId !== m.id ? 0.5 : 1,
-                }}>
-                <span className="text-base flex-shrink-0 mt-0.5">
-                  {MEMORY_TYPE_EMOJI[m.memory_type as MemoryType] ?? '📝'}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[12px] text-[#5C4033] break-words leading-snug">
-                    {m.content}
-                  </p>
-                  <div className="flex items-center gap-2 mt-1 flex-wrap">
-                    <span className="text-[9px] px-1.5 py-0.5 rounded-full"
-                      style={{
-                        background: `rgba(245,110,139,${m.importance === 'high' ? '0.12' : '0.06'})`,
-                        color: IMPORTANCE_COLOR[m.importance],
-                      }}>
-                      {IMPORTANCE_LABELS[m.importance]}
-                    </span>
-                    <span className="text-[9px] text-[#C8A8B0]">
-                      {MEMORY_TYPE_LABELS[m.memory_type as MemoryType]}
-                    </span>
-                    {m.trigger_date && (
-                      <span className="text-[9px] text-[#C8A8B0]">📅 {m.trigger_date}</span>
-                    )}
-                    {m.is_sensitive && (
-                      <span className="text-[9px] text-[#D06070]">⚠ センシティブ</span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex flex-col gap-1.5 flex-shrink-0">
-                  <button onClick={() => startEdit(m)}
-                    className="w-7 h-7 rounded-full flex items-center justify-center border-none cursor-pointer"
-                    style={{ background: '#F5EEF0' }}>
-                    <Edit2 size={11} color="#9F7E6C" />
-                  </button>
-                  <button onClick={() => handleDelete(m.id)}
-                    className="w-7 h-7 rounded-full flex items-center justify-center border-none cursor-pointer"
-                    style={{ background: '#FFF0F2' }}>
-                    <Trash2 size={11} color="#E08090" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }
