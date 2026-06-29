@@ -1,20 +1,23 @@
 /**
- * useHomeStore — 今日の予約リスト専用ストア
+ * useHomeStore — 今日の予約リスト専用ストア（Pass V-1: brain_customers 統一）
  *
- * 予約リスト: reservations テーブル（今日のスケジュール）
- * 顧客統計:   brain_customers + brain_visits（累計売上・来店回数・最終来院日）
+ * 予約リスト: reservations テーブル（brain_customer_id IS NOT NULL のみ）
+ * 顧客情報:   brain_customers（JOIN via brain_customer_id）
+ * 顧客統計:   brain_visits（累計売上・来店回数・最終来院日）
  *             /api/customers/brain-stats 経由（service role・RLS bypass）
+ *
+ * customers テーブルは参照しない。
  */
 import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
-import type { ReservationWithCustomer } from '@/types/database'
+import type { ReservationWithBrainCustomer } from '@/types/database'
 import type { UserRole } from '@/types/database'
 import type { CustomerBrainStats } from '../../app/api/customers/brain-stats/route'
 
 // ─── Store types ──────────────────────────────────────────────────────────────
 
 interface HomeState {
-  reservations: ReservationWithCustomer[]
+  reservations: ReservationWithBrainCustomer[]
   isFallback:   boolean
   isLoading:    boolean
 
@@ -34,6 +37,7 @@ function todayRange(): { start: string; end: string } {
 const RESERVATION_SELECT = `
   id,
   customer_id,
+  brain_customer_id,
   staff_id,
   menu,
   price,
@@ -43,41 +47,40 @@ const RESERVATION_SELECT = `
   is_new_customer,
   notes,
   created_at,
-  customer:customers (
+  brain_customer:brain_customers!brain_customer_id (
+    id,
     name,
     customer_type,
-    is_vip,
-    visit_count,
-    churn_risk_score,
-    last_visit_date,
-    total_spent
+    churn_score,
+    is_subscriber
   )
 `
 
 /**
- * brain_* から取得した実データで ReservationWithCustomer を上書きする。
- * 名前マッチが取れなかった場合は元の customers テーブル値をそのまま維持する。
+ * brain_visits 集計（brain-stats API）で ReservationWithBrainCustomer を上書きする。
+ * brain_customer.name で完全一致するためスペース正規化不要。
  */
 function enrichWithBrainStats(
-  reservations: ReservationWithCustomer[],
+  reservations: ReservationWithBrainCustomer[],
   stats: Record<string, CustomerBrainStats>
-): ReservationWithCustomer[] {
+): ReservationWithBrainCustomer[] {
   return reservations.map(r => {
-    const s = stats[r.customer?.name ?? ''];
-    if (!s) return r;
+    const bc = r.brain_customer
+    if (!bc) return r
+    const s = stats[bc.name]
+    if (!s) return r
     return {
       ...r,
-      customer: {
-        ...r.customer,
-        visit_count:      s.visitCount,
-        total_spent:      s.totalSpent,
-        last_visit_date:  s.lastVisitDate,
-        churn_risk_score: Math.round(s.churnScore * 100),
-        is_vip:           s.isVip,
-        customer_type:    s.customerType ?? r.customer?.customer_type,
+      brain_customer: {
+        ...bc,
+        visit_count:     s.visitCount,
+        total_spent:     s.totalSpent,
+        last_visit_date: s.lastVisitDate,
+        is_vip:          s.isVip,
+        customer_type:   s.customerType ?? bc.customer_type,
       },
-    };
-  });
+    }
+  })
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -92,10 +95,11 @@ export const useHomeStore = create<HomeState>((set) => ({
     try {
       const { start, end } = todayRange()
 
-      // ── 1. 今日の予約を取得 ────────────────────────────────────────────
+      // ── 1. 今日の予約を取得（brain_customer_id 連携済みのみ）─────────────
       let query = supabase
         .from('reservations')
         .select(RESERVATION_SELECT)
+        .not('brain_customer_id', 'is', null)
         .gte('scheduled_at', start)
         .lte('scheduled_at', end)
         .order('scheduled_at', { ascending: true })
@@ -107,15 +111,17 @@ export const useHomeStore = create<HomeState>((set) => ({
       const { data, error } = await query.limit(50)
       if (error) return
 
-      let mapped = ((data ?? []) as unknown as ReservationWithCustomer[]).filter(
-        (r) => r.customer != null
+      let mapped = ((data ?? []) as unknown as ReservationWithBrainCustomer[]).filter(
+        (r) => r.brain_customer != null
       )
       let isFallback = false
 
       if (mapped.length === 0) {
+        // ── 2. 今日の予約なし → brain_customer 連携済み最新5件 ───────────
         let fallbackQuery = supabase
           .from('reservations')
           .select(RESERVATION_SELECT)
+          .not('brain_customer_id', 'is', null)
           .order('scheduled_at', { ascending: false })
           .limit(5)
 
@@ -126,16 +132,18 @@ export const useHomeStore = create<HomeState>((set) => ({
         const { data: fallbackData, error: fallbackError } = await fallbackQuery
 
         if (!fallbackError && fallbackData) {
-          mapped = (fallbackData as unknown as ReservationWithCustomer[])
-            .filter((r) => r.customer != null)
+          mapped = (fallbackData as unknown as ReservationWithBrainCustomer[])
+            .filter((r) => r.brain_customer != null)
             .sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at))
           isFallback = mapped.length > 0
         }
       }
 
-      // ── 2. brain_* で顧客統計を実データに差し替え ─────────────────────
+      // ── 3. brain_visits で顧客統計を実データに差し替え ────────────────
       if (mapped.length > 0) {
-        const nameSet = new Set(mapped.map(r => r.customer?.name).filter(Boolean) as string[])
+        const nameSet = new Set(
+          mapped.map(r => r.brain_customer?.name).filter(Boolean) as string[]
+        )
         const names: string[] = Array.from(nameSet)
         try {
           const res = await fetch(
@@ -144,16 +152,9 @@ export const useHomeStore = create<HomeState>((set) => ({
           if (res.ok) {
             const json = await res.json() as { stats: Record<string, CustomerBrainStats> }
             mapped = enrichWithBrainStats(mapped, json.stats)
-            // brain_customers 連携済みのみ表示（全件除外になる場合はフィルター非適用）
-            const brainFiltered = mapped.filter(r =>
-              Object.prototype.hasOwnProperty.call(json.stats, r.customer?.name ?? '')
-            )
-            if (brainFiltered.length > 0) {
-              mapped = brainFiltered
-            }
           }
         } catch {
-          // brain 取得失敗時は customers テーブル値で継続（フィルタなし）
+          // brain_visits 取得失敗時は brain_customers 基本情報で継続
         }
       }
 

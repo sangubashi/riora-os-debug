@@ -24,7 +24,7 @@ import { useAuthStore }       from '@/store/useAuthStore'
 import { useLineUnreadStore } from '@/store/useLineUnreadStore'
 
 // types
-import type { ReservationWithCustomer }      from '@/types/database'
+import type { ReservationWithBrainCustomer } from '@/types/database'
 import type { Customer as BSCustomer,
               Reservation as BSReservation } from '@/types'
 
@@ -42,24 +42,26 @@ import { useNewCustomerSheetStore } from '@/store/useNewCustomerSheetStore'
 
 // ─── DB行 → Phase1Reservation 変換 ───────────────────────────────────────────
 
-function toPhase1(r: ReservationWithCustomer): Phase1Reservation {
-  const lastVisit = r.customer.last_visit_date
+function toPhase1(r: ReservationWithBrainCustomer): Phase1Reservation {
+  const bc = r.brain_customer!
+  const lastVisit = bc.last_visit_date ?? null
   const daysSinceLastVisit = lastVisit
     ? Math.floor((Date.now() - new Date(lastVisit).getTime()) / 86400000)
     : 0
+  const churnRisk = Math.round(Number(bc.churn_score ?? 0) * 100)
   return {
     id:                 r.id,
     customerId:         r.customer_id,
     scheduledAt:        r.scheduled_at,
     durationMinutes:    r.duration_minutes,
     menu:               r.menu,
-    customerName:       r.customer.name,
-    customerType:       (r.customer.customer_type as CustomerType) || 'VIP型',
-    visitCount:         r.customer.visit_count,
-    totalSpent:         r.customer.total_spent ?? 0,
-    aiScore:            Math.max(0, 100 - r.customer.churn_risk_score),
-    isVip:              r.customer.is_vip,
-    churnRisk:          r.customer.churn_risk_score,
+    customerName:       bc.name,
+    customerType:       (bc.customer_type as CustomerType) || 'VIP型',
+    visitCount:         bc.visit_count    ?? 0,
+    totalSpent:         bc.total_spent    ?? 0,
+    aiScore:            Math.max(0, 100 - churnRisk),
+    isVip:              bc.is_vip         ?? (bc.total_spent ?? 0) >= 100_000,
+    churnRisk,
     daysSinceLastVisit,
     lineTags:           [],
   }
