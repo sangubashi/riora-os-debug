@@ -95,11 +95,11 @@ const HERO_TOP: KpiConfig = {
 }
 
 const DETAIL_KPIS: KpiConfig[] = [
-  { key: 'monthlySales',      label: '月間売上',     format: 'currency', icon: '📈' },
-  { key: 'nextReserveRate',   label: '次回予約率',   format: 'percent',  icon: '🔁' },
-  { key: 'avgSpend',          label: '客単価',       format: 'currency', icon: '💎' },
-  { key: 'repeatRate',        label: 'リピート率',   format: 'percent',  icon: '🔁' },
-  { key: 'subscContinueRate', label: 'サブスク継続', format: 'percent',  icon: '🌸' },
+  { key: 'monthlySales',    label: '月間売上',   format: 'currency', icon: '📈' },
+  { key: 'nextReserveRate', label: '次回予約率', format: 'percent',  icon: '🔁' },
+  { key: 'avgSpend',        label: '客単価',     format: 'currency', icon: '💎' },
+  { key: 'repeatRate',      label: 'リピート率', format: 'percent',  icon: '🔁' },
+  { key: 'visitCycleDays',  label: '来店周期',   format: 'number',   icon: '📅' },
 ]
 
 // ─── 日付 ─────────────────────────────────────────────────────────────────────
@@ -144,10 +144,15 @@ export default function KpiDashboard() {
     return () => unsubscribeRealtime()
   }, [authInitialized, authSession]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // brain_visits 集計で todaySales を上書き
+  // brain_visits 集計で KPI を上書き（daily_kpi_snapshots 非依存）
   const sqlCurrent = {
     ...current,
-    todaySales: sqlStore.todaySales || current.todaySales,
+    todaySales:      sqlStore.todaySales      || current.todaySales,
+    monthlySales:    sqlStore.monthlySales    || current.monthlySales,
+    nextReserveRate: sqlStore.nextBookingRate || current.nextReserveRate,
+    avgSpend:        sqlStore.avgSpend        || current.avgSpend,
+    repeatRate:      sqlStore.repeatRate      || current.repeatRate,
+    visitCycleDays:  sqlStore.visitCycleDays,
   }
 
   // brain_visits 週次売上 → WeeklyDatum 変換

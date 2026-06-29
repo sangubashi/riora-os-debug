@@ -199,6 +199,48 @@ export async function GET() {
       }
     }
 
+    // ── リピート率 ──────────────────────────────────────────────────
+    // 過去365日で2回以上来院した顧客数 / アクティブ顧客数
+    const yearAgo = daysAgoStr(365);
+    const visitCountByCustomer: Record<string, number> = {};
+    for (const v of lastVisitRows) {
+      if (v.visit_date >= yearAgo) {
+        visitCountByCustomer[v.customer_id] = (visitCountByCustomer[v.customer_id] ?? 0) + 1;
+      }
+    }
+    const repeatCustomerCount = Object.values(visitCountByCustomer).filter(n => n >= 2).length;
+    const repeatRate = activeCustomerCount > 0
+      ? Math.round(repeatCustomerCount / activeCustomerCount * 100)
+      : 0;
+
+    // ── 客単価 ──────────────────────────────────────────────────────
+    // 今月の来院1件あたり平均売上
+    const avgSpend = monthRows.length > 0
+      ? Math.round(monthlySales / monthRows.length)
+      : 0;
+
+    // ── 来店周期 ─────────────────────────────────────────────────────
+    // 顧客ごとの来院間隔（日数）の平均
+    const visitDatesByCustomer: Record<string, string[]> = {};
+    for (const v of lastVisitRows) {
+      if (!visitDatesByCustomer[v.customer_id]) visitDatesByCustomer[v.customer_id] = [];
+      visitDatesByCustomer[v.customer_id].push(v.visit_date);
+    }
+    const intervals: number[] = [];
+    for (const dates of Object.values(visitDatesByCustomer)) {
+      if (dates.length < 2) continue;
+      dates.sort();
+      for (let i = 1; i < dates.length; i++) {
+        const diff = Math.round(
+          (new Date(dates[i]).getTime() - new Date(dates[i - 1]).getTime()) / 86_400_000
+        );
+        if (diff > 0) intervals.push(diff);
+      }
+    }
+    const visitCycleDays = intervals.length > 0
+      ? Math.round(intervals.reduce((a, b) => a + b, 0) / intervals.length)
+      : 0;
+
     return NextResponse.json({
       todaySales,
       yesterdaySales,
@@ -210,6 +252,9 @@ export async function GET() {
       activeCustomerCount,
       weeklySales,
       staffPerformance,
+      repeatRate,
+      avgSpend,
+      visitCycleDays,
     });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });

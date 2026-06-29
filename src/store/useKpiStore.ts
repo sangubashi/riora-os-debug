@@ -18,6 +18,7 @@ export type KpiKey =
   | 'nextReserveRate'
   | 'avgSpend'
   | 'repeatRate'
+  | 'visitCycleDays'
   | 'lineResponseRate'
   | 'subscContinueRate'
   | 'occupancyRate'
@@ -38,6 +39,7 @@ export interface KpiSnapshot {
   nextReserveRate:   number
   avgSpend:          number
   repeatRate:        number
+  visitCycleDays:    number
   lineResponseRate:  number
   subscContinueRate: number
   occupancyRate:     number
@@ -111,7 +113,7 @@ function isoMonthStart() {
 
 // ─── Create store ─────────────────────────────────────────────────────────────
 
-const ZERO_SNAPSHOT: KpiSnapshot = { todaySales: 0, monthlySales: 0, nextReserveRate: 0, avgSpend: 0, repeatRate: 0, lineResponseRate: 0, subscContinueRate: 0, occupancyRate: 0, vipRate: 0 }
+const ZERO_SNAPSHOT: KpiSnapshot = { todaySales: 0, monthlySales: 0, nextReserveRate: 0, avgSpend: 0, repeatRate: 0, visitCycleDays: 0, lineResponseRate: 0, subscContinueRate: 0, occupancyRate: 0, vipRate: 0 }
 
 export const useKpiStore = create<KpiStore>((set, get) => ({
   current:       { ...ZERO_SNAPSHOT },
@@ -175,6 +177,7 @@ export const useKpiStore = create<KpiStore>((set, get) => ({
             nextReserveRate:   Number(todayRow.next_booking_rate),
             avgSpend:          todayRow.avg_spend,
             repeatRate:        Number(todayRow.repeat_rate),
+            visitCycleDays:    0,
             lineResponseRate:  Number(todayRow.line_reply_rate),
             subscContinueRate: Number(todayRow.subscription_retention),
             occupancyRate:     Number(todayRow.occupancy_rate ?? 0),

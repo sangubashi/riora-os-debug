@@ -27,6 +27,9 @@ export interface KpiSqlState {
   todayVisitCount:    number   // brain_visits 本日の来院件数
   churnRiskCount:     number   // 最終来院 >90日 or 来院なし の顧客数
   activeCustomerCount: number  // brain_customers アクティブ件数
+  repeatRate:         number   // 0–100 % (過去365日2回以上来院)
+  avgSpend:           number   // 円 (今月客単価)
+  visitCycleDays:     number   // 日 (来院間隔平均)
   staffPerformance:   StaffPerf[]
   weeklySales:        WeeklySalesPoint[]
   isLoading:          boolean
@@ -43,6 +46,9 @@ export const useKpiSqlStore = create<KpiSqlState>((set) => ({
   todayVisitCount:     0,
   churnRiskCount:      0,
   activeCustomerCount: 0,
+  repeatRate:          0,
+  avgSpend:            0,
+  visitCycleDays:      0,
   staffPerformance:    [],
   weeklySales:         [],
   isLoading:           false,
@@ -62,6 +68,9 @@ export const useKpiSqlStore = create<KpiSqlState>((set) => ({
         todayVisitCount:     data.todayVisitCount     ?? 0,
         churnRiskCount:      data.churnRiskCount      ?? 0,
         activeCustomerCount: data.activeCustomerCount ?? 0,
+        repeatRate:          data.repeatRate          ?? 0,
+        avgSpend:            data.avgSpend            ?? 0,
+        visitCycleDays:      data.visitCycleDays      ?? 0,
         weeklySales:         data.weeklySales         ?? [],
         staffPerformance:    data.staffPerformance    ?? [],
       });
