@@ -144,7 +144,7 @@ export default function Phase1Screen() {
   const [lineSheetOpen, setLineSheetOpen] = useState(false)
 
   // ── データストア ──────────────────────────────────────────────────────────
-  const { reservations: rawReservations, isFallback, fetchTodayReservations } = useHomeStore()
+  const { reservations: rawReservations, fetchTodayReservations } = useHomeStore()
 
   const {
     todaySales,
@@ -241,7 +241,7 @@ export default function Phase1Screen() {
               SALON RIORA
             </p>
             <h1 className="text-[22px] font-semibold leading-tight" style={{ color: '#4A2C2A' }}>
-              {isFallback ? '直近の予約' : '今日の予約'}
+              今日の予約
             </h1>
             <p className="text-[13px] mt-0.5" style={{ color: '#9E8090' }}>
               {dateLabel()}
@@ -276,7 +276,7 @@ export default function Phase1Screen() {
         {/* サマリーチップ */}
         <div className="flex gap-2 px-5 pb-3">
           {[
-            { label: isFallback ? '直近の予約' : '本日の予約', value: `${reservations.length}件`,   color: '#F5A0B5' },
+            { label: '本日の予約', value: `${reservations.length}件`, color: '#F5A0B5' },
             { label: '顧客数',                                  value: `${activeCustomerCount}名`,    color: '#D4A96A' },
             { label: '要注意',                                  value: `${churnRiskCount}名`,          color: churnRiskCount > 0 ? '#E84050' : '#52C87A' },
           ].map(chip => (
@@ -350,7 +350,9 @@ export default function Phase1Screen() {
           <div className="flex flex-col items-center justify-center py-16 gap-3">
             <Image src="/assets/rio-kuma.png" alt=""
               width={64} height={64} className="object-contain opacity-50" />
-            <p className="text-[13px]" style={{ color: '#9E8090' }}>該当する予約はありません</p>
+            <p className="text-[13px]" style={{ color: '#9E8090' }}>
+              {rawReservations.length === 0 ? '本日の予約はありません' : '該当する予約はありません'}
+            </p>
           </div>
         ) : (
           filtered.map((r, i) => (

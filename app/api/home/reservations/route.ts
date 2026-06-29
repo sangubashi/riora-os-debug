@@ -1,21 +1,19 @@
 /**
  * GET /api/home/reservations
  *
- * service role でRLSをバイパスし、brain_customer_id 連携済み予約を返す。
- * Supabase anon クライアントでは brain_customers RLS（app_store_id() = NULL）
- * によりJOINが0件になるため、このAPIを経由して取得する。
+ * service role でRLSをバイパスし、今日の brain_customer_id 連携済み予約を返す。
+ *
+ * 仕様:
+ *   - 今日の予約のみ返す（フォールバックなし）
+ *   - 今日0件 → reservations: [] を返す（画面側で「本日の予約はありません」表示）
+ *   - 同一 brain_customer_id が重複する場合は最初の1件（scheduled_at 昇順）を残す
  *
  * Query params:
  *   role  — 'owner' | 'staff'
  *   uid   — staff の場合は staff_id でフィルタ
- *
- * Response:
- *   { reservations: ReservationWithBrainCustomer[], isFallback: boolean }
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '../../../lib/repos';
-
-const STORE_ID = '00000000-0000-0000-0000-000000000001';
 
 function todayJst(): { start: string; end: string } {
   const now = new Date();
@@ -57,7 +55,7 @@ export async function GET(req: NextRequest) {
     const supabase = getServiceClient();
     const { start, end } = todayJst();
 
-    // ── 今日の予約（brain_customer_id 連携済みのみ）─────────────────────
+    // 今日の予約（brain_customer_id 連携済みのみ、時刻昇順）
     let query = supabase
       .from('reservations')
       .select(RESERVATION_SELECT)
@@ -73,36 +71,19 @@ export async function GET(req: NextRequest) {
     const { data, error } = await query.limit(50);
     if (error) return NextResponse.json({ error: String(error) }, { status: 500 });
 
+    // brain_customer が null のものを除外
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let reservations = (data ?? []).filter((r: any) => r.brain_customer != null);
-    let isFallback = false;
+    const valid = (data ?? []).filter((r: any) => r.brain_customer != null);
 
-    if (reservations.length === 0) {
-      // ── 今日の予約なし → 最新5件フォールバック ────────────────────────
-      let fallbackQuery = supabase
-        .from('reservations')
-        .select(RESERVATION_SELECT)
-        .not('brain_customer_id', 'is', null)
-        .order('scheduled_at', { ascending: false })
-        .limit(5);
+    // 同一 brain_customer_id の重複を排除（先頭1件を残す）
+    const seen = new Set<string>();
+    const reservations = valid.filter((r: { brain_customer_id: string }) => {
+      if (seen.has(r.brain_customer_id)) return false;
+      seen.add(r.brain_customer_id);
+      return true;
+    });
 
-      if (role === 'staff' && uid) {
-        fallbackQuery = fallbackQuery.eq('staff_id', uid);
-      }
-
-      const { data: fallbackData, error: fallbackError } = await fallbackQuery;
-      if (!fallbackError && fallbackData) {
-        reservations = (fallbackData as typeof fallbackData)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .filter((r: any) => r.brain_customer != null)
-          .sort((a: { scheduled_at: string }, b: { scheduled_at: string }) =>
-            a.scheduled_at.localeCompare(b.scheduled_at)
-          );
-        isFallback = reservations.length > 0;
-      }
-    }
-
-    return NextResponse.json({ reservations, isFallback });
+    return NextResponse.json({ reservations });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }

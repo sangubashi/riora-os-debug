@@ -1,13 +1,13 @@
 /**
- * useHomeStore — 今日の予約リスト専用ストア（Pass V-2: service role API 経由）
+ * useHomeStore — 今日の予約リスト専用ストア
  *
  * 予約リスト: /api/home/reservations（service role・RLSバイパス）
+ *   - 今日の予約のみ（フォールバックなし）
  *   - brain_customer_id IS NOT NULL のみ
- *   - brain_customers を FK JOIN
+ *   - 同一顧客重複なし
  * 顧客統計: /api/customers/brain-stats（brain_visits 集計）
  *
- * Supabase anon クライアントから brain_customers を直接 JOIN しない。
- * customers テーブルは一切参照しない。
+ * customers テーブル・Supabase anon クライアントは使用しない。
  */
 import { create } from 'zustand'
 import type { ReservationWithBrainCustomer } from '@/types/database'
@@ -18,7 +18,6 @@ import type { CustomerBrainStats } from '../../app/api/customers/brain-stats/rou
 
 interface HomeState {
   reservations: ReservationWithBrainCustomer[]
-  isFallback:   boolean
   isLoading:    boolean
 
   fetchTodayReservations: (role: UserRole, uid: string) => Promise<void>
@@ -26,10 +25,6 @@ interface HomeState {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/**
- * brain_visits 集計（brain-stats API）で ReservationWithBrainCustomer を上書きする。
- * brain_customer.name で完全一致するためスペース正規化不要。
- */
 function enrichWithBrainStats(
   reservations: ReservationWithBrainCustomer[],
   stats: Record<string, CustomerBrainStats>
@@ -57,24 +52,36 @@ function enrichWithBrainStats(
 
 export const useHomeStore = create<HomeState>((set) => ({
   reservations: [],
-  isFallback:   false,
   isLoading:    false,
 
   fetchTodayReservations: async (role: UserRole, uid: string) => {
     set({ isLoading: true })
     try {
-      // ── 1. service role API で予約を取得（RLSバイパス）──────────────────
+      // ── 1. service role API で今日の予約を取得（RLSバイパス）────────────
       const res = await fetch(
         `/api/home/reservations?role=${encodeURIComponent(role)}&uid=${encodeURIComponent(uid)}`
       )
-      if (!res.ok) return
+      if (!res.ok) {
+        console.warn('[HomeStore] API error:', res.status)
+        return
+      }
 
-      const { reservations: raw, isFallback } =
-        await res.json() as { reservations: ReservationWithBrainCustomer[]; isFallback: boolean }
+      const { reservations: raw } =
+        await res.json() as { reservations: ReservationWithBrainCustomer[] }
+
+      // ⑤ ログ出力
+      console.log('[HomeStore] 取得件数:', raw.length)
+      console.log('[HomeStore] 顧客名・予約日時:',
+        raw.map(r => ({
+          name:        r.brain_customer?.name ?? '(unknown)',
+          scheduledAt: r.scheduled_at,
+          bcId:        r.brain_customer_id,
+        }))
+      )
 
       let mapped = raw
 
-      // ── 2. brain_visits で顧客統計を実データに差し替え ────────────────
+      // ── 2. brain_visits で顧客統計を補完 ─────────────────────────────
       if (mapped.length > 0) {
         const nameSet = new Set(
           mapped.map(r => r.brain_customer?.name).filter(Boolean) as string[]
@@ -94,9 +101,9 @@ export const useHomeStore = create<HomeState>((set) => ({
         }
       }
 
-      set({ reservations: mapped, isFallback })
-    } catch {
-      // silent
+      set({ reservations: mapped })
+    } catch (e) {
+      console.error('[HomeStore] fetchTodayReservations error:', e)
     } finally {
       set({ isLoading: false })
     }
