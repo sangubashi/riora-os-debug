@@ -1000,6 +1000,14 @@ export default function CustomerBottomSheet({
                         </button>
                       </div>
 
+                      {/* 覚えておくこと — 接客前ブリーフィング（AI提案より上） */}
+                      <ErrorBoundary label="CustomerMemorySection" silentFail>
+                        <CustomerMemorySection
+                          customerId={c.id}
+                          onManage={() => setPage('memory')}
+                        />
+                      </ErrorBoundary>
+
                       {/* Today's AI Brief */}
                       <ErrorBoundary label="BookingPromptSection" silentFail>
                         <BookingPromptSection
@@ -1027,14 +1035,6 @@ export default function CustomerBottomSheet({
                           loading={contraindicationsLoading}
                           collapsed={contraindicationsCollapsed}
                           onToggle={() => setContraindicationsCollapsed(p => !p)}
-                        />
-                      </ErrorBoundary>
-
-                      {/* 覚えておくこと */}
-                      <ErrorBoundary label="CustomerMemorySection" silentFail>
-                        <CustomerMemorySection
-                          customerId={c.id}
-                          onManage={() => setPage('memory')}
                         />
                       </ErrorBoundary>
 
