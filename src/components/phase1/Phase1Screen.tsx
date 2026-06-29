@@ -51,7 +51,7 @@ function toPhase1(r: ReservationWithBrainCustomer): Phase1Reservation {
   const churnRisk = Math.round(Number(bc.churn_score ?? 0) * 100)
   return {
     id:                 r.id,
-    customerId:         r.customer_id,
+    customerId:         r.brain_customer_id,
     scheduledAt:        r.scheduled_at,
     durationMinutes:    r.duration_minutes,
     menu:               r.menu,

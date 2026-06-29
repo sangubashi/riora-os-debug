@@ -74,9 +74,9 @@ export interface BrainCustomerMini {
   is_vip?:         boolean
 }
 
-export interface ReservationWithBrainCustomer extends Reservation {
-  brain_customer_id: string | null
-  brain_customer:    BrainCustomerMini | null
+export interface ReservationWithBrainCustomer extends Omit<Reservation, 'customer_id'> {
+  brain_customer_id: string            // 必須: クエリで IS NOT NULL を保証
+  brain_customer:    BrainCustomerMini // 必須: brain_customer_id FK JOIN
 }
 
 export interface StaffLog {

@@ -1,12 +1,13 @@
 /**
- * useHomeStore — 今日の予約リスト専用ストア（Pass V-1: brain_customers 統一）
+ * useHomeStore — 今日の予約リスト専用ストア（Pass V-1/V-2: brain_customers 完全統一）
  *
- * 予約リスト: reservations テーブル（brain_customer_id IS NOT NULL のみ）
- * 顧客情報:   brain_customers（JOIN via brain_customer_id）
+ * 予約リスト: reservations（brain_customer_id IS NOT NULL のみ取得）
+ * 顧客情報:   brain_customers（FK JOIN via brain_customer_id）
  * 顧客統計:   brain_visits（累計売上・来店回数・最終来院日）
  *             /api/customers/brain-stats 経由（service role・RLS bypass）
  *
- * customers テーブルは参照しない。
+ * customers テーブルは一切参照しない。
+ * brain_customer_id が NULL の予約はクエリ段階で除外する。
  */
 import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
@@ -36,7 +37,6 @@ function todayRange(): { start: string; end: string } {
 
 const RESERVATION_SELECT = `
   id,
-  customer_id,
   brain_customer_id,
   staff_id,
   menu,
