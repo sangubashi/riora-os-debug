@@ -89,6 +89,8 @@ import CustomerNotesSection from '@/components/customer/CustomerNotesSection';
 import BookingPromptSection from '@/components/customer/BookingPromptSection';
 import HandoverSection from '@/components/customer/HandoverSection';
 import ContraindicationSection from '@/components/customer/ContraindicationSection';
+import CustomerMemorySection from '@/components/customer/CustomerMemorySection';
+import CustomerMemoryTab from '@/components/customer/CustomerMemoryTab';
 
 // ─── 定数 ────────────────────────────────────────────────────────────────────
 
@@ -216,7 +218,7 @@ export default function CustomerBottomSheet({
   }, []);
 
   // ── ページ ──────────────────────────────────────────────────────────────────
-  const [page, setPage] = useState<'overview' | 'log'>('overview');
+  const [page, setPage] = useState<'overview' | 'log' | 'memory'>('overview');
 
   // ── 接客ログ ────────────────────────────────────────────────────────────────
   const [logSelected,   setLogSelected]   = useState<Set<LogKey>>(new Set());
@@ -1028,6 +1030,14 @@ export default function CustomerBottomSheet({
                         />
                       </ErrorBoundary>
 
+                      {/* 覚えておくこと */}
+                      <ErrorBoundary label="CustomerMemorySection" silentFail>
+                        <CustomerMemorySection
+                          customerId={c.id}
+                          onManage={() => setPage('memory')}
+                        />
+                      </ErrorBoundary>
+
                       {/* KPI 横3列 */}
                       <div className="grid grid-cols-3 gap-2">
                         {[
@@ -1232,13 +1242,41 @@ export default function CustomerBottomSheet({
                         paddingBottom: 'max(env(safe-area-inset-bottom, 16px), 24px)',
                         boxShadow: '0 -1px 0 #F5ECF0',
                       }}>
-                      <motion.button whileTap={{ scale: 0.97 }} onClick={() => setPage('log')}
-                        className="w-full flex items-center justify-center gap-2 py-4 rounded-full bg-[#F56E8B] text-white text-sm font-bold border-none cursor-pointer"
-                        style={{ boxShadow: '0 8px 24px rgba(245,110,139,0.35)' }}>
-                        今日の接客を記録する
-                        <ChevronRight size={18} strokeWidth={2.5} />
-                      </motion.button>
+                      <div className="flex gap-2">
+                        <motion.button whileTap={{ scale: 0.97 }} onClick={() => setPage('memory')}
+                          className="flex-shrink-0 flex items-center justify-center gap-1 px-4 py-4 rounded-full border-none cursor-pointer text-sm font-bold"
+                          style={{
+                            background: 'rgba(245,110,139,0.10)',
+                            color: '#F56E8B',
+                          }}>
+                          💌 記憶
+                        </motion.button>
+                        <motion.button whileTap={{ scale: 0.97 }} onClick={() => setPage('log')}
+                          className="flex-1 flex items-center justify-center gap-2 py-4 rounded-full bg-[#F56E8B] text-white text-sm font-bold border-none cursor-pointer"
+                          style={{ boxShadow: '0 8px 24px rgba(245,110,139,0.35)' }}>
+                          今日の接客を記録する
+                          <ChevronRight size={18} strokeWidth={2.5} />
+                        </motion.button>
+                      </div>
                     </div>
+                  </motion.div>
+                )}
+
+                {/* ════════════════════════════
+                    SHEET C — Customer Memory
+                ════════════════════════════ */}
+                {page === 'memory' && (
+                  <motion.div key="memory"
+                    initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 20 }}
+                    transition={{ duration: 0.2 }}
+                    className="flex-1 flex flex-col min-h-0"
+                  >
+                    <CustomerMemoryTab
+                      customerId={c.id}
+                      staffId={currentStaffId}
+                      onBack={() => setPage('overview')}
+                    />
                   </motion.div>
                 )}
 
