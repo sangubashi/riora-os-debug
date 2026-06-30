@@ -7,8 +7,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getRepos } from '../../../lib/repos';
 import { idSchema, toValidationErrorResponse } from '../../_schemas/common';
 import { recentVisitsLimitSchema } from '../../_schemas/query';
+import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
+import { canAccessCustomer } from '@/lib/auth/canAccessCustomer';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const staff = await extractStaffFromRequest(req)
+  if (!staff) {
+    return NextResponse.json({ success: false, error: 'unauthorized' }, { status: 401 })
+  }
+
   const { id } = await params;
 
   const idResult = idSchema.safeParse(id);
@@ -32,6 +39,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const customer = await repos.customerRepo.findById(idResult.data);
     if (!customer) {
       return NextResponse.json({ success: false, error: 'customer_not_found' }, { status: 404 });
+    }
+
+    const accessible = await canAccessCustomer(staff.staffBrainId, idResult.data, staff.isAdmin)
+    if (!accessible) {
+      return NextResponse.json({ success: false, error: 'forbidden' }, { status: 403 })
     }
 
     const recentVisits = await repos.visitRepo.recentByCustomer(idResult.data, limitResult.data);

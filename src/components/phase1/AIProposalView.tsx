@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { motion } from 'framer-motion'
 import { ChevronLeft, ClipboardList, X } from 'lucide-react'
 import type { Phase1Reservation } from './ReservationCard'
+import { authedFetch } from '@/lib/api/authedFetch'
 
 interface ProposalData {
   found:         boolean
@@ -27,7 +28,7 @@ export default function AIProposalView({ reservation: r, onBack, onServiceLog }:
 
   useEffect(() => {
     setLoading(true)
-    fetch(`/api/proposals/by-name?customerName=${encodeURIComponent(r.customerName)}`)
+    authedFetch(`/api/proposals/by-name?customerName=${encodeURIComponent(r.customerName)}`)
       .then(res => res.ok ? res.json() : null)
       .then((data: ProposalData | null) => setProposal(data))
       .catch(() => setProposal(null))

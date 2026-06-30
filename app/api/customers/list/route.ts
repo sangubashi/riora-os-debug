@@ -2,9 +2,12 @@
  * GET /api/customers/list
  * brain_customers + brain_visits + brain_staff から顧客一覧を返す。
  * service role 経由（RLS bypass）。
+ * Authorization: Bearer <token> 必須。担当顧客 + NULL(共有)顧客のみ返す。
  */
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '../../../lib/repos';
+import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
+import { filterAccessibleCustomerIds } from '@/lib/auth/canAccessCustomer';
 
 const STORE_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -23,7 +26,12 @@ function resolveType(t: string | null): string {
   return '信頼構築型';
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const staff = await extractStaffFromRequest(req)
+  if (!staff) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  }
+
   try {
     const supabase = getServiceClient();
 
@@ -48,9 +56,17 @@ export async function GET() {
         .is('deleted_at', null),
     ]);
 
-    const customers = custRes.status   === 'fulfilled' ? (custRes.value.data   ?? []) : [];
-    const visits    = visitRes.status  === 'fulfilled' ? (visitRes.value.data  ?? []) : [];
-    const staffList = staffRes.status  === 'fulfilled' ? (staffRes.value.data  ?? []) : [];
+    const allCustomers = custRes.status   === 'fulfilled' ? (custRes.value.data   ?? []) : [];
+    const visits       = visitRes.status  === 'fulfilled' ? (visitRes.value.data  ?? []) : [];
+    const staffList    = staffRes.status  === 'fulfilled' ? (staffRes.value.data  ?? []) : [];
+
+    // 担当顧客 + NULL(共有)顧客のみに絞る
+    const accessibleIds = await filterAccessibleCustomerIds(
+      allCustomers.map((c: { id: string }) => c.id),
+      staff.staffBrainId,
+      staff.isAdmin,
+    )
+    const customers = allCustomers.filter((c: { id: string }) => accessibleIds.has(c.id));
 
     // 来店集計マップ
     const visitStats: Record<string, { visitCount: number; totalSpent: number; lastVisitDate: string | null }> = {};

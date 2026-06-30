@@ -9,6 +9,8 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '../../../lib/repos';
+import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
+import { filterAccessibleCustomerIds } from '@/lib/auth/canAccessCustomer';
 
 const STORE_ID  = '00000000-0000-0000-0000-000000000001';
 const VIP_SPEND = 100_000;
@@ -23,6 +25,11 @@ export interface CustomerBrainStats {
 }
 
 export async function GET(req: NextRequest) {
+  const staff = await extractStaffFromRequest(req)
+  if (!staff) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  }
+
   const raw   = req.nextUrl.searchParams.get('names') ?? '';
   const names = raw.split(',').map(n => n.trim()).filter(Boolean);
 
@@ -45,7 +52,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ stats: {} });
     }
 
-    const customerIds = customers.map((c: { id: string }) => c.id);
+    // アクセス可能な顧客のみ対象に絞る
+    const accessibleIds = await filterAccessibleCustomerIds(
+      customers.map((c: { id: string }) => c.id),
+      staff.staffBrainId,
+      staff.isAdmin,
+    )
+    const accessibleCustomers = customers.filter((c: { id: string }) => accessibleIds.has(c.id))
+    if (accessibleCustomers.length === 0) return NextResponse.json({ stats: {} })
+
+    const customerIds = accessibleCustomers.map((c: { id: string }) => c.id);
 
     // brain_visits を対象顧客で一括取得
     const { data: visits } = await supabase
@@ -66,12 +82,12 @@ export async function GET(req: NextRequest) {
 
     // 名前キーで返却 (同名顧客が複数いる場合は最初のレコードを使用)
     const nameIndex: Record<string, string> = {};
-    for (const c of customers) {
+    for (const c of accessibleCustomers) {
       if (!nameIndex[c.name]) nameIndex[c.name] = c.id;
     }
 
     const stats: Record<string, CustomerBrainStats> = {};
-    for (const c of customers as Array<{ id: string; name: string; customer_type: string | null; churn_score: number }>) {
+    for (const c of accessibleCustomers as Array<{ id: string; name: string; customer_type: string | null; churn_score: number }>) {
       if (nameIndex[c.name] !== c.id) continue; // 同名重複は最初のみ
       const a = agg[c.id] ?? { visitCount: 0, totalSpent: 0, lastVisitDate: null };
       stats[c.name] = {

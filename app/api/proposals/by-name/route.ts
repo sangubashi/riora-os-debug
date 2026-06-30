@@ -8,11 +8,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRepos, getServiceClient } from '../../../lib/repos';
 import { generateCustomerProposal } from '@/lib/proposal/generateCustomerProposal';
+import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
+import { canAccessCustomer } from '@/lib/auth/canAccessCustomer';
 
 const STORE_ID    = '00000000-0000-0000-0000-000000000001';
-const DEFAULT_STAFF = '00000000-0000-0000-0000-000000000101'; // 鈴木
+const DEFAULT_STAFF = '00000000-0000-0000-0000-000000000101'; // 鈴木(管理者フォールバック)
 
 export async function GET(req: NextRequest) {
+  const staff = await extractStaffFromRequest(req)
+  if (!staff) {
+    return NextResponse.json({ found: false, reason: 'unauthorized' }, { status: 401 })
+  }
+
   const customerName = req.nextUrl.searchParams.get('customerName');
   if (!customerName) {
     return NextResponse.json({ found: false, reason: 'missing_customerName' });
@@ -36,6 +43,12 @@ export async function GET(req: NextRequest) {
 
     const bc = matches[0] as { id: string; customer_type: string | null };
 
+    // アクセス権確認
+    const accessible = await canAccessCustomer(staff.staffBrainId, bc.id, staff.isAdmin)
+    if (!accessible) {
+      return NextResponse.json({ found: false, reason: 'forbidden' }, { status: 403 })
+    }
+
     // 直近 3 来院のメニュー（実データ）
     const { data: visits } = await client
       .from('brain_visits')
@@ -57,8 +70,10 @@ export async function GET(req: NextRequest) {
 
     try {
       const repos = getRepos();
+      // 管理者は DEFAULT_STAFF、スタッフは自身の ID でプロポーザルを生成
+      const staffIdForProposal = staff.isAdmin ? DEFAULT_STAFF : staff.staffBrainId
       const result = await generateCustomerProposal(
-        { storeId: STORE_ID, customerId: bc.id, staffId: DEFAULT_STAFF, legacyClient: client },
+        { storeId: STORE_ID, customerId: bc.id, staffId: staffIdForProposal, legacyClient: client },
         repos
       );
 

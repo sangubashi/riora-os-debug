@@ -5,7 +5,7 @@ import { motion }            from 'framer-motion'
 import Image                 from 'next/image'
 import {
   Bell, ChevronRight,
-  CalendarDays, LayoutGrid, Crown, MessageCircle,
+  CalendarDays, LayoutGrid, Crown, MessageCircle, BookOpen,
 } from 'lucide-react'
 import { useMenuStore, type FilterTab } from '@/store/useMenuStore'
 import { DEMO_STORE_ID } from '@/lib/constants'
@@ -24,10 +24,11 @@ const FILTER_TABS: { key: FilterTab; label: string }[] = [
 
 // ─── グリッドメニュー(ナビゲーションのみ・データ無し) ───────────────────────────
 const GRID_ITEMS: { label: string; Icon: React.ElementType; href: string; color: string }[] = [
-  { label: '予約管理',    Icon: CalendarDays, href: '/phase1',    color: '#78A8D8' },
-  { label: 'メニュー管理', Icon: LayoutGrid,  href: '/menu',      color: '#D4A96A' },
-  { label: 'VIP管理',     Icon: Crown,        href: '/customers', color: '#D4A96A' },
-  { label: 'メッセージ',  Icon: MessageCircle, href: '/line',      color: '#52C87A' },
+  { label: '予約管理',    Icon: CalendarDays,  href: '/phase1',     color: '#78A8D8' },
+  { label: 'メニュー管理', Icon: LayoutGrid,   href: '/menu',       color: '#D4A96A' },
+  { label: 'VIP管理',     Icon: Crown,         href: '/customers',  color: '#D4A96A' },
+  { label: 'メッセージ',  Icon: MessageCircle, href: '/line',       color: '#52C87A' },
+  { label: '使い方ガイド', Icon: BookOpen,     href: '/menu/guide', color: '#9E8090' },
 ]
 
 function formatPct(value: number | null, placeholder = '未実装'): string {

@@ -1,12 +1,23 @@
 'use client'
 /**
- * VoiceMemoSection.tsx
- * CustomerBottomSheet 内の音声メモセクション。
- * 録音・再生・削除・保存をモバイル優先UIで実装。
- * 既存デザイントークン（色・余白）を完全踏襲。
+ * VoiceMemoSection.tsx — Pass VN-1 Voice Note UX安全強化版
+ *
+ * 4段階フロー（設計書 v1.0 準拠）:
+ *   ① 録音中   : タイマー表示 + [キャンセル] [停止]
+ *   ② 確認画面 : 音声再生 + transcript全文 + [破棄] [編集] [保存へ]
+ *   ③ 編集     : transcript 自由修正
+ *   ④ 選択保存 : Customer Memory 候補チェックボックス → 選択のみ保存
+ *
+ * 安全保証:
+ *   - 録音しただけでは DB に何も保存されない
+ *   - スタッフがチェックしたメモリだけ customer_memories に保存
+ *   - 5秒 Undo toast で voice_notes + customer_memories を完全ロールバック
+ *
+ * 監査ログ: VOICE_STARTED / VOICE_CANCELLED / VOICE_DISCARDED / VOICE_SAVED / VOICE_UNDO
  */
-import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react'
-import { motion } from 'framer-motion'
+import { useState, useRef, useCallback, useEffect, memo } from 'react'
+import type { CSSProperties } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { prodLog } from '@/lib/stability'
 import { useVoiceRecorder } from '@/hooks/useVoiceRecorder'
@@ -17,27 +28,66 @@ import {
   getVoiceNoteUrl,
   type VoiceNoteRow,
 } from '@/lib/voiceNote'
-import { INSIGHT_TAG_LABELS } from '@/types'
 import {
   runStreamPipeline,
   StreamPipelineController,
-  type PartialTranscript,
-  type StreamingInsight,
 } from '@/lib/voice/streamPipeline'
-import type { InsightTag } from '@/types'
+import { extractCustomerNotes } from '@/lib/voiceInsight/extractCustomerNotes'
+import type { MemoryType } from '@/types/customerMemory'
+import { logAction } from '@/lib/actionLog'
+import { authedFetch } from '@/lib/api/authedFetch'
 import VoiceNotesList from './VoiceNotesList'
+
+// ─── 型 ──────────────────────────────────────────────────────────────────────
+
+/** 録音後の UI フェーズ（status==='stopped' 時のみ有効） */
+type PostPhase = 'confirming' | 'editing' | 'selecting' | 'saving'
+
+interface MemoryCandidate {
+  idx:        number
+  content:    string
+  memoryType: MemoryType
+}
+
+interface SavedState {
+  voiceNoteId: string
+  storagePath: string
+  memoryIds:   string[]
+}
+
+// ─── 定数 ────────────────────────────────────────────────────────────────────
+
+const CATEGORY_TO_MEMORY_TYPE: Record<string, MemoryType> = {
+  Family:     'family',
+  Work:       'occupation',
+  Health:     'other',
+  Preference: 'hobby',
+  Event:      'life_event',
+}
+
+// ─── スタイルヘルパー ─────────────────────────────────────────────────────────
+
+function pill(bg: string, color: string, borderColor?: string): CSSProperties {
+  return {
+    padding:      '11px',
+    borderRadius: '999px',
+    background:   bg,
+    color,
+    border:       borderColor ? `1.5px solid ${borderColor}` : 'none',
+    fontSize:     '13px',
+    fontWeight:   600,
+    cursor:       'pointer',
+  }
+}
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
-interface VoiceMemoSectionProps {
+interface Props {
   customerId:    string
   staffId:       string | null
   reservationId: string | null
-  /** 保存完了後に親の行動履歴をリロードさせるコールバック */
   onSaved:       () => void
-  /** Silent Automation 完了後のサジェスト（任意） */
   onSuggestion?: (hint: string) => void
-  /** 録音状態が変化した時の通知（STEP7: Adaptive Priority 連携） */
   onRecordingStateChange?: (isRecording: boolean) => void
 }
 
@@ -50,25 +100,36 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
   onSaved,
   onSuggestion,
   onRecordingStateChange,
-}: VoiceMemoSectionProps) {
+}: Props) {
   const {
     status, durationSec, audioBlob, audioUrl, errorMessage,
     start, stop, reset,
   } = useVoiceRecorder()
 
-  const [uploading,          setUploading]          = useState(false)
-  // STEP5: partial transcript / streaming insight 表示
-  const [partialTranscript,  setPartialTranscript]  = useState<string>('')
-  const [streamingTags,      setStreamingTags]      = useState<string[]>([])
-  const [processingStage,    setProcessingStage]    = useState<'idle' | 'analyzing' | 'done'>('idle')
-  const pipelineCtrlRef = useRef<StreamPipelineController | null>(null)
+  // ── 録音後フェーズ（status==='stopped' 時のみ非 null） ──
+  const [postPhase,          setPostPhase]          = useState<PostPhase | null>(null)
+  const [transcript,         setTranscript]         = useState('')
+  const [editBuffer,         setEditBuffer]         = useState('')
+  const [transcriptLoading,  setTranscriptLoading]  = useState(false)
+  const [candidates,         setCandidates]         = useState<MemoryCandidate[]>([])
+  const [checkedSet,         setCheckedSet]         = useState<Set<number>>(new Set())
+  const [isSaving,           setIsSaving]           = useState(false)
+
+  // ── 過去メモ ──
   const [pastNotes,    setPastNotes]    = useState<VoiceNoteRow[]>([])
   const [notesLoading, setNotesLoading] = useState(false)
   const [playingId,    setPlayingId]    = useState<string | null>(null)
   const [deletingId,   setDeletingId]   = useState<string | null>(null)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  // 過去メモをロード
+  const pipelineCtrlRef = useRef<StreamPipelineController | null>(null)
+  const audioRef        = useRef<HTMLAudioElement | null>(null)
+  const savedRef        = useRef<SavedState | null>(null)
+  const durRef          = useRef(0)
+
+  // durationSec を ref に同期
+  useEffect(() => { durRef.current = durationSec }, [durationSec])
+
+  // ── 過去メモ読み込み ──────────────────────────────────────────────────────
   const loadNotes = useCallback(async () => {
     setNotesLoading(true)
     const rows = await fetchVoiceNotes(customerId, 10)
@@ -76,158 +137,281 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
     setNotesLoading(false)
   }, [customerId])
 
-  useEffect(() => {
-    loadNotes()
-  }, [loadNotes])
+  useEffect(() => { loadNotes() }, [loadNotes])
 
-  // アンマウント時 audio 解放 + pipeline キャンセル
   useEffect(() => {
     return () => {
-      if (audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current.src = ''
-      }
+      audioRef.current?.pause()
       pipelineCtrlRef.current?.cancel()
     }
   }, [])
 
-  // ── 録音開始/停止ラッパー（STEP7: Adaptive Priority 通知） ─────────────────────
+  // ── 録音停止 → 確認フェーズ + transcript 取得 ────────────────────────────
+  useEffect(() => {
+    if (status !== 'stopped' || !audioBlob || postPhase !== null) return
+
+    setPostPhase('confirming')
+    setTranscript('')
+    setTranscriptLoading(true)
+
+    pipelineCtrlRef.current?.cancel()
+    const ctrl = new StreamPipelineController()
+    pipelineCtrlRef.current = ctrl
+
+    void runStreamPipeline(
+      { audioBlob, durationSec: durRef.current },
+      {
+        onPartialTranscript: (pt) => { if (!ctrl.cancelled) setTranscript(pt.text) },
+        onComplete: (r) => {
+          if (!ctrl.cancelled) {
+            setTranscript(r.transcript)
+            setTranscriptLoading(false)
+          }
+        },
+        onError: (_e, fallback) => {
+          if (!ctrl.cancelled) {
+            setTranscript(fallback.transcript)
+            setTranscriptLoading(false)
+          }
+        },
+      },
+      {},
+      ctrl
+    )
+  }, [status, audioBlob, postPhase]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── 監査ログ ──────────────────────────────────────────────────────────────
+  const audit = useCallback((
+    type: 'voice_started' | 'voice_cancelled' | 'voice_discarded' | 'voice_saved' | 'voice_undo',
+    payload?: Record<string, unknown>
+  ) => {
+    void logAction({ customerId, staffId, actionType: type, actionPayload: payload })
+  }, [customerId, staffId])
+
+  // ── フルリセット ──────────────────────────────────────────────────────────
+  const fullReset = useCallback(() => {
+    pipelineCtrlRef.current?.cancel()
+    reset()
+    setPostPhase(null)
+    setTranscript('')
+    setEditBuffer('')
+    setTranscriptLoading(false)
+    setCandidates([])
+    setCheckedSet(new Set())
+    setIsSaving(false)
+    onRecordingStateChange?.(false)
+  }, [reset, onRecordingStateChange])
+
+  // ── ① 録音開始 ─────────────────────────────────────────────────────────────
   const handleStart = useCallback(async () => {
-    setPartialTranscript('')
-    setStreamingTags([])
-    setProcessingStage('idle')
+    audit('voice_started')
     onRecordingStateChange?.(true)
     await start()
-  }, [start, onRecordingStateChange])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [start, onRecordingStateChange, audit])
 
+  // ── キャンセル（録音中） ──────────────────────────────────────────────────
+  const handleCancel = useCallback(() => {
+    audit('voice_cancelled')
+    fullReset()
+  }, [fullReset, audit])
+
+  // ── 停止 ─────────────────────────────────────────────────────────────────
   const handleStop = useCallback(() => {
     stop()
-    onRecordingStateChange?.(false)
-  }, [stop, onRecordingStateChange])  // eslint-disable-line react-hooks/exhaustive-deps
+    // postPhase は status==='stopped' を受けて useEffect が 'confirming' へ遷移
+  }, [stop])
 
-  // ── 保存 ─────────────────────────────────────────────────────────────────
-  const handleSave = useCallback(async () => {
-    if (!audioBlob || !staffId || uploading) return
-    setUploading(true)
+  // ── ② 確認画面: 破棄 ────────────────────────────────────────────────────
+  const handleDiscard = useCallback(() => {
+    audit('voice_discarded')
+    fullReset()
+  }, [fullReset, audit])
 
-    setProcessingStage('analyzing')
-    pipelineCtrlRef.current?.cancel()
-    pipelineCtrlRef.current = new StreamPipelineController()
+  // ── 確認画面: 編集へ ─────────────────────────────────────────────────────
+  const handleEditStart = useCallback(() => {
+    setEditBuffer(transcript)
+    setPostPhase('editing')
+  }, [transcript])
 
-    const { error } = await uploadVoiceNote({
-      blob:          audioBlob,
-      staffId,
-      customerId,
-      reservationId,
-      durationSec,
+  // ── ③ 編集確定 ────────────────────────────────────────────────────────────
+  const handleEditDone = useCallback(() => {
+    setTranscript(editBuffer)
+    setPostPhase('confirming')
+  }, [editBuffer])
+
+  // ── 確認画面: 保存フローへ ────────────────────────────────────────────────
+  const handleProceedSave = useCallback(() => {
+    const notes = extractCustomerNotes(transcript, null)
+    const cands: MemoryCandidate[] = notes.map((n, i) => ({
+      idx:        i,
+      content:    n.content,
+      memoryType: CATEGORY_TO_MEMORY_TYPE[n.category] ?? 'other',
+    }))
+    setCandidates(cands)
+    setCheckedSet(new Set(cands.map(c => c.idx)))   // 全選択をデフォルト
+    setPostPhase('selecting')
+  }, [transcript])
+
+  // ── ④ チェックボックス切り替え ───────────────────────────────────────────
+  const toggleCheck = useCallback((idx: number) => {
+    setCheckedSet(prev => {
+      const next = new Set(prev)
+      next.has(idx) ? next.delete(idx) : next.add(idx)
+      return next
     })
+  }, [])
 
-    setUploading(false)
+  // ── Undo（5秒 toast から呼ばれる） ───────────────────────────────────────
+  const handleUndo = useCallback(async () => {
+    const saved = savedRef.current
+    if (!saved) return
+    savedRef.current = null
 
-    if (error) {
-      setProcessingStage('idle')
-      prodLog('warn', '[VoiceMemoSection] 保存失敗', error)
-      toast.error('保存に失敗しました。もう一度お試しください。')
-      return
-    }
+    await deleteVoiceNote(saved.voiceNoteId, saved.storagePath)
 
-    // STEP4: streaming pipeline で段階的にinsightを表示
-    if (audioBlob) {
-      void runStreamPipeline(
-        { audioBlob, durationSec },
-        {
-          onPartialTranscript: (pt: PartialTranscript) => {
-            setPartialTranscript(pt.text)
-          },
-          onStreamingInsight: (si: StreamingInsight) => {
-            if (si.tags.length > 0) setStreamingTags(si.tags)
-          },
-          onComplete: () => {
-            setProcessingStage('done')
-            // 分析完了をリロードで反映（過去メモ一覧 + AIタイムライン）
-            void loadNotes()
-            onSaved()
-          },
-          onError: (_err, fallback) => {
-            setProcessingStage('done')
-            if (fallback.tags.length > 0) setStreamingTags(fallback.tags)
-          },
-        },
-        {},
-        pipelineCtrlRef.current ?? undefined
+    for (const memId of saved.memoryIds) {
+      await authedFetch(
+        `/api/customer-memories/${memId}?customer_id=${encodeURIComponent(customerId)}`,
+        { method: 'DELETE' }
       )
     }
 
-    toast.success('音声メモを保存しました 🎙️', { duration: 2000 })
-    reset()
-    await loadNotes()
+    audit('voice_undo', {
+      voice_note_id: saved.voiceNoteId,
+      memory_count:  saved.memoryIds.length,
+    })
+    void loadNotes()
     onSaved()
+  }, [customerId, audit, loadNotes, onSaved])
 
-    // Silent Automation ヒント
-    setTimeout(() => {
-      onSuggestion?.('音声メモを分析しました — NextActionが更新されました ✦')
-    }, 800)
-  }, [audioBlob, staffId, customerId, reservationId, durationSec, uploading, reset, loadNotes, onSaved, onSuggestion]) // eslint-disable-line react-hooks/exhaustive-deps
+  // ── 確定保存（Storage + voice_notes + customer_memories） ────────────────
+  const handleConfirmSave = useCallback(async () => {
+    if (!audioBlob || !staffId || isSaving) return
+    setIsSaving(true)
+    setPostPhase('saving')
 
-  // ── 過去メモ再生 ─────────────────────────────────────────────────────────
+    try {
+      // 1. Storage + voice_notes INSERT
+      const { voiceNoteId, storagePath, error: upErr } = await uploadVoiceNote({
+        blob:          audioBlob,
+        staffId,
+        customerId,
+        reservationId,
+        durationSec:   durRef.current,
+      })
+
+      if (upErr || !voiceNoteId || !storagePath) {
+        prodLog('warn', '[VoiceMemoSection] upload失敗', upErr)
+        toast.error('保存に失敗しました。もう一度お試しください。')
+        setPostPhase('selecting')
+        setIsSaving(false)
+        return
+      }
+
+      // 2. 選択したメモリだけ customer_memories へ保存
+      const memoryIds: string[] = []
+      for (const cand of candidates) {
+        if (!checkedSet.has(cand.idx)) continue
+        try {
+          const res = await authedFetch('/api/customer-memories', {
+            method: 'POST',
+            body: JSON.stringify({
+              customer_id:  customerId,
+              content:      cand.content,
+              memory_type:  cand.memoryType,
+              importance:   'medium',
+              is_sensitive: false,
+              created_by:   staffId,
+            }),
+          })
+          if (res.ok) {
+            const { memory } = await res.json() as { memory: { id: string } }
+            memoryIds.push(memory.id)
+          }
+        } catch { /* silent: 1件失敗しても続行 */ }
+      }
+
+      // 3. 監査ログ
+      audit('voice_saved', {
+        voice_note_id: voiceNoteId,
+        memory_count:  memoryIds.length,
+        duration_sec:  durRef.current,
+      })
+
+      // 4. Undo 用に ref に保存
+      savedRef.current = { voiceNoteId, storagePath, memoryIds }
+
+      // 5. リセット
+      fullReset()
+
+      // 6. 5秒 Undo toast
+      toast.success('保存しました', {
+        duration: 5000,
+        action: {
+          label:   '取り消す',
+          onClick: () => { void handleUndo() },
+        },
+      })
+
+      // 7. 後処理
+      void loadNotes()
+      onSaved()
+      setTimeout(() => {
+        onSuggestion?.('音声メモを保存しました — Customer Memory を更新しました ✦')
+      }, 800)
+
+    } catch (e) {
+      prodLog('error', '[VoiceMemoSection] 保存失敗', e)
+      toast.error('保存に失敗しました')
+      setPostPhase('selecting')
+      setIsSaving(false)
+    }
+  }, [
+    audioBlob, staffId, customerId, reservationId,
+    candidates, checkedSet, isSaving,
+    audit, fullReset, loadNotes, onSaved, onSuggestion, handleUndo,
+  ])
+
+  // ── 過去メモ再生 ──────────────────────────────────────────────────────────
   const handlePlay = useCallback(async (note: VoiceNoteRow) => {
-    // 同一メモ再生中なら停止
     if (playingId === note.id) {
       audioRef.current?.pause()
       setPlayingId(null)
       return
     }
-
     const url = await getVoiceNoteUrl(note.storage_path)
-    if (!url) {
-      toast.error('音声の読み込みに失敗しました')
-      return
-    }
-
-    if (audioRef.current) {
-      audioRef.current.pause()
-    }
+    if (!url) { toast.error('音声の読み込みに失敗しました'); return }
+    if (audioRef.current) audioRef.current.pause()
     const audio = new Audio(url)
     audioRef.current = audio
     audio.onended = () => setPlayingId(null)
     audio.onerror = () => { toast.error('再生に失敗しました'); setPlayingId(null) }
-    audio.play().catch(() => {
-      toast.error('再生に失敗しました')
-      setPlayingId(null)
-    })
+    audio.play().catch(() => { toast.error('再生に失敗しました'); setPlayingId(null) })
     setPlayingId(note.id)
   }, [playingId])
 
-  // ── 過去メモ削除 ─────────────────────────────────────────────────────────
-  const handleDelete = useCallback(async (note: VoiceNoteRow) => {
+  const handleDeleteNote = useCallback(async (note: VoiceNoteRow) => {
     if (deletingId) return
     setDeletingId(note.id)
-
-    if (playingId === note.id) {
-      audioRef.current?.pause()
-      setPlayingId(null)
-    }
-
+    if (playingId === note.id) { audioRef.current?.pause(); setPlayingId(null) }
     const { error } = await deleteVoiceNote(note.id, note.storage_path)
     setDeletingId(null)
-
-    if (error) {
-      toast.error('削除に失敗しました')
-      return
-    }
-
+    if (error) { toast.error('削除に失敗しました'); return }
     toast.success('音声メモを削除しました', { duration: 1500 })
     await loadNotes()
   }, [deletingId, playingId, loadNotes])
 
-  // ── 秒数フォーマット ──────────────────────────────────────────────────────
-  const formatSec = (s: number) => {
-    const m = Math.floor(s / 60)
-    const r = s % 60
+  // ── ヘルパー ──────────────────────────────────────────────────────────────
+  const fmtSec = (s: number) => {
+    const m = Math.floor(s / 60); const r = s % 60
     return m > 0 ? `${m}:${String(r).padStart(2, '0')}` : `${s}秒`
   }
 
-  // ── レンダー ─────────────────────────────────────────────────────────────
+  const isPost = status === 'stopped' && postPhase !== null
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────────────────
 
   return (
     <div style={{ background: '#F0F5FA', borderRadius: '22px', padding: '16px' }}>
@@ -235,195 +419,275 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
         🎙️ 音声メモ
       </p>
 
-      {/* ── 録音コントロール ── */}
       <div style={{ background: '#fff', borderRadius: '18px', padding: '14px', border: '1px solid #C8DCF0', marginBottom: '12px' }}>
 
-        {/* エラー */}
         {errorMessage && (
           <p style={{ fontSize: '12px', color: '#C05060', marginBottom: '10px', lineHeight: 1.5 }}>
             ⚠️ {errorMessage}
           </p>
         )}
 
-        {/* idle: 録音開始ボタン */}
-        {status === 'idle' && (
-          <motion.button whileTap={{ scale: 0.97 }}
-            onClick={handleStart}
-            onTouchStart={handleStart}
-            style={{ width: '100%', padding: '14px', borderRadius: '999px', border: 'none', background: '#4878A8', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', touchAction: 'none', WebkitTapHighlightColor: 'transparent' }}>
-            <span style={{ fontSize: '18px' }}>🎙️</span> 録音を開始
-          </motion.button>
-        )}
+        <AnimatePresence mode="wait">
 
-        {/* requesting: マイク許可待ち */}
-        {status === 'requesting' && (
-          <div style={{ textAlign: 'center', padding: '10px 0' }}>
-            <p style={{ fontSize: '13px', color: '#4878A8' }}>マイクの許可を確認中…</p>
-          </div>
-        )}
+          {/* ── idle / error ── */}
+          {!isPost && (status === 'idle' || status === 'error') && (
+            <motion.div key="idle"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              {status === 'error' ? (
+                <button onClick={reset}
+                  style={{ ...pill('#fff', '#688098', '#C8DCF0'), width: '100%' }}>
+                  もう一度試す
+                </button>
+              ) : (
+                <motion.button whileTap={{ scale: 0.97 }}
+                  onClick={handleStart} onTouchStart={handleStart}
+                  style={{
+                    ...pill('#4878A8', '#fff'),
+                    width: '100%', display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', gap: '8px',
+                    touchAction: 'none', WebkitTapHighlightColor: 'transparent',
+                  }}>
+                  <span style={{ fontSize: '18px' }}>🎙️</span> 録音を開始
+                </motion.button>
+              )}
+            </motion.div>
+          )}
 
-        {/* recording: 録音中 */}
-        {status === 'recording' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {/* Recording glow + indicator */}
-            <motion.div
-              animate={{ boxShadow: ['0 0 0px rgba(232,64,80,0)', '0 0 14px rgba(232,64,80,0.14)', '0 0 0px rgba(232,64,80,0)'] }}
-              transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
-              style={{ borderRadius: '14px', padding: '12px', background: 'rgba(232,64,80,0.04)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}
-            >
-              {/* 波形バー */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '3px', height: '28px' }}>
-                {Array.from({ length: 9 }).map((_, i) => (
+          {/* ── requesting ── */}
+          {!isPost && status === 'requesting' && (
+            <motion.div key="requesting"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              style={{ textAlign: 'center', padding: '10px 0' }}>
+              <p style={{ fontSize: '13px', color: '#4878A8' }}>マイクの許可を確認中…</p>
+            </motion.div>
+          )}
+
+          {/* ── ① 録音中: キャンセル + 停止 ── */}
+          {!isPost && status === 'recording' && (
+            <motion.div key="recording"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+
+              {/* 波形 + タイマー */}
+              <motion.div
+                animate={{ boxShadow: ['0 0 0px rgba(232,64,80,0)', '0 0 14px rgba(232,64,80,0.14)', '0 0 0px rgba(232,64,80,0)'] }}
+                transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+                style={{ borderRadius: '14px', padding: '12px', background: 'rgba(232,64,80,0.04)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '3px', height: '28px' }}>
+                  {Array.from({ length: 9 }).map((_, i) => (
+                    <motion.div key={i}
+                      animate={{ height: ['4px', `${12 + Math.sin(i * 0.8) * 10}px`, '4px'] }}
+                      transition={{ duration: 0.6 + i * 0.07, repeat: Infinity, ease: 'easeInOut', delay: i * 0.06 }}
+                      style={{ width: '3px', borderRadius: '999px', background: '#E84050' }}
+                    />
+                  ))}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <motion.div
-                    key={i}
-                    animate={{ height: ['4px', `${12 + Math.sin(i * 0.8) * 10}px`, '4px'] }}
-                    transition={{ duration: 0.6 + i * 0.07, repeat: Infinity, ease: 'easeInOut', delay: i * 0.06 }}
-                    style={{ width: '3px', borderRadius: '999px', background: '#E84050' }}
+                    animate={{ opacity: [1, 0.2, 1] }} transition={{ duration: 1.2, repeat: Infinity }}
+                    style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#E84050', flexShrink: 0 }}
                   />
-                ))}
-              </div>
-              {/* タイマー */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <motion.div
-                  animate={{ opacity: [1, 0.2, 1] }}
-                  transition={{ duration: 1.2, repeat: Infinity }}
-                  style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#E84050', flexShrink: 0 }}
-                />
-                <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '22px', fontWeight: 700, color: '#4878A8', letterSpacing: '0.04em' }}>
-                  {formatSec(durationSec)}
-                </span>
+                  <span style={{ fontFamily: 'Inter, sans-serif', fontSize: '22px', fontWeight: 700, color: '#4878A8', letterSpacing: '0.04em' }}>
+                    {fmtSec(durationSec)}
+                  </span>
+                </div>
+              </motion.div>
+
+              {/* キャンセル + 停止 ボタン行 */}
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button onClick={handleCancel}
+                  style={{ ...pill('#FFF5F6', '#C05060', '#F5C0C8'), flex: 1 }}>
+                  キャンセル
+                </button>
+                <motion.button whileTap={{ scale: 0.97 }}
+                  onClick={handleStop} onTouchStart={handleStop}
+                  style={{
+                    ...pill('#E84050', '#fff'),
+                    flex: 2, display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', gap: '8px',
+                    touchAction: 'none', WebkitTapHighlightColor: 'transparent',
+                  }}>
+                  <span style={{ fontSize: '16px' }}>⏹</span> 停止
+                </motion.button>
               </div>
             </motion.div>
-            <motion.button whileTap={{ scale: 0.97 }}
-              onClick={handleStop}
-              onTouchStart={handleStop}
-              style={{ width: '100%', padding: '14px', borderRadius: '999px', border: 'none', background: '#E84050', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', touchAction: 'none', WebkitTapHighlightColor: 'transparent' }}>
-              <span style={{ fontSize: '16px' }}>⏹</span> 録音を停止
-            </motion.button>
-          </div>
-        )}
+          )}
 
-        {/* stopped: 録音完了 → 確認UI */}
-        {status === 'stopped' && audioUrl && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {/* 録音時間バッジ */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '12px', color: '#4878A8', fontWeight: 600 }}>
-                録音完了
-              </span>
-              <span style={{ fontSize: '11px', color: '#688098', background: '#E0EAF5', padding: '2px 8px', borderRadius: '999px' }}>
-                {formatSec(durationSec)}
-              </span>
-            </div>
+          {/* ── ② 確認画面: 音声再生 + transcript + 3ボタン ── */}
+          {isPost && postPhase === 'confirming' && (
+            <motion.div key="confirming"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
 
-            {/* STEP5: partial transcript 表示（静かに・フェードイン） */}
-            {partialTranscript && processingStage !== 'idle' && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                transition={{ duration: 0.18, ease: 'easeOut' }}
-                style={{ background: '#F0F5FA', borderRadius: '10px', padding: '8px 10px' }}
-              >
-                <p style={{ fontSize: '10px', color: '#8AAAC8', letterSpacing: '0.1em', marginBottom: '3px' }}>文字起こし</p>
-                <p style={{ fontSize: '11px', color: '#4878A8', lineHeight: 1.6, wordBreak: 'break-all' }}>
-                  {partialTranscript}
+              {/* 録音時間バッジ */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '12px', color: '#4878A8', fontWeight: 600 }}>録音完了</span>
+                <span style={{ fontSize: '11px', color: '#688098', background: '#E0EAF5', padding: '2px 8px', borderRadius: '999px' }}>
+                  {fmtSec(durationSec)}
+                </span>
+              </div>
+
+              {/* 音声再生 */}
+              {audioUrl && (
+                <audio
+                  src={audioUrl}
+                  controls
+                  preload="none"
+                  style={{ width: '100%', height: '36px', outline: 'none', borderRadius: '8px' }}
+                />
+              )}
+
+              {/* transcript 全文 */}
+              <div style={{ background: '#F0F5FA', borderRadius: '10px', padding: '10px' }}>
+                <p style={{ fontSize: '10px', color: '#8AAAC8', letterSpacing: '0.1em', marginBottom: '4px' }}>
+                  文字起こし {transcriptLoading ? '（解析中…）' : ''}
                 </p>
-              </motion.div>
-            )}
+                {transcriptLoading && !transcript ? (
+                  <motion.p
+                    animate={{ opacity: [0.4, 0.9, 0.4] }}
+                    transition={{ duration: 1.4, repeat: Infinity }}
+                    style={{ fontSize: '11px', color: '#8AAAC8' }}>
+                    解析中…
+                  </motion.p>
+                ) : (
+                  <p style={{ fontSize: '12px', color: '#4878A8', lineHeight: 1.7, wordBreak: 'break-all' }}>
+                    {transcript || '（文字起こし結果なし）'}
+                  </p>
+                )}
+              </div>
 
-            {/* STEP5: streaming insight tags（段階表示） */}
-            {streamingTags.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.25 }}
-                style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}
-              >
-                {streamingTags.slice(0, 3).map((tag, i) => (
-                  <motion.span
-                    key={tag}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: i * 0.06, duration: 0.16, ease: [0.25, 0.46, 0.45, 0.94] }}
-                    style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '999px', background: '#E8F0FA', color: '#4878A8', fontWeight: 500, border: '1px solid rgba(72,120,168,0.2)' }}
-                  >
-                    {INSIGHT_TAG_LABELS[tag as InsightTag] ?? tag}
-                  </motion.span>
-                ))}
-              </motion.div>
-            )}
+              {/* 破棄 / 編集 / 保存へ */}
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button onClick={handleDiscard}
+                  style={{ ...pill('#FFF5F6', '#C05060', '#F5C0C8'), flex: 1 }}>
+                  破棄
+                </button>
+                <button onClick={handleEditStart}
+                  style={{ ...pill('#fff', '#688098', '#C8DCF0'), flex: 1 }}>
+                  編集
+                </button>
+                <motion.button whileTap={{ scale: 0.97 }} onClick={handleProceedSave}
+                  style={{ ...pill('#4878A8', '#fff'), flex: 2 }}>
+                  保存へ
+                </motion.button>
+              </div>
+            </motion.div>
+          )}
 
-            {/* STEP5: processing shimmer（AI分析中の静かな表現） */}
-            {processingStage === 'analyzing' && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.2 }}
-                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 2px' }}
-              >
-                <motion.span
-                  animate={{ opacity: [0.3, 0.8, 0.3] }}
-                  transition={{ duration: 2.0, repeat: Infinity, ease: 'easeInOut' }}
-                  style={{ fontSize: '10px', color: '#8AAAC8' }}
-                >
-                  ✦
-                </motion.span>
-                <p style={{ fontSize: '11px', color: '#8AAAC8' }}>分析中…</p>
-              </motion.div>
-            )}
+          {/* ── ③ 編集: transcript 修正 ── */}
+          {isPost && postPhase === 'editing' && (
+            <motion.div key="editing"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <p style={{ fontSize: '11px', color: '#8AAAC8', letterSpacing: '0.1em' }}>
+                📝 文字起こしを修正
+              </p>
+              <textarea
+                value={editBuffer}
+                onChange={e => setEditBuffer(e.target.value)}
+                rows={5}
+                autoFocus
+                style={{
+                  width: '100%', fontSize: '12px', color: '#4878A8', lineHeight: 1.7,
+                  padding: '10px', borderRadius: '10px',
+                  border: '1.5px solid rgba(72,120,168,0.35)',
+                  background: '#FAFCFF', outline: 'none', resize: 'vertical',
+                  boxSizing: 'border-box',
+                }}
+              />
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button onClick={() => setPostPhase('confirming')}
+                  style={{ ...pill('#fff', '#688098', '#C8DCF0'), flex: 1 }}>
+                  キャンセル
+                </button>
+                <motion.button whileTap={{ scale: 0.97 }} onClick={handleEditDone}
+                  style={{ ...pill('#4878A8', '#fff'), flex: 2 }}>
+                  確定
+                </motion.button>
+              </div>
+            </motion.div>
+          )}
 
-            {/* ブラウザネイティブ再生コントロール */}
-            <audio
-              src={audioUrl ?? undefined}
-              controls
-              preload="none"
-              style={{ width: '100%', height: '36px', outline: 'none', borderRadius: '8px' }}
-              onError={() => prodLog('warn', '[VoiceMemoSection] audio load error — format may be unsupported')}
-            />
+          {/* ── ④ 選択保存: チェックボックス ── */}
+          {isPost && postPhase === 'selecting' && (
+            <motion.div key="selecting"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
 
-            {/* 保存 / 撮り直し */}
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button onClick={reset}
-                style={{ flex: 1, padding: '11px', borderRadius: '999px', border: '1.5px solid #C8DCF0', background: '#fff', color: '#688098', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
-                撮り直し
-              </button>
-              <motion.button whileTap={{ scale: 0.97 }}
-                onClick={handleSave}
-                disabled={uploading}
-                style={{ flex: 2, padding: '11px', borderRadius: '999px', border: 'none', background: uploading ? '#A0BCD8' : '#4878A8', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: uploading ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
-                {uploading ? (
-                  <>
-                    <motion.span animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 0.9, repeat: Infinity }}>✦</motion.span>
-                    AI分析中…
-                  </>
-                ) : '保存する'}
-              </motion.button>
-            </div>
-          </div>
-        )}
+              <div>
+                <p style={{ fontSize: '12px', color: '#4878A8', fontWeight: 600, marginBottom: '4px' }}>
+                  保存するメモリを選択
+                </p>
+                <p style={{ fontSize: '10px', color: '#8AAAC8' }}>
+                  チェックしたものだけ保存されます
+                </p>
+              </div>
 
-        {/* error: リトライ */}
-        {status === 'error' && (
-          <button onClick={reset}
-            style={{ width: '100%', padding: '12px', borderRadius: '999px', border: '1.5px solid #C8DCF0', background: '#fff', color: '#688098', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
-            もう一度試す
-          </button>
-        )}
+              {candidates.length === 0 ? (
+                <p style={{ fontSize: '12px', color: '#8AAAC8', textAlign: 'center', padding: '8px 0' }}>
+                  メモリ候補が見つかりませんでした
+                </p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {candidates.map(c => (
+                    <label key={c.idx}
+                      style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={checkedSet.has(c.idx)}
+                        onChange={() => toggleCheck(c.idx)}
+                        style={{ marginTop: '2px', width: '15px', height: '15px', accentColor: '#4878A8', flexShrink: 0 }}
+                      />
+                      <span style={{ fontSize: '12px', color: '#3d4858', lineHeight: 1.6 }}>
+                        {c.content}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button onClick={() => setPostPhase('confirming')}
+                  style={{ ...pill('#fff', '#688098', '#C8DCF0'), flex: 1 }}>
+                  戻る
+                </button>
+                <motion.button whileTap={{ scale: 0.97 }} onClick={handleConfirmSave}
+                  disabled={isSaving}
+                  style={{ ...pill(isSaving ? '#A0BCD8' : '#4878A8', '#fff'), flex: 2, cursor: isSaving ? 'default' : 'pointer' }}>
+                  {isSaving ? '保存中…' : `保存（${checkedSet.size}件）`}
+                </motion.button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ── saving スピナー ── */}
+          {isPost && postPhase === 'saving' && (
+            <motion.div key="saving"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              style={{ textAlign: 'center', padding: '20px 0' }}>
+              <motion.span
+                animate={{ opacity: [0.3, 1, 0.3] }}
+                transition={{ duration: 1.4, repeat: Infinity }}
+                style={{ fontSize: '20px', color: '#4878A8' }}>✦</motion.span>
+              <p style={{ fontSize: '12px', color: '#4878A8', marginTop: '8px' }}>保存中…</p>
+            </motion.div>
+          )}
+
+        </AnimatePresence>
       </div>
 
-      {/* ── 過去メモ一覧（最新10件 / AI解析結果） ── */}
+      {/* ── 過去メモ一覧 ── */}
       <VoiceNotesList
         notes={pastNotes}
         loading={notesLoading}
         playingId={playingId}
         deletingId={deletingId}
         onPlay={handlePlay}
-        onDelete={handleDelete}
+        onDelete={handleDeleteNote}
       />
     </div>
   )
 })
 
 VoiceMemoSectionInner.displayName = 'VoiceMemoSection'
-
 export default VoiceMemoSectionInner

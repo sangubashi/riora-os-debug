@@ -15,6 +15,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronLeft, Trash2, Edit2, Check, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { CustomerMemory, MemoryType, MemoryImportance } from '@/types/customerMemory'
+import { authedFetch } from '@/lib/api/authedFetch'
 import {
   MEMORY_TYPE_EMOJI,
   MEMORY_TYPE_LABELS,
@@ -67,7 +68,7 @@ export default function CustomerMemoryTab({ customerId, onBack }: Props) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(
+      const res = await authedFetch(
         `/api/customer-memories?customer_id=${encodeURIComponent(customerId)}`
       )
       if (!res.ok) return
@@ -97,10 +98,10 @@ export default function CustomerMemoryTab({ customerId, onBack }: Props) {
     if (!form.content.trim()) { toast.error('内容を入力してください'); return }
     setSaving(true)
     try {
-      const res = await fetch(`/api/customer-memories/${editingId}`, {
-        method:  'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await authedFetch(`/api/customer-memories/${editingId}`, {
+        method: 'PATCH',
         body: JSON.stringify({
+          customer_id:  customerId,
           content:      form.content.trim(),
           memory_type:  form.memory_type,
           trigger_date: form.trigger_date || null,
@@ -117,7 +118,10 @@ export default function CustomerMemoryTab({ customerId, onBack }: Props) {
   }
 
   async function handleDelete(id: string) {
-    const res = await fetch(`/api/customer-memories/${id}`, { method: 'DELETE' })
+    const res = await authedFetch(
+      `/api/customer-memories/${id}?customer_id=${encodeURIComponent(customerId)}`,
+      { method: 'DELETE' }
+    )
     if (!res.ok) { toast.error('削除に失敗しました'); return }
     toast.success('削除しました')
     setMemories(prev => prev.filter(m => m.id !== id))

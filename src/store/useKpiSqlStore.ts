@@ -4,6 +4,7 @@
  * 認証不要・モックなし。
  */
 import { create } from 'zustand';
+import { authedFetch } from '@/lib/api/authedFetch';
 
 export interface WeeklySalesPoint {
   date:  string   // YYYY-MM-DD
@@ -56,7 +57,7 @@ export const useKpiSqlStore = create<KpiSqlState>((set) => ({
   fetchAll: async () => {
     set({ isLoading: true });
     try {
-      const res = await fetch('/api/kpi/summary');
+      const res = await authedFetch('/api/kpi/summary');
       if (!res.ok) return;
       const data = await res.json();
       set({

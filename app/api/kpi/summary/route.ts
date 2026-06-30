@@ -15,8 +15,9 @@
  *   weeklySales      直近7日の日別売上配列
  *   staffPerformance スタッフ別月次実績
  */
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '../../../lib/repos';
+import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
 
 const STORE_ID = '00000000-0000-0000-0000-000000000001';
 const CHURN_DAYS = 90;
@@ -39,7 +40,12 @@ function daysAgoStr(n: number) {
   return d.toISOString().split('T')[0];
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const staff = await extractStaffFromRequest(req)
+  if (!staff) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  }
+
   try {
     const supabase  = getServiceClient();
     const today     = isoToday();
@@ -169,6 +175,7 @@ export async function GET() {
       perfMap[v.staff_id] = ex;
     }
     const staffPerformance = staffList
+      .filter(s => staff.isAdmin || s.id === staff.staffBrainId)
       .map(s => ({
         staffId:     s.id,
         staffName:   s.name,

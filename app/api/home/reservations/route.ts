@@ -14,6 +14,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '../../../lib/repos';
+import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
 
 function todayJst(): { start: string; end: string } {
   const now = new Date();
@@ -42,20 +43,23 @@ const RESERVATION_SELECT = `
     name,
     customer_type,
     churn_score,
-    is_subscriber
+    is_subscriber,
+    skin_tags
   )
 ` as const;
 
 export async function GET(req: NextRequest) {
-  try {
-    const params = req.nextUrl.searchParams;
-    const role = params.get('role') ?? 'owner';
-    const uid  = params.get('uid')  ?? '';
+  const staff = await extractStaffFromRequest(req);
+  if (!staff) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  }
 
+  try {
     const supabase = getServiceClient();
     const { start, end } = todayJst();
 
     // 今日の予約（brain_customer_id 連携済みのみ、時刻昇順）
+    // 管理者は全スタッフ分、スタッフは自分の担当分のみ
     let query = supabase
       .from('reservations')
       .select(RESERVATION_SELECT)
@@ -64,8 +68,8 @@ export async function GET(req: NextRequest) {
       .lte('scheduled_at', end)
       .order('scheduled_at', { ascending: true });
 
-    if (role === 'staff' && uid) {
-      query = query.eq('staff_id', uid);
+    if (!staff.isAdmin) {
+      query = query.eq('staff_id', staff.staffBrainId);
     }
 
     const { data, error } = await query.limit(50);

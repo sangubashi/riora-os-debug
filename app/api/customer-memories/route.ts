@@ -8,13 +8,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '../../lib/repos'
 import type { MemoryType, MemoryImportance } from '@/types/customerMemory'
+import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest'
+import { canAccessCustomer } from '@/lib/auth/canAccessCustomer'
 
 const STORE_ID = '00000000-0000-0000-0000-000000000001'
 
 export async function GET(req: NextRequest) {
+  const staff = await extractStaffFromRequest(req)
+  if (!staff) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  }
+
   const customerId = req.nextUrl.searchParams.get('customer_id')
   if (!customerId) {
     return NextResponse.json({ error: 'customer_id is required' }, { status: 400 })
+  }
+
+  const accessible = await canAccessCustomer(staff.staffBrainId, customerId, staff.isAdmin)
+  if (!accessible) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
   const supabase = getServiceClient()
@@ -30,6 +42,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const staff = await extractStaffFromRequest(req)
+  if (!staff) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  }
+
   let body: {
     customer_id:  string
     content:      string
@@ -48,6 +65,11 @@ export async function POST(req: NextRequest) {
 
   if (!body.customer_id || !body.content?.trim()) {
     return NextResponse.json({ error: 'customer_id and content are required' }, { status: 400 })
+  }
+
+  const accessible = await canAccessCustomer(staff.staffBrainId, body.customer_id, staff.isAdmin)
+  if (!accessible) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
   const supabase = getServiceClient()

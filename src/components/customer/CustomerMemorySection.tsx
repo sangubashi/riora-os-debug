@@ -17,6 +17,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, ChevronLeft, Mic } from 'lucide-react'
 import { toast } from 'sonner'
 import type { CustomerMemory, MemoryType, MemoryImportance } from '@/types/customerMemory'
+import { authedFetch } from '@/lib/api/authedFetch'
 import {
   MEMORY_TYPE_EMOJI,
   MEMORY_TYPE_LABELS,
@@ -26,8 +27,9 @@ import {
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface Props {
-  customerId: string
-  onManage:   () => void
+  customerId:  string
+  onManage:    () => void
+  refreshKey?: number
 }
 
 // ── Form ─────────────────────────────────────────────────────────────────────
@@ -107,7 +109,7 @@ const IMP_STYLE: Record<MemoryImportance, { bg: string; color: string }> = {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function CustomerMemorySection({ customerId, onManage }: Props) {
+export default function CustomerMemorySection({ customerId, onManage, refreshKey }: Props) {
   const [memories, setMemories] = useState<CustomerMemory[]>([])
   const [loading,  setLoading]  = useState(true)
   const [view,     setView]     = useState<'briefing' | 'add'>('briefing')
@@ -116,7 +118,7 @@ export default function CustomerMemorySection({ customerId, onManage }: Props) {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(
+      const res = await authedFetch(
         `/api/customer-memories?customer_id=${encodeURIComponent(customerId)}`
       )
       if (!res.ok) return
@@ -125,15 +127,16 @@ export default function CustomerMemorySection({ customerId, onManage }: Props) {
     } catch { /* silent */ } finally { setLoading(false) }
   }, [customerId])
 
-  useEffect(() => { load() }, [load])
+  // refreshKey が変化するたびに再フェッチ（VoiceMemoSection の onSaved からトリガー）
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load() }, [load, refreshKey])
 
   async function handleSave() {
     if (!form.content.trim()) { toast.error('内容を入力してください'); return }
     setSaving(true)
     try {
-      const res = await fetch('/api/customer-memories', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await authedFetch('/api/customer-memories', {
+        method: 'POST',
         body: JSON.stringify({
           customer_id:  customerId,
           content:      form.content.trim(),

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { authedFetch } from '@/lib/api/authedFetch';
 
 // ─── 型 ──────────────────────────────────────────────────────────────────────
 
@@ -57,7 +58,7 @@ export const useCustomerStore = create<CustomerState>((set) => ({
   fetchCustomers: async () => {
     set({ isLoading: true });
     try {
-      const res = await fetch('/api/customers/list');
+      const res = await authedFetch('/api/customers/list');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const rows = (data.customers ?? []) as CustomerRow[];

@@ -13,6 +13,7 @@ import { create } from 'zustand'
 import type { ReservationWithBrainCustomer } from '@/types/database'
 import type { UserRole } from '@/types/database'
 import type { CustomerBrainStats } from '../../app/api/customers/brain-stats/route'
+import { authedFetch } from '@/lib/api/authedFetch'
 
 // ─── Store types ──────────────────────────────────────────────────────────────
 
@@ -54,13 +55,12 @@ export const useHomeStore = create<HomeState>((set) => ({
   reservations: [],
   isLoading:    false,
 
-  fetchTodayReservations: async (role: UserRole, uid: string) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  fetchTodayReservations: async (_role: UserRole, _uid: string) => {
     set({ isLoading: true })
     try {
-      // ── 1. service role API で今日の予約を取得（RLSバイパス）────────────
-      const res = await fetch(
-        `/api/home/reservations?role=${encodeURIComponent(role)}&uid=${encodeURIComponent(uid)}`
-      )
+      // ── 1. JWT 認証付きで今日の予約を取得（スタッフはJWT内IDで自動フィルタ）
+      const res = await authedFetch('/api/home/reservations')
       if (!res.ok) {
         console.warn('[HomeStore] API error:', res.status)
         return
@@ -88,7 +88,7 @@ export const useHomeStore = create<HomeState>((set) => ({
         )
         const names = Array.from(nameSet)
         try {
-          const statsRes = await fetch(
+          const statsRes = await authedFetch(
             `/api/customers/brain-stats?names=${encodeURIComponent(names.join(','))}`
           )
           if (statsRes.ok) {

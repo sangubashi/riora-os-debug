@@ -11,13 +11,25 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getRepos } from '../../lib/repos';
 import { customerIdQuerySchema } from '../_schemas/query';
 import { toValidationErrorResponse } from '../_schemas/common';
+import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
+import { canAccessCustomer } from '@/lib/auth/canAccessCustomer';
 
 export async function GET(req: NextRequest) {
+  const staff = await extractStaffFromRequest(req);
+  if (!staff) {
+    return NextResponse.json({ success: false, error: 'unauthorized' }, { status: 401 });
+  }
+
   const parsed = customerIdQuerySchema.safeParse({
     customerId: req.nextUrl.searchParams.get('customerId'),
   });
   if (!parsed.success) {
     return NextResponse.json(toValidationErrorResponse(parsed.error), { status: 400 });
+  }
+
+  const accessible = await canAccessCustomer(staff.staffBrainId, parsed.data.customerId, staff.isAdmin);
+  if (!accessible) {
+    return NextResponse.json({ success: false, error: 'forbidden' }, { status: 403 });
   }
 
   let repos;
