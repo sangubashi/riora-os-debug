@@ -271,6 +271,8 @@ export interface DashboardDailyUpsertInput {
 export interface IDashboardRepo {
   /** brain_dashboard_dailyをstore_idでsnapshot_date降順に最新1件取得する(GetDashboard)。存在しない場合はnull。 */
   latestByStore(storeId: UUID): Promise<DashboardSnapshot | null>;
+  /** brain_dashboard_dailyでsnapshot_date<=dateの最新1件を取得する(月指定表示用)。存在しない場合はnull。 */
+  latestBeforeOrAt(storeId: UUID, date: string): Promise<DashboardSnapshot | null>;
   /** brain_dashboard_dailyをstore_id+snapshot_date>=fromDateでsnapshot_date昇順に取得する(画面①売上推移)。 */
   listSinceDate(storeId: UUID, fromDate: string): Promise<DashboardSnapshot[]>;
   /**

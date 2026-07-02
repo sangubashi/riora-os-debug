@@ -28,6 +28,23 @@ export class DashboardRepo implements IDashboardRepo {
     return toDashboardSnapshot(data as unknown as BrainDashboardRow);
   }
 
+  async latestBeforeOrAt(storeId: UUID, date: string): Promise<DashboardSnapshot | null> {
+    const { data, error } = await this.client
+      .from('brain_dashboard_daily')
+      .select(DASHBOARD_COLUMNS)
+      .eq('store_id', storeId)
+      .lte('snapshot_date', date)
+      .order('snapshot_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`DashboardRepo.latestBeforeOrAt failed: ${error.message}`);
+    }
+    if (!data) return null;
+    return toDashboardSnapshot(data as unknown as BrainDashboardRow);
+  }
+
   async listSinceDate(storeId: UUID, fromDate: string): Promise<DashboardSnapshot[]> {
     const { data, error } = await this.client
       .from('brain_dashboard_daily')

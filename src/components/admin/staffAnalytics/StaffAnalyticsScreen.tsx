@@ -9,9 +9,12 @@
  * 五十音順表示。本コンポーネントはAPIが返した配列順(五十音順)をそのまま描画するのみで、
  * クライアント側で並び替え・順位番号・スタッフ間の比較強調は一切行わない。
  */
-import { useEffect } from 'react'
+import { useEffect, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Loader2, User } from 'lucide-react'
 import { useStaffAnalyticsStore } from '@/store/useStaffAnalyticsStore'
+import { useMonthStore } from '@/store/useMonthStore'
+import MonthSelector from '../MonthSelector'
 import { DEMO_STORE_ID } from '@/lib/constants'
 
 function formatYen(n: number): string {
@@ -39,7 +42,7 @@ function Metric({ label, value, color = '#5C4033' }: { label: string; value: str
   )
 }
 
-function StaffCard({ row }: { row: { staffName: string; monthlySales: number; nominationRate: number | null; repeatRate: number | null; ltv: number | null; growthRate: number | null } }) {
+function StaffCard({ row, monthLabel }: { row: { staffName: string; monthlySales: number; nominationRate: number | null; repeatRate: number | null; ltv: number | null; growthRate: number | null }; monthLabel: string }) {
   const growth = formatGrowth(row.growthRate)
   return (
     <div style={{ background: '#fff', border: '1px solid #F5EEF0', borderRadius: '16px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -50,7 +53,7 @@ function StaffCard({ row }: { row: { staffName: string; monthlySales: number; no
 
       {/* 売上は必ず指名率・リピート率と同居して表示する(v2.0「売上単体表示を型で禁止」) */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-        <Metric label="売上(今月)" value={formatYen(row.monthlySales)} />
+        <Metric label={`売上(${monthLabel})`} value={formatYen(row.monthlySales)} />
         <Metric label="指名率" value={formatPercent(row.nominationRate)} />
         <Metric label="リピート率" value={formatPercent(row.repeatRate)} />
         <Metric label="LTV" value={row.ltv === null ? '—' : formatYen(Math.round(row.ltv))} />
@@ -60,12 +63,27 @@ function StaffCard({ row }: { row: { staffName: string; monthlySales: number; no
   )
 }
 
-export default function StaffAnalyticsScreen() {
+function StaffAnalyticsContent() {
   const { staffAnalytics, isLoading, error, fetchStaffAnalytics } = useStaffAnalyticsStore()
+  const { selectedMonth, setSelectedMonth } = useMonthStore()
+  const searchParams = useSearchParams()
+
+  // URL の ?month= を読んでストアに反映(リロード復元)
+  useEffect(() => {
+    const urlMonth = searchParams.get('month')
+    if (urlMonth && /^\d{4}-\d{2}$/.test(urlMonth)) {
+      setSelectedMonth(urlMonth)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
-    fetchStaffAnalytics(DEMO_STORE_ID)
-  }, [fetchStaffAnalytics])
+    fetchStaffAnalytics(DEMO_STORE_ID, selectedMonth)
+  }, [fetchStaffAnalytics, selectedMonth])
+
+  const currentYM = new Date().toISOString().slice(0, 7)
+  const isCurrentMonth = selectedMonth === currentYM
+  const monthLabel = isCurrentMonth ? '今月' : `${Number(selectedMonth.slice(5, 7))}月`
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '16px', maxWidth: '480px' }}>
@@ -73,7 +91,10 @@ export default function StaffAnalyticsScreen() {
         <p style={{ fontSize: '10px', fontWeight: 700, color: '#C8A8B0', letterSpacing: '0.1em', marginBottom: '2px' }}>
           画面④ MD-4
         </p>
-        <h1 style={{ fontSize: '18px', fontWeight: 700, color: '#5C4033' }}>スタッフ分析</h1>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+          <h1 style={{ fontSize: '18px', fontWeight: 700, color: '#5C4033' }}>スタッフ分析</h1>
+          <MonthSelector />
+        </div>
         <p style={{ fontSize: '12px', color: '#9F7E6C', marginTop: '4px' }}>
           五十音順に表示しています。ランキング・順位はありません。
         </p>
@@ -99,8 +120,16 @@ export default function StaffAnalyticsScreen() {
       )}
 
       {!isLoading && staffAnalytics.map((row) => (
-        <StaffCard key={row.staffId} row={row} />
+        <StaffCard key={row.staffId} row={row} monthLabel={monthLabel} />
       ))}
     </div>
+  )
+}
+
+export default function StaffAnalyticsScreen() {
+  return (
+    <Suspense>
+      <StaffAnalyticsContent />
+    </Suspense>
   )
 }

@@ -19,17 +19,25 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function lastDayOfMonth(yearMonth: string): string {
+  const [y, m] = yearMonth.split('-').map(Number);
+  return new Date(y, m, 0).toISOString().slice(0, 10);
+}
+
 export async function GET(req: NextRequest) {
   const parsed = staffAnalyticsQuerySchema.safeParse({
     storeId: req.nextUrl.searchParams.get('storeId'),
     date: req.nextUrl.searchParams.get('date') ?? undefined,
+    month: req.nextUrl.searchParams.get('month') ?? undefined,
   });
   if (!parsed.success) {
     return NextResponse.json(toValidationErrorResponse(parsed.error), { status: 400 });
   }
 
   const { storeId } = parsed.data;
-  const date = parsed.data.date ?? todayIso();
+  const date = parsed.data.month
+    ? lastDayOfMonth(parsed.data.month)
+    : (parsed.data.date ?? todayIso());
 
   let repos;
   try {

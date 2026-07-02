@@ -15,12 +15,14 @@ export const storeIdQuerySchema = z.object({
 export const recentVisitsLimitSchema = z.coerce.number().int().min(1).max(20).default(5);
 
 /**
- * GetDashboardTop(GET /api/dashboard/top?storeId=...&date=...)のクエリ検証スキーマ。
- * dateは省略時サーバー現在日時(YYYY-MM-DD)。本日売上・当月集計の基準日として使う。
+ * GetDashboardTop(GET /api/dashboard/top?storeId=...&date=...&month=...)のクエリ検証スキーマ。
+ * month(YYYY-MM)が指定された場合はその月末を基準日として使い、月指定表示に対応する。
+ * dateは後方互換用(省略時サーバー現在日時)。monthとdateが両方ある場合はmonthを優先。
  */
 export const dashboardTopQuerySchema = z.object({
   storeId: idSchema,
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD').optional(),
+  month: z.string().regex(/^\d{4}-\d{2}$/, 'month must be YYYY-MM').optional(),
 });
 
 /**
@@ -38,12 +40,13 @@ export const customerAssetsQuerySchema = z.object({
 });
 
 /**
- * GetStaffAnalytics(GET /api/admin/staff-analytics?storeId=...&date=...)のクエリ検証スキーマ。
- * dateは省略時サーバー現在日時(YYYY-MM-DD)。当月売上・成長率の基準日。
+ * GetStaffAnalytics(GET /api/admin/staff-analytics?storeId=...&date=...&month=...)のクエリ検証スキーマ。
+ * month(YYYY-MM)が指定された場合はその月末を基準日にする。monthとdateが両方ある場合はmonthを優先。
  */
 export const staffAnalyticsQuerySchema = z.object({
   storeId: idSchema,
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD').optional(),
+  month: z.string().regex(/^\d{4}-\d{2}$/, 'month must be YYYY-MM').optional(),
 });
 
 /** GetOccupancy(GET /api/admin/occupancy?storeId=...&date=...)のクエリ検証スキーマ。 */

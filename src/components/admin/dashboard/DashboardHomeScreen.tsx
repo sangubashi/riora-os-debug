@@ -10,10 +10,13 @@
  *
  * スタッフランキングはv2.0画面④(MD-4・売上単体表示禁止)の別契約のため本画面には含めない。
  */
-import { useEffect } from 'react'
+import { useEffect, Suspense } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { TrendingUp, Target, CalendarCheck, MessageCircleHeart, AlertTriangle, AlertCircle, Info, UploadCloud, Loader2, Users, Settings } from 'lucide-react'
 import { useDashboardTopStore, type TodayAction } from '@/store/useDashboardTopStore'
+import { useMonthStore } from '@/store/useMonthStore'
+import MonthSelector from '../MonthSelector'
 import { DEMO_STORE_ID } from '@/lib/constants'
 
 const SEVERITY_STYLE: Record<TodayAction['severity'], { color: string; bg: string; Icon: typeof AlertTriangle; label: string }> = {
@@ -87,12 +90,23 @@ function SalesTrendChart({ points }: { points: { snapshotDate: string; monthlySa
   )
 }
 
-export default function DashboardHomeScreen() {
+function DashboardHomeContent() {
   const { data, isLoading, error, fetchTop } = useDashboardTopStore()
+  const { selectedMonth, setSelectedMonth } = useMonthStore()
+  const searchParams = useSearchParams()
+
+  // URL の ?month= を読んでストアに反映(リロード復元)
+  useEffect(() => {
+    const urlMonth = searchParams.get('month')
+    if (urlMonth && /^\d{4}-\d{2}$/.test(urlMonth)) {
+      setSelectedMonth(urlMonth)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
-    fetchTop(DEMO_STORE_ID)
-  }, [fetchTop])
+    fetchTop(DEMO_STORE_ID, selectedMonth)
+  }, [fetchTop, selectedMonth])
 
   if (isLoading && !data) {
     return (
@@ -115,9 +129,19 @@ export default function DashboardHomeScreen() {
 
   const { required4, kpi4, extendedKpi, todayActions, salesTrend, csvImportStatus } = data
 
+  const currentYM = new Date().toISOString().slice(0, 7)
+  const isCurrentMonth = selectedMonth === currentYM
+  const monthLabel = isCurrentMonth
+    ? '今月'
+    : `${Number(selectedMonth.slice(5, 7))}月`
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '16px', maxWidth: '480px' }}>
-      <SectionCard title="今月の経営(必須4指標)" icon={<TrendingUp size={16} color="#D98292" />}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '-4px' }}>
+        <p style={{ fontSize: '11px', fontWeight: 700, color: '#C8A8B0' }}>表示月</p>
+        <MonthSelector />
+      </div>
+      <SectionCard title={`${monthLabel}の経営(必須4指標)`} icon={<TrendingUp size={16} color="#D98292" />}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
           <Stat label="売上" value={`${formatYen(required4.monthlySales)} / 目標 ${kpi4.salesTarget !== null ? formatYen(kpi4.salesTarget) : '未設定'}`} />
           <Stat
@@ -214,9 +238,17 @@ export default function DashboardHomeScreen() {
         )}
       </SectionCard>
 
-      <SectionCard title="売上推移(当月・日次)" icon={<CalendarCheck size={16} color="#D98292" />}>
+      <SectionCard title="売上推移(選択月・日次)" icon={<CalendarCheck size={16} color="#D98292" />}>
         <SalesTrendChart points={salesTrend} />
       </SectionCard>
     </div>
+  )
+}
+
+export default function DashboardHomeScreen() {
+  return (
+    <Suspense>
+      <DashboardHomeContent />
+    </Suspense>
   )
 }

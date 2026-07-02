@@ -20,7 +20,7 @@ interface StaffAnalyticsState {
   staffAnalytics: StaffAnalyticsRow[]
   isLoading: boolean
   error: string | null
-  fetchStaffAnalytics: (storeId: string) => Promise<void>
+  fetchStaffAnalytics: (storeId: string, month?: string) => Promise<void>
 }
 
 export const useStaffAnalyticsStore = create<StaffAnalyticsState>((set) => ({
@@ -28,11 +28,13 @@ export const useStaffAnalyticsStore = create<StaffAnalyticsState>((set) => ({
   isLoading: false,
   error: null,
 
-  fetchStaffAnalytics: async (storeId: string) => {
+  fetchStaffAnalytics: async (storeId: string, month?: string) => {
     set({ isLoading: true, error: null })
 
     try {
-      const res = await fetch(`/api/admin/staff-analytics?storeId=${encodeURIComponent(storeId)}`)
+      const params = new URLSearchParams({ storeId })
+      if (month) params.set('month', month)
+      const res = await fetch(`/api/admin/staff-analytics?${params.toString()}`)
       const body = await res.json()
 
       if (!res.ok || !body.success) {

@@ -74,7 +74,7 @@ interface DashboardTopState {
   data: DashboardTopData | null
   isLoading: boolean
   error: string | null
-  fetchTop: (storeId: string) => Promise<void>
+  fetchTop: (storeId: string, month?: string) => Promise<void>
 }
 
 export const useDashboardTopStore = create<DashboardTopState>((set) => ({
@@ -82,11 +82,13 @@ export const useDashboardTopStore = create<DashboardTopState>((set) => ({
   isLoading: false,
   error: null,
 
-  fetchTop: async (storeId: string) => {
+  fetchTop: async (storeId: string, month?: string) => {
     set({ isLoading: true, error: null })
 
     try {
-      const res = await fetch(`/api/dashboard/top?storeId=${encodeURIComponent(storeId)}`)
+      const params = new URLSearchParams({ storeId })
+      if (month) params.set('month', month)
+      const res = await fetch(`/api/dashboard/top?${params.toString()}`)
       const body = await res.json()
 
       if (!res.ok || !body.success) {
