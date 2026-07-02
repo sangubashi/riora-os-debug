@@ -1,0 +1,68 @@
+/**
+ * csvTypeDetector.ts — CSVファイル形式の自動判定(売上明細/予約/不明)
+ *
+ * アップロード時にヘッダー行を解析して形式を判定し、画面に判定結果を表示する。
+ * SalonBoard売上明細CSV → 'detail'
+ * 予約CSV              → 'reservation' + 情報メッセージ(エラーにしない)
+ * その他               → 'unknown'
+ *
+ * 列名ゆらぎ吸収はsalonBoardDetailParser.tsのresolveDetailHeader()を共用する。
+ */
+import { resolveDetailHeader } from './salonBoardDetailParser'
+
+export type CsvType = 'detail' | 'reservation' | 'unknown'
+
+export interface CsvTypeDetectionResult {
+  type: CsvType
+  infoMessage: string | null
+}
+
+const DETAIL_REQUIRED_COLUMNS = ['会計ID', '会計日', 'スタッフ', '区分', '金額']
+const DETAIL_MATCH_THRESHOLD = 4
+
+const RESERVATION_SIGNALS = new Set([
+  '予約日', '予約時間', '予約メニュー', '施術者', '来店予定時刻',
+  '施術時間', '予約ステータス', '予約番号',
+])
+
+export function detectCsvType(rawHeaders: string[]): CsvTypeDetectionResult {
+  const resolved = rawHeaders.map(resolveDetailHeader)
+
+  const detailMatchCount = DETAIL_REQUIRED_COLUMNS.filter(r => resolved.includes(r)).length
+  if (detailMatchCount >= DETAIL_MATCH_THRESHOLD) {
+    return { type: 'detail', infoMessage: null }
+  }
+
+  const reservationMatchCount = rawHeaders.filter(h => RESERVATION_SIGNALS.has(h)).length
+  if (reservationMatchCount >= 2) {
+    return {
+      type: 'reservation',
+      infoMessage: '予約CSVを検出しました。予約インポート機能は次フェーズで対応予定です。',
+    }
+  }
+
+  return { type: 'unknown', infoMessage: null }
+}
+
+/** CSVテキストの先頭行を解析してヘッダー一覧を返す(type-detection専用の軽量パーサー)。 */
+export function parseHeadersFromCsv(csvText: string): string[] {
+  const firstLine = (csvText.split(/\r?\n/)[0] ?? '').trim()
+  if (!firstLine) return []
+  const result: string[] = []
+  let current = ''
+  let inQuote = false
+  for (let i = 0; i < firstLine.length; i++) {
+    const ch = firstLine[i]
+    if (ch === '"') {
+      if (inQuote && firstLine[i + 1] === '"') { current += '"'; i++ }
+      else { inQuote = !inQuote }
+    } else if (ch === ',' && !inQuote) {
+      result.push(current.trim())
+      current = ''
+    } else {
+      current += ch
+    }
+  }
+  result.push(current.trim())
+  return result
+}
