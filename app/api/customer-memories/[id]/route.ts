@@ -28,7 +28,7 @@ async function verifyOwnership(
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const reqStaff = await extractStaffFromRequest(req)
   if (!reqStaff) {
@@ -54,7 +54,8 @@ export async function PATCH(
     return NextResponse.json({ error: 'customer_id is required' }, { status: 400 })
   }
 
-  const owned = await verifyOwnership(params.id, body.customer_id)
+  const { id } = await params
+  const owned = await verifyOwnership(id, body.customer_id)
   if (!owned) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
@@ -75,7 +76,7 @@ export async function PATCH(
   const { data, error } = await supabase
     .from('customer_memories')
     .update(updates)
-    .eq('id', params.id)
+    .eq('id', id)
     .eq('store_id', STORE_ID)
     .select()
     .single()
@@ -86,7 +87,7 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const reqStaff = await extractStaffFromRequest(req)
   if (!reqStaff) {
@@ -98,7 +99,8 @@ export async function DELETE(
     return NextResponse.json({ error: 'customer_id is required' }, { status: 400 })
   }
 
-  const owned = await verifyOwnership(params.id, customerId)
+  const { id } = await params
+  const owned = await verifyOwnership(id, customerId)
   if (!owned) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
@@ -107,7 +109,7 @@ export async function DELETE(
   const { error } = await supabase
     .from('customer_memories')
     .delete()
-    .eq('id', params.id)
+    .eq('id', id)
     .eq('store_id', STORE_ID)
 
   if (error) return NextResponse.json({ error: String(error) }, { status: 500 })
