@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Upload, FileText, AlertCircle, CheckCircle2, X, ShieldAlert,
-  UserCog, Users, History, BookUser, Loader2,
+  UserCog, Users, History, BookUser, Loader2, Info,
 } from 'lucide-react'
 import {
   mockDryRun, mockRunImport, mockFetchHistory, mockAddStaffAlias, mockFetchStaffAliases,
@@ -76,13 +76,20 @@ export default function CsvImportScreen() {
 
   const [history, setHistory] = useState<ImportHistoryItem[]>([])
   const [historyLoading, setHistoryLoading] = useState(true)
+  const [historyError, setHistoryError] = useState<string | null>(null)
   const [showAliasManager, setShowAliasManager] = useState(false)
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true)
-    const rows = await mockFetchHistory()
-    setHistory(rows)
-    setHistoryLoading(false)
+    setHistoryError(null)
+    try {
+      const rows = await mockFetchHistory()
+      setHistory(rows)
+    } catch (e) {
+      setHistoryError(String(e))
+    } finally {
+      setHistoryLoading(false)
+    }
   }, [])
 
   useEffect(() => {
@@ -162,6 +169,12 @@ export default function CsvImportScreen() {
     return validation.unresolvedStaff.every((u) => staffDecisions[u.rawName])
   }, [validation, staffDecisions])
 
+  const canImport = useMemo(() => {
+    if (!validation) return false
+    if (validation.csvType !== 'detail') return false
+    return allStaffResolved
+  }, [validation, allStaffResolved])
+
   const remainingUnresolvedCount = useMemo(() => {
     if (!validation) return 0
     return validation.unresolvedStaff.filter((u) => !staffDecisions[u.rawName]).length
@@ -171,7 +184,7 @@ export default function CsvImportScreen() {
 
   const handleImport = useCallback(async () => {
     const file = fileBlobRef.current
-    if (!validation || !allStaffResolved || !file) return
+    if (!validation || !canImport || !file) return
     setState('importing')
     setProgress({ processed: 0, total: validation.totalRows })
     try {
@@ -185,7 +198,7 @@ export default function CsvImportScreen() {
       setError(String(e))
       setState('error')
     }
-  }, [validation, allStaffResolved, reviewDecisions, loadHistory])
+  }, [validation, canImport, reviewDecisions, loadHistory])
 
   return (
     <div style={{
@@ -303,6 +316,31 @@ export default function CsvImportScreen() {
         {/* ── ② Dry Run結果 ── */}
         {validation && state !== 'parsing' && state !== 'idle' && (
           <SectionCard title="② Dry Run結果" icon={<FileText size={15} color="#D98292" />}>
+            {/* CSV形式自動判定バッジ */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+              <span style={{ fontSize: '10px', color: '#C8A8B0' }}>CSV形式:</span>
+              <span style={{
+                fontSize: '10px', fontWeight: 700,
+                color: validation.csvType === 'detail' ? '#2D6A4F' : validation.csvType === 'reservation' ? '#C9A055' : '#9F7E6C',
+                background: validation.csvType === 'detail' ? '#F0FFF8' : validation.csvType === 'reservation' ? '#FFFBF0' : '#FAFAFA',
+                border: `1px solid ${validation.csvType === 'detail' ? '#B7E4C7' : validation.csvType === 'reservation' ? '#F4E4C2' : '#E5E5E5'}`,
+                borderRadius: '999px', padding: '2px 9px',
+              }}>
+                {validation.csvType === 'detail' ? '売上明細CSV' : validation.csvType === 'reservation' ? '予約CSV' : '不明CSV'}
+              </span>
+            </div>
+
+            {/* 予約CSV情報メッセージ */}
+            {validation.csvInfoMessage && (
+              <div style={{
+                display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '10px 14px',
+                background: '#FFFBF0', border: '1px solid #F4E4C2', borderRadius: '12px', marginBottom: '12px',
+              }}>
+                <Info size={14} color="#C9A055" style={{ flexShrink: 0, marginTop: '1px' }} />
+                <p style={{ fontSize: '11px', color: '#9F7E6C', lineHeight: 1.5 }}>{validation.csvInfoMessage}</p>
+              </div>
+            )}
+
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
               <CountStat label="取込可" value={validation.importable} color="#2D6A4F" />
               <CountStat label="要確認" value={validation.needsReview.length} color="#C9A055" />
@@ -478,17 +516,22 @@ export default function CsvImportScreen() {
         {/* ── ⑤ 取込実行 / 進捗 / 完了レポート ── */}
         {validation && state === 'dryrun_done' && (
           <div>
+            {validation.csvType !== 'detail' && !validation.csvInfoMessage && (
+              <p style={{ fontSize: '11px', color: '#9F7E6C', textAlign: 'center', marginBottom: '8px' }}>
+                売上明細CSV以外は取り込めません。
+              </p>
+            )}
             <motion.button
-              whileTap={{ scale: allStaffResolved ? 0.97 : 1 }}
+              whileTap={{ scale: canImport ? 0.97 : 1 }}
               onClick={handleImport}
-              disabled={!allStaffResolved}
+              disabled={!canImport}
               style={{
                 width: '100%', padding: '14px', border: 'none', borderRadius: '14px',
-                cursor: allStaffResolved ? 'pointer' : 'default',
-                background: allStaffResolved ? 'linear-gradient(135deg, #F56E8B, #F0487A)' : '#F0E4E7',
-                color: allStaffResolved ? '#fff' : '#C8A8B0',
+                cursor: canImport ? 'pointer' : 'default',
+                background: canImport ? 'linear-gradient(135deg, #F56E8B, #F0487A)' : '#F0E4E7',
+                color: canImport ? '#fff' : '#C8A8B0',
                 fontSize: '13px', fontWeight: 700,
-                boxShadow: allStaffResolved ? '0 6px 20px rgba(245,110,139,0.35)' : 'none',
+                boxShadow: canImport ? '0 6px 20px rgba(245,110,139,0.35)' : 'none',
               }}
             >
               ⑤ この内容で取り込む({validation.importable}件)
@@ -550,6 +593,14 @@ export default function CsvImportScreen() {
         <SectionCard title="取込履歴" icon={<History size={15} color="#D98292" />}>
           {historyLoading ? (
             <p style={{ fontSize: '11px', color: '#C8A8B0', textAlign: 'center', padding: '12px' }}>読み込み中...</p>
+          ) : historyError ? (
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: '7px', padding: '10px 12px',
+              background: '#FFF0F0', borderRadius: '10px', border: '1px solid #FCCDD8',
+            }}>
+              <AlertCircle size={14} color="#EF476F" style={{ flexShrink: 0, marginTop: '1px' }} />
+              <p style={{ fontSize: '11px', color: '#EF476F', lineHeight: 1.5 }}>履歴取得エラー: {historyError}</p>
+            </div>
           ) : history.length === 0 ? (
             <p style={{ fontSize: '11px', color: '#C8A8B0', textAlign: 'center', padding: '12px' }}>取込履歴はまだありません</p>
           ) : (

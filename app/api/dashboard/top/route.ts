@@ -17,6 +17,30 @@ function firstOfMonth(date: string): string {
   return `${date.slice(0, 7)}-01`;
 }
 
+function firstOfPreviousMonth(month: string): string {
+  const y = Number(month.slice(0, 4));
+  const m = Number(month.slice(5, 7));
+  return new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 10);
+}
+
+function hasValidFixedCosts(fixedCosts: Record<string, unknown> | null | undefined): boolean {
+  if (!fixedCosts) return false;
+  return Object.values(fixedCosts).some(v => typeof v === 'number' && Number.isFinite(v as number));
+}
+
+function sumFixedCosts(fixedCosts: Record<string, unknown> | null | undefined): number | null {
+  if (!fixedCosts) return null;
+  let total = 0;
+  let hasValue = false;
+  for (const value of Object.values(fixedCosts)) {
+    if (typeof value === 'number' && Number.isFinite(value as number)) {
+      total += value as number;
+      hasValue = true;
+    }
+  }
+  return hasValue ? total : null;
+}
+
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -42,7 +66,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [snapshot, trend, settings, todaySales, csvImportLogs] = await Promise.all([
+    const [snapshot, trend, settingsForMonth, todaySales, csvImportLogs] = await Promise.all([
       repos.dashboardRepo.latestByStore(storeId),
       repos.dashboardRepo.listSinceDate(storeId, month),
       repos.businessSettingsRepo.findByStoreAndMonth(storeId, month),
@@ -50,10 +74,27 @@ export async function GET(req: NextRequest) {
       repos.opsLogRepo.recentByStoreAndKind(storeId, 'csv_import', 1),
     ]);
 
+    // 当月行が未存在の場合、または fixed_costs が全 null(未入力)の場合は
+    // 直前月の設定を引き継ぐ(月跨ぎ固定費永続化)。
+    const settings = hasValidFixedCosts(settingsForMonth?.fixedCosts)
+      ? settingsForMonth
+      : (await repos.businessSettingsRepo.findLatestBeforeOrAt(storeId, firstOfPreviousMonth(month)))
+        ?? settingsForMonth;
+
     const monthlySales = snapshot?.monthlySales ?? 0;
-    const breakevenPoint = snapshot?.breakevenPoint ?? null;
+    const fixedCostTotal = sumFixedCosts(settings?.fixedCosts);
+    const variableCostRate = settings?.variableCostRate ?? 0;
+    // breakeven/profit はスナップショット(nightly)ではなく現在のsettingsからライブ計算。
+    // nightly実行前の古いスナップショットでも常に最新の固定費設定が反映される。
+    const breakevenPoint = fixedCostTotal === null
+      ? null
+      : Math.round(fixedCostTotal / (1 - variableCostRate));
+    const forecastSales = snapshot?.forecastSales ?? 0;
+    const monthProfitEst = fixedCostTotal === null
+      ? null
+      : Math.round(forecastSales * (1 - variableCostRate) - fixedCostTotal);
     const salesTarget = settings?.salesTarget ?? null;
-    const fixedCostsConfigured = settings?.fixedCosts != null;
+    const fixedCostsConfigured = hasValidFixedCosts(settings?.fixedCosts);
 
     const csvLog = csvImportLogs[0] ?? null;
     const csvImportStatus = csvLog
@@ -73,11 +114,12 @@ export async function GET(req: NextRequest) {
       month,
       required4: {
         monthlySales,
-        profit: fixedCostsConfigured ? snapshot?.monthProfitEst ?? null : null,
+        profit: fixedCostsConfigured ? monthProfitEst : null,
         breakevenPoint,
         breakevenRemaining: breakevenPoint === null ? null : Math.max(breakevenPoint - monthlySales, 0),
-        forecastSales: snapshot?.forecastSales ?? 0,
+        forecastSales,
         fixedCostsConfigured,
+        fixedCostTotal,
       },
       kpi4: {
         todaySales,

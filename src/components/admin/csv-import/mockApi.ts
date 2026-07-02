@@ -22,10 +22,10 @@ import type {
   ValidationResult,
 } from './types'
 
-async function readJson(res: Response): Promise<any> {
-  const json = await res.json().catch(() => ({}))
-  if (!res.ok || json.success === false) {
-    throw new Error(json.message || json.error || `request_failed (${res.status})`)
+async function readJson(res: Response): Promise<Record<string, unknown>> {
+  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>
+  if (!res.ok || json['success'] === false) {
+    throw new Error(String(json['message'] ?? json['error'] ?? `request_failed (${res.status})`))
   }
   return json
 }
@@ -37,7 +37,7 @@ export async function mockDryRun(file: File): Promise<ValidationResult> {
 
   const res = await fetch('/api/admin/csv/dry-run', { method: 'POST', body: form })
   const { success, ...result } = await readJson(res)
-  return result as ValidationResult
+  return result as unknown as ValidationResult
 }
 
 export async function mockRunImport(
@@ -57,19 +57,19 @@ export async function mockRunImport(
   const { success, ...report } = await readJson(res)
 
   onProgress(totalRows, totalRows)
-  return report as ImportReport
+  return report as unknown as ImportReport
 }
 
 export async function mockFetchHistory(): Promise<ImportHistoryItem[]> {
   const res = await fetch(`/api/admin/csv/history?storeId=${DEMO_STORE_ID}`)
   const { history } = await readJson(res)
-  return history as ImportHistoryItem[]
+  return history as unknown as ImportHistoryItem[]
 }
 
 export async function mockFetchStaffAliases(): Promise<StaffAliasListResponse> {
   const res = await fetch(`/api/admin/staff-aliases?storeId=${DEMO_STORE_ID}`)
   const { success, ...response } = await readJson(res)
-  return response as StaffAliasListResponse
+  return response as unknown as StaffAliasListResponse
 }
 
 export async function mockAddStaffAlias(alias: string, staffId: string): Promise<StaffAlias> {
@@ -79,7 +79,7 @@ export async function mockAddStaffAlias(alias: string, staffId: string): Promise
     body: JSON.stringify({ storeId: DEMO_STORE_ID, alias, staffId }),
   })
   const { success, ...created } = await readJson(res)
-  return created as StaffAlias
+  return created as unknown as StaffAlias
 }
 
 export type StaffBindingDecision = { rawName: string; staffId: string }

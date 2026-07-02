@@ -11,6 +11,7 @@ import { getRepos } from '../../../../lib/repos';
 import { DEMO_STORE_ID } from '@/lib/constants';
 import { decodeCsvBuffer } from '@/lib/import/csvEncoding';
 import { runImportPipeline } from '@/lib/import/csvImportPipeline';
+import { parseHeadersFromCsv, detectCsvType } from '@/lib/import/csvTypeDetector';
 import type { ReviewDecisionValue } from '@/components/admin/csv-import/types';
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -56,7 +57,10 @@ export async function POST(req: NextRequest) {
     const buf = Buffer.from(await file.arrayBuffer());
     const csvText = decodeCsvBuffer(buf);
 
-    const result = await runImportPipeline({ storeId, csvText, reviewDecisions }, repos);
+    const headers = parseHeadersFromCsv(csvText);
+    const { type: csvType } = detectCsvType(headers);
+
+    const result = await runImportPipeline({ storeId, fileName: file.name, csvType, csvText, reviewDecisions }, repos);
     if (!result.ok) {
       return NextResponse.json({ success: false, error: result.code, message: result.message }, { status: 400 });
     }

@@ -24,6 +24,23 @@ export class BusinessSettingsRepo implements IBusinessSettingsRepo {
     return toBusinessSettings(data as unknown as BrainBusinessSettingsRow);
   }
 
+  async findLatestBeforeOrAt(storeId: UUID, month: string): Promise<BusinessSettings | null> {
+    const { data, error } = await this.client
+      .from('brain_business_settings')
+      .select(BUSINESS_SETTINGS_COLUMNS)
+      .eq('store_id', storeId)
+      .lte('month', month)
+      .order('month', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`BusinessSettingsRepo.findLatestBeforeOrAt failed: ${error.message}`);
+    }
+    if (!data) return null;
+    return toBusinessSettings(data as unknown as BrainBusinessSettingsRow);
+  }
+
   async upsert(input: BusinessSettingsUpsertInput): Promise<BusinessSettings> {
     const { data, error } = await this.client
       .from('brain_business_settings')

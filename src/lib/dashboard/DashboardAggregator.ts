@@ -57,14 +57,22 @@ function daysInMonth(date: string): number {
   return new Date(year, month, 0).getDate();
 }
 
-/** fixed_costs(jsonb内訳)の数値リーフを合算する。null値・非数値キーは無視する。未設定(null)はnullを返す。 */
+/** fixed_costs(jsonb内訳)の数値リーフを合算する。null値・非数値キーは無視する。
+ * 有効な数値が1件もない場合(全nullオブジェクト含む)はnullを返す。未設定(null)もnullを返す。 */
 function sumFixedCosts(fixedCosts: Record<string, unknown> | null): number | null {
   if (!fixedCosts) return null;
   let total = 0;
+  let hasValue = false;
   for (const value of Object.values(fixedCosts)) {
-    if (typeof value === 'number' && Number.isFinite(value)) total += value;
+    if (typeof value === 'number' && Number.isFinite(value)) { total += value; hasValue = true; }
   }
-  return total;
+  return hasValue ? total : null;
+}
+
+/** fixed_costsに有効な数値フィールドが1件以上存在するか判定する。全nullオブジェクトはfalse。 */
+function hasValidFixedCosts(settings: { fixedCosts: Record<string, unknown> | null } | null): boolean {
+  if (!settings?.fixedCosts) return false;
+  return Object.values(settings.fixedCosts).some(v => typeof v === 'number' && Number.isFinite(v));
 }
 
 /**
@@ -174,7 +182,7 @@ export async function runDashboardAggregator(
 ): Promise<DashboardAggregate> {
   const monthStart = firstOfMonth(input.snapshotDate);
 
-  const [visits, settings, customers, staff, subscriptions, recentSnapshots] = await Promise.all([
+  const [visits, settingsForMonth, customers, staff, subscriptions, recentSnapshots] = await Promise.all([
     repos.visitRepo.listByStore(input.storeId),
     repos.businessSettingsRepo.findByStoreAndMonth(input.storeId, monthStart),
     repos.customerRepo.listByStore(input.storeId),
@@ -182,6 +190,14 @@ export async function runDashboardAggregator(
     repos.subscriptionRepo.listByStore(input.storeId),
     repos.dashboardRepo.listSinceDate(input.storeId, previousMonthFirstDay(input.snapshotDate)),
   ]);
+
+  // 当月行が未作成の場合、または fixed_costs が全 null(未入力)の場合は
+  // 直前月の設定を引き継ぐ(月跨ぎ固定費永続化)。
+  const settings = hasValidFixedCosts(settingsForMonth)
+    ? settingsForMonth
+    : (await repos.businessSettingsRepo.findLatestBeforeOrAt(
+        input.storeId, previousMonthFirstDay(input.snapshotDate)
+      )) ?? settingsForMonth;
 
   // computeDashboardAggregate()(既存の計算式)はAI Warning追加にあたり一切変更していない。
   const result = computeDashboardAggregate({

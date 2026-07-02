@@ -208,6 +208,8 @@ export interface DryRunInput {
   storeId:  string
   fileName: string
   csvText:  string
+  /** 自動判定済みCSV形式。未指定時は 'unknown' とみなす。 */
+  csvType?: 'detail' | 'reservation' | 'unknown'
 }
 
 export type DryRunResult =
@@ -258,7 +260,7 @@ export async function buildDryRunResult(input: DryRunInput, repos: PipelineRepos
       })
     }
 
-    if (preview.length < 3) {
+    if (preview.length < 10) {
       const matchedExisting = decision.status === 'matched'
         ? ctx.existingCustomers.find(c => c.id === decision.customerId) ?? null
         : null
@@ -296,6 +298,8 @@ export async function buildDryRunResult(input: DryRunInput, repos: PipelineRepos
       unresolvedStaff: Array.from(unresolvedStaffMap.values()),
       preview,
       qualityReport,
+      csvType: input.csvType ?? 'unknown' as const,
+      csvInfoMessage: null,
     },
   }
 }
@@ -304,7 +308,11 @@ export async function buildDryRunResult(input: DryRunInput, repos: PipelineRepos
 
 export interface ImportInput {
   storeId:         string
+  /** 監査ログ記録用ファイル名(PII含まない)。省略時は空文字列を記録する。 */
+  fileName?:       string
   csvText:         string
+  /** 自動判定済みCSV形式(監査ログ記録用)。 */
+  csvType?:        string
   /** rowNumber(=checkoutの代表行番号)→'merge'|'new'。未指定行は'new'扱い。 */
   reviewDecisions: Record<number, ReviewDecisionValue>
 }
@@ -449,7 +457,12 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
     // qualityReport.duplicateCustomerNamesは氏名を含むため要注意だが、ops_logs(brain_ops_logs)は
     // 元々owner専用APIのみが読む内部ログであり、CSVImportSecurityArchitecture.mdのPII方針は
     // 「外部送信・画面外への漏出」を主眼とするため、取込結果の監査情報として保持する。
-    detail: { newCustomers, updatedCustomers, visitsImported, piiFoundTotal, unresolvedStaffCount, durationMs, menuResolution, qualityReport },
+    detail: {
+      fileName: input.fileName ?? '',
+      rows: parsed.data.totalRows,
+      type: input.csvType ?? 'detail',
+      newCustomers, updatedCustomers, visitsImported, piiFoundTotal, unresolvedStaffCount, durationMs, menuResolution, qualityReport,
+    },
   })
 
   return {

@@ -8,8 +8,10 @@
  *     business_settings拡張項目(fixed_costs jsonb / variable_rates jsonb)
  *
  * GET: brain_business_settingsを1件取得する(設定画面の初期表示用)。
- * POST: (store_id, month)へUPSERTする。損益分岐点・利益予測の計算式は
- *   DashboardAggregator側にあり、本ルートは入力データの保存のみを行う(計算しない)。
+ *   当月行が未存在の場合は直前月の設定をフォールバック返却する(月跨ぎ固定費永続化)。
+ * POST: (store_id, month)へUPSERTする。変更前後をbrain_ops_logsへ記録する(監査)。
+ *   損益分岐点・利益予測の計算式はDashboardAggregator側にあり、
+ *   本ルートは入力データの保存のみを行う(計算しない)。
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getRepos } from '../../../lib/repos';
@@ -19,6 +21,17 @@ import { toValidationErrorResponse } from '../../_schemas/common';
 
 function firstOfMonth(date: string): string {
   return `${date.slice(0, 7)}-01`;
+}
+
+function firstOfPreviousMonth(month: string): string {
+  const y = Number(month.slice(0, 4));
+  const m = Number(month.slice(5, 7));
+  return new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 10);
+}
+
+function hasValidFixedCosts(fixedCosts: Record<string, unknown> | null | undefined): boolean {
+  if (!fixedCosts) return false;
+  return Object.values(fixedCosts).some(v => typeof v === 'number' && Number.isFinite(v as number));
 }
 
 export async function GET(req: NextRequest) {
@@ -39,7 +52,14 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const settings = await repos.businessSettingsRepo.findByStoreAndMonth(parsed.data.storeId, month);
+    // 当月行が未存在の場合、または fixed_costs が全 null(未入力)の場合は
+    // 直前月の設定を引き継ぐ(月跨ぎ固定費永続化)。
+    const exactSettings = await repos.businessSettingsRepo.findByStoreAndMonth(parsed.data.storeId, month);
+    const settings = hasValidFixedCosts(exactSettings?.fixedCosts)
+      ? exactSettings
+      : (await repos.businessSettingsRepo.findLatestBeforeOrAt(
+          parsed.data.storeId, firstOfPreviousMonth(month)
+        )) ?? exactSettings;
     return NextResponse.json({ success: true, month, settings });
   } catch (e) {
     return NextResponse.json({ success: false, error: String(e) }, { status: 500 });
@@ -67,7 +87,26 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const before = await repos.businessSettingsRepo.findByStoreAndMonth(
+      parsed.data.storeId,
+      parsed.data.month,
+    );
     const settings = await repos.businessSettingsRepo.upsert(parsed.data);
+
+    // 変更前後をbrain_ops_logsへ記録する(設計書§監査)。
+    await repos.opsLogRepo.insert({
+      storeId: parsed.data.storeId,
+      kind: 'business_settings_update',
+      actorId: null,
+      detail: {
+        month: parsed.data.month,
+        before: before
+          ? { fixedCosts: before.fixedCosts, variableCostRate: before.variableCostRate, salesTarget: before.salesTarget }
+          : null,
+        after: { fixedCosts: settings.fixedCosts, variableCostRate: settings.variableCostRate, salesTarget: settings.salesTarget },
+      },
+    });
+
     return NextResponse.json({ success: true, settings });
   } catch (e) {
     return NextResponse.json({ success: false, error: String(e) }, { status: 500 });

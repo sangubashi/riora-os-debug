@@ -303,6 +303,11 @@ export interface BusinessSettingsUpsertInput {
 export interface IBusinessSettingsRepo {
   /** brain_business_settingsをstore_id+monthで1件取得する(画面①目標進捗/損益分岐)。存在しない場合はnull。 */
   findByStoreAndMonth(storeId: UUID, month: string): Promise<BusinessSettings | null>;
+  /**
+   * brain_business_settingsをstore_id+month<=指定monthで最新1件取得する(月跨ぎ固定費フォールバック用)。
+   * 当月行が存在しない場合に直前の設定を引き継ぐために使用する。存在しない場合はnull。
+   */
+  findLatestBeforeOrAt(storeId: UUID, month: string): Promise<BusinessSettings | null>;
   /** brain_business_settingsへ(store_id, month)でUPSERTする(固定費・変動費率設定UIの保存先)。更新後の行を返す。 */
   upsert(input: BusinessSettingsUpsertInput): Promise<BusinessSettings>;
 }

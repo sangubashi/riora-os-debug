@@ -9,6 +9,7 @@ import { getRepos } from '../../../../lib/repos';
 import { DEMO_STORE_ID } from '@/lib/constants';
 import { decodeCsvBuffer } from '@/lib/import/csvEncoding';
 import { buildDryRunResult } from '@/lib/import/csvImportPipeline';
+import { parseHeadersFromCsv, detectCsvType } from '@/lib/import/csvTypeDetector';
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
@@ -41,7 +42,36 @@ export async function POST(req: NextRequest) {
     const buf = Buffer.from(await file.arrayBuffer());
     const csvText = decodeCsvBuffer(buf);
 
-    const dryRun = await buildDryRunResult({ storeId, fileName: file.name, csvText }, repos);
+    const headers = parseHeadersFromCsv(csvText);
+    const { type: csvType, infoMessage: csvInfoMessage } = detectCsvType(headers);
+
+    // 予約CSVはエラーにせず情報メッセージのみ返す(次フェーズで対応予定)。
+    if (csvType === 'reservation') {
+      const totalRows = Math.max(0, csvText.split(/\r?\n/).filter(l => l.trim() !== '').length - 1);
+      return NextResponse.json({
+        success: true,
+        fileName: file.name,
+        totalRows,
+        importable: 0,
+        needsReview: [],
+        skipped: [],
+        unknownColumns: [],
+        droppedColumns: [],
+        piiFoundTotal: 0,
+        unresolvedStaff: [],
+        preview: [],
+        qualityReport: {
+          score: 0, level: 'poor', totalCheckouts: 0, warnings: [],
+          menuResolution: { exactMatch: 0, normalizedMatch: 0, partialMatch: 0, fallbackOther: 0, unresolved: 0, entries: [] },
+          duplicateCustomerNames: [],
+          rates: { customerResolutionRate: 0, staffResolutionRate: 0, menuResolutionRate: 0, importedOtherRate: 0, errorCount: 0, skippedCount: 0 },
+        },
+        csvType,
+        csvInfoMessage,
+      });
+    }
+
+    const dryRun = await buildDryRunResult({ storeId, fileName: file.name, csvText, csvType }, repos);
     if (!dryRun.ok) {
       return NextResponse.json({ success: false, error: dryRun.code, message: dryRun.message }, { status: 400 });
     }

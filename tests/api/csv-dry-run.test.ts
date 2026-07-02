@@ -55,7 +55,7 @@ describe('POST /api/admin/csv/dry-run', () => {
   it('storeId省略時はDEMO_STORE_IDを使ってbuildDryRunResultを呼ぶ', async () => {
     vi.mocked(buildDryRunResult).mockResolvedValue({
       ok: true,
-      result: { fileName: 'a.csv', totalRows: 1, importable: 1, needsReview: [], skipped: [], unknownColumns: [], droppedColumns: [], piiFoundTotal: 0, unresolvedStaff: [], preview: [], qualityReport: EMPTY_QUALITY_REPORT },
+      result: { fileName: 'a.csv', totalRows: 1, importable: 1, needsReview: [], skipped: [], unknownColumns: [], droppedColumns: [], piiFoundTotal: 0, unresolvedStaff: [], preview: [], qualityReport: EMPTY_QUALITY_REPORT, csvType: 'detail' as const, csvInfoMessage: null },
     });
     const file = new File(['会計日,区分\n2026/06/01,施術'], 'a.csv');
 

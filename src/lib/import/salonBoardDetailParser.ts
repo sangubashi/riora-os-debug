@@ -70,6 +70,19 @@ export interface CheckoutIssue {
   lineNumber?: number
 }
 
+/** 列名ゆらぎ吸収テーブル: 非標準表記 → SalonBoard標準列名(csvTypeDetector.tsでも利用)。 */
+export const DETAIL_COLUMN_ALIASES: Record<string, string> = {
+  '会計 Id': '会計ID', '会計Id': '会計ID', '会計ＩＤ': '会計ID', 'id': '会計ID', 'ID': '会計ID',
+  '担当': 'スタッフ', '担当者': 'スタッフ',
+  '売上': '金額', '売上金額': '金額',
+  '日付': '会計日', '来店日': '会計日',
+}
+
+/** 列名エイリアスを正規化する。対応する標準名がなければそのまま返す。 */
+export function resolveDetailHeader(header: string): string {
+  return DETAIL_COLUMN_ALIASES[header] ?? header
+}
+
 const HEADER_MAP: Record<string, keyof SalonBoardDetailRow> = {
   '会計日':     'checkoutDate',
   '会計時間':   'checkoutTime',
@@ -176,12 +189,16 @@ export interface ParseDetailCsvResult {
   droppedColumns:  string[]
 }
 
-function classifyUnmappedHeaders(headers: string[]): { unknownColumns: string[]; droppedColumns: string[] } {
+function classifyUnmappedHeaders(
+  originalHeaders: string[],
+  resolvedHeaders: string[],
+): { unknownColumns: string[]; droppedColumns: string[] } {
   const unknownColumns: string[] = []
   const droppedColumns: string[] = []
-  headers.forEach(h => {
-    if (HEADER_MAP[h]) return
-    if (DROP_COLUMN_ALIASES.has(h)) droppedColumns.push(h)
+  originalHeaders.forEach((h, i) => {
+    const resolved = resolvedHeaders[i]
+    if (HEADER_MAP[resolved]) return
+    if (DROP_COLUMN_ALIASES.has(h) || DROP_COLUMN_ALIASES.has(resolved)) droppedColumns.push(h)
     else unknownColumns.push(h)
   })
   return { unknownColumns, droppedColumns }
@@ -201,8 +218,9 @@ export function parseSalonBoardDetailCsv(csvText: string): ParseDetailCsvResult 
   }
 
   const headers = parseCsvLine(lines[0])
-  const { unknownColumns, droppedColumns } = classifyUnmappedHeaders(headers)
-  const missing = REQUIRED_HEADERS.filter(h => !headers.includes(h))
+  const resolvedHeaders = headers.map(resolveDetailHeader)
+  const { unknownColumns, droppedColumns } = classifyUnmappedHeaders(headers, resolvedHeaders)
+  const missing = REQUIRED_HEADERS.filter(h => !resolvedHeaders.includes(h))
   if (missing.length > 0) {
     issues.push({
       checkoutId: '-', code: 'missing_required_columns',
@@ -215,7 +233,7 @@ export function parseSalonBoardDetailCsv(csvText: string): ParseDetailCsvResult 
     const values = parseCsvLine(lines[i])
     const record: Partial<SalonBoardDetailRow> = { lineNumber: i + 1 }
 
-    headers.forEach((h, idx) => {
+    resolvedHeaders.forEach((h, idx) => {
       const field = HEADER_MAP[h]
       if (!field) return
       const raw = (values[idx] ?? '').trim()
@@ -224,7 +242,7 @@ export function parseSalonBoardDetailCsv(csvText: string): ParseDetailCsvResult 
         if (n === null) {
           issues.push({
             checkoutId: record.checkoutId ?? '?', code: 'invalid_number',
-            message: `行${i + 1}: ${h}が数値として解釈できません: "${raw}"`, severity: 'error',
+            message: `行${i + 1}: ${headers[idx] ?? h}が数値として解釈できません: "${raw}"`, severity: 'error',
             lineNumber: i + 1,
           })
         }

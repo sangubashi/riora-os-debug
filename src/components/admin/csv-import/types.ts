@@ -78,6 +78,10 @@ export interface ValidationResult {
   unresolvedStaff: UnresolvedStaffName[]
   preview: PreviewRow[]
   qualityReport: CsvQualityReport
+  /** アップロード時に列名から自動判定したCSV形式。 */
+  csvType: 'detail' | 'reservation' | 'unknown'
+  /** 情報メッセージ(予約CSVの場合のみ設定される)。エラーではない。 */
+  csvInfoMessage: string | null
 }
 
 /** menuResolver.resolveMenuId()のMenuResolutionMethod + 'unresolved'(フォールバック行も無い場合)。 */
