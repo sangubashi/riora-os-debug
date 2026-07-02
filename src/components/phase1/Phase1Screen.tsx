@@ -64,6 +64,7 @@ function toPhase1(r: ReservationWithBrainCustomer): Phase1Reservation {
     churnRisk,
     daysSinceLastVisit,
     lineTags:           [],
+    skin_tags:          bc.skin_tags ?? [],
   }
 }
 
@@ -81,7 +82,7 @@ function toCustomer(r: Phase1Reservation): BSCustomer {
     churn_risk:            r.churnRisk,
     line_response_rate:    0,
     next_visit_prediction: '',
-    skin_tags:             [],
+    skin_tags:             r.skin_tags ?? [],
     recommended_cycle_days: null,
   }
 }

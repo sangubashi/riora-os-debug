@@ -90,7 +90,8 @@ import BookingPromptSection from '@/components/customer/BookingPromptSection';
 import HandoverSection from '@/components/customer/HandoverSection';
 import ContraindicationSection from '@/components/customer/ContraindicationSection';
 import CustomerMemorySection from '@/components/customer/CustomerMemorySection';
-import CustomerMemoryTab from '@/components/customer/CustomerMemoryTab';
+import CustomerMemoryTab from '@/components/customer/CustomerMemoryTab'
+import CustomerAITimelineTab from '@/components/customer/CustomerAITimelineTab';
 
 // ─── 定数 ────────────────────────────────────────────────────────────────────
 
@@ -218,7 +219,7 @@ export default function CustomerBottomSheet({
   }, []);
 
   // ── ページ ──────────────────────────────────────────────────────────────────
-  const [page, setPage] = useState<'overview' | 'log' | 'memory'>('overview');
+  const [page, setPage] = useState<'overview' | 'log' | 'memory' | 'timeline'>('overview');
 
   // ── 接客ログ ────────────────────────────────────────────────────────────────
   const [logSelected,   setLogSelected]   = useState<Set<LogKey>>(new Set());
@@ -256,6 +257,7 @@ export default function CustomerBottomSheet({
   const [insightRefreshKey,  setInsightRefreshKey]  = useState(0);
   const [timelineRefreshKey, setTimelineRefreshKey] = useState(0);
   const [notesRefreshKey,    setNotesRefreshKey]    = useState(0);
+  const [memoryRefreshKey,   setMemoryRefreshKey]   = useState(0);
 
   // ── Booking Prompt ───────────────────────────────────────────────────────────
   const [bookingPrompt,         setBookingPrompt]         = useState<BookingPrompt | null>(null);
@@ -294,6 +296,7 @@ export default function CustomerBottomSheet({
     setInsightRefreshKey(0);
     setTimelineRefreshKey(0);
     setNotesRefreshKey(0);
+    setMemoryRefreshKey(0);
     setBookingPrompt(null);
     setBookingPromptCollapsed(false);
     setHandover(null);
@@ -317,24 +320,19 @@ export default function CustomerBottomSheet({
           if (data?.[0]?.note) { setSavedMemoText(data[0].note); setMemo(data[0].note); }
         });
 
-      supabase
-        .from('customers')
-        .select('skin_tags')
-        .eq('id', c.id)
-        .single()
-        .then(({ data }) => {
-          const tags = ((data?.skin_tags ?? c.skin_tags ?? []) as SkinTagKey[]);
-          setSkinTags(tags);
-          setEditingTags(tags);
-          if (r) {
-            setHomecarePlan(generateHomecarePlan({
-              customerName:   c.name,
-              skinTags:       tags,
-              menuName:       r.menu,
-              daysAfterVisit: r.days_since_last_visit ?? 0,
-            }));
-          }
-        });
+      {
+        const tags = (c.skin_tags ?? []) as SkinTagKey[];
+        setSkinTags(tags);
+        setEditingTags(tags);
+        if (r) {
+          setHomecarePlan(generateHomecarePlan({
+            customerName:   c.name,
+            skinTags:       tags,
+            menuName:       r.menu,
+            daysAfterVisit: r.days_since_last_visit ?? 0,
+          }));
+        }
+      }
 
     loadRecentActions(c.id);
 
@@ -481,14 +479,22 @@ export default function CustomerBottomSheet({
     if (!c || tagSaving) return;
     setTagSaving(true);
 
-    const { error } = await supabase.from('customers').update({ skin_tags: editingTags }).eq('id', c.id);
-    setTagSaving(false);
-    if (error) { toast.error('タグの保存に失敗しました'); return; }
-
-    setSkinTags(editingTags);
-    regeneratePlan(editingTags);
-    setTagEditing(false);
-    toast.success('肌タグを保存しました 🌸', { duration: 2000 });
+    try {
+      const res = await fetch(`/api/customers/${c.id}/skin-tags`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ skin_tags: editingTags }),
+      });
+      if (!res.ok) throw new Error();
+      setSkinTags(editingTags);
+      regeneratePlan(editingTags);
+      setTagEditing(false);
+      toast.success('肌タグを保存しました 🌸', { duration: 2000 });
+    } catch {
+      toast.error('肌タグの保存に失敗しました');
+    } finally {
+      setTagSaving(false);
+    }
   }, [c, editingTags, tagSaving, regeneratePlan]);
 
   // ─── ログ保存 ──────────────────────────────────────────────────────────────
@@ -1005,6 +1011,7 @@ export default function CustomerBottomSheet({
                         <CustomerMemorySection
                           customerId={c.id}
                           onManage={() => setPage('memory')}
+                          refreshKey={memoryRefreshKey}
                         />
                       </ErrorBoundary>
 
@@ -1195,6 +1202,7 @@ export default function CustomerBottomSheet({
                                 loadRecentActions(c.id);
                                 setInsightRefreshKey(p => p + 1);
                                 setTimelineRefreshKey(p => p + 1);
+                                setMemoryRefreshKey(p => p + 1);
                                 // AI分析完了後に customer_notes・booking_prompt・handover を再取得
                                 setTimeout(() => setNotesRefreshKey(p => p + 1), 2000);
                                 setTimeout(async () => {
@@ -1242,17 +1250,32 @@ export default function CustomerBottomSheet({
                         paddingBottom: 'max(env(safe-area-inset-bottom, 16px), 24px)',
                         boxShadow: '0 -1px 0 #F5ECF0',
                       }}>
-                      <div className="flex gap-2">
-                        <motion.button whileTap={{ scale: 0.97 }} onClick={() => setPage('memory')}
-                          className="flex-shrink-0 flex items-center justify-center gap-1 px-4 py-4 rounded-full border-none cursor-pointer text-sm font-bold"
-                          style={{
-                            background: 'rgba(245,110,139,0.10)',
-                            color: '#F56E8B',
-                          }}>
-                          💌 記憶
-                        </motion.button>
+                      <div className="flex flex-col gap-2">
+                        {/* サブナビ行 */}
+                        <div className="flex gap-2">
+                          <motion.button whileTap={{ scale: 0.97 }} onClick={() => setPage('memory')}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-full border-none cursor-pointer text-sm"
+                            style={{
+                              background: 'rgba(245,110,139,0.10)',
+                              color: '#F56E8B',
+                              fontWeight: 600,
+                            }}>
+                            💌 <span>メモ</span>
+                          </motion.button>
+                          <motion.button whileTap={{ scale: 0.97 }} onClick={() => setPage('timeline')}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-full cursor-pointer text-sm"
+                            style={{
+                              background: '#FFF8F2',
+                              border: '1px solid #E8D8CC',
+                              color: '#9F7E6C',
+                              fontWeight: 600,
+                            }}>
+                            🕮 <span>AI Timeline</span>
+                          </motion.button>
+                        </div>
+                        {/* メインCTAボタン */}
                         <motion.button whileTap={{ scale: 0.97 }} onClick={() => setPage('log')}
-                          className="flex-1 flex items-center justify-center gap-2 py-4 rounded-full bg-[#F56E8B] text-white text-sm font-bold border-none cursor-pointer"
+                          className="flex items-center justify-center gap-2 py-4 rounded-full bg-[#F56E8B] text-white text-sm font-bold border-none cursor-pointer"
                           style={{ boxShadow: '0 8px 24px rgba(245,110,139,0.35)' }}>
                           今日の接客を記録する
                           <ChevronRight size={18} strokeWidth={2.5} />
@@ -1277,6 +1300,26 @@ export default function CustomerBottomSheet({
                       staffId={currentStaffId}
                       onBack={() => setPage('overview')}
                     />
+                  </motion.div>
+                )}
+
+                {/* ════════════════════════════
+                    SHEET D — AI Timeline
+                ════════════════════════════ */}
+                {page === 'timeline' && (
+                  <motion.div key="timeline"
+                    initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 20 }}
+                    transition={{ duration: 0.2 }}
+                    className="flex-1 flex flex-col min-h-0"
+                  >
+                    <ErrorBoundary label="CustomerAITimelineTab" silentFail>
+                      <CustomerAITimelineTab
+                        customerId={c.id}
+                        customerName={c.name}
+                        onBack={() => setPage('overview')}
+                      />
+                    </ErrorBoundary>
                   </motion.div>
                 )}
 

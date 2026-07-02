@@ -69,7 +69,9 @@ export async function GET(req: NextRequest) {
       .order('scheduled_at', { ascending: true });
 
     if (!staff.isAdmin) {
-      query = query.eq('staff_id', staff.staffBrainId);
+      // reservations.staff_id は profiles.id (= auth.users.id) を格納する。
+      // brain_staff.id (staffBrainId) とは別物のため authUserId で比較する。
+      query = query.eq('staff_id', staff.authUserId);
     }
 
     const { data, error } = await query.limit(50);

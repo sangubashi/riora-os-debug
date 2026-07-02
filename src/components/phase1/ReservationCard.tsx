@@ -30,6 +30,7 @@ export interface Phase1Reservation {
   churnRisk:          number
   daysSinceLastVisit: number
   lineTags?:          string[]
+  skin_tags?:         string[]
 }
 
 // ─── タイプ別カラー ───────────────────────────────────────────────────────────

@@ -67,6 +67,7 @@ export interface BrainCustomerMini {
   customer_type:   string | null
   churn_score:     number
   is_subscriber:   boolean
+  skin_tags?:      string[] | null
   // brain_visits 集計（brain-stats API 呼び出し後にセット）
   visit_count?:    number
   total_spent?:    number

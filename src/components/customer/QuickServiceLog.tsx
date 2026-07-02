@@ -106,13 +106,6 @@ export default function QuickServiceLog({ reservation, onComplete }: Props) {
         body: { customer_id: customerId, log_text: logText },
       }).then(() => {}).catch(() => { /* タグ更新失敗は無視 */ })
 
-      // 次回来店推奨日を計算して customers に保存（30日後をデフォルト）
-      const nextVisit = new Date()
-      nextVisit.setDate(nextVisit.getDate() + 30)
-      void supabase
-        .from('customers')
-        .update({ next_visit_date: nextVisit.toISOString().split('T')[0] })
-        .eq('id', customerId)
     }
 
     haptic([20, 40, 20])
