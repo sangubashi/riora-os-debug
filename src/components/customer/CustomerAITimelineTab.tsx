@@ -1,12 +1,15 @@
 'use client'
 /**
- * CustomerAITimelineTab.tsx — AI Timeline タブ (TL-1 Phase 1)
+ * CustomerAITimelineTab.tsx — AI Timeline タブ (TL-5)
  *
  * CustomerBottomSheet の "timeline" ページとして表示する。
  * 画面構成:
- *   1. AIまとめ (簡易版・Phase 1)
- *   2. 今日の接客ポイント (Customer Memory + Voice Note 抽出)
- *   3. タイムライン一覧 (visit/voice/memory/proposal 時系列降順)
+ *   1. 関係性スコア (★1〜5)
+ *   2. 接客リスク検知 (⚠ 決定論ルール)
+ *   3. AIまとめ (4セクション: このお客様は/最近の変化/次回意識すること/⚠注意)
+ *   4. 会話の入り口 (conversation-starters API)
+ *   5. 今日の接客ポイント (Customer Memory)
+ *   6. タイムライン (visit/voice/memory/proposal + 派生イベント)
  *
  * 認証: authedFetch 経由で Authorization ヘッダーを付与。
  *       サーバー側で AUTH-2(canAccessCustomer) 適用済み。
@@ -18,34 +21,54 @@ import { authedFetch } from '@/lib/api/authedFetch'
 
 // ─── 型 ────────────────────────────────────────────────────────────────────────
 
-type EventType = 'visit' | 'voice' | 'memory' | 'line' | 'proposal'
+type EventType =
+  | 'visit' | 'voice' | 'memory' | 'line' | 'proposal'
+  | 'nomination_change' | 'long_absence' | 'return' | 'premium_purchase'
 
 interface TimelineEntry {
-  id: string
-  type: EventType
-  title: string
-  content: string | null
+  id:          string
+  type:        EventType
+  title:       string
+  content:     string | null
   occurred_at: string
 }
 
 interface TalkingPoint {
   emoji: string
-  text: string
+  text:  string
 }
 
 interface TimelineData {
-  timeline: TimelineEntry[]
-  aiSummary: string
+  timeline:      TimelineEntry[]
+  aiSummary:     string
   talkingPoints: TalkingPoint[]
 }
 
+interface RiskAlert {
+  code:    string
+  message: string
+}
+
+interface RelationshipScore {
+  score:         number
+  stars:         number
+  visitCount:    number
+  durationYears: number
+  memoryCount:   number
+  voiceCount:    number
+}
+
 interface AISummaryData {
-  summary:      string
-  motivation:   'high' | 'medium' | 'low'
-  focus:        string | null
-  avoid:        string | null
-  cached:       boolean
-  generated_at: string
+  summary:           string
+  motivation:        'high' | 'medium' | 'low'
+  focus:             string | null   // deprecated (kept for backward compat)
+  avoid:             string | null
+  recentChange:      string | null
+  nextFocus:         string[]
+  risks:             RiskAlert[]
+  relationshipScore: RelationshipScore | null
+  cached:            boolean
+  generated_at:      string
 }
 
 interface ConversationData {
@@ -68,38 +91,56 @@ const MOTIVATION_STYLE: Record<'high' | 'medium' | 'low', { bg: string; color: s
   low:    { bg: '#EAF4EA', color: '#306030' },
 }
 
-// ─── 定数 ──────────────────────────────────────────────────────────────────────
+// ─── タイムライン定数 ──────────────────────────────────────────────────────────
 
 const TYPE_ICON: Record<EventType, string> = {
-  visit:    '🌿',
-  voice:    '🎙',
-  memory:   '💌',
-  line:     '💬',
-  proposal: '📈',
+  visit:             '🌿',
+  voice:             '🎙',
+  memory:            '💌',
+  line:              '💬',
+  proposal:          '📈',
+  nomination_change: '🔄',
+  long_absence:      '📭',
+  return:            '🎉',
+  premium_purchase:  '💎',
 }
 
 const TYPE_COLOR: Record<EventType, string> = {
-  visit:    '#34A070',
-  voice:    '#4878A8',
-  memory:   '#D98292',
-  line:     '#34A070',
-  proposal: '#8060A8',
+  visit:             '#34A070',
+  voice:             '#4878A8',
+  memory:            '#D98292',
+  line:              '#34A070',
+  proposal:          '#8060A8',
+  nomination_change: '#D08030',
+  long_absence:      '#A88080',
+  return:            '#3090A8',
+  premium_purchase:  '#8050C8',
 }
 
 const TYPE_LABEL: Record<EventType, string> = {
-  visit:    '来店',
-  voice:    '音声',
-  memory:   '記憶',
-  line:     'LINE',
-  proposal: '提案',
+  visit:             '来店',
+  voice:             '音声',
+  memory:            '記憶',
+  line:              'LINE',
+  proposal:          '提案',
+  nomination_change: '指名変更',
+  long_absence:      '長期離脱',
+  return:            '再来店',
+  premium_purchase:  '高額購入',
+}
+
+const RISK_COLOR: Record<string, string> = {
+  long_absence:      '#D08030',
+  nomination_change: '#A04040',
+  price_decline:     '#7060A8',
 }
 
 // ─── ユーティリティ ────────────────────────────────────────────────────────────
 
 function formatAt(iso: string): string {
   try {
-    const d = new Date(iso)
-    const now = new Date()
+    const d       = new Date(iso)
+    const now     = new Date()
     const diffDays = Math.floor((now.getTime() - d.getTime()) / 86_400_000)
     if (diffDays === 0) return '今日'
     if (diffDays === 1) return '昨日'
@@ -110,12 +151,16 @@ function formatAt(iso: string): string {
   }
 }
 
+function renderStars(stars: number): string {
+  return '★'.repeat(stars) + '☆'.repeat(Math.max(0, 5 - stars))
+}
+
 // ─── スケルトン ────────────────────────────────────────────────────────────────
 
 function Skeleton() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-      {[80, 120, 56, 56, 56].map((h, i) => (
+      {[56, 100, 140, 56, 56, 56].map((h, i) => (
         <div
           key={i}
           style={{
@@ -141,14 +186,14 @@ interface Props {
 }
 
 export default function CustomerAITimelineTab({ customerId, customerName, onBack }: Props) {
-  const [data,               setData]               = useState<TimelineData | null>(null)
-  const [loading,            setLoading]            = useState(true)
-  const [error,              setError]              = useState(false)
-  const [summaryData,        setSummaryData]        = useState<AISummaryData | null>(null)
-  const [summaryLoading,     setSummaryLoading]     = useState(true)
-  const [conversationData,   setConversationData]   = useState<ConversationData | null>(null)
+  const [data,                setData]                = useState<TimelineData | null>(null)
+  const [loading,             setLoading]             = useState(true)
+  const [error,               setError]               = useState(false)
+  const [summaryData,         setSummaryData]         = useState<AISummaryData | null>(null)
+  const [summaryLoading,      setSummaryLoading]      = useState(true)
+  const [conversationData,    setConversationData]    = useState<ConversationData | null>(null)
   const [conversationLoading, setConversationLoading] = useState(true)
-  const [showAllTimeline,    setShowAllTimeline]    = useState(false)
+  const [showAllTimeline,     setShowAllTimeline]     = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -156,7 +201,6 @@ export default function CustomerAITimelineTab({ customerId, customerName, onBack
     setConversationLoading(true)
     setError(false)
     try {
-      // タイムライン・AIサマリー・今日の一言を並列取得
       const [timelineRes, summaryRes, conversationRes] = await Promise.allSettled([
         authedFetch(`/api/customers/${customerId}/timeline`),
         authedFetch(`/api/customers/${customerId}/timeline-summary`),
@@ -212,7 +256,7 @@ export default function CustomerAITimelineTab({ customerId, customerName, onBack
           </p>
           <p style={{ fontSize: '17px', fontWeight: 700, color: '#3d2218', marginBottom: '2px' }}>{customerName} 様</p>
           <p style={{ fontSize: '10px', color: '#C8B0B0', letterSpacing: '0.02em' }}>
-            お客様の流れをAIが整理しました
+            AIが顧客を30秒で要約
           </p>
         </div>
         <div style={{ width: '52px' }} />
@@ -243,53 +287,135 @@ export default function CustomerAITimelineTab({ customerId, customerName, onBack
           <AnimatePresence mode="popLayout">
             <motion.div key="content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: 'contents' }}>
 
-              {/* ── AIまとめ (TL-2: LLM生成) ────────────────────────────── */}
+              {/* ── ① 関係性スコア ─────────────────────────────────────────── */}
+              {summaryData?.relationshipScore && (
+                <div style={{
+                  background: 'linear-gradient(135deg, #FFF0F8 0%, #F8F0FF 100%)',
+                  borderRadius: '16px', padding: '12px 16px',
+                  border: '1px solid #ECD8F8',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                }}>
+                  <div>
+                    <p style={{ fontSize: '9px', color: '#A880C0', fontWeight: 700, letterSpacing: '0.12em', marginBottom: '3px' }}>
+                      関係性レベル
+                    </p>
+                    <p style={{ fontSize: '18px', color: '#8050A8', letterSpacing: '1px', fontFamily: 'Inter, sans-serif' }}>
+                      {renderStars(summaryData.relationshipScore.stars)}
+                    </p>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <p style={{ fontSize: '12px', color: '#7058A0', fontWeight: 700 }}>
+                      来店 {summaryData.relationshipScore.visitCount}回
+                    </p>
+                    {summaryData.relationshipScore.durationYears > 0 && (
+                      <p style={{ fontSize: '10px', color: '#A890C0', marginTop: '2px' }}>
+                        {summaryData.relationshipScore.durationYears.toFixed(1)}年のお付き合い
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ── ② 接客リスク検知 ────────────────────────────────────────── */}
+              {summaryData && summaryData.risks && summaryData.risks.length > 0 && (
+                <div style={{
+                  background: '#FFF8F2',
+                  borderRadius: '16px', padding: '12px 16px',
+                  border: '1px solid #F0D8C0',
+                }}>
+                  <p style={{ fontSize: '10px', color: '#C07030', fontWeight: 700, letterSpacing: '0.1em', marginBottom: '8px' }}>
+                    ⚠ 接客リスク検知
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {summaryData.risks.map((r, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div style={{
+                          width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0,
+                          background: RISK_COLOR[r.code] ?? '#D08030',
+                        }} />
+                        <p style={{ fontSize: '12px', color: '#7C5030', lineHeight: 1.5 }}>{r.message}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── ③ AIまとめ (TL-5: 4セクション) ─────────────────────────── */}
               <div style={{
                 background: 'linear-gradient(135deg, #FFF8F7 0%, #FDF0F3 100%)',
                 borderRadius: '20px', padding: '16px 18px',
                 border: '1px solid #F5E6E8',
               }}>
-                <div style={{ marginBottom: '10px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '3px' }}>
-                    <p style={{ fontSize: '10px', letterSpacing: '0.18em', color: '#D98292', fontWeight: 700 }}>
-                      ✨ AIまとめ
-                    </p>
-                    {summaryData && (
-                      <span style={{
-                        fontSize: '9px', padding: '2px 9px', borderRadius: '99px', fontWeight: 700,
-                        letterSpacing: '0.04em', border: '1px solid transparent',
-                        background: MOTIVATION_STYLE[summaryData.motivation].bg,
-                        color:      MOTIVATION_STYLE[summaryData.motivation].color,
-                      }}>
-                        {MOTIVATION_LABEL[summaryData.motivation]}
-                      </span>
-                    )}
-                  </div>
-                  <p style={{ fontSize: '10px', color: '#C8B0B8', lineHeight: 1.5 }}>
-                    初めて担当する場合でも30秒で状況を把握できます
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                  <p style={{ fontSize: '10px', letterSpacing: '0.18em', color: '#D98292', fontWeight: 700 }}>
+                    ✨ AIまとめ
                   </p>
+                  {summaryData && (
+                    <span style={{
+                      fontSize: '9px', padding: '2px 9px', borderRadius: '99px', fontWeight: 700,
+                      letterSpacing: '0.04em', border: '1px solid transparent',
+                      background: MOTIVATION_STYLE[summaryData.motivation].bg,
+                      color:      MOTIVATION_STYLE[summaryData.motivation].color,
+                    }}>
+                      {MOTIVATION_LABEL[summaryData.motivation]}
+                    </span>
+                  )}
                 </div>
 
                 {summaryLoading ? (
-                  <div style={{ height: '64px', borderRadius: '10px', background: 'linear-gradient(90deg, #F5EEF0 25%, #EDE5E8 50%, #F5EEF0 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {[56, 40, 80].map((h, i) => (
+                      <div key={i} style={{ height: `${h}px`, borderRadius: '10px', background: 'linear-gradient(90deg, #F5EEF0 25%, #EDE5E8 50%, #F5EEF0 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s ease-in-out infinite' }} />
+                    ))}
+                  </div>
                 ) : summaryData ? (
-                  <>
-                    <p style={{ fontSize: '13px', color: '#5C4033', lineHeight: 1.8, marginBottom: summaryData.focus || summaryData.avoid ? '10px' : 0 }}>
-                      {summaryData.summary}
-                    </p>
-                    {summaryData.focus && (
-                      <div style={{ background: '#FFF5F0', borderRadius: '12px', padding: '8px 12px', marginBottom: summaryData.avoid ? '6px' : 0 }}>
-                        <p style={{ fontSize: '10px', color: '#C07848', fontWeight: 700, marginBottom: '3px' }}>💡 フォーカス</p>
-                        <p style={{ fontSize: '12px', color: '#5C4033', lineHeight: 1.6 }}>{summaryData.focus}</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+
+                    {/* 【このお客様はどんな人か】 */}
+                    <div>
+                      <p style={{ fontSize: '9px', color: '#D98292', fontWeight: 700, letterSpacing: '0.08em', marginBottom: '4px' }}>
+                        このお客様はどんな人か
+                      </p>
+                      <p style={{ fontSize: '13px', color: '#5C4033', lineHeight: 1.8 }}>
+                        {summaryData.summary || data.aiSummary}
+                      </p>
+                    </div>
+
+                    {/* 【最近の変化】 */}
+                    {summaryData.recentChange && (
+                      <div style={{ background: '#F8F4FF', borderRadius: '12px', padding: '8px 12px' }}>
+                        <p style={{ fontSize: '9px', color: '#8060A8', fontWeight: 700, letterSpacing: '0.08em', marginBottom: '3px' }}>
+                          最近の変化
+                        </p>
+                        <p style={{ fontSize: '12px', color: '#5C4033', lineHeight: 1.65 }}>{summaryData.recentChange}</p>
                       </div>
                     )}
+
+                    {/* 【次回来店で意識すること】 */}
+                    {summaryData.nextFocus && summaryData.nextFocus.length > 0 && (
+                      <div style={{ background: '#F0F8F4', borderRadius: '12px', padding: '8px 12px' }}>
+                        <p style={{ fontSize: '9px', color: '#30806A', fontWeight: 700, letterSpacing: '0.08em', marginBottom: '6px' }}>
+                          次回来店で意識すること
+                        </p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                          {summaryData.nextFocus.map((item, i) => (
+                            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+                              <span style={{ fontSize: '11px', color: '#30806A', fontWeight: 700, flexShrink: 0, lineHeight: 1.6 }}>✓</span>
+                              <p style={{ fontSize: '12px', color: '#3A5048', lineHeight: 1.6 }}>{item}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ⚠️ 注意 (センシティブ) */}
                     {summaryData.avoid && (
                       <div style={{ background: '#FDF5E0', borderRadius: '12px', padding: '8px 12px' }}>
-                        <p style={{ fontSize: '10px', color: '#A07820', fontWeight: 700, marginBottom: '3px' }}>⚠️ 注意</p>
+                        <p style={{ fontSize: '9px', color: '#A07820', fontWeight: 700, letterSpacing: '0.08em', marginBottom: '3px' }}>⚠️ 注意</p>
                         <p style={{ fontSize: '12px', color: '#5C4033', lineHeight: 1.6 }}>{summaryData.avoid}</p>
                       </div>
                     )}
-                  </>
+                  </div>
                 ) : (
                   <p style={{ fontSize: '13px', color: '#5C4033', lineHeight: 1.8 }}>
                     {data.aiSummary}
@@ -297,7 +423,7 @@ export default function CustomerAITimelineTab({ customerId, customerName, onBack
                 )}
               </div>
 
-              {/* ── 今日の一言 (TL-3) ────────────────────────────────────── */}
+              {/* ── 会話の入り口 ─────────────────────────────────────────────── */}
               {(conversationLoading || conversationData) && (
                 <div style={{
                   background: '#FFFDFB',
@@ -305,7 +431,7 @@ export default function CustomerAITimelineTab({ customerId, customerName, onBack
                   border: '1px solid #F0EBE0',
                 }}>
                   <p style={{ fontSize: '10px', letterSpacing: '0.18em', color: '#9F7E6C', fontWeight: 700, marginBottom: '10px' }}>
-                    💬 今日使える会話
+                    💬 会話の入り口
                   </p>
                   {conversationLoading ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -445,7 +571,6 @@ export default function CustomerAITimelineTab({ customerId, customerName, onBack
                       ))}
                     </div>
 
-                    {/* もっと見る（5件超の場合のみ） */}
                     {hasMore && (
                       <button
                         onClick={() => setShowAllTimeline(true)}

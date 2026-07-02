@@ -1270,7 +1270,10 @@ export default function CustomerBottomSheet({
                               color: '#9F7E6C',
                               fontWeight: 600,
                             }}>
-                            🕮 <span>AI Timeline</span>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1px' }}>
+                              <span>🕮 AI Timeline</span>
+                              <span style={{ fontSize: '9px', color: '#B8A090', fontWeight: 400 }}>AIが顧客を30秒で要約</span>
+                            </div>
                           </motion.button>
                         </div>
                         {/* メインCTAボタン */}

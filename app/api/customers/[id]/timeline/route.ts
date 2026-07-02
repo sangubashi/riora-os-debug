@@ -29,6 +29,7 @@ const STORE_ID = '00000000-0000-0000-0000-000000000001'
 export interface TimelineEntry {
   id: string
   type: 'visit' | 'voice' | 'memory' | 'line' | 'proposal'
+       | 'nomination_change' | 'long_absence' | 'return' | 'premium_purchase'
   title: string
   content: string | null
   occurred_at: string
@@ -105,7 +106,7 @@ export async function GET(
   const [visitsRes, voiceRes, memoriesRes, proposalsRes] = await Promise.allSettled([
     supabase
       .from('brain_visits')
-      .select('id, visit_date, visit_count_at, treatment_amount, retail_amount')
+      .select('id, visit_date, visit_count_at, treatment_amount, retail_amount, staff_id')
       .eq('customer_id', customerId)
       .is('deleted_at', null)
       .order('visit_date', { ascending: false })
@@ -137,7 +138,7 @@ export async function GET(
 
   const entries: TimelineEntry[] = []
 
-  // 1. brain_visits → TimelineEntry
+  // 1. brain_visits → TimelineEntry (基本来店エントリ + 派生イベント)
   const visits = visitsRes.status === 'fulfilled' ? (visitsRes.value.data ?? []) : []
   for (const v of visits) {
     const total = (v.treatment_amount ?? 0) + (v.retail_amount ?? 0)
@@ -148,6 +149,66 @@ export async function GET(
       content: total > 0 ? `¥${total.toLocaleString('ja-JP')}` : null,
       occurred_at: `${v.visit_date as string}T00:00:00.000Z`,
     })
+  }
+
+  // 派生イベント: 高額購入 / 長期離脱 / 再来店 / 指名変更
+  // visits は DESC 順なので ASC に並び直して連続来店間の差分を計算
+  const visitsAsc = [...visits].sort((a, b) =>
+    new Date(a.visit_date as string).getTime() - new Date(b.visit_date as string).getTime()
+  )
+  for (let i = 0; i < visitsAsc.length; i++) {
+    const v     = visitsAsc[i]
+    const total = (v.treatment_amount ?? 0) + (v.retail_amount ?? 0)
+
+    // 高額購入 (2万円以上)
+    if (total >= 20000) {
+      entries.push({
+        id:          `premium-${v.id as string}`,
+        type:        'premium_purchase',
+        title:       '高額購入',
+        content:     `¥${total.toLocaleString('ja-JP')}`,
+        occurred_at: `${v.visit_date as string}T00:00:01.000Z`,
+      })
+    }
+
+    if (i > 0) {
+      const prev    = visitsAsc[i - 1]
+      const gapDays = Math.floor(
+        (new Date(v.visit_date as string).getTime() - new Date(prev.visit_date as string).getTime()) / 86_400_000
+      )
+
+      // 長期離脱 + 再来店 (90日以上の空白)
+      if (gapDays >= 90) {
+        entries.push({
+          id:          `absence-${v.id as string}`,
+          type:        'long_absence',
+          title:       '長期離脱',
+          content:     `${gapDays}日間の空白期間`,
+          // 前回来店の翌日相当に配置 (DESC で前回来店の直上に表示)
+          occurred_at: `${prev.visit_date as string}T23:59:59.000Z`,
+        })
+        entries.push({
+          id:          `return-${v.id as string}`,
+          type:        'return',
+          title:       '再来店',
+          content:     `${gapDays}日ぶりの来店`,
+          occurred_at: `${v.visit_date as string}T00:00:02.000Z`,
+        })
+      }
+
+      // 指名変更
+      const prevStaff = prev.staff_id as string | null
+      const currStaff = v.staff_id as string | null
+      if (prevStaff && currStaff && prevStaff !== currStaff) {
+        entries.push({
+          id:          `nomination-${v.id as string}`,
+          type:        'nomination_change',
+          title:       '指名変更',
+          content:     null,
+          occurred_at: `${v.visit_date as string}T00:00:03.000Z`,
+        })
+      }
+    }
   }
 
   // 2. voice_notes → TimelineEntry
