@@ -150,10 +150,10 @@ export const ACTION_RULES: ActionRule[] = [
       !recentActionTypes.includes('product_recommended') &&
       !recentActionTypes.includes('next_action_product'),
     score: ({ skinTags }) => Math.min(50 + skinTags.length * 8, 78),
-    title: ({ skinTags }) => `${skinTags[0]}ケアの商品提案チャンス`,
+    title: ({ skinTags }) => `${skinTags[0]}の様子を聞いてみましょう`,
     desc:  ({ skinTags }) =>
-      `${skinTags.slice(0,2).join('・')}の悩みに合った商品を提案するタイミングです。`,
-    ctaLabel: '提案完了',
+      `${skinTags.slice(0,2).join('・')}について、その後の調子を確認する自然な会話のきっかけです。`,
+    ctaLabel: '会話した',
     logType:  'next_action_product',
   },
   {
@@ -166,13 +166,13 @@ export const ACTION_RULES: ActionRule[] = [
       insightTags.includes('event_before') ? 82 : 68,
     title: ({ insightTags }) =>
       insightTags.includes('event_before')
-        ? 'イベント前：商品提案の絶好機'
-        : 'モチベ高め：商品提案が刺さりやすい',
+        ? 'イベント・旅行前のご様子を伺いましょう'
+        : '前向きなご様子について話してみましょう',
     desc:  ({ insightTags }) =>
       insightTags.includes('event_before')
-        ? '音声メモからイベント前需要が確認できています。特別ケアセットを提案しましょう。'
-        : '来店モチベーションが高い今が商品提案のベストタイミングです。',
-    ctaLabel: '提案完了',
+        ? '音声メモからイベント前の予定が確認できています。「その後の準備はいかがですか？」と聞いてみましょう。'
+        : '来店時のモチベーションが高い様子でした。今の気持ちを聞いてみるとよい会話になりそうです。',
+    ctaLabel: '会話した',
     logType:  'next_action_product',
   },
 
@@ -188,10 +188,10 @@ export const ACTION_RULES: ActionRule[] = [
       !recentActionTypes.includes('next_action_vip'),
     score: ({ vipRank, daysSinceLastVisit }) =>
       Math.min(55 + vipRank * 5 + Math.min(daysSinceLastVisit, 30), 88),
-    title: () => 'VIP様への特別フォロー',
+    title: () => 'しばらくご来店のないお客様です',
     desc:  ({ daysSinceLastVisit }) =>
-      `VIPお客様が${daysSinceLastVisit}日未来店。特別感のあるパーソナルメッセージを送りましょう。`,
-    ctaLabel: '特別メッセージ作成',
+      `前回来店から${daysSinceLastVisit}日経っています。「その後お変わりありませんか？」とやさしく声をかけてみましょう。`,
+    ctaLabel: 'メッセージ送信',
     logType:  'next_action_vip',
   },
   {
@@ -201,10 +201,10 @@ export const ACTION_RULES: ActionRule[] = [
       vipRank < 3 && visits >= 8 && totalSales >= 100000,
     score: ({ visits, totalSales }) =>
       Math.min(45 + Math.floor(visits / 2) + Math.floor(totalSales / 10000), 75),
-    title: () => 'VIP化候補 — 関係強化チャンス',
-    desc:  ({ visits, totalSales }) =>
-      `来店${visits}回・累計¥${totalSales.toLocaleString('ja-JP')}。VIP化に向けた特別ケアを提案しましょう。`,
-    ctaLabel: '特別提案完了',
+    title: () => '長くご愛顧いただいているお客様です',
+    desc:  ({ visits }) =>
+      `来店${visits}回のお客様です。日頃のご愛顧への感謝を一言お伝えしてみましょう。`,
+    ctaLabel: '会話した',
     logType:  'next_action_vip',
   },
 
@@ -219,10 +219,10 @@ export const ACTION_RULES: ActionRule[] = [
       !recentActionTypes.includes('homecare_explained') &&
       !recentActionTypes.includes('next_action_homecare'),
     score: () => 65,
-    title: () => 'ホームケア習慣のフォロー',
+    title: () => 'おうちでのケアの様子を聞いてみましょう',
     desc:  () =>
-      '音声メモからホームケア不足が確認されています。具体的な方法を伝えてリピート率を高めましょう。',
-    ctaLabel: '説明完了',
+      '音声メモからホームケアがあまりできていない様子が伺えます。「おうちでのケアはどうですか？」と聞いてみましょう。',
+    ctaLabel: '確認した',
     logType:  'next_action_homecare',
   },
   {
@@ -234,10 +234,10 @@ export const ACTION_RULES: ActionRule[] = [
       !recentActionTypes.includes('next_action_homecare'),
     score: ({ insightTags }) =>
       insightTags.includes('dryness_concern') ? 70 : 58,
-    title: () => '乾燥ケアのフォロー提案',
+    title: () => '乾燥の様子を聞いてみましょう',
     desc:  () =>
-      '乾燥肌への具体的なホームケア手順を伝えることで、次回来店時の肌状態改善に繋がります。',
-    ctaLabel: '説明完了',
+      '前回は乾燥が気になるご様子でした。「その後、乾燥は落ち着きましたか？」と一言確認してみましょう。',
+    ctaLabel: '確認した',
     logType:  'next_action_homecare',
   },
 
@@ -282,16 +282,11 @@ export const ACTION_RULES: ActionRule[] = [
       return phase === 'growing' && !input.recentActionTypes.includes('next_action_product')
     },
     score: () => 75,
-    title: () => '回数券・コース提案',
-    desc:  ({ visits, totalSales }) => {
-      const avg = visits > 0 ? Math.round(totalSales / visits / 1000) : 0
-      return `来店${visits}回・平均単価${avg}千円のお客様は継続意欲が高まっています。回数券で来店固定化を図りましょう。`
-    },
-    reasons: ({ visits, totalSales }) => {
-      const avg = visits > 0 ? Math.round(totalSales / visits / 1000) : 0
-      return [`来店${visits}回`, `平均単価${avg}千円`]
-    },
-    ctaLabel: '提案済み',
+    title: () => '継続来店への意欲を聞いてみましょう',
+    desc:  ({ visits }) =>
+      `来店${visits}回目のお客様です。「これからも続けたいですか？」など、今後のペースについて自然に聞いてみましょう。`,
+    reasons: ({ visits }) => [`来店${visits}回`],
+    ctaLabel: '会話した',
     logType:  'option_sold' as ActionType,
   },
 
@@ -309,13 +304,13 @@ export const ACTION_RULES: ActionRule[] = [
       return phase === 'repeat' && input.hasRecentPurchase
     },
     score: () => 74,
-    title: () => '前回お試し商品のリピート提案',
-    desc:  () => '前回購入済みのホームケア商品の使い心地を確認し、リピート購入やステップアップ商品を提案しましょう。',
+    title: () => '前回の商品の使い心地を聞いてみましょう',
+    desc:  () => '前回購入済みのホームケア商品について、「その後の使い心地はいかがですか？」と確認する自然な会話のきっかけです。',
     reasons: ({ daysSinceLastVisit }) => [
       '店販購入履歴あり',
       `前回来店${daysSinceLastVisit}日経過`,
     ],
-    ctaLabel: '提案済み',
+    ctaLabel: '会話した',
     logType:  'retail_sold' as ActionType,
   },
 
@@ -333,11 +328,11 @@ export const ACTION_RULES: ActionRule[] = [
       return phase === 'repeat' && !input.hasRecentPurchase
     },
     score: () => 71,
-    title: () => 'ホームケア商品を初提案する',
+    title: () => 'ホームケアの状況を聞いてみましょう',
     desc:  ({ visits }) =>
-      `来店${visits}回のお客様はまだ店販未購入です。施術効果を高めるホームケアとして自然に提案するタイミングです。`,
+      `来店${visits}回のお客様です。「おうちでのケアはどうされていますか？」と聞くと、自然にホームケアの話につながります。`,
     reasons: ({ visits }) => [`来店${visits}回`, '店販購入なし'],
-    ctaLabel: '提案済み',
+    ctaLabel: '会話した',
     logType:  'retail_sold' as ActionType,
   },
 
@@ -357,16 +352,11 @@ export const ACTION_RULES: ActionRule[] = [
         !input.recentActionTypes.includes('next_action_vip')
     },
     score: () => 87,
-    title: () => 'プレミアムコースを案内する',
-    desc:  ({ totalSales }) => {
-      const man = Math.round(totalSales / 10000)
-      return `累計${man}万円のVIPのお客様には特別感を演出したプレミアムコースが刺さります。「他のお客様より一歩先のケア」として案内しましょう。`
-    },
-    reasons: ({ totalSales, visits }) => {
-      const man = Math.round(totalSales / 10000)
-      return [`累計${man}万円`, `来店${visits}回`]
-    },
-    ctaLabel: '案内済み',
+    title: () => '日頃の感謝を伝えましょう',
+    desc:  ({ visits }) =>
+      `来店${visits}回、長くご愛顧いただいているお客様です。日頃の感謝と、いつもと変わりない様子かを一言確認しましょう。`,
+    reasons: ({ visits }) => [`来店${visits}回`],
+    ctaLabel: '会話した',
     logType:  'next_action_vip' as ActionType,
   },
 
@@ -387,10 +377,10 @@ export const ACTION_RULES: ActionRule[] = [
         !input.recentActionTypes.includes('next_action_vip')
     },
     score: () => 83,
-    title: () => 'VIPお客様に来店フォロー',
+    title: () => 'いつもより間隔が空いています',
     desc:  ({ daysSinceLastVisit, recommendedCycleDays }) => {
       const over = daysSinceLastVisit - recommendedCycleDays
-      return `通常${recommendedCycleDays}日サイクルのところ${over}日超過しています。VIPのお客様を失客しないよう丁寧にフォローしましょう。`
+      return `通常${recommendedCycleDays}日サイクルのところ${over}日超過しています。「その後お変わりありませんか？」と丁寧に声をかけてみましょう。`
     },
     reasons: ({ daysSinceLastVisit, recommendedCycleDays }) => [
       `来店${daysSinceLastVisit}日経過`,
@@ -417,10 +407,10 @@ export const ACTION_RULES: ActionRule[] = [
         !input.recentActionTypes.includes('next_action_product')
     },
     score: () => 78,
-    title: () => 'VIPお客様にホームケア提案',
-    desc:  () => 'VIPのお客様ですが店販購入がありません。施術効果を自宅でも継続できるホームケアセットをご提案する絶好のタイミングです。',
+    title: () => 'おうちでのケアについて聞いてみましょう',
+    desc:  () => '長くご愛顧いただいているお客様です。「おうちでのケアで気になることはありますか？」と聞いてみましょう。',
     reasons: ({ visits }) => [`来店${visits}回`, '店販未購入'],
-    ctaLabel: '提案済み',
+    ctaLabel: '会話した',
     logType:  'retail_sold' as ActionType,
   },
 

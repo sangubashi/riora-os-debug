@@ -19,6 +19,7 @@ export interface CustomerBrainStats {
   visitCount:    number
   totalSpent:    number
   lastVisitDate: string | null
+  lastMenu:      string | null   // 直近来店の施術メニュー名（30秒ブリーフィング用）
   churnScore:    number          // 0–1
   isVip:         boolean
   customerType:  string | null
@@ -66,18 +67,32 @@ export async function GET(req: NextRequest) {
     // brain_visits を対象顧客で一括取得
     const { data: visits } = await supabase
       .from('brain_visits')
-      .select('customer_id, treatment_amount, retail_amount, visit_date')
+      .select('customer_id, treatment_amount, retail_amount, visit_date, menu_id')
       .in('customer_id', customerIds)
       .is('deleted_at', null);
 
-    // 顧客IDごとに集計
-    const agg: Record<string, { visitCount: number; totalSpent: number; lastVisitDate: string | null }> = {};
+    // 顧客IDごとに集計（直近来店のメニューIDも保持）
+    const agg: Record<string, { visitCount: number; totalSpent: number; lastVisitDate: string | null; lastMenuId: string | null }> = {};
     for (const v of (visits ?? [])) {
-      const ex = agg[v.customer_id] ?? { visitCount: 0, totalSpent: 0, lastVisitDate: null };
+      const ex = agg[v.customer_id] ?? { visitCount: 0, totalSpent: 0, lastVisitDate: null, lastMenuId: null };
       ex.visitCount++;
       ex.totalSpent += (v.treatment_amount ?? 0) + (v.retail_amount ?? 0);
-      if (!ex.lastVisitDate || v.visit_date > ex.lastVisitDate) ex.lastVisitDate = v.visit_date;
+      if (!ex.lastVisitDate || v.visit_date > ex.lastVisitDate) {
+        ex.lastVisitDate = v.visit_date;
+        ex.lastMenuId    = v.menu_id ?? null;
+      }
       agg[v.customer_id] = ex;
+    }
+
+    // 直近来店メニューID → メニュー名を解決
+    const menuIds = Array.from(new Set(Object.values(agg).map(a => a.lastMenuId).filter(Boolean))) as string[];
+    const menuNameById: Record<string, string> = {};
+    if (menuIds.length > 0) {
+      const { data: menus } = await supabase
+        .from('brain_menus')
+        .select('id, name')
+        .in('id', menuIds);
+      for (const m of (menus ?? [])) menuNameById[m.id] = m.name;
     }
 
     // 名前キーで返却 (同名顧客が複数いる場合は最初のレコードを使用)
@@ -89,11 +104,12 @@ export async function GET(req: NextRequest) {
     const stats: Record<string, CustomerBrainStats> = {};
     for (const c of accessibleCustomers as Array<{ id: string; name: string; customer_type: string | null; churn_score: number }>) {
       if (nameIndex[c.name] !== c.id) continue; // 同名重複は最初のみ
-      const a = agg[c.id] ?? { visitCount: 0, totalSpent: 0, lastVisitDate: null };
+      const a = agg[c.id] ?? { visitCount: 0, totalSpent: 0, lastVisitDate: null, lastMenuId: null };
       stats[c.name] = {
         visitCount:    a.visitCount,
         totalSpent:    a.totalSpent,
         lastVisitDate: a.lastVisitDate,
+        lastMenu:      a.lastMenuId ? (menuNameById[a.lastMenuId] ?? null) : null,
         churnScore:    Number(c.churn_score) ?? 0,
         isVip:         a.totalSpent >= VIP_SPEND,
         customerType:  c.customer_type,

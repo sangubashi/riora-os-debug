@@ -25,10 +25,10 @@ export interface Phase1Reservation {
   customerType:       CustomerType
   visitCount:         number
   totalSpent:         number
-  aiScore:            number
   isVip:              boolean
   churnRisk:          number
   daysSinceLastVisit: number
+  lastMenu?:          string | null   // 前回施術内容（30秒ブリーフィング用）
   lineTags?:          string[]
   skin_tags?:         string[]
 }
@@ -56,7 +56,7 @@ interface Props {
 
 export default function ReservationCard({ reservation: r, index, onTap }: Props) {
   const color    = TYPE_COLOR[r.customerType]
-  const isDanger = r.churnRisk > 65 || r.daysSinceLastVisit >= 60
+  const isDanger = r.daysSinceLastVisit >= 60
   const tags     = r.lineTags ?? defaultTags(r.customerType)
 
   return (
@@ -95,19 +95,11 @@ export default function ReservationCard({ reservation: r, index, onTap }: Props)
 
         {/* ─── 中央：顧客情報 ─── */}
         <div className="flex-1 min-w-0 pt-0.5">
-          {/* 名前 + VIPバッジ */}
+          {/* 名前 */}
           <div className="flex items-center gap-2 mb-1">
             <span className="text-[17px] font-semibold text-salon-brown leading-tight truncate">
               {r.customerName}
             </span>
-            {r.isVip && (
-              <span
-                className="flex-shrink-0 text-[9px] font-bold px-2 py-0.5 rounded-full text-white"
-                style={{ background: 'linear-gradient(135deg, #E8C88A 0%, #D4A96A 100%)' }}
-              >
-                VIP
-              </span>
-            )}
             {isDanger && (
               <AlertTriangle size={13} className="flex-shrink-0 text-salon-danger" />
             )}

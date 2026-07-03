@@ -14,6 +14,8 @@ export type RecorderStatus = 'idle' | 'requesting' | 'recording' | 'stopped' | '
 
 // 録音は最大30秒で自動停止する
 const MAX_RECORDING_SEC = 30
+// マイク許可ダイアログが無応答のまま固まるのを防ぐタイムアウト
+const MIC_PERMISSION_TIMEOUT_MS = 15_000
 
 export interface UseVoiceRecorderReturn {
   status:       RecorderStatus
@@ -38,6 +40,7 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
   const timerRef         = useRef<ReturnType<typeof setInterval> | null>(null)
   const streamRef        = useRef<MediaStream | null>(null)
   const objectUrlRef     = useRef<string | null>(null)
+  const timedOutRef      = useRef(false)
 
   // タイマー停止
   const stopTimer = useCallback(() => {
@@ -77,21 +80,39 @@ export function useVoiceRecorder(): UseVoiceRecorderReturn {
     setStatus('requesting')
     setErrorMessage(null)
     chunksRef.current = []
+    timedOutRef.current = false
 
-    // getUserMedia
+    // getUserMedia（許可ダイアログが無応答のまま固まるケースに備えタイムアウトを設ける）
     let stream: MediaStream
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          sampleRate:       44100,
-        },
-      })
+      stream = await Promise.race([
+        navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            sampleRate:       44100,
+          },
+        }),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            timedOutRef.current = true
+            reject(new Error('MIC_PERMISSION_TIMEOUT'))
+          }, MIC_PERMISSION_TIMEOUT_MS)
+        }),
+      ])
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'マイクへのアクセスが拒否されました'
+      const isTimeout = err instanceof Error && err.message === 'MIC_PERMISSION_TIMEOUT'
+      const msg = isTimeout
+        ? 'マイクの許可確認がタイムアウトしました。もう一度お試しください。'
+        : (err instanceof Error ? err.message : 'マイクへのアクセスが拒否されました')
       setStatus('error')
       setErrorMessage(msg)
+      return
+    }
+
+    // タイムアウト後に許可ダイアログが遅れて許可された場合は、使わずに解放する
+    if (timedOutRef.current) {
+      stream.getTracks().forEach(t => t.stop())
       return
     }
 

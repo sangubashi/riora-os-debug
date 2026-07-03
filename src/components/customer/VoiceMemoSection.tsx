@@ -242,11 +242,22 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
   // ── 確認画面: 保存フローへ ────────────────────────────────────────────────
   const handleProceedSave = useCallback(() => {
     const notes = extractCustomerNotes(transcript, null)
-    const cands: MemoryCandidate[] = notes.map((n, i) => ({
+    let cands: MemoryCandidate[] = notes.map((n, i) => ({
       idx:        i,
       content:    n.content,
       memoryType: CATEGORY_TO_MEMORY_TYPE[n.category] ?? 'other',
     }))
+
+    // キーワード分類に1件も一致しなかった場合、transcriptそのものを
+    // 汎用候補として1件提示する（「メモリ候補が見つかりませんでした」を回避）
+    if (cands.length === 0 && transcript.trim().length > 0) {
+      cands = [{
+        idx:        0,
+        content:    `接客内容を記録: ${transcript.trim().slice(0, 80)}`,
+        memoryType: 'other',
+      }]
+    }
+
     setCandidates(cands)
     setCheckedSet(new Set(cands.map(c => c.idx)))   // 全選択をデフォルト
     setPostPhase('selecting')

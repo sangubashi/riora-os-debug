@@ -72,6 +72,7 @@ export interface BrainCustomerMini {
   visit_count?:    number
   total_spent?:    number
   last_visit_date?: string | null
+  last_menu?:      string | null
   is_vip?:         boolean
 }
 

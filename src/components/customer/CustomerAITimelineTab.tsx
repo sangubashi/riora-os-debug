@@ -4,12 +4,13 @@
  *
  * CustomerBottomSheet の "timeline" ページとして表示する。
  * 画面構成:
- *   1. 関係性スコア (★1〜5)
- *   2. 接客リスク検知 (⚠ 決定論ルール)
- *   3. AIまとめ (4セクション: このお客様は/最近の変化/次回意識すること/⚠注意)
- *   4. 会話の入り口 (conversation-starters API)
- *   5. 今日の接客ポイント (Customer Memory)
- *   6. タイムライン (visit/voice/memory/proposal + 派生イベント)
+ *   1. 接客リスク検知 (⚠ 決定論ルール)
+ *   2. AIまとめ (4セクション: このお客様は/最近の変化/次回意識すること/⚠注意)
+ *   3. 会話の入り口 (conversation-starters API)
+ *   4. 今日の接客ポイント (Customer Memory)
+ *   5. タイムライン (visit/voice/memory/proposal + 派生イベント)
+ *
+ * 関係性スコア(★1〜5)は Riora OS v1.0 再設計書に基づき完全削除(評価系UI禁止)。
  *
  * 認証: authedFetch 経由で Authorization ヘッダーを付与。
  *       サーバー側で AUTH-2(canAccessCustomer) 適用済み。
@@ -49,26 +50,16 @@ interface RiskAlert {
   message: string
 }
 
-interface RelationshipScore {
-  score:         number
-  stars:         number
-  visitCount:    number
-  durationYears: number
-  memoryCount:   number
-  voiceCount:    number
-}
-
 interface AISummaryData {
-  summary:           string
-  motivation:        'high' | 'medium' | 'low'
-  focus:             string | null   // deprecated (kept for backward compat)
-  avoid:             string | null
-  recentChange:      string | null
-  nextFocus:         string[]
-  risks:             RiskAlert[]
-  relationshipScore: RelationshipScore | null
-  cached:            boolean
-  generated_at:      string
+  summary:      string
+  motivation:   'high' | 'medium' | 'low'
+  focus:        string | null   // deprecated (kept for backward compat)
+  avoid:        string | null
+  recentChange: string | null
+  nextFocus:    string[]
+  risks:        RiskAlert[]
+  cached:       boolean
+  generated_at: string
 }
 
 interface ConversationData {
@@ -149,10 +140,6 @@ function formatAt(iso: string): string {
   } catch {
     return iso.slice(0, 10)
   }
-}
-
-function renderStars(stars: number): string {
-  return '★'.repeat(stars) + '☆'.repeat(Math.max(0, 5 - stars))
 }
 
 // ─── スケルトン ────────────────────────────────────────────────────────────────
@@ -286,35 +273,6 @@ export default function CustomerAITimelineTab({ customerId, customerName, onBack
         ) : !data ? null : (
           <AnimatePresence mode="popLayout">
             <motion.div key="content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: 'contents' }}>
-
-              {/* ── ① 関係性スコア ─────────────────────────────────────────── */}
-              {summaryData?.relationshipScore && (
-                <div style={{
-                  background: 'linear-gradient(135deg, #FFF0F8 0%, #F8F0FF 100%)',
-                  borderRadius: '16px', padding: '12px 16px',
-                  border: '1px solid #ECD8F8',
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                }}>
-                  <div>
-                    <p style={{ fontSize: '9px', color: '#A880C0', fontWeight: 700, letterSpacing: '0.12em', marginBottom: '3px' }}>
-                      関係性レベル
-                    </p>
-                    <p style={{ fontSize: '18px', color: '#8050A8', letterSpacing: '1px', fontFamily: 'Inter, sans-serif' }}>
-                      {renderStars(summaryData.relationshipScore.stars)}
-                    </p>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <p style={{ fontSize: '12px', color: '#7058A0', fontWeight: 700 }}>
-                      来店 {summaryData.relationshipScore.visitCount}回
-                    </p>
-                    {summaryData.relationshipScore.durationYears > 0 && (
-                      <p style={{ fontSize: '10px', color: '#A890C0', marginTop: '2px' }}>
-                        {summaryData.relationshipScore.durationYears.toFixed(1)}年のお付き合い
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
 
               {/* ── ② 接客リスク検知 ────────────────────────────────────────── */}
               {summaryData && summaryData.risks && summaryData.risks.length > 0 && (

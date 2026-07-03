@@ -118,7 +118,8 @@ export interface Customer {
 
 /** reservations テーブルの行（フロント表示用） */
 export interface Reservation {
-  id: string;
+  /** 顧客タブ等、実予約に紐づかない起動元からは null になり得る */
+  id: string | null;
   customer_id: string | null;
   customer_hash_id: string | null;
   staff_id: string;

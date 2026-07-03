@@ -5,7 +5,7 @@ import { motion }            from 'framer-motion'
 import Image                 from 'next/image'
 import {
   Bell, ChevronRight,
-  CalendarDays, LayoutGrid, Crown, MessageCircle, BookOpen,
+  CalendarDays, LayoutGrid, MessageCircle, BookOpen,
 } from 'lucide-react'
 import { useMenuStore, type FilterTab } from '@/store/useMenuStore'
 import { DEMO_STORE_ID } from '@/lib/constants'
@@ -26,7 +26,6 @@ const FILTER_TABS: { key: FilterTab; label: string }[] = [
 const GRID_ITEMS: { label: string; Icon: React.ElementType; href: string; color: string }[] = [
   { label: '予約管理',    Icon: CalendarDays,  href: '/phase1',     color: '#78A8D8' },
   { label: 'メニュー管理', Icon: LayoutGrid,   href: '/menu',       color: '#D4A96A' },
-  { label: 'VIP管理',     Icon: Crown,         href: '/customers',  color: '#D4A96A' },
   { label: 'メッセージ',  Icon: MessageCircle, href: '/line',       color: '#52C87A' },
   { label: '使い方ガイド', Icon: BookOpen,     href: '/menu/guide', color: '#9E8090' },
 ]
@@ -287,7 +286,7 @@ export default function MenuDashboard() {
               </p>
               <p className="text-[10px] text-white/70 mt-1">直近7日間の日別売上(実データ)</p>
               <button className="mt-3 text-[11px] text-white/85 flex items-center gap-0.5"
-                onClick={() => router.push('/kpi')}>
+                onClick={() => router.push('/me')}>
                 詳細を見る <ChevronRight size={11} />
               </button>
             </div>

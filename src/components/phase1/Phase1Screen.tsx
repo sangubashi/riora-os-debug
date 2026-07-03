@@ -26,7 +26,9 @@ import { useLineUnreadStore } from '@/store/useLineUnreadStore'
 // types
 import type { ReservationWithBrainCustomer } from '@/types/database'
 import type { Customer as BSCustomer,
-              Reservation as BSReservation } from '@/types'
+              Reservation as BSReservation,
+              SkinTagKey } from '@/types'
+import { SKIN_TAG_LABELS } from '@/types'
 
 // phase1 コンポーネント
 import TagFilterBar,  { type TagFilterKey }  from './TagFilterBar'
@@ -59,10 +61,10 @@ function toPhase1(r: ReservationWithBrainCustomer): Phase1Reservation {
     customerType:       (bc.customer_type as CustomerType) || 'VIP型',
     visitCount:         bc.visit_count    ?? 0,
     totalSpent:         bc.total_spent    ?? 0,
-    aiScore:            Math.max(0, 100 - churnRisk),
     isVip:              bc.is_vip         ?? (bc.total_spent ?? 0) >= 100_000,
     churnRisk,
     daysSinceLastVisit,
+    lastMenu:           bc.last_menu ?? null,
     lineTags:           [],
     skin_tags:          bc.skin_tags ?? [],
   }
@@ -78,7 +80,7 @@ function toCustomer(r: Phase1Reservation): BSCustomer {
     avg_price:             r.visitCount > 0 ? Math.round(r.totalSpent / r.visitCount) : 0,
     last_visit:            new Date(Date.now() - r.daysSinceLastVisit * 86400000).toISOString().slice(0, 10),
     customer_type:         r.customerType,
-    vip_rank:              r.isVip ? 4 : (r.aiScore >= 80 ? 2 : 1),
+    vip_rank:              r.isVip ? 4 : 1,
     churn_risk:            r.churnRisk,
     line_response_rate:    0,
     next_visit_prediction: '',
@@ -122,6 +124,11 @@ function dateLabel() {
   const d  = new Date()
   const wd = ['日','月','火','水','木','金','土'][d.getDay()]
   return `${d.getMonth()+1}月${d.getDate()}日(${wd})`
+}
+
+function formatTime(iso: string) {
+  try { return new Date(iso).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) }
+  catch { return iso.slice(11, 16) }
 }
 
 type AppView = 'home' | 'ai_proposal' | 'service_log'
@@ -201,6 +208,24 @@ export default function Phase1Screen() {
     risk:     reservations.filter(r => r.churnRisk > 60).length,
     followup: reservations.filter(r => r.daysSinceLastVisit >= 30).length,
   }), [reservations])
+
+  // ── 来店前30秒ブリーフィング（直近の予約を3行で要約。文章禁止・短文固定） ───────
+  const briefingReservation = useMemo(() => {
+    if (reservations.length === 0) return null
+    const now = Date.now()
+    const byTime = [...reservations].sort(
+      (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
+    )
+    return byTime.find(r => new Date(r.scheduledAt).getTime() >= now) ?? byTime[0]
+  }, [reservations])
+
+  const briefingCaution = useMemo(() => {
+    if (!briefingReservation?.skin_tags?.length) return null
+    return briefingReservation.skin_tags
+      .map(t => SKIN_TAG_LABELS[t as SkinTagKey] ?? t)
+      .slice(0, 2)
+      .join('・')
+  }, [briefingReservation])
 
   function handleCardTap(r: Phase1Reservation) {
     setSelected(r)
@@ -293,6 +318,37 @@ export default function Phase1Screen() {
           ))}
         </div>
       </div>
+
+      {/* ════════════ 来店前30秒ブリーフィング（最上部固定・3行以内） ════════════ */}
+      {briefingReservation && (
+        <motion.div
+          initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          className="flex-shrink-0 mx-4 mt-3 mb-1">
+          <div
+            className="rounded-2xl px-4 py-3"
+            style={{
+              background: 'linear-gradient(135deg, rgba(245,160,181,0.14) 0%, rgba(255,255,255,0.98) 100%)',
+              border: '1px solid rgba(245,160,181,0.28)',
+              boxShadow: '0 2px 10px rgba(245,160,181,0.10)',
+            }}>
+            <p className="text-[9px] tracking-widest mb-1.5" style={{ color: '#C8A58C' }}>
+              来店前30秒ブリーフィング
+            </p>
+            <p className="text-[15px] font-semibold leading-tight" style={{ color: '#4A2C2A' }}>
+              {briefingReservation.customerName}様（本日 {formatTime(briefingReservation.scheduledAt)}）
+            </p>
+            <p className="text-[13px] mt-1" style={{ color: '#7A5A50' }}>
+              前回：{briefingReservation.lastMenu ?? '初めてのご来店'}
+            </p>
+            {briefingCaution && (
+              <p className="text-[13px] mt-0.5" style={{ color: '#C05060' }}>
+                注意：{briefingCaution}
+              </p>
+            )}
+          </div>
+        </motion.div>
+      )}
 
       {/* ════════════ KPI ミニカード ════════════ */}
       <motion.div

@@ -13,9 +13,11 @@
  * 出力: {
  *   success, summary, motivation, avoid,
  *   recentChange, nextFocus[],
- *   risks[], relationshipScore,
+ *   risks[],
  *   cached, generated_at
  * }
+ *
+ * 関係性スコア(★1〜5)は Riora OS v1.0 再設計書に基づき完全削除(評価系UI禁止)。
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createHash } from 'crypto'
@@ -41,15 +43,6 @@ interface AISummary {
 export interface RiskAlert {
   code:    'long_absence' | 'price_decline' | 'nomination_change'
   message: string
-}
-
-export interface RelationshipScore {
-  score:         number   // 0.0 – 5.0
-  stars:         number   // 1 – 5
-  visitCount:    number
-  durationYears: number
-  memoryCount:   number
-  voiceCount:    number
 }
 
 // ─── Claude プロンプト ────────────────────────────────────────────────────────
@@ -211,32 +204,6 @@ function detectRisks(visits: VisitForRisk[]): RiskAlert[] {
   return risks
 }
 
-function computeRelationshipScore(
-  visitCount:     number,
-  firstVisitDate: string | null,
-  memoryCount:    number,
-  voiceCount:     number,
-): RelationshipScore {
-  let s = 0
-  s += Math.min(visitCount / 5, 2)             // 0〜2 (10来店で満点)
-  let durationYears = 0
-  if (firstVisitDate) {
-    durationYears = (Date.now() - new Date(firstVisitDate).getTime()) / (365.25 * 86_400_000)
-    s += Math.min(durationYears, 1.5)           // 0〜1.5 (1.5年以上で満点)
-  }
-  s += Math.min(memoryCount * 0.2, 1)          // 0〜1 (5件で満点)
-  s += Math.min(voiceCount * 0.25, 0.5)        // 0〜0.5 (2件で満点)
-  s = Math.min(s, 5)
-  return {
-    score:         Math.round(s * 10) / 10,
-    stars:         Math.max(1, Math.min(5, Math.ceil(s))),
-    visitCount,
-    durationYears: Math.round(durationYears * 10) / 10,
-    memoryCount,
-    voiceCount,
-  }
-}
-
 // ─── ハンドラー ────────────────────────────────────────────────────────────────
 
 export async function GET(
@@ -307,7 +274,6 @@ export async function GET(
 
   const visitCount     = visits.length
   const lastVisitDate  = visits[0]?.visit_date ?? null
-  const firstVisitDate = visits[visits.length - 1]?.visit_date ?? null
   const voiceCount     = voiceNotes.length
   const latestVoiceAt  = voiceNotes[0]?.created_at ?? null
   const memoryCount    = memories.length
@@ -317,8 +283,7 @@ export async function GET(
   const dataHash = computeDataHash({ visitCount, lastVisitDate, voiceCount, latestVoiceAt, memoryCount, latestMemoryAt, proposalCount })
 
   // 決定論ロジックは毎回計算（キャッシュ外）
-  const risks             = detectRisks(visits)
-  const relationshipScore = computeRelationshipScore(visitCount, firstVisitDate, memoryCount, voiceCount)
+  const risks = detectRisks(visits)
 
   const { data: cacheRow } = await supabase
     .from('timeline_summary_cache')
@@ -340,7 +305,6 @@ export async function GET(
         recentChange:      (cacheRow.recent_change as string | null) ?? null,
         nextFocus:         nextFocusCached,
         risks,
-        relationshipScore,
         cached:            true,
         generated_at:      cacheRow.generated_at,
       })
@@ -366,7 +330,6 @@ export async function GET(
         recentChange:      (cacheRow.recent_change as string | null) ?? null,
         nextFocus:         nextFocusCached,
         risks,
-        relationshipScore,
         cached:            true,
         generated_at:      cacheRow.generated_at,
       })
@@ -398,7 +361,6 @@ export async function GET(
     recentChange:      aiResult.recentChange,
     nextFocus:         aiResult.nextFocus,
     risks,
-    relationshipScore,
     cached:            false,
     generated_at:      now,
   })

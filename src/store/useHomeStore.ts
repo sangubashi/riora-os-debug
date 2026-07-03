@@ -42,6 +42,7 @@ function enrichWithBrainStats(
         visit_count:     s.visitCount,
         total_spent:     s.totalSpent,
         last_visit_date: s.lastVisitDate,
+        last_menu:       s.lastMenu,
         is_vip:          s.isVip,
         customer_type:   s.customerType ?? bc.customer_type,
       },

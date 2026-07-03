@@ -76,11 +76,7 @@ import {
 // ── コンポーネント層 ──────────────────────────────────────────────────────────
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import CustomerInsightPanel from '@/components/customer/CustomerInsightPanel';
-import CustomerScoreCard from '@/components/customer/CustomerScoreCard';
-import VipSimilarityCard from '@/components/customer/VipSimilarityCard';
-import VipPromotionCard from '@/components/customer/VipPromotionCard';
 import NextActionPanel from '@/components/customer/NextActionPanel';
-import CustomerTimeline from '@/components/customer/CustomerTimeline';
 import CustomerRiskCard from '@/components/customer/CustomerRiskCard';
 import ServiceReplayCard from '@/components/customer/ServiceReplayCard';
 import StoreLearningSection from '@/components/customer/StoreLearningSection';
@@ -255,7 +251,6 @@ export default function CustomerBottomSheet({
 
   // ── Priority / Timeline refresh ─────────────────────────────────────────────
   const [insightRefreshKey,  setInsightRefreshKey]  = useState(0);
-  const [timelineRefreshKey, setTimelineRefreshKey] = useState(0);
   const [notesRefreshKey,    setNotesRefreshKey]    = useState(0);
   const [memoryRefreshKey,   setMemoryRefreshKey]   = useState(0);
 
@@ -272,7 +267,6 @@ export default function CustomerBottomSheet({
   // ── Contraindications ────────────────────────────────────────────────────────
   const [contraindications,         setContraindications]         = useState<Contraindication[]>([]);
   const [contraindicationsLoading,  setContraindicationsLoading]  = useState(false);
-  const [contraindicationsCollapsed, setContraindicationsCollapsed] = useState(false);
 
   // ── Smart Completion Hint ─────────────────────────────────────────────────────
   const [completionHint, setCompletionHint] = useState<string | null>(null);
@@ -294,7 +288,6 @@ export default function CustomerBottomSheet({
     setDoneActions(new Set());
     setRecentActions([]);
     setInsightRefreshKey(0);
-    setTimelineRefreshKey(0);
     setNotesRefreshKey(0);
     setMemoryRefreshKey(0);
     setBookingPrompt(null);
@@ -302,7 +295,6 @@ export default function CustomerBottomSheet({
     setHandover(null);
     setHandoverCollapsed(false);
     setContraindications([]);
-    setContraindicationsCollapsed(false);
     setAllDone(false);
     setServiceReplay(null);
     resetActiveSession();
@@ -470,7 +462,6 @@ export default function CustomerBottomSheet({
     const hint = NEXT_HINT[actionType];
     if (hint) showHint(hint);
     loadRecentActions(c.id);
-    setTimelineRefreshKey(p => p + 1);
     release();
   }, [c, r, currentStaffId, savingAction, doneActions, loadRecentActions, showHint]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -628,7 +619,7 @@ export default function CustomerBottomSheet({
   };
 
   // ─── 計算値 ────────────────────────────────────────────────────────────────
-  const isDanger = !!c && (c.churn_risk > 70 || (r?.days_since_last_visit ?? 0) >= 60);
+  const isDanger = !!c && (r?.days_since_last_visit ?? 0) >= 60;
   const fallback = c ? (TYPE_COPY[c.customer_type] ?? TYPE_COPY['慎重・不安型']) : null;
   const aiAdvice = aiSuggestion?.strategy_logic?.adviceMessage
     ?? (c && fallback ? `${c.name}様には「${fallback.goal}」を意識した接客を心がけましょう。` : '');
@@ -924,6 +915,18 @@ export default function CustomerBottomSheet({
                 <div className="w-12 h-[5px] rounded-full bg-[#E8D5D8]" />
               </div>
 
+              {/* 禁忌事項 — 最重要・常時表示（スクロールで隠れない・折りたたみ不可・全ページ共通固定） */}
+              {(contraindicationsLoading || contraindications.length > 0) && (
+                <div className="flex-shrink-0 px-5 pb-2">
+                  <ErrorBoundary label="ContraindicationSection" silentFail>
+                    <ContraindicationSection
+                      items={contraindications}
+                      loading={contraindicationsLoading}
+                    />
+                  </ErrorBoundary>
+                </div>
+              )}
+
               {/* フェーズ切り替えタブ */}
               {page === 'overview' && (
                 <div className="flex-shrink-0 flex gap-1.5 px-5 pb-2.5 overflow-x-auto"
@@ -984,11 +987,6 @@ export default function CustomerBottomSheet({
                               <span className="text-xl font-bold text-[#5C4033] leading-tight">
                                 {c.name} 様
                               </span>
-                              {c.vip_rank >= 3 && (
-                                <span className="text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-[#FFF3DC] text-[#C8A58C]">
-                                  ★ VIP
-                                </span>
-                              )}
                               {isDanger && (
                                 <span className="text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-[#FFF0F2] text-[#C05060]">
                                   失客注意
@@ -1032,16 +1030,6 @@ export default function CustomerBottomSheet({
                           loading={handoverLoading}
                           collapsed={handoverCollapsed}
                           onToggle={() => setHandoverCollapsed(p => !p)}
-                        />
-                      </ErrorBoundary>
-
-                      {/* Contraindications */}
-                      <ErrorBoundary label="ContraindicationSection" silentFail>
-                        <ContraindicationSection
-                          items={contraindications}
-                          loading={contraindicationsLoading}
-                          collapsed={contraindicationsCollapsed}
-                          onToggle={() => setContraindicationsCollapsed(p => !p)}
                         />
                       </ErrorBoundary>
 
@@ -1100,21 +1088,6 @@ export default function CustomerBottomSheet({
                           />
                         </ErrorBoundary>
                       )}
-
-                      {/* 顧客スコア */}
-                      <ErrorBoundary label="CustomerScoreCard" silentFail>
-                        <CustomerScoreCard customer={c} />
-                      </ErrorBoundary>
-
-                      {/* VIP類似度 */}
-                      <ErrorBoundary label="VipSimilarityCard" silentFail>
-                        <VipSimilarityCard customer={c} />
-                      </ErrorBoundary>
-
-                      {/* VIP昇格シミュレーター */}
-                      <ErrorBoundary label="VipPromotionCard" silentFail>
-                        <VipPromotionCard customer={c} />
-                      </ErrorBoundary>
 
                       {/* 接客コンテキスト（リスク・関係性・SmartFollow） */}
                       {visible('storeLearning') && (
@@ -1201,7 +1174,6 @@ export default function CustomerBottomSheet({
                               onSaved={() => {
                                 loadRecentActions(c.id);
                                 setInsightRefreshKey(p => p + 1);
-                                setTimelineRefreshKey(p => p + 1);
                                 setMemoryRefreshKey(p => p + 1);
                                 // AI分析完了後に customer_notes・booking_prompt・handover を再取得
                                 setTimeout(() => setNotesRefreshKey(p => p + 1), 2000);
@@ -1233,15 +1205,6 @@ export default function CustomerBottomSheet({
                         )}
                       </div>
 
-                      {/* AI タイムライン */}
-                      {visible('timeline') && (
-                        <ErrorBoundary label="CustomerTimeline">
-                          <CustomerTimeline
-                            customerId={c.id}
-                            refreshKey={timelineRefreshKey}
-                          />
-                        </ErrorBoundary>
-                      )}
                     </div>
 
                     {/* 固定フッターボタン */}

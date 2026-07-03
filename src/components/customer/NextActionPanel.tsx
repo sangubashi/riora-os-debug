@@ -119,7 +119,7 @@ export default function NextActionPanel(props: NextActionPanelProps) {
     return (
       <div style={{ background: '#F8F5F0', borderRadius: '22px', padding: '16px' }}>
         <p style={{ fontSize: '11px', letterSpacing: '0.18em', color: '#C8A58C', fontWeight: 600, marginBottom: '12px' }}>
-          🔥 次にやるべきこと
+          💬 会話のきっかけ
         </p>
         {/* Skeleton */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -144,7 +144,7 @@ export default function NextActionPanel(props: NextActionPanelProps) {
         fontSize: '11px', letterSpacing: '0.18em',
         color: '#C8A58C', fontWeight: 600, marginBottom: '12px',
       }}>
-        🔥 次にやるべきこと
+        💬 会話のきっかけ
       </p>
 
       {/* アクションカード一覧 */}

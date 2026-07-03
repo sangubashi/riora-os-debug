@@ -18,6 +18,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { extractInsightTags } from '@/lib/voiceInsight/extractInsightTags'
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SVC_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -319,6 +320,10 @@ export async function POST(req: NextRequest) {
     const analysis = await analyzeWithClaude(transcript)
     console.log(`[pipeline] Claude解析完了 cn=${analysis.customerNotes.length} ci=${analysis.contraindications.length}`)
 
+    // ── 4.5. insight_tags 抽出（決定論的キーワードマッチング・AI不使用） ──
+    const { tags: insightTags } = extractInsightTags([transcript])
+    console.log(`[pipeline] insight_tags抽出完了: ${insightTags.length}件 [${insightTags.join(', ')}]`)
+
     // ── 5. voice_notes 更新（completed）──
     const { error: vnErr } = await sb.from('voice_notes').update({
       transcript,
@@ -326,8 +331,13 @@ export async function POST(req: NextRequest) {
       analysis_status:  'completed',
       analyzed_at:      now,
       insight_summary:  analysis.handoverNotes.summary,
+      insight_tags:     insightTags,
     }).eq('id', voiceNoteId)
-    if (vnErr) console.error('[pipeline] voice_notes update error:', vnErr.message)
+    if (vnErr) {
+      console.error('[pipeline] voice_notes update error:', vnErr.message)
+    } else {
+      console.log(`[pipeline] voice_notes保存確認: transcript=${transcript.length}文字 summary=${analysis.bookingPrompt.summary.length}文字 insight_tags=${insightTags.length}件`)
+    }
 
     // ── 6. customer_notes INSERT（重複チェック付き）──
     if (analysis.customerNotes.length > 0) {
