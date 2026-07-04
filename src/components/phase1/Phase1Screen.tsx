@@ -26,18 +26,15 @@ import { useLineUnreadStore } from '@/store/useLineUnreadStore'
 // types
 import type { ReservationWithBrainCustomer } from '@/types/database'
 import type { Customer as BSCustomer,
-              Reservation as BSReservation,
-              SkinTagKey } from '@/types'
-import { SKIN_TAG_LABELS } from '@/types'
+              Reservation as BSReservation } from '@/types'
 
 // phase1 コンポーネント
-import TagFilterBar,  { type TagFilterKey }  from './TagFilterBar'
-import ReservationCard, { type Phase1Reservation,
-                          type CustomerType } from './ReservationCard'
+import type { Phase1Reservation, CustomerType } from './ReservationCard'
 import AIProposalView                         from './AIProposalView'
 import ServiceLogView                         from './ServiceLogView'
 import LineUnreadSheet                        from './LineUnreadSheet'
 import AppBottomNav                           from './AppBottomNav'
+import TodayBriefingCard                      from './TodayBriefingCard'
 
 import CustomerBottomSheet from '@/components/customer/CustomerBottomSheet'
 import { useNewCustomerSheetStore } from '@/store/useNewCustomerSheetStore'
@@ -106,29 +103,10 @@ function toReservation(r: Phase1Reservation): BSReservation {
   }
 }
 
-// ─── タグフィルター ───────────────────────────────────────────────────────────
-
-function matchTag(r: Phase1Reservation, tag: TagFilterKey): boolean {
-  switch (tag) {
-    case 'all':      return true
-    case 'vip':      return r.isVip
-    case 'regular':  return !r.isVip && r.visitCount >= 5
-    case 'new':      return r.visitCount < 3
-    case 'risk':     return r.churnRisk > 60
-    case 'followup': return r.daysSinceLastVisit >= 30
-    default:         return true
-  }
-}
-
 function dateLabel() {
   const d  = new Date()
   const wd = ['日','月','火','水','木','金','土'][d.getDay()]
   return `${d.getMonth()+1}月${d.getDate()}日(${wd})`
-}
-
-function formatTime(iso: string) {
-  try { return new Date(iso).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) }
-  catch { return iso.slice(11, 16) }
 }
 
 type AppView = 'home' | 'ai_proposal' | 'service_log'
@@ -146,7 +124,6 @@ export default function Phase1Screen() {
     close:        closeNewSheet,
   } = useNewCustomerSheetStore()
 
-  const [activeTag,     setActiveTag]     = useState<TagFilterKey>('all')
   const [view,          setView]          = useState<AppView>('home')
   const [selected,      setSelected]      = useState<Phase1Reservation | null>(null)
   const [lineSheetOpen, setLineSheetOpen] = useState(false)
@@ -196,43 +173,19 @@ export default function Phase1Screen() {
     () => rawReservations.map(toPhase1),
     [rawReservations]
   )
-  const filtered = useMemo(
-    () => reservations.filter(r => matchTag(r, activeTag)),
-    [reservations, activeTag]
-  )
-  const counts = useMemo<Partial<Record<TagFilterKey, number>>>(() => ({
-    all:      reservations.length,
-    vip:      reservations.filter(r => r.isVip).length,
-    regular:  reservations.filter(r => !r.isVip && r.visitCount >= 5).length,
-    new:      reservations.filter(r => r.visitCount < 3).length,
-    risk:     reservations.filter(r => r.churnRisk > 60).length,
-    followup: reservations.filter(r => r.daysSinceLastVisit >= 30).length,
-  }), [reservations])
-
-  // ── 来店前30秒ブリーフィング（直近の予約を3行で要約。文章禁止・短文固定） ───────
-  const briefingReservation = useMemo(() => {
-    if (reservations.length === 0) return null
-    const now = Date.now()
-    const byTime = [...reservations].sort(
-      (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
-    )
-    return byTime.find(r => new Date(r.scheduledAt).getTime() >= now) ?? byTime[0]
-  }, [reservations])
-
-  const briefingCaution = useMemo(() => {
-    if (!briefingReservation?.skin_tags?.length) return null
-    return briefingReservation.skin_tags
-      .map(t => SKIN_TAG_LABELS[t as SkinTagKey] ?? t)
-      .slice(0, 2)
-      .join('・')
-  }, [briefingReservation])
-
   function handleCardTap(r: Phase1Reservation) {
     setSelected(r)
     openNewSheet(toCustomer(r), toReservation(r))
   }
   function handleServiceLog(r: Phase1Reservation) { setSelected(r); setView('service_log') }
   function goHome()                               { setView('home') }
+
+  // 今日タブブリーフィングカードからのタップ → useHomeStore側の完全な予約データを
+  // reservationId で引き当てて既存のCustomerBottomSheetフローに合流させる
+  function handleSelectFromBriefing(reservationId: string) {
+    const match = reservations.find(r => r.id === reservationId)
+    if (match) handleCardTap(match)
+  }
 
   // ── レンダー ──────────────────────────────────────────────────────────────
   return (
@@ -319,37 +272,6 @@ export default function Phase1Screen() {
         </div>
       </div>
 
-      {/* ════════════ 来店前30秒ブリーフィング（最上部固定・3行以内） ════════════ */}
-      {briefingReservation && (
-        <motion.div
-          initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
-          className="flex-shrink-0 mx-4 mt-3 mb-1">
-          <div
-            className="rounded-2xl px-4 py-3"
-            style={{
-              background: 'linear-gradient(135deg, rgba(245,160,181,0.14) 0%, rgba(255,255,255,0.98) 100%)',
-              border: '1px solid rgba(245,160,181,0.28)',
-              boxShadow: '0 2px 10px rgba(245,160,181,0.10)',
-            }}>
-            <p className="text-[9px] tracking-widest mb-1.5" style={{ color: '#C8A58C' }}>
-              来店前30秒ブリーフィング
-            </p>
-            <p className="text-[15px] font-semibold leading-tight" style={{ color: '#4A2C2A' }}>
-              {briefingReservation.customerName}様（本日 {formatTime(briefingReservation.scheduledAt)}）
-            </p>
-            <p className="text-[13px] mt-1" style={{ color: '#7A5A50' }}>
-              前回：{briefingReservation.lastMenu ?? '初めてのご来店'}
-            </p>
-            {briefingCaution && (
-              <p className="text-[13px] mt-0.5" style={{ color: '#C05060' }}>
-                注意：{briefingCaution}
-              </p>
-            )}
-          </div>
-        </motion.div>
-      )}
-
       {/* ════════════ KPI ミニカード ════════════ */}
       <motion.div
         initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
@@ -388,39 +310,15 @@ export default function Phase1Screen() {
         </div>
       </motion.div>
 
-      {/* ════════════ TAG FILTER ════════════ */}
-      <div className="flex-shrink-0"
-        style={{ background: 'rgba(253,247,248,0.80)', borderBottom: '1px solid #F5E6E8' }}>
-        <TagFilterBar active={activeTag} onChange={setActiveTag} counts={counts} />
-      </div>
-
-      {/* ════════════ RESERVATION LIST ════════════ */}
+      {/* ════════════ 来店前30秒ブリーフィング（次のお客様／注意事項／このあとの予約） ════════════ */}
       <div
-        className="flex-1 overflow-y-auto overflow-x-hidden pt-3"
+        className="flex-1 overflow-y-auto overflow-x-hidden"
         style={{
           WebkitOverflowScrolling: 'touch',
           paddingBottom: 'calc(68px + max(12px, env(safe-area-inset-bottom)))',
           scrollbarWidth: 'none',
         }}>
-
-        {filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 gap-3">
-            <Image src="/assets/rio-kuma.png" alt=""
-              width={64} height={64} className="object-contain opacity-50" />
-            <p className="text-[13px]" style={{ color: '#9E8090' }}>
-              {rawReservations.length === 0 ? '本日の予約はありません' : '該当する予約はありません'}
-            </p>
-          </div>
-        ) : (
-          filtered.map((r, i) => (
-            <ReservationCard
-              key={r.id}
-              reservation={r}
-              index={i}
-              onTap={handleCardTap}
-            />
-          ))
-        )}
+        <TodayBriefingCard onSelectCustomer={handleSelectFromBriefing} />
       </div>
 
       <AppBottomNav />

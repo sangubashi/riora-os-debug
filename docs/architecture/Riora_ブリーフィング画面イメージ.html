@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>来店前30秒ブリーフィング</title>
+<style>
+  :root{--bg:#F8F1F3;--card:#fff;--soft:#F5E6E8;--gold:#C8A58C;--ink:#5C4033;
+        --ink2:#9C8478;--line:#EFE2E4;--warn:#B0524E;--note:#B98C6E}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Hiragino Mincho ProN','Yu Mincho',serif;background:var(--bg);color:var(--ink);
+       -webkit-font-smoothing:antialiased;padding:24px}
+  .lead{text-align:center;font-family:sans-serif;font-size:11px;color:var(--ink2);letter-spacing:.12em;margin-bottom:16px}
+  .phone{max-width:360px;margin:0 auto;background:var(--card);border:1px solid var(--line);
+         border-radius:24px;padding:18px 16px;box-shadow:0 8px 30px rgba(92,64,51,.08)}
+
+  .clock{font-family:sans-serif;font-size:11px;color:var(--gold);letter-spacing:.1em;text-align:center;margin-bottom:12px}
+  .next{display:flex;align-items:center;gap:11px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+  .ava{width:44px;height:44px;border-radius:50%;background:#E7CFC0}
+  .next b{font-size:16px}.next span{font-size:11px;color:var(--ink2);font-family:sans-serif;display:block;margin-top:2px}
+  .in{margin-left:auto;font-family:sans-serif;font-size:11px;color:#fff;background:var(--gold);border-radius:12px;padding:4px 10px}
+
+  /* 3行ブリーフィング */
+  .brief{background:#FBF4F0;border-radius:14px;padding:15px 16px;margin:14px 0}
+  .brief .h{font-family:sans-serif;font-size:10px;letter-spacing:.1em;color:var(--note);margin-bottom:11px}
+  .line{display:flex;gap:10px;padding:7px 0;font-size:14px;align-items:flex-start}
+  .line .i{width:20px;text-align:center;flex-shrink:0}
+  .line.ng{color:var(--warn)}
+  .line.ng .i{color:var(--warn)}
+  .focus{color:var(--ink)}
+
+  .detail{border:1px solid var(--line);border-radius:12px;margin-top:6px}
+  .detail summary{font-family:sans-serif;font-size:12px;color:var(--ink2);padding:12px 14px;cursor:pointer;list-style:none;display:flex;justify-content:space-between}
+  .detail summary::-webkit-details-marker{display:none}
+  .detail .dc{padding:0 14px 14px;font-family:sans-serif;font-size:12px;color:#6E5547;line-height:1.8}
+  .detail .dc b{color:var(--ink)}
+  .row{padding:6px 0;border-top:1px dashed var(--line)}
+
+  .after{margin-top:16px}
+  .after .t{font-family:sans-serif;font-size:11px;color:var(--ink2);margin-bottom:8px}
+  .q{display:flex;justify-content:space-between;font-size:13px;padding:9px 12px;background:#FFFDFD;border:1px solid var(--line);border-radius:10px;margin-bottom:6px}
+  .q .tm{font-family:sans-serif;color:var(--gold);font-size:12px}
+  .foot{font-family:sans-serif;font-size:10px;color:var(--ink2);text-align:center;margin-top:14px}
+</style>
+</head>
+<body>
+  <p class="lead">スタッフアプリ ＞ 今日タブ（開いた瞬間の画面）</p>
+  <div class="phone">
+    <div class="clock">次のお客様まで あと 8分</div>
+
+    <div class="next"><div class="ava"></div>
+      <div><b>佐藤 美咲 様</b><span>4回目 ・ B型 ・ 担当 外舘</span></div>
+      <span class="in">14:00</span></div>
+
+    <!-- 3行以内で「今日注意すること」 -->
+    <div class="brief">
+      <div class="h">今日、気をつけること</div>
+      <div class="line ng"><span class="i">⚠</span><span>アレルギー：アルコール系化粧品NG（禁忌）</span></div>
+      <div class="line ng"><span class="i">🤫</span><span>触れない：体重・ダイエットの話</span></div>
+      <div class="line focus"><span class="i">🎯</span><span>今日の focus：ホームケアの継続（来週お誕生日🎂）</span></div>
+    </div>
+
+    <!-- 詳細は畳む -->
+    <details class="detail">
+      <summary>くわしく見る（前回・履歴・AIまとめ）<span>＋</span></summary>
+      <div class="dc">
+        <div class="row"><b>前回(6/20)</b>：ハーブピーリング＋ホームケア購入。赤みが落ち着いてきた</div>
+        <div class="row"><b>覚えておくこと</b>：長女が来年小学校受験・ゴルフが趣味</div>
+        <div class="row"><b>AIまとめ</b>：結婚式に向け肌改善の意欲が高い方。仕事ストレスでニキビ再発傾向。ホームケア提案が効きやすい</div>
+        <div class="row"><b>AI Timeline を開く →</b></div>
+      </div>
+    </details>
+
+    <div class="after">
+      <div class="t">このあとの予約</div>
+      <div class="q"><span>田中 様 ・ 3回目</span><span class="tm">15:30</span></div>
+      <div class="q"><span>山本 様 ・ 初回</span><span class="tm">17:00</span></div>
+    </div>
+
+    <p class="foot">まず3行。深く知りたいときだけ開く。</p>
+  </div>
+</body>
+</html>

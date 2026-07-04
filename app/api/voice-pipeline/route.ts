@@ -24,6 +24,18 @@ const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SVC_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
 const OPENAI_KEY = process.env.OPENAI_API_KEY
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
+const STORE_ID = '00000000-0000-0000-0000-000000000001'
+
+// customer_notes と同じ Family/Work/Health/Preference/Event 分類を
+// customer_memories の memory_type へマッピング（VoiceMemoSection.tsx の
+// CATEGORY_TO_MEMORY_TYPE と同一定義）
+const CATEGORY_TO_MEMORY_TYPE: Record<string, string> = {
+  Family:     'family',
+  Work:       'occupation',
+  Health:     'other',
+  Preference: 'hobby',
+  Event:      'life_event',
+}
 
 // ─── 型定義 ──────────────────────────────────────────────────────────────────
 
@@ -252,6 +264,37 @@ async function analyzeWithClaude(transcript: string): Promise<ClaudeAnalysis> {
 
 function clamp(v: number): number { return Math.max(0, Math.min(1, v)) }
 
+// ─── customer_memories 候補生成（P1: Whisper/Claude実データ連結） ─────────────
+//
+// 優先順位:
+//   1位 analysis.customerNotes（Claude解析済みのFamily/Work/Health/Preference/Event
+//       分類＋実文。insight_tags(dryness_concern等の肌悩み/購買シグナル)は文章を
+//       伴わずcontentを構成できないため、同じ「解析済み構造化データ」の中で
+//       実際にcontentとして使えるcustomerNotesを1位に採用する）
+//   2位 summary（bookingPrompt優先、なければhandoverNotes）
+//   3位 transcript全文（先頭80文字）
+interface MemoryCandidate { content: string; memoryType: string }
+
+function buildMemoryCandidates(analysis: ClaudeAnalysis, transcript: string): MemoryCandidate[] {
+  if (analysis.customerNotes.length > 0) {
+    return analysis.customerNotes.map(n => ({
+      content:    n.note,
+      memoryType: CATEGORY_TO_MEMORY_TYPE[n.category] ?? 'other',
+    }))
+  }
+
+  const summary = analysis.bookingPrompt.summary || analysis.handoverNotes.summary
+  if (summary && summary.trim().length > 0) {
+    return [{ content: summary.trim(), memoryType: 'other' }]
+  }
+
+  if (transcript && transcript.trim().length > 0) {
+    return [{ content: `接客内容を記録: ${transcript.trim().slice(0, 80)}`, memoryType: 'other' }]
+  }
+
+  return []
+}
+
 // ─── メインハンドラー ─────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -368,6 +411,38 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── 6.5. customer_memories 生成（P1: Whisper/Claude実データ連結・重複チェック付き）──
+    const memoryCandidates = buildMemoryCandidates(analysis, transcript)
+    let memoriesInserted = 0
+    if (memoryCandidates.length > 0) {
+      const { data: existingMem } = await sb.from('customer_memories')
+        .select('content')
+        .eq('customer_id', customerId)
+
+      const existingContents = new Set((existingMem ?? []).map(m => (m.content as string).slice(0, 30)))
+
+      const memToInsert = memoryCandidates
+        .filter(c => !existingContents.has(c.content.slice(0, 30)))
+        .map(c => ({
+          customer_id:  customerId,
+          store_id:     STORE_ID,
+          content:      c.content,
+          memory_type:  c.memoryType,
+          importance:   'medium',
+          is_sensitive: false,
+          created_by:   staffId,
+        }))
+
+      if (memToInsert.length > 0) {
+        const { error: memErr } = await sb.from('customer_memories').insert(memToInsert)
+        if (memErr) console.error('[pipeline] customer_memories insert error:', memErr.message)
+        else {
+          memoriesInserted = memToInsert.length
+          console.log(`[pipeline] customer_memories ${memToInsert.length}件保存`)
+        }
+      }
+    }
+
     // ── 7. booking_prompts UPSERT ──
     const bp = analysis.bookingPrompt
     // 既存レコード確認
@@ -474,6 +549,7 @@ export async function POST(req: NextRequest) {
       analysis: {
         customerNotesCount:      analysis.customerNotes.length,
         contraindicationsCount:  analysis.contraindications.length,
+        customerMemoriesCount:   memoriesInserted,
         bookingPromptConfidence: bp.confidence,
         handoverConfidence:      hn.confidence,
       },
