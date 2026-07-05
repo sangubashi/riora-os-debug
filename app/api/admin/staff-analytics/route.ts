@@ -14,6 +14,7 @@ import { getRepos } from '../../../lib/repos';
 import { staffAnalyticsQuerySchema } from '../../_schemas/query';
 import { toValidationErrorResponse } from '../../_schemas/common';
 import { computeStaffAnalytics } from '@/lib/staffAnalytics/StaffAnalyticsEngine';
+import { requireAdmin } from '@/lib/auth/requireAdmin';
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -25,6 +26,9 @@ function lastDayOfMonth(yearMonth: string): string {
 }
 
 export async function GET(req: NextRequest) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   const parsed = staffAnalyticsQuerySchema.safeParse({
     storeId: req.nextUrl.searchParams.get('storeId'),
     date: req.nextUrl.searchParams.get('date') ?? undefined,

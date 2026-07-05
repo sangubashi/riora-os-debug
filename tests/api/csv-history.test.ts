@@ -2,9 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET } from '../../app/api/admin/csv/history/route';
 import { getRepos } from '../../app/lib/repos';
+import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
 import type { OpsLog } from '../../src/types/riora.types';
 
 vi.mock('../../app/lib/repos', () => ({ getRepos: vi.fn() }));
+vi.mock('@/lib/auth/extractStaffFromRequest', () => ({ extractStaffFromRequest: vi.fn() }));
+
+const ADMIN_STAFF = {
+  authUserId: 'admin-auth-uid', staffBrainId: 'admin-staff-id',
+  email: 'admin@salon-riora.jp', isAdmin: true,
+};
 
 const mockRepos = { opsLogRepo: { recentByStoreAndKind: vi.fn() } };
 
@@ -16,6 +23,7 @@ describe('GET /api/admin/csv/history', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getRepos).mockReturnValue(mockRepos as never);
+    vi.mocked(extractStaffFromRequest).mockResolvedValue(ADMIN_STAFF as never);
   });
 
   it('brain_ops_logs(kind=csv_import)から件数のみの履歴を返す(PIIを含まない)', async () => {

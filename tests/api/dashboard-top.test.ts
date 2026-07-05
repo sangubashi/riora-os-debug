@@ -2,9 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET } from '../../app/api/dashboard/top/route';
 import { getRepos } from '../../app/lib/repos';
+import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
 import type { DashboardSnapshot, BusinessSettings, OpsLog } from '../../src/types/riora.types';
 
 vi.mock('../../app/lib/repos', () => ({ getRepos: vi.fn() }));
+vi.mock('@/lib/auth/extractStaffFromRequest', () => ({ extractStaffFromRequest: vi.fn() }));
+
+const ADMIN_STAFF = {
+  authUserId: 'admin-auth-uid', staffBrainId: 'admin-staff-id',
+  email: 'admin@salon-riora.jp', isAdmin: true,
+};
 
 const SNAPSHOT: DashboardSnapshot = {
   storeId: 'store-1',
@@ -52,8 +59,8 @@ const CSV_LOG: OpsLog = {
 };
 
 const mockRepos = {
-  dashboardRepo: { latestByStore: vi.fn(), listSinceDate: vi.fn() },
-  businessSettingsRepo: { findByStoreAndMonth: vi.fn() },
+  dashboardRepo: { latestBeforeOrAt: vi.fn(), listSinceDate: vi.fn() },
+  businessSettingsRepo: { findByStoreAndMonth: vi.fn(), findLatestBeforeOrAt: vi.fn() },
   visitRepo: { sumSalesByStoreAndDate: vi.fn() },
   opsLogRepo: { recentByStoreAndKind: vi.fn() },
 };
@@ -66,9 +73,11 @@ describe('GET /api/dashboard/top (GetDashboardTop)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getRepos).mockReturnValue(mockRepos as never);
-    mockRepos.dashboardRepo.latestByStore.mockResolvedValue(SNAPSHOT);
+    vi.mocked(extractStaffFromRequest).mockResolvedValue(ADMIN_STAFF as never);
+    mockRepos.dashboardRepo.latestBeforeOrAt.mockResolvedValue(SNAPSHOT);
     mockRepos.dashboardRepo.listSinceDate.mockResolvedValue([SNAPSHOT]);
     mockRepos.businessSettingsRepo.findByStoreAndMonth.mockResolvedValue(SETTINGS);
+    mockRepos.businessSettingsRepo.findLatestBeforeOrAt.mockResolvedValue(null);
     mockRepos.visitRepo.sumSalesByStoreAndDate.mockResolvedValue(98000);
     mockRepos.opsLogRepo.recentByStoreAndKind.mockResolvedValue([CSV_LOG]);
   });
@@ -192,7 +201,7 @@ describe('GET /api/dashboard/top (GetDashboardTop)', () => {
   });
 
   it('dashboard_dailyが0件(snapshot=null)でもゼロ値で正常応答する(空状態)', async () => {
-    mockRepos.dashboardRepo.latestByStore.mockResolvedValue(null);
+    mockRepos.dashboardRepo.latestBeforeOrAt.mockResolvedValue(null);
     mockRepos.dashboardRepo.listSinceDate.mockResolvedValue([]);
 
     const res = await GET(buildUrl('?storeId=store-1&date=2026-06-22'));
@@ -217,7 +226,7 @@ describe('GET /api/dashboard/top (GetDashboardTop)', () => {
   });
 
   it('Repositoryが例外をthrowした場合は500を返す', async () => {
-    mockRepos.dashboardRepo.latestByStore.mockRejectedValue(new Error('DashboardRepo.latestByStore failed: db down'));
+    mockRepos.dashboardRepo.latestBeforeOrAt.mockRejectedValue(new Error('DashboardRepo.latestBeforeOrAt failed: db down'));
 
     const res = await GET(buildUrl('?storeId=store-1&date=2026-06-22'));
 

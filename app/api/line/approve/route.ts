@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { sendLineMessage } from '../../../lib/line/sender'
+import { requireAdmin } from '@/lib/auth/requireAdmin'
 
 function getSupabase(): SupabaseClient {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -37,6 +38,9 @@ async function logSendResult(
 }
 
 export async function POST(req: NextRequest) {
+  const gate = await requireAdmin(req)
+  if (gate instanceof NextResponse) return gate
+
   try {
     const body = await req.json() as { id?: string; action?: 'approve' | 'skip' }
 

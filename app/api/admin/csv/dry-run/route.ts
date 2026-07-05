@@ -10,10 +10,14 @@ import { DEMO_STORE_ID } from '@/lib/constants';
 import { decodeCsvBuffer } from '@/lib/import/csvEncoding';
 import { buildDryRunResult } from '@/lib/import/csvImportPipeline';
 import { parseHeadersFromCsv, detectCsvType } from '@/lib/import/csvTypeDetector';
+import { requireAdmin } from '@/lib/auth/requireAdmin';
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 export async function POST(req: NextRequest) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   let form: FormData;
   try {
     form = await req.formData();

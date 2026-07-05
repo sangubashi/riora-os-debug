@@ -2,9 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET } from '../../app/api/admin/customer-assets/route';
 import { getRepos } from '../../app/lib/repos';
+import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
 import type { Customer, Visit, Subscription } from '../../src/types/riora.types';
 
 vi.mock('../../app/lib/repos', () => ({ getRepos: vi.fn() }));
+vi.mock('@/lib/auth/extractStaffFromRequest', () => ({ extractStaffFromRequest: vi.fn() }));
+
+const ADMIN_STAFF = {
+  authUserId: 'admin-auth-uid', staffBrainId: 'admin-staff-id',
+  email: 'admin@salon-riora.jp', isAdmin: true,
+};
 
 function customer(id: string, name: string): Customer {
   return {
@@ -39,6 +46,7 @@ describe('GET /api/admin/customer-assets (画面③顧客管理)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getRepos).mockReturnValue(mockRepos as never);
+    vi.mocked(extractStaffFromRequest).mockResolvedValue(ADMIN_STAFF as never);
     mockRepos.customerRepo.listByStore.mockResolvedValue([customer('c1', '田中花子')]);
     mockRepos.visitRepo.listByStore.mockResolvedValue([visit('v1', 'c1', '2026-06-01')]);
     mockRepos.subscriptionRepo.listByStore.mockResolvedValue([] as Subscription[]);

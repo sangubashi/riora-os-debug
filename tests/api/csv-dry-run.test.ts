@@ -10,9 +10,16 @@ import { NextRequest } from 'next/server';
 import { POST } from '../../app/api/admin/csv/dry-run/route';
 import { getRepos } from '../../app/lib/repos';
 import { buildDryRunResult } from '../../src/lib/import/csvImportPipeline';
+import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
 
 vi.mock('../../app/lib/repos', () => ({ getRepos: vi.fn() }));
 vi.mock('../../src/lib/import/csvImportPipeline', () => ({ buildDryRunResult: vi.fn() }));
+vi.mock('@/lib/auth/extractStaffFromRequest', () => ({ extractStaffFromRequest: vi.fn() }));
+
+const ADMIN_STAFF = {
+  authUserId: 'admin-auth-uid', staffBrainId: 'admin-staff-id',
+  email: 'admin@salon-riora.jp', isAdmin: true,
+};
 
 const EMPTY_QUALITY_REPORT = {
   score: 100, level: 'excellent' as const, totalCheckouts: 0, warnings: [],
@@ -32,6 +39,7 @@ describe('POST /api/admin/csv/dry-run', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getRepos).mockReturnValue({} as never);
+    vi.mocked(extractStaffFromRequest).mockResolvedValue(ADMIN_STAFF as never);
   });
 
   it('fileが無い場合は400(file_required)を返す', async () => {

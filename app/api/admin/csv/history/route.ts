@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getRepos } from '../../../../lib/repos';
 import { DEMO_STORE_ID } from '@/lib/constants';
 import type { ImportHistoryItem } from '@/components/admin/csv-import/types';
+import { requireAdmin } from '@/lib/auth/requireAdmin';
 
 function readNumber(detail: Record<string, unknown>, key: string): number {
   const v = detail[key];
@@ -15,6 +16,9 @@ function readNumber(detail: Record<string, unknown>, key: string): number {
 }
 
 export async function GET(req: NextRequest) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   const storeId = req.nextUrl.searchParams.get('storeId') || DEMO_STORE_ID;
 
   let repos;

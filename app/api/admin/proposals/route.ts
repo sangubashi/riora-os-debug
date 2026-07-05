@@ -13,6 +13,7 @@ import { getRepos, getServiceClient } from '../../../lib/repos';
 import { proposalQuerySchema, proposalSaveSchema } from '../../_schemas/proposal';
 import { toValidationErrorResponse } from '../../_schemas/common';
 import { generateCustomerProposal } from '@/lib/proposal/generateCustomerProposal';
+import { requireAdmin } from '@/lib/auth/requireAdmin';
 
 async function buildResult(storeId: string, customerId: string, staffId: string) {
   const repos = getRepos();
@@ -21,6 +22,9 @@ async function buildResult(storeId: string, customerId: string, staffId: string)
 }
 
 export async function GET(req: NextRequest) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   const parsed = proposalQuerySchema.safeParse({
     storeId: req.nextUrl.searchParams.get('storeId'),
     customerId: req.nextUrl.searchParams.get('customerId'),
@@ -42,6 +46,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   let body: unknown;
   try {
     body = await req.json();

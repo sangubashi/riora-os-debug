@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getRepos } from '../../../../lib/repos';
 import { toValidationErrorResponse } from '../../../_schemas/common';
+import { requireAdmin } from '@/lib/auth/requireAdmin';
 
 const postBodySchema = z.object({
   storeId: z.string().min(1),
@@ -20,6 +21,9 @@ const postBodySchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   let body: unknown;
   try {
     body = await req.json();

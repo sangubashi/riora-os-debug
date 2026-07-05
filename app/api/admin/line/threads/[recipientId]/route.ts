@@ -6,8 +6,12 @@ import { getServiceClient } from '../../../../../lib/repos';
 import { getLineThreadMessages } from '@/lib/line/lineAdminQueries';
 import { recipientIdParamSchema } from '../../../../_schemas/line';
 import { toValidationErrorResponse } from '../../../../_schemas/common';
+import { requireAdmin } from '@/lib/auth/requireAdmin';
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ recipientId: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ recipientId: string }> }) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   const { recipientId } = await params;
   const parsed = recipientIdParamSchema.safeParse({ recipientId });
   if (!parsed.success) {

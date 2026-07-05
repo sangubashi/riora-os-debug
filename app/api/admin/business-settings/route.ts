@@ -18,6 +18,7 @@ import { getRepos } from '../../../lib/repos';
 import { storeIdQuerySchema } from '../../_schemas/query';
 import { businessSettingsUpsertSchema } from '../../_schemas/businessSettings';
 import { toValidationErrorResponse } from '../../_schemas/common';
+import { requireAdmin } from '@/lib/auth/requireAdmin';
 
 function firstOfMonth(date: string): string {
   return `${date.slice(0, 7)}-01`;
@@ -35,6 +36,9 @@ function hasValidFixedCosts(fixedCosts: Record<string, unknown> | null | undefin
 }
 
 export async function GET(req: NextRequest) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   const parsed = storeIdQuerySchema.safeParse({
     storeId: req.nextUrl.searchParams.get('storeId'),
   });
@@ -67,6 +71,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   let body: unknown;
   try {
     body = await req.json();

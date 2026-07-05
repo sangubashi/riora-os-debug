@@ -3,11 +3,15 @@
  *
  * line_send_queue(実データ)の送信済み一覧を返す(成功/失敗を含む)。
  */
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '../../../../lib/repos';
 import { listDeliveryHistory } from '@/lib/line/lineAdminQueries';
+import { requireAdmin } from '@/lib/auth/requireAdmin';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   let supabase;
   try {
     supabase = getServiceClient();

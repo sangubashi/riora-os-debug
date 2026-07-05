@@ -2,9 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { POST } from '../../app/api/admin/churn-risk/instruct/route';
 import { getRepos } from '../../app/lib/repos';
+import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
 import type { Customer, Staff, OpsLog } from '../../src/types/riora.types';
 
 vi.mock('../../app/lib/repos', () => ({ getRepos: vi.fn() }));
+vi.mock('@/lib/auth/extractStaffFromRequest', () => ({ extractStaffFromRequest: vi.fn() }));
+
+const ADMIN_STAFF = {
+  authUserId: 'admin-auth-uid', staffBrainId: 'admin-staff-id',
+  email: 'admin@salon-riora.jp', isAdmin: true,
+};
 
 const CUSTOMER: Customer = {
   id: 'c1', storeId: 'store-1', name: '危険客', ageGroup: null, customerType: null,
@@ -33,6 +40,7 @@ describe('POST /api/admin/churn-risk/instruct (担当スタッフへ指示)', ()
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getRepos).mockReturnValue(mockRepos as never);
+    vi.mocked(extractStaffFromRequest).mockResolvedValue(ADMIN_STAFF as never);
     mockRepos.customerRepo.findById.mockResolvedValue(CUSTOMER);
     mockRepos.staffRepo.listByStore.mockResolvedValue([STAFF]);
     mockRepos.opsLogRepo.insert.mockResolvedValue({

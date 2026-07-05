@@ -13,6 +13,7 @@ import { decodeCsvBuffer } from '@/lib/import/csvEncoding';
 import { runImportPipeline } from '@/lib/import/csvImportPipeline';
 import { parseHeadersFromCsv, detectCsvType } from '@/lib/import/csvTypeDetector';
 import type { ReviewDecisionValue } from '@/components/admin/csv-import/types';
+import { requireAdmin } from '@/lib/auth/requireAdmin';
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
@@ -28,6 +29,9 @@ function parseReviewDecisions(raw: string | null): Record<number, ReviewDecision
 }
 
 export async function POST(req: NextRequest) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   let form: FormData;
   try {
     form = await req.formData();

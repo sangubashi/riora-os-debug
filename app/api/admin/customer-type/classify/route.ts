@@ -9,8 +9,12 @@ import { getRepos } from '../../../../lib/repos';
 import { runCustomerTypeClassification } from '@/lib/customerType/runCustomerTypeClassification';
 import { classifyQuerySchema } from '../../../_schemas/customerType';
 import { toValidationErrorResponse } from '../../../_schemas/common';
+import { requireAdmin } from '@/lib/auth/requireAdmin';
 
 export async function POST(req: NextRequest) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   const parsed = classifyQuerySchema.safeParse({
     storeId: req.nextUrl.searchParams.get('storeId'),
   });

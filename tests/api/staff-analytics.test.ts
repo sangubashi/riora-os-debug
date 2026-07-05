@@ -2,9 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET } from '../../app/api/admin/staff-analytics/route';
 import { getRepos } from '../../app/lib/repos';
+import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
 import type { Staff, Visit, Subscription } from '../../src/types/riora.types';
 
 vi.mock('../../app/lib/repos', () => ({ getRepos: vi.fn() }));
+vi.mock('@/lib/auth/extractStaffFromRequest', () => ({ extractStaffFromRequest: vi.fn() }));
+
+const ADMIN_STAFF = {
+  authUserId: 'admin-auth-uid', staffBrainId: 'admin-staff-id',
+  email: 'admin@salon-riora.jp', isAdmin: true,
+};
 
 function staff(id: string, name: string): Staff {
   return { id, storeId: 'store-1', name, style: 'evidence', isActive: true, nameAliases: [] };
@@ -33,6 +40,7 @@ describe('GET /api/admin/staff-analytics (画面④スタッフ分析)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getRepos).mockReturnValue(mockRepos as never);
+    vi.mocked(extractStaffFromRequest).mockResolvedValue(ADMIN_STAFF as never);
     mockRepos.staffRepo.listByStore.mockResolvedValue([staff('s1', '鈴木'), staff('s2', '亀山')]);
     mockRepos.visitRepo.listByStore.mockResolvedValue([visit('v1', 's1', 'c1', '2026-06-01')]);
     mockRepos.subscriptionRepo.listByStore.mockResolvedValue([] as Subscription[]);

@@ -13,8 +13,12 @@ import { getRepos } from '../../../lib/repos';
 import { customerAssetsQuerySchema } from '../../_schemas/query';
 import { toValidationErrorResponse } from '../../_schemas/common';
 import { computeCustomerAssets } from '@/lib/customerAssets/CustomerAssetEngine';
+import { requireAdmin } from '@/lib/auth/requireAdmin';
 
 export async function GET(req: NextRequest) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   const parsed = customerAssetsQuerySchema.safeParse({
     storeId: req.nextUrl.searchParams.get('storeId'),
   });

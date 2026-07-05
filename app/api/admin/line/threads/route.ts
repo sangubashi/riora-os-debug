@@ -4,11 +4,15 @@
  * line_send_logs(実データ・Webhook受信ログ+送信実行ログ)をrecipient_idで集約して返す。
  * line_logsの架空データは使用しない(docs/LINE画面_DB調査レポート.md参照)。
  */
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '../../../../lib/repos';
 import { listLineThreads } from '@/lib/line/lineAdminQueries';
+import { requireAdmin } from '@/lib/auth/requireAdmin';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   let supabase;
   try {
     supabase = getServiceClient();

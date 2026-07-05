@@ -6,8 +6,12 @@ import { getServiceClient } from '../../../../../lib/repos';
 import { updateTemplate, deleteTemplate } from '@/lib/line/lineAdminQueries';
 import { templateIdParamSchema, templateUpdateSchema } from '../../../../_schemas/line';
 import { toValidationErrorResponse } from '../../../../_schemas/common';
+import { requireAdmin } from '@/lib/auth/requireAdmin';
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   const { id } = await params;
   const idParsed = templateIdParamSchema.safeParse({ id });
   if (!idParsed.success) {
@@ -41,7 +45,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   const { id } = await params;
   const idParsed = templateIdParamSchema.safeParse({ id });
   if (!idParsed.success) {

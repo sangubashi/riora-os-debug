@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getRepos } from '../../../lib/repos';
 import { dashboardTopQuerySchema } from '../../_schemas/query';
 import { toValidationErrorResponse } from '../../_schemas/common';
+import { requireAdmin } from '@/lib/auth/requireAdmin';
 
 function firstOfMonth(date: string): string {
   return `${date.slice(0, 7)}-01`;
@@ -51,6 +52,9 @@ function lastDayOfMonth(yearMonth: string): string {
 }
 
 export async function GET(req: NextRequest) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   const parsed = dashboardTopQuerySchema.safeParse({
     storeId: req.nextUrl.searchParams.get('storeId'),
     date: req.nextUrl.searchParams.get('date') ?? undefined,

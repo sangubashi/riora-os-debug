@@ -2,9 +2,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET, POST } from '../../app/api/admin/business-settings/route';
 import { getRepos } from '../../app/lib/repos';
+import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
 import type { BusinessSettings } from '../../src/types/riora.types';
 
 vi.mock('../../app/lib/repos', () => ({ getRepos: vi.fn() }));
+vi.mock('@/lib/auth/extractStaffFromRequest', () => ({ extractStaffFromRequest: vi.fn() }));
+
+// requireAdmin() 経由でadmin@salon-riora.jpとして認証済みの状態を既定でモックする。
+// 本テストファイルの目的はルート自体のビジネスロジック検証であり、認証は前提条件のため
+// 各テストで個別にモックし直す必要はない。
+const ADMIN_STAFF = {
+  authUserId: 'admin-auth-uid', staffBrainId: 'admin-staff-id',
+  email: 'admin@salon-riora.jp', isAdmin: true,
+};
 
 const SETTINGS: BusinessSettings = {
   storeId: 'store-1', month: '2026-06-01', salesTarget: 2500000,
@@ -12,7 +22,12 @@ const SETTINGS: BusinessSettings = {
 };
 
 const mockRepos = {
-  businessSettingsRepo: { findByStoreAndMonth: vi.fn(), upsert: vi.fn() },
+  businessSettingsRepo: {
+    findByStoreAndMonth: vi.fn(),
+    findLatestBeforeOrAt: vi.fn(),
+    upsert: vi.fn(),
+  },
+  opsLogRepo: { insert: vi.fn() },
 };
 
 function buildGetReq(qs: string) {
@@ -29,6 +44,9 @@ describe('GET /api/admin/business-settings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getRepos).mockReturnValue(mockRepos as never);
+    vi.mocked(extractStaffFromRequest).mockResolvedValue(ADMIN_STAFF as never);
+    // 当月行が有効なfixedCostsを持つ場合はフォールバックへ進まないため、既定はnullでよい。
+    mockRepos.businessSettingsRepo.findLatestBeforeOrAt.mockResolvedValue(null);
   });
 
   it('storeId未指定の場合は400(validation_error)を返す', async () => {
@@ -69,6 +87,9 @@ describe('POST /api/admin/business-settings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getRepos).mockReturnValue(mockRepos as never);
+    vi.mocked(extractStaffFromRequest).mockResolvedValue(ADMIN_STAFF as never);
+    // POSTは変更前後をbrain_ops_logsへ監査記録する(本テストの検証対象外のため既定値を設定するのみ)。
+    mockRepos.opsLogRepo.insert.mockResolvedValue({ id: 'log-tmp', createdAt: '2026-06-23T00:00:00.000Z' });
   });
 
   it('不正なJSONの場合は400(invalid_json)を返す', async () => {

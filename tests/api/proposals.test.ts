@@ -2,11 +2,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET, POST } from '../../app/api/admin/proposals/route';
 import { getRepos, getServiceClient } from '../../app/lib/repos';
+import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
 import * as generateModule from '../../src/lib/proposal/generateCustomerProposal';
 import type { GenerateCustomerProposalResult } from '../../src/lib/proposal/generateCustomerProposal';
 import type { FinalProposalSet, PatternContext } from '../../src/types/riora.types';
 
 vi.mock('../../app/lib/repos', () => ({ getRepos: vi.fn(), getServiceClient: vi.fn() }));
+vi.mock('@/lib/auth/extractStaffFromRequest', () => ({ extractStaffFromRequest: vi.fn() }));
+
+const ADMIN_STAFF = {
+  authUserId: 'admin-auth-uid', staffBrainId: 'admin-staff-id',
+  email: 'admin@salon-riora.jp', isAdmin: true,
+};
 
 const mockRepos = { briefingRepo: { insert: vi.fn() } };
 
@@ -43,6 +50,7 @@ describe('GET/POST /api/admin/proposals', () => {
     vi.clearAllMocks();
     vi.mocked(getRepos).mockReturnValue(mockRepos as never);
     vi.mocked(getServiceClient).mockReturnValue({} as never);
+    vi.mocked(extractStaffFromRequest).mockResolvedValue(ADMIN_STAFF as never);
   });
 
   it('GET: storeId/customerId/staffId未指定の場合は400(validation_error)を返す', async () => {

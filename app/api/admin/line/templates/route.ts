@@ -8,8 +8,12 @@ import { getServiceClient } from '../../../../lib/repos';
 import { listTemplates, createTemplate } from '@/lib/line/lineAdminQueries';
 import { templateCreateSchema } from '../../../_schemas/line';
 import { toValidationErrorResponse } from '../../../_schemas/common';
+import { requireAdmin } from '@/lib/auth/requireAdmin';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   let supabase;
   try {
     supabase = getServiceClient();
@@ -26,6 +30,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   let body: unknown;
   try {
     body = await req.json();
