@@ -4,10 +4,14 @@
  * line_send_logs の最新 20 件を返す（Pass S-1 テスト送信ログ表示用）。
  * service_role で RLS バイパスして全件取得する。
  */
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireAdmin } from '@/lib/auth/requireAdmin'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const gate = await requireAdmin(req)
+  if (gate instanceof NextResponse) return gate
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
 

@@ -9,8 +9,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getRepos } from '../../../../lib/repos';
 import { idSchema, toValidationErrorResponse } from '../../../_schemas/common';
 import { approveRevisionSchema } from '../../../_schemas/revision';
+import { requireAdmin } from '@/lib/auth/requireAdmin';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   const { id } = await params;
 
   const idResult = idSchema.safeParse(id);

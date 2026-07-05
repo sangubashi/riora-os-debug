@@ -12,8 +12,12 @@ import { getRepos } from '../../../lib/repos';
 import { DEMO_STORE_ID } from '@/lib/constants';
 import { toValidationErrorResponse } from '../../_schemas/common';
 import type { StaffAlias, StaffAliasListResponse, StaffOption } from '@/components/admin/csv-import/types';
+import { requireAdmin } from '@/lib/auth/requireAdmin';
 
 export async function GET(req: NextRequest) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   const storeId = req.nextUrl.searchParams.get('storeId') || DEMO_STORE_ID;
 
   let repos;
@@ -51,6 +55,9 @@ const postBodySchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   let body: unknown;
   try {
     body = await req.json();

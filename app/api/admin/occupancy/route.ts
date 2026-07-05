@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getRepos } from '../../../lib/repos';
 import { occupancyQuerySchema } from '../../_schemas/query';
 import { toValidationErrorResponse } from '../../_schemas/common';
+import { requireAdmin } from '@/lib/auth/requireAdmin';
 
 const HOURLY_UNAVAILABLE_REASON =
   'brain_visitsに来店時刻を保持する列が存在しないため算出できません(visit_dateはdate型で時刻情報を持たず、created_atはCSV取込/入力時のDB書込時刻であり実際の来店時刻ではありません)。';
@@ -28,6 +29,9 @@ function todayIso(): string {
 }
 
 export async function GET(req: NextRequest) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   const parsed = occupancyQuerySchema.safeParse({
     storeId: req.nextUrl.searchParams.get('storeId'),
     date: req.nextUrl.searchParams.get('date') ?? undefined,

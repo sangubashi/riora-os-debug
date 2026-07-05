@@ -11,8 +11,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getRepos } from '../../lib/repos';
 import { visitInputSchema } from '../_schemas/visit';
 import { toValidationErrorResponse } from '../_schemas/common';
+import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
 
 export async function POST(req: NextRequest) {
+  const staff = await extractStaffFromRequest(req);
+  if (!staff) {
+    return NextResponse.json({ success: false, error: 'unauthorized' }, { status: 401 });
+  }
+
   let body: unknown;
   try {
     body = await req.json();
