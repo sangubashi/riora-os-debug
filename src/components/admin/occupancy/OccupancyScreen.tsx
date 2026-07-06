@@ -126,12 +126,60 @@ export default function OccupancyScreen() {
 
           {/* ③ 時間帯別来店数 */}
           <SectionCard title="③ 時間帯別来店数" icon={<Clock size={15} color="#D98292" />}>
-            <UnavailableNotice reason={data.hourlyVisits.reason} />
+            {data.hourlyVisits.available ? (
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '3px', height: '110px', overflowX: 'auto' }}>
+                {(() => {
+                  const points = data.hourlyVisits.data
+                  const max = Math.max(...points.map((h) => h.visitCount), 1)
+                  return points.map((h) => (
+                    <div key={h.hour} style={{ flex: 1, minWidth: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', height: '100%' }}>
+                      {h.visitCount > 0 && (
+                        <span style={{ fontSize: '9px', color: '#5C4033', fontWeight: 700 }}>{h.visitCount}</span>
+                      )}
+                      <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', width: '100%' }}>
+                        <div style={{
+                          width: '100%', borderRadius: '3px 3px 0 0',
+                          height: `${Math.max((h.visitCount / max) * 100, h.visitCount > 0 ? 4 : 1)}%`,
+                          background: 'linear-gradient(180deg, #F56E8B, #F0487A)',
+                        }} />
+                      </div>
+                      <span style={{ fontSize: '8px', color: '#C8A8B0' }}>{h.hour}</span>
+                    </div>
+                  ))
+                })()}
+              </div>
+            ) : (
+              <UnavailableNotice reason={data.hourlyVisits.reason} />
+            )}
           </SectionCard>
 
-          {/* ④ 稼働率推移 */}
-          <SectionCard title="④ 稼働率推移" icon={<TrendingUp size={15} color="#D98292" />}>
-            <UnavailableNotice reason={data.occupancyTrend.reason} />
+          {/* ④ 稼働分数推移 */}
+          <SectionCard title="④ 稼働分数推移(直近30日)" icon={<TrendingUp size={15} color="#D98292" />}>
+            {data.occupancyTrend.available ? (
+              <>
+                {data.occupancyTrend.note && (
+                  <p style={{ fontSize: '10px', color: '#C9A055', marginBottom: '10px' }}>{data.occupancyTrend.note}</p>
+                )}
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', height: '100px', overflowX: 'auto' }}>
+                  {(() => {
+                    const points = data.occupancyTrend.data
+                    const max = Math.max(...points.map((p) => p.occupiedMinutes), 1)
+                    return points.map((p) => (
+                      <div key={p.date} title={`${p.date}: ${p.occupiedMinutes}分`}
+                        style={{ flex: 1, minWidth: '5px', height: '100%', display: 'flex', alignItems: 'flex-end' }}>
+                        <div style={{
+                          width: '100%', borderRadius: '2px 2px 0 0',
+                          height: `${Math.max((p.occupiedMinutes / max) * 100, 2)}%`,
+                          background: 'linear-gradient(180deg, #F56E8B, #F0487A)',
+                        }} />
+                      </div>
+                    ))
+                  })()}
+                </div>
+              </>
+            ) : (
+              <UnavailableNotice reason={data.occupancyTrend.reason} />
+            )}
           </SectionCard>
         </>
       )}

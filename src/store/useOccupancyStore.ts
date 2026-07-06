@@ -25,13 +25,31 @@ export interface UnavailableSection {
   reason: string
 }
 
+export interface HourlyVisitPoint {
+  hour: number
+  visitCount: number
+}
+
+export interface DailyOccupancyPoint {
+  date: string
+  occupiedMinutes: number
+}
+
+export type HourlyVisitsSection =
+  | { available: true; data: HourlyVisitPoint[] }
+  | UnavailableSection
+
+export type OccupancyTrendSection =
+  | { available: true; data: DailyOccupancyPoint[]; seatCapacityConfigured: boolean; note: string | null }
+  | UnavailableSection
+
 export interface OccupancyData {
   storeId: string
   date: string
   staffOccupancy: StaffOccupancyRow[]
   dayOfWeekVisits: DayOfWeekVisitCount[]
-  hourlyVisits: UnavailableSection
-  occupancyTrend: UnavailableSection
+  hourlyVisits: HourlyVisitsSection
+  occupancyTrend: OccupancyTrendSection
 }
 
 interface OccupancyState {

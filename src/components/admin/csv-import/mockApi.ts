@@ -16,6 +16,8 @@ import { DEMO_STORE_ID } from '@/lib/constants'
 import type {
   ImportHistoryItem,
   ImportReport,
+  ReservationImportReport,
+  ReservationValidationResult,
   ReviewDecisionValue,
   StaffAlias,
   StaffAliasListResponse,
@@ -84,3 +86,31 @@ export async function mockAddStaffAlias(alias: string, staffId: string): Promise
 
 export type StaffBindingDecision = { rawName: string; staffId: string }
 export type ReviewDecisionMap = Record<number, ReviewDecisionValue>
+
+// ================================================================
+// 予約CSV Import(RES-5)。既存のmockDryRun/mockRunImportとは別エンドポイントを叩く。
+// ================================================================
+
+export async function reservationDryRun(file: File): Promise<ReservationValidationResult> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('storeId', DEMO_STORE_ID)
+
+  const res = await fetch('/api/admin/csv/reservation-dry-run', { method: 'POST', body: form })
+  const { success, ...result } = await readJson(res)
+  return result as unknown as ReservationValidationResult
+}
+
+export async function reservationRunImport(
+  file: File,
+  reviewDecisions: Record<number, ReviewDecisionValue>
+): Promise<ReservationImportReport> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('storeId', DEMO_STORE_ID)
+  form.append('reviewDecisions', JSON.stringify(reviewDecisions))
+
+  const res = await fetch('/api/admin/csv/reservation-import', { method: 'POST', body: form })
+  const { success, ...report } = await readJson(res)
+  return report as unknown as ReservationImportReport
+}

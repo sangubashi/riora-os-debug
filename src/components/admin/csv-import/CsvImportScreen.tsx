@@ -18,13 +18,21 @@ import {
 } from 'lucide-react'
 import {
   mockDryRun, mockRunImport, mockFetchHistory, mockAddStaffAlias, mockFetchStaffAliases,
+  reservationDryRun, reservationRunImport,
 } from './mockApi'
 import StaffAliasManager from './StaffAliasManager'
 import type {
-  ImportHistoryItem, ImportReport, ImportState, ReviewDecisionValue,
-  StaffOption, ValidationResult,
+  ImportHistoryItem, ImportReport, ImportState, ReservationImportReport,
+  ReservationValidationResult, ReviewDecisionValue, StaffOption, ValidationResult,
 } from './types'
 import { SKIP_REASON_LABEL } from './types'
+
+const RESERVATION_SKIP_REASON_LABEL: Record<string, string> = {
+  missing_field: '必須列が空欄',
+  unresolved_staff: 'スタッフ名が未紐付け',
+  unresolved_status: '未知のステータス',
+  invalid_datetime: '来店日・開始時間が不正',
+}
 
 const PRIVACY_NOTICE =
   '電話番号・メール・郵便番号・建物名・部屋番号・メモ欄は保存されず、読み込み時点で破棄されます'
@@ -74,6 +82,10 @@ export default function CsvImportScreen() {
   const [progress, setProgress] = useState<{ processed: number; total: number } | null>(null)
   const [report, setReport] = useState<ImportReport | null>(null)
 
+  // 予約CSV(RES-5)専用state。既存のvalidation/reportとは完全に分離する。
+  const [resValidation, setResValidation] = useState<ReservationValidationResult | null>(null)
+  const [resReport, setResReport] = useState<ReservationImportReport | null>(null)
+
   const [history, setHistory] = useState<ImportHistoryItem[]>([])
   const [historyLoading, setHistoryLoading] = useState(true)
   const [historyError, setHistoryError] = useState<string | null>(null)
@@ -115,11 +127,22 @@ export default function CsvImportScreen() {
     setStaffDecisions({})
     setReviewDecisions({})
     setReport(null)
+    setResValidation(null)
+    setResReport(null)
 
     try {
       const result = await mockDryRun(file)
       const defaults: Record<number, ReviewDecisionValue> = {}
       result.needsReview.forEach((r) => { defaults[r.rowNumber] = 'new' })
+
+      // 予約CSV(RES-5): 既存dry-runは検出のみ(空プレビュー)を返すため、
+      // 予約CSV専用エンドポイントで実際のプレビューを追加取得する。
+      if (result.csvType === 'reservation') {
+        const resResult = await reservationDryRun(file)
+        resResult.needsReview.forEach((r) => { defaults[r.rowNumber] = 'new' })
+        setResValidation(resResult)
+      }
+
       setReviewDecisions(defaults)
       setValidation(result)
       setState('dryrun_done')
@@ -150,6 +173,8 @@ export default function CsvImportScreen() {
     setReviewDecisions({})
     setProgress(null)
     setReport(null)
+    setResValidation(null)
+    setResReport(null)
   }, [])
 
   // ─── 未解決スタッフ・要確認顧客の決定操作 ───────────────────────────────────
@@ -171,9 +196,10 @@ export default function CsvImportScreen() {
 
   const canImport = useMemo(() => {
     if (!validation) return false
-    if (validation.csvType !== 'detail') return false
-    return allStaffResolved
-  }, [validation, allStaffResolved])
+    if (validation.csvType === 'detail') return allStaffResolved
+    if (validation.csvType === 'reservation') return !!resValidation && resValidation.importable > 0
+    return false
+  }, [validation, allStaffResolved, resValidation])
 
   const remainingUnresolvedCount = useMemo(() => {
     if (!validation) return 0
@@ -188,6 +214,14 @@ export default function CsvImportScreen() {
     setState('importing')
     setProgress({ processed: 0, total: validation.totalRows })
     try {
+      if (validation.csvType === 'reservation') {
+        const resResult = await reservationRunImport(file, reviewDecisions)
+        setProgress({ processed: validation.totalRows, total: validation.totalRows })
+        setResReport(resResult)
+        setState('done')
+        return
+      }
+
       const result = await mockRunImport(file, validation.totalRows, reviewDecisions, (processedRows, totalRows) => {
         setProgress({ processed: processedRows, total: totalRows })
       })
@@ -412,6 +446,53 @@ export default function CsvImportScreen() {
           </SectionCard>
         )}
 
+        {/* ── ②b 予約CSV Dry Run結果(RES-5) ── */}
+        {validation && validation.csvType === 'reservation' && resValidation && state !== 'parsing' && state !== 'idle' && (
+          <SectionCard title="②予約Dry Run結果" icon={<FileText size={15} color="#C9A055" />}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+              <CountStat label="取込可" value={resValidation.importable} color="#2D6A4F" />
+              <CountStat label="要確認" value={resValidation.needsReview.length} color="#C9A055" />
+              <CountStat label="除外" value={resValidation.skipped.length} color="#9F7E6C" />
+            </div>
+
+            {resValidation.skipped.length > 0 && (
+              <div style={{ marginBottom: '12px' }}>
+                <p style={{ fontSize: '10px', color: '#C8A8B0', marginBottom: '6px' }}>
+                  除外行({resValidation.skipped.length}件)
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', maxHeight: '110px', overflowY: 'auto' }}>
+                  {resValidation.skipped.map((s, i) => (
+                    <p key={`${s.rowNumber}-${i}`} style={{ fontSize: '10px', color: '#9F7E6C' }}>
+                      行{s.rowNumber}: {RESERVATION_SKIP_REASON_LABEL[s.reasonCode] ?? s.reasonCode}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <p style={{ fontSize: '10px', color: '#C8A8B0', marginBottom: '6px' }}>
+              プレビュー(先頭{resValidation.preview.length}行)
+            </p>
+            <div style={{ border: '1px solid #F5EEF0', borderRadius: '12px', overflow: 'hidden' }}>
+              {resValidation.preview.map((row, i) => (
+                <div key={i} style={{
+                  display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', flexWrap: 'wrap',
+                  borderBottom: i < resValidation.preview.length - 1 ? '1px solid #F8F2F3' : 'none',
+                  background: i % 2 === 0 ? '#fff' : '#FFFBF8', fontSize: '11px', color: '#5C4033',
+                }}>
+                  <span style={{ color: '#C8A8B0', fontSize: '10px', minWidth: '70px' }}>{row.visitDate}</span>
+                  <span style={{ fontWeight: 600, minWidth: '92px' }}>{row.startTime}–{row.endTime}</span>
+                  <span style={{ color: '#9F7E6C', minWidth: '48px' }}>{row.durationMinutes}分</span>
+                  <span style={{ color: '#9F7E6C', minWidth: '56px' }}>{row.staffNameRaw}</span>
+                  <span style={{ color: '#9F7E6C', flex: 1 }}>{row.menuName}</span>
+                  <span style={{ color: '#5C4033' }}>{row.customerName}</span>
+                  <span style={{ fontSize: '10px', color: '#C9A055' }}>{row.mappedStatus ?? row.statusRaw}</span>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+        )}
+
         {/* ── ③ 未解決スタッフ(名寄せ) ── */}
         {validation && validation.unresolvedStaff.length > 0 && state !== 'parsing' && state !== 'idle' && (
           <SectionCard title="③ 未解決スタッフ(名寄せ)" icon={<UserCog size={15} color="#D98292" />}>
@@ -516,9 +597,9 @@ export default function CsvImportScreen() {
         {/* ── ⑤ 取込実行 / 進捗 / 完了レポート ── */}
         {validation && state === 'dryrun_done' && (
           <div>
-            {validation.csvType !== 'detail' && !validation.csvInfoMessage && (
+            {validation.csvType === 'unknown' && (
               <p style={{ fontSize: '11px', color: '#9F7E6C', textAlign: 'center', marginBottom: '8px' }}>
-                売上明細CSV以外は取り込めません。
+                売上明細CSV・予約CSV以外は取り込めません。
               </p>
             )}
             <motion.button
@@ -534,7 +615,7 @@ export default function CsvImportScreen() {
                 boxShadow: canImport ? '0 6px 20px rgba(245,110,139,0.35)' : 'none',
               }}
             >
-              ⑤ この内容で取り込む({validation.importable}件)
+              ⑤ この内容で取り込む({validation.csvType === 'reservation' ? (resValidation?.importable ?? 0) : validation.importable}件)
             </motion.button>
           </div>
         )}
@@ -586,6 +667,33 @@ export default function CsvImportScreen() {
               </div>
             </div>
             <p style={{ fontSize: '10px', color: '#52B788', marginTop: '12px' }}>ops_logsで監査可能(内容は記録されません)</p>
+          </motion.div>
+        )}
+
+        {state === 'done' && resReport && (
+          <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
+            style={{ background: '#FFFBF0', borderRadius: '16px', padding: '20px', textAlign: 'center', border: '1px solid #F4E4C2' }}>
+            <CheckCircle2 size={26} color="#C9A055" style={{ margin: '0 auto 8px' }} />
+            <p style={{ fontSize: '13px', fontWeight: 700, color: '#8A6D2F', marginBottom: '10px' }}>予約CSV取込完了</p>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '18px', flexWrap: 'wrap' }}>
+              <div>
+                <p style={{ fontSize: '9px', color: '#C9A055' }}>新規登録</p>
+                <p style={{ fontSize: '18px', fontWeight: 700, color: '#8A6D2F', fontFamily: 'Inter, sans-serif' }}>{resReport.created}</p>
+              </div>
+              <div>
+                <p style={{ fontSize: '9px', color: '#C9A055' }}>更新</p>
+                <p style={{ fontSize: '18px', fontWeight: 700, color: '#8A6D2F', fontFamily: 'Inter, sans-serif' }}>{resReport.updated}</p>
+              </div>
+              <div>
+                <p style={{ fontSize: '9px', color: '#C9A055' }}>除外</p>
+                <p style={{ fontSize: '18px', fontWeight: 700, color: '#8A6D2F', fontFamily: 'Inter, sans-serif' }}>{resReport.skipped}</p>
+              </div>
+              <div>
+                <p style={{ fontSize: '9px', color: '#C9A055' }}>要確認</p>
+                <p style={{ fontSize: '18px', fontWeight: 700, color: '#8A6D2F', fontFamily: 'Inter, sans-serif' }}>{resReport.needsReviewCount}</p>
+              </div>
+            </div>
+            <p style={{ fontSize: '10px', color: '#C9A055', marginTop: '12px' }}>ops_logsで監査可能(reservation_csv_import)</p>
           </motion.div>
         )}
 

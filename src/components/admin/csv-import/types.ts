@@ -197,3 +197,57 @@ export interface StaffAliasListResponse {
   staffOptions: StaffOption[]
   aliases: StaffAlias[]
 }
+
+// ================================================================
+// 予約CSV Import(RES-5・Phase RES-2/RES-3設計に基づく実装)
+// 既存の売上明細CSV用型(ValidationResult/ImportReport等)とは完全に独立させる
+// (docs/design/RESERVATION_IMPORT_IMPLEMENTATION_PLAN_V1.md §8方針)。
+// ================================================================
+
+export type ReservationSkipReasonCode =
+  | 'missing_field'
+  | 'unresolved_staff'
+  | 'unresolved_status'
+  | 'invalid_datetime'
+
+export interface ReservationSkipItem {
+  rowNumber: number
+  reasonCode: ReservationSkipReasonCode
+}
+
+export interface ReservationNeedsReviewItem {
+  rowNumber: number
+  customerName: string
+  candidateMatchName: string
+}
+
+export interface ReservationPreviewRow {
+  rowNumber: number
+  visitDate: string
+  startTime: string
+  endTime: string
+  durationMinutes: number
+  staffNameRaw: string
+  menuName: string
+  statusRaw: string
+  mappedStatus: string | null
+  customerName: string
+}
+
+export interface ReservationValidationResult {
+  fileName: string
+  totalRows: number
+  importable: number
+  needsReview: ReservationNeedsReviewItem[]
+  skipped: ReservationSkipItem[]
+  unresolvedStaff: UnresolvedStaffName[]
+  preview: ReservationPreviewRow[]
+}
+
+export interface ReservationImportReport {
+  created: number
+  updated: number
+  skipped: number
+  needsReviewCount: number
+  durationMs: number
+}

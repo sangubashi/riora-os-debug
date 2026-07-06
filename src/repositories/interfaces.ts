@@ -169,6 +169,42 @@ export interface IMenuRepo {
   listByStore(storeId: UUID): Promise<Menu[]>;
 }
 
+/**
+ * reservations(予約)テーブルへの入力(予約CSV Import専用)。
+ * 設計根拠: docs/design/RESERVATION_IMPORT_V1.md §7(RES-2/RES-3確定事項)
+ *   - customer_id(legacy)は本パイプラインでは設定しない(常にNULL)。
+ *   - staff_idはprofiles.id(brain_staff.user_id経由で解決済みの値)を渡すこと。
+ *   - menuはbrain_menusへの解決を行わずtext列へそのまま格納する。
+ */
+export interface ReservationUpsertInput {
+  staffId:         UUID;
+  brainCustomerId: UUID | null;
+  menu:            string;
+  price:           number;
+  scheduledAt:     string;
+  durationMinutes: number;
+  status:          'confirmed' | 'in_progress' | 'completed' | 'cancelled';
+  isNewCustomer:   boolean;
+  notes:           string | null;
+}
+
+export interface ReservationRow {
+  id: UUID;
+}
+
+export interface IReservationRepo {
+  /**
+   * 暫定複合キー(staff_id, scheduled_at, brain_customer_id)で既存行を検索する
+   * (RES-3確定の暫定UPSERTキー。「予約番号」列が無いための代替。リスケジュール時は
+   * 別行として扱われる既知の制約がある)。
+   */
+  findByNaturalKey(staffId: UUID, scheduledAt: string, brainCustomerId: UUID | null): Promise<ReservationRow | null>;
+  /** reservationsへ1件追加し、生成された行(id付き)を返す。 */
+  create(input: ReservationUpsertInput): Promise<ReservationRow>;
+  /** reservationsを1件更新する(再取込時の冪等更新)。 */
+  update(id: UUID, input: ReservationUpsertInput): Promise<void>;
+}
+
 export interface ISubscriptionRepo {
   /**
    * brain_subscriptionsをstore_idで一覧取得する(deleted_at IS NULL)。
@@ -194,6 +230,19 @@ export interface DayOfWeekVisitCount {
   visitCount: number;
 }
 
+export interface HourlyVisitCount {
+  /** JST時間帯(0〜23時)。 */
+  hour: number;
+  visitCount: number;
+}
+
+export interface DailyOccupancyPoint {
+  /** JST日付(YYYY-MM-DD)。 */
+  date: string;
+  /** その日の全スタッフ合計の稼働分数(duration_minutes合計)。 */
+  occupiedMinutes: number;
+}
+
 export interface IOccupancyRepo {
   /**
    * 画面⑤稼働率分析(MD-5)①スタッフ別稼働状況。brain_visits+brain_staffを集計し、
@@ -206,6 +255,20 @@ export interface IOccupancyRepo {
    * 月〜日の7件(来店が無い曜日は0件)を固定順で返す。
    */
   visitsByDayOfWeek(storeId: UUID): Promise<DayOfWeekVisitCount[]>;
+  /**
+   * 画面⑤稼働率分析(MD-5)③時間帯別来店数(RES-5・Tier1)。reservations(予約CSV Importで
+   * 投入されたデータ)をJST時間帯別に集計する(status='completed'=実来店のみ対象)。
+   * staffOccupancy/visitsByDayOfWeekと同様に全履歴を対象にする(date絞り込みなし)。
+   * reservationsにstore_id列が存在しないため、storeIdによる絞り込みは行わない
+   * (現状単一店舗運用のため実害なし。将来の複数店舗対応時の既知の制約)。
+   */
+  hourlyVisits(): Promise<HourlyVisitCount[]>;
+  /**
+   * 画面⑤稼働率分析(MD-5)④稼働分数推移(RES-5・Tier1)。reservations(status IN
+   * ('confirmed','completed')=稼働予定として集計)のduration_minutesを日別合計する。
+   * seat_capacity(曜日×時間帯別の席数)は未実装のため「稼働率%」ではなく「稼働分数」までを返す。
+   */
+  occupancyTrend(fromDate: string, toDate: string): Promise<DailyOccupancyPoint[]>;
 }
 
 export interface IOpsLogRepo {

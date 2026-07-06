@@ -19,6 +19,7 @@ import type {
   IOpsLogRepo,
   IOutcomeRepo,
   IParamsRepo,
+  IReservationRepo,
   IRevisionRepo,
   IStaffRepo,
   IStatsRepo,
@@ -37,6 +38,7 @@ import { OccupancyRepo } from '@/repositories/supabase/OccupancyRepo';
 import { OpsLogRepo } from '@/repositories/supabase/OpsLogRepo';
 import { OutcomeRepo } from '@/repositories/supabase/OutcomeRepo';
 import { ParamsRepo } from '@/repositories/supabase/ParamsRepo';
+import { ReservationRepo } from '@/repositories/supabase/ReservationRepo';
 import { RevisionRepo } from '@/repositories/supabase/RevisionRepo';
 import { StaffRepo } from '@/repositories/supabase/StaffRepo';
 import { StatsRepo } from '@/repositories/supabase/StatsRepo';
@@ -63,6 +65,8 @@ export interface Repos {
   statsRepo: IStatsRepo;
   paramsRepo: IParamsRepo;
   outcomeRepo: IOutcomeRepo;
+  /** 予約CSV Import専用(RES-5)。 */
+  reservationRepo: IReservationRepo;
 }
 
 let client: SupabaseClient | null = null;
@@ -111,5 +115,6 @@ export function getRepos(): Repos {
     statsRepo: new StatsRepo(supabase),
     paramsRepo: new ParamsRepo(supabase),
     outcomeRepo: new OutcomeRepo(supabase),
+    reservationRepo: new ReservationRepo(supabase),
   };
 }
