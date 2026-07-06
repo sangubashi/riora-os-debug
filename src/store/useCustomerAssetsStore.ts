@@ -5,6 +5,7 @@
  * 管理者は閲覧のみ(顧客編集・削除のアクションはこのストアに持たせない)。
  */
 import { create } from 'zustand'
+import { authedFetch } from '@/lib/api/authedFetch'
 
 export interface CustomerAssetRow {
   customerId: string
@@ -33,7 +34,7 @@ export const useCustomerAssetsStore = create<CustomerAssetsState>((set) => ({
     set({ isLoading: true, error: null })
 
     try {
-      const res = await fetch(`/api/admin/customer-assets?storeId=${encodeURIComponent(storeId)}`)
+      const res = await authedFetch(`/api/admin/customer-assets?storeId=${encodeURIComponent(storeId)}`)
       const body = await res.json()
 
       if (!res.ok || !body.success) {

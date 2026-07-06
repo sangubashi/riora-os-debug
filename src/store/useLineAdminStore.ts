@@ -4,6 +4,7 @@
  * GET/POST/PATCH/DELETE /api/admin/line/* をfetchするだけ(モック・ダミーデータなし)。
  */
 import { create } from 'zustand'
+import { authedFetch } from '@/lib/api/authedFetch'
 
 export interface LineThreadSummary {
   recipientId: string
@@ -96,7 +97,7 @@ export const useLineAdminStore = create<LineAdminState>((set, get) => ({
   fetchThreads: async () => {
     set({ isLoadingThreads: true, threadsError: null })
     try {
-      const res = await fetch('/api/admin/line/threads')
+      const res = await authedFetch('/api/admin/line/threads')
       const body = await res.json()
       if (!res.ok || !body.success) {
         set({ threadsError: body.error ?? 'fetch_failed', isLoadingThreads: false })
@@ -111,7 +112,7 @@ export const useLineAdminStore = create<LineAdminState>((set, get) => ({
   fetchThreadMessages: async (recipientId) => {
     set({ isLoadingMessages: true, messagesError: null })
     try {
-      const res = await fetch(`/api/admin/line/threads/${encodeURIComponent(recipientId)}`)
+      const res = await authedFetch(`/api/admin/line/threads/${encodeURIComponent(recipientId)}`)
       const body = await res.json()
       if (!res.ok || !body.success) {
         set({ messagesError: body.error ?? 'fetch_failed', isLoadingMessages: false })
@@ -126,7 +127,7 @@ export const useLineAdminStore = create<LineAdminState>((set, get) => ({
   fetchHistory: async () => {
     set({ isLoadingHistory: true, historyError: null })
     try {
-      const res = await fetch('/api/admin/line/history')
+      const res = await authedFetch('/api/admin/line/history')
       const body = await res.json()
       if (!res.ok || !body.success) {
         set({ historyError: body.error ?? 'fetch_failed', isLoadingHistory: false })
@@ -141,7 +142,7 @@ export const useLineAdminStore = create<LineAdminState>((set, get) => ({
   fetchTemplates: async () => {
     set({ isLoadingTemplates: true, templatesError: null })
     try {
-      const res = await fetch('/api/admin/line/templates')
+      const res = await authedFetch('/api/admin/line/templates')
       const body = await res.json()
       if (!res.ok || !body.success) {
         set({ templatesError: body.error ?? 'fetch_failed', isLoadingTemplates: false })
@@ -155,7 +156,7 @@ export const useLineAdminStore = create<LineAdminState>((set, get) => ({
 
   createTemplate: async (input) => {
     try {
-      const res = await fetch('/api/admin/line/templates', {
+      const res = await authedFetch('/api/admin/line/templates', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(input),
@@ -175,7 +176,7 @@ export const useLineAdminStore = create<LineAdminState>((set, get) => ({
 
   updateTemplate: async (id, input) => {
     try {
-      const res = await fetch(`/api/admin/line/templates/${encodeURIComponent(id)}`, {
+      const res = await authedFetch(`/api/admin/line/templates/${encodeURIComponent(id)}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(input),
@@ -195,7 +196,7 @@ export const useLineAdminStore = create<LineAdminState>((set, get) => ({
 
   deleteTemplate: async (id) => {
     try {
-      const res = await fetch(`/api/admin/line/templates/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      const res = await authedFetch(`/api/admin/line/templates/${encodeURIComponent(id)}`, { method: 'DELETE' })
       const body = await res.json()
       if (!res.ok || !body.success) {
         set({ templatesError: body.error ?? 'delete_failed' })

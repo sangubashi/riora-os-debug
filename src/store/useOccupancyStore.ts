@@ -5,6 +5,7 @@
  * 編集機能は持たない(閲覧専用)。
  */
 import { create } from 'zustand'
+import { authedFetch } from '@/lib/api/authedFetch'
 
 export interface StaffOccupancyRow {
   staffId: string
@@ -49,7 +50,7 @@ export const useOccupancyStore = create<OccupancyState>((set) => ({
     set({ isLoading: true, error: null })
 
     try {
-      const res = await fetch(`/api/admin/occupancy?storeId=${encodeURIComponent(storeId)}`)
+      const res = await authedFetch(`/api/admin/occupancy?storeId=${encodeURIComponent(storeId)}`)
       const body = await res.json()
 
       if (!res.ok || !body.success) {

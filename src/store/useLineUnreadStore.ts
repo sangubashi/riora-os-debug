@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { authedFetch } from '@/lib/api/authedFetch'
 
 export interface LineUnreadItem {
   recipientId: string
@@ -22,7 +23,7 @@ export const useLineUnreadStore = create<LineUnreadState>((set) => ({
   fetchUnreads: async () => {
     set({ isLoading: true })
     try {
-      const res = await fetch('/api/admin/line/threads')
+      const res = await authedFetch('/api/admin/line/threads')
       if (!res.ok) return
       const data = await res.json()
       const threads = (data.threads ?? []) as Array<{

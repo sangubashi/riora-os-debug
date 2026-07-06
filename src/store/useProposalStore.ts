@@ -4,6 +4,7 @@
  * GET/POST /api/admin/proposals をfetchするだけ(計算・LLM呼び出しは一切ここでは行わない)。
  */
 import { create } from 'zustand'
+import { authedFetch } from '@/lib/api/authedFetch'
 
 export interface FiredProposalView {
   customerId: string
@@ -80,7 +81,7 @@ export const useProposalStore = create<ProposalState>((set) => ({
     set({ isLoading: true, error: null, saveSuccess: false })
     try {
       const qs = new URLSearchParams({ storeId, customerId, staffId })
-      const res = await fetch(`/api/admin/proposals?${qs.toString()}`)
+      const res = await authedFetch(`/api/admin/proposals?${qs.toString()}`)
       const body = await res.json()
       if (!res.ok || !body.success) {
         set({ error: body.error ?? 'proposal_generation_failed', isLoading: false, result: null })
@@ -95,7 +96,7 @@ export const useProposalStore = create<ProposalState>((set) => ({
   save: async (storeId, customerId, staffId) => {
     set({ isSaving: true, error: null })
     try {
-      const res = await fetch('/api/admin/proposals', {
+      const res = await authedFetch('/api/admin/proposals', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ storeId, customerId, staffId }),

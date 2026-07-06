@@ -8,6 +8,7 @@
  * 管理者は閲覧と指示のみ(LINE送信・予約操作はこのストアからは行わない)。
  */
 import { create } from 'zustand'
+import { authedFetch } from '@/lib/api/authedFetch'
 
 export interface ChurnRiskCustomer {
   customerId: string
@@ -42,7 +43,7 @@ export const useChurnRiskStore = create<ChurnRiskState>((set) => ({
     set({ isLoading: true, error: null })
 
     try {
-      const res = await fetch(`/api/admin/churn-risk?storeId=${encodeURIComponent(storeId)}`)
+      const res = await authedFetch(`/api/admin/churn-risk?storeId=${encodeURIComponent(storeId)}`)
       const body = await res.json()
 
       if (!res.ok || !body.success) {
@@ -60,7 +61,7 @@ export const useChurnRiskStore = create<ChurnRiskState>((set) => ({
     set({ instructingCustomerId: customerId, instructError: null })
 
     try {
-      const res = await fetch('/api/admin/churn-risk/instruct', {
+      const res = await authedFetch('/api/admin/churn-risk/instruct', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ storeId, customerId, staffId, note }),

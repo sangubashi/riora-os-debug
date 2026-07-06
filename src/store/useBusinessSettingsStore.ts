@@ -7,6 +7,7 @@
  * mock禁止のためSupabase直叩き・ハードコード値は持たない。
  */
 import { create } from 'zustand'
+import { authedFetch } from '@/lib/api/authedFetch'
 
 export interface BusinessSettingsData {
   storeId: string
@@ -50,7 +51,7 @@ export const useBusinessSettingsStore = create<BusinessSettingsState>((set) => (
     set({ isLoading: true, error: null })
     try {
       const qs = new URLSearchParams({ storeId, ...(month ? { month } : {}) })
-      const res = await fetch(`/api/admin/business-settings?${qs.toString()}`)
+      const res = await authedFetch(`/api/admin/business-settings?${qs.toString()}`)
       const body = await res.json()
 
       if (!res.ok || !body.success) {
@@ -66,7 +67,7 @@ export const useBusinessSettingsStore = create<BusinessSettingsState>((set) => (
   saveSettings: async (input) => {
     set({ isSaving: true, saveError: null, saveSuccess: false })
     try {
-      const res = await fetch('/api/admin/business-settings', {
+      const res = await authedFetch('/api/admin/business-settings', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(input),

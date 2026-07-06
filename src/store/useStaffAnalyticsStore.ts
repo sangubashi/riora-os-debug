@@ -5,6 +5,7 @@
  * ランキング・並び替えのアクションはこのストアに持たせない(常に五十音順で受け取った順を保持する)。
  */
 import { create } from 'zustand'
+import { authedFetch } from '@/lib/api/authedFetch'
 
 export interface StaffAnalyticsRow {
   staffId: string
@@ -34,7 +35,7 @@ export const useStaffAnalyticsStore = create<StaffAnalyticsState>((set) => ({
     try {
       const params = new URLSearchParams({ storeId })
       if (month) params.set('month', month)
-      const res = await fetch(`/api/admin/staff-analytics?${params.toString()}`)
+      const res = await authedFetch(`/api/admin/staff-analytics?${params.toString()}`)
       const body = await res.json()
 
       if (!res.ok || !body.success) {

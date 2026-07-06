@@ -7,6 +7,7 @@
  * VIP移行率は実データソースが存在しないため常にnull(UI側で「未実装」等を表示する)。
  */
 import { create } from 'zustand'
+import { authedFetch } from '@/lib/api/authedFetch'
 import type { MenuRole, CustomerType } from '@/types/riora.types'
 
 export interface MenuAnalyticsRow {
@@ -71,7 +72,7 @@ export const useMenuStore = create<MenuState>((set, get) => ({
   fetchMenus: async (storeId) => {
     set({ isLoading: true, error: null })
     try {
-      const res = await fetch(`/api/admin/menu?storeId=${encodeURIComponent(storeId)}`)
+      const res = await authedFetch(`/api/admin/menu?storeId=${encodeURIComponent(storeId)}`)
       const body = await res.json()
 
       if (!res.ok || !body.success) {

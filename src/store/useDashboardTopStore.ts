@@ -8,6 +8,7 @@
  * スタッフランキングはv2.0画面④(MD-4)の別契約のため本ストアには含めない。
  */
 import { create } from 'zustand'
+import { authedFetch } from '@/lib/api/authedFetch'
 
 export interface Required4 {
   monthlySales: number
@@ -88,7 +89,7 @@ export const useDashboardTopStore = create<DashboardTopState>((set) => ({
     try {
       const params = new URLSearchParams({ storeId })
       if (month) params.set('month', month)
-      const res = await fetch(`/api/dashboard/top?${params.toString()}`)
+      const res = await authedFetch(`/api/dashboard/top?${params.toString()}`)
       const body = await res.json()
 
       if (!res.ok || !body.success) {
