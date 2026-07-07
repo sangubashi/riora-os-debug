@@ -20,9 +20,14 @@ export interface CsvTypeDetectionResult {
 const DETAIL_REQUIRED_COLUMNS = ['会計ID', '会計日', 'スタッフ', '区分', '金額']
 const DETAIL_MATCH_THRESHOLD = 4
 
+// reservationCsvParser.ts の REQUIRED_HEADERS と一致させる(実際のSalonBoard予約一覧CSVの
+// 実ヘッダーで検証済み。旧シグナル(予約日/予約時間/予約メニュー/施術者/来店予定時刻/
+// 施術時間/予約ステータス)は実CSVに存在しない想定上の列名だったため、detectCsvType()が
+// 'unknown'と誤判定し、予約CSVが売上CSV用パーサーに回されてmissing_required_columnsで
+// 400になるバグの原因だった)。
 const RESERVATION_SIGNALS = new Set([
-  '予約日', '予約時間', '予約メニュー', '施術者', '来店予定時刻',
-  '施術時間', '予約ステータス', '予約番号',
+  'ステータス', 'スタッフ名', '来店日', '開始時間', '終了時間', '所要時間',
+  'お名前', '予約時合計金額',
 ])
 
 export function detectCsvType(rawHeaders: string[]): CsvTypeDetectionResult {
