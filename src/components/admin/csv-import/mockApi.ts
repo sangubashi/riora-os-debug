@@ -38,7 +38,7 @@ export async function mockDryRun(file: File): Promise<ValidationResult> {
   form.append('file', file)
   form.append('storeId', DEMO_STORE_ID)
 
-  const res = await fetch('/api/admin/csv/dry-run', { method: 'POST', body: form })
+  const res = await authedFetch('/api/admin/csv/dry-run', { method: 'POST', body: form })
   const { success, ...result } = await readJson(res)
   return result as unknown as ValidationResult
 }
@@ -56,7 +56,7 @@ export async function mockRunImport(
   form.append('storeId', DEMO_STORE_ID)
   form.append('reviewDecisions', JSON.stringify(reviewDecisions))
 
-  const res = await fetch('/api/admin/csv/import', { method: 'POST', body: form })
+  const res = await authedFetch('/api/admin/csv/import', { method: 'POST', body: form })
   const { success, ...report } = await readJson(res)
 
   onProgress(totalRows, totalRows)
