@@ -3,6 +3,10 @@
  *
  * useAuthStore の session.access_token を Authorization ヘッダーに付与する。
  * セッション未取得の場合は通常の fetch にフォールバック（DEMO_MODE 対応）。
+ *
+ * body が FormData の場合は Content-Type を設定しない
+ * (ブラウザが multipart/form-data; boundary=... を自動付与するため、
+ * ここで application/json を強制すると multipart 送信が壊れる)。
  */
 import { useAuthStore } from '@/store/useAuthStore'
 
@@ -12,9 +16,10 @@ export async function authedFetch(
 ): Promise<Response> {
   const session = useAuthStore.getState().session
   const token   = session?.access_token
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData
 
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(options.headers as Record<string, string> | undefined),
   }
 

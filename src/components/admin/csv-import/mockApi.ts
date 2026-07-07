@@ -13,6 +13,7 @@
  * 進捗はサーバーが単一リクエスト/レスポンスのため擬似的なもの(開始時0%・完了時100%)。
  */
 import { DEMO_STORE_ID } from '@/lib/constants'
+import { authedFetch } from '@/lib/api/authedFetch'
 import type {
   ImportHistoryItem,
   ImportReport,
@@ -63,21 +64,20 @@ export async function mockRunImport(
 }
 
 export async function mockFetchHistory(): Promise<ImportHistoryItem[]> {
-  const res = await fetch(`/api/admin/csv/history?storeId=${DEMO_STORE_ID}`)
+  const res = await authedFetch(`/api/admin/csv/history?storeId=${DEMO_STORE_ID}`)
   const { history } = await readJson(res)
   return history as unknown as ImportHistoryItem[]
 }
 
 export async function mockFetchStaffAliases(): Promise<StaffAliasListResponse> {
-  const res = await fetch(`/api/admin/staff-aliases?storeId=${DEMO_STORE_ID}`)
+  const res = await authedFetch(`/api/admin/staff-aliases?storeId=${DEMO_STORE_ID}`)
   const { success, ...response } = await readJson(res)
   return response as unknown as StaffAliasListResponse
 }
 
 export async function mockAddStaffAlias(alias: string, staffId: string): Promise<StaffAlias> {
-  const res = await fetch('/api/admin/staff-aliases', {
+  const res = await authedFetch('/api/admin/staff-aliases', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ storeId: DEMO_STORE_ID, alias, staffId }),
   })
   const { success, ...created } = await readJson(res)
@@ -96,7 +96,7 @@ export async function reservationDryRun(file: File): Promise<ReservationValidati
   form.append('file', file)
   form.append('storeId', DEMO_STORE_ID)
 
-  const res = await fetch('/api/admin/csv/reservation-dry-run', { method: 'POST', body: form })
+  const res = await authedFetch('/api/admin/csv/reservation-dry-run', { method: 'POST', body: form })
   const { success, ...result } = await readJson(res)
   return result as unknown as ReservationValidationResult
 }
@@ -110,7 +110,7 @@ export async function reservationRunImport(
   form.append('storeId', DEMO_STORE_ID)
   form.append('reviewDecisions', JSON.stringify(reviewDecisions))
 
-  const res = await fetch('/api/admin/csv/reservation-import', { method: 'POST', body: form })
+  const res = await authedFetch('/api/admin/csv/reservation-import', { method: 'POST', body: form })
   const { success, ...report } = await readJson(res)
   return report as unknown as ReservationImportReport
 }
