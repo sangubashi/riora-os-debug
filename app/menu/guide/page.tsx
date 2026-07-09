@@ -179,13 +179,6 @@ const sections: Section[] = [
           </p>
         </div>
         <div>
-          <p className="font-semibold mb-1">Q. 担当顧客を変更したい</p>
-          <p style={{ color: '#6B4C4C' }}>
-            A. 担当変更は管理者（鈴木）が行います。来店履歴の多いスタッフが自動で割り当てられていますが、
-            変更が必要な場合はご連絡ください。
-          </p>
-        </div>
-        <div>
           <p className="font-semibold mb-1">Q. 音声メモが文字起こしされない</p>
           <p style={{ color: '#6B4C4C' }}>
             A. 現在、文字起こし機能はベータ版です。うまく認識されない場合はテキスト入力で

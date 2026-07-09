@@ -9,7 +9,7 @@ const TABS: Array<{ id: NavTab; label: string; Icon: React.ElementType; href: st
   { id: 'today',     label: '今日',   Icon: Home,     href: '/phase1'    },
   { id: 'customers', label: '顧客',   Icon: Users,    href: '/customers' },
   { id: 'memo',      label: 'メモ',   Icon: Mic,      href: '/memo'      },
-  { id: 'me',        label: 'わたし', Icon: User,     href: '/me'        },
+  { id: 'me',        label: 'マイページ', Icon: User,     href: '/me'        },
   { id: 'settings',  label: '設定',   Icon: Settings, href: '/menu'      },
 ]
 

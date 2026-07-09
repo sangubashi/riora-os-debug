@@ -15,7 +15,8 @@ import { useAuthStore } from '@/store/useAuthStore'
 function DiffValue({ value, unit }: { value: number; unit: string }) {
   const isZero = value === 0
   const isUp   = value > 0
-  const color  = isZero ? '#9E8090' : isUp ? '#52C87A' : '#E88A8A'
+  // 下降は責めない表示にする(赤ではなく既存の控えめグレー#9E8090を流用)。
+  const color  = isUp ? '#52C87A' : '#9E8090'
   const Icon   = isZero ? Minus : isUp ? TrendingUp : TrendingDown
   const sign   = isZero ? '' : isUp ? '+' : ''
   return (
@@ -76,7 +77,7 @@ export default function MyStatsScreen() {
         <p className="text-[10px] font-medium tracking-[0.32em] mb-0.5" style={{ color: '#C8A8B0' }}>
           SALON RIORA
         </p>
-        <h1 className="text-[22px] font-semibold" style={{ color: '#4A2C2A' }}>わたし</h1>
+        <h1 className="text-[22px] font-semibold" style={{ color: '#4A2C2A' }}>マイページ</h1>
         <p className="text-[13px] mt-0.5" style={{ color: '#9E8090' }}>
           先月と比べたご自身の実績です
         </p>
