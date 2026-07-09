@@ -49,6 +49,7 @@ import {
   getReturnTiming,
   type HomecarePlanInput,
 } from '@/lib/homecare/generateHomecarePlan';
+import { getHomecareUsageGuide } from '@/lib/homecare/homecareUsageGuide';
 import { logAction, fetchRecentActions, type ActionLogRow } from '@/lib/actionLog';
 import { buildServiceReplay } from '@/lib/phase5/serviceReplay';
 import { Mutex, prodLog } from '@/lib/stability';
@@ -277,6 +278,10 @@ export default function CustomerBottomSheet({
   // ── ホームケア使用商品（PHASE HC-2B） ────────────────────────────────────────
   const [homecareProducts,        setHomecareProducts]        = useState<HomecareProductEntry[]>([]);
   const [homecareProductsLoading, setHomecareProductsLoading] = useState(false);
+
+  // ── ホームケア使い方カード（PHASE HC-4） ────────────────────────────────────────
+  const [expandedUsageCards, setExpandedUsageCards] = useState<Set<string>>(new Set());
+  const [copiedUsageProduct, setCopiedUsageProduct] = useState<string | null>(null);
 
   // ── Priority / Timeline refresh ─────────────────────────────────────────────
   const [insightRefreshKey,  setInsightRefreshKey]  = useState(0);
@@ -644,6 +649,24 @@ export default function CustomerBottomSheet({
       setTimeout(() => setLineCopied(false), 2500);
     } catch { toast.error('コピーに失敗しました'); }
   }, [homecarePlan]);
+
+  // ─── ホームケア使い方カード（PHASE HC-4） ───────────────────────────────────
+  const toggleUsageCard = useCallback((productName: string) => {
+    setExpandedUsageCards(prev => {
+      const next = new Set(prev);
+      next.has(productName) ? next.delete(productName) : next.add(productName);
+      return next;
+    });
+  }, []);
+
+  const copyUsageMessage = useCallback(async (productName: string, message: string) => {
+    try {
+      await navigator.clipboard.writeText(message);
+      setCopiedUsageProduct(productName);
+      toast.success('メッセージをコピーしました', { duration: 1500 });
+      setTimeout(() => setCopiedUsageProduct(null), 2500);
+    } catch { toast.error('コピーに失敗しました'); }
+  }, []);
 
   // ─── Adaptive Priority ────────────────────────────────────────────────────
   const sectionPriority = useSectionPriority(c ?? null, servicePhase, timePressure);
@@ -1324,6 +1347,65 @@ export default function CustomerBottomSheet({
                           </div>
                         )}
                       </div>
+
+                      {/* ホームケア使い方カード（PHASE HC-4） */}
+                      {homecareProducts.length > 0 && (
+                        <div className="bg-[#F8F1F3] rounded-[22px] p-4">
+                          <p className="text-[11px] tracking-[0.18em] text-[#C8A58C] font-semibold mb-2.5">
+                            📋 ホームケア使い方カード
+                          </p>
+                          <div className="flex flex-col gap-2">
+                            {homecareProducts.map(p => {
+                              const guide = getHomecareUsageGuide(p.productName);
+                              const open  = expandedUsageCards.has(p.productName);
+                              return (
+                                <div key={p.productName} className="bg-white rounded-2xl overflow-hidden">
+                                  <div className="flex items-center justify-between px-3.5 py-3 gap-2">
+                                    <p className="text-sm font-semibold text-[#5C4033] break-words flex-1">{p.productName}</p>
+                                    {guide ? (
+                                      <button onClick={() => toggleUsageCard(p.productName)}
+                                        className="flex-shrink-0 text-[11px] font-semibold text-[#C8A58C] bg-[#F8F1F3] border-none rounded-full px-3 py-1.5 cursor-pointer whitespace-nowrap">
+                                        {open ? '閉じる' : '使い方を見る'}
+                                      </button>
+                                    ) : (
+                                      <span className="flex-shrink-0 text-[11px] text-[#C8A8B0] whitespace-nowrap">使い方情報未登録</span>
+                                    )}
+                                  </div>
+                                  {guide && open && (
+                                    <div className="px-3.5 pb-3.5 flex flex-col gap-2.5">
+                                      <div>
+                                        <p className="text-[10px] text-[#C8A58C] tracking-[0.08em] mb-0.5">使用頻度</p>
+                                        <p className="text-xs text-[#5C4033] leading-relaxed">{guide.frequency}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-[10px] text-[#C8A58C] tracking-[0.08em] mb-0.5">使用タイミング</p>
+                                        <p className="text-xs text-[#5C4033] leading-relaxed">{guide.timing}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-[10px] text-[#C05060] tracking-[0.08em] mb-0.5">注意事項</p>
+                                        <p className="text-xs text-[#C05060] leading-relaxed">{guide.caution}</p>
+                                      </div>
+                                      <div className="bg-[#FFF8F7] rounded-2xl p-3 border border-[#F5E6E8]">
+                                        <p className="text-[10px] text-[#C8A58C] tracking-[0.08em] mb-1.5">スタッフ送信用メッセージ</p>
+                                        <p className="text-xs text-[#5C4033] leading-[1.7] whitespace-pre-wrap mb-2.5">
+                                          {guide.staffMessage(c.name)}
+                                        </p>
+                                        <button
+                                          onClick={() => copyUsageMessage(p.productName, guide.staffMessage(c.name))}
+                                          className={`w-full py-2 rounded-full text-xs font-bold text-white border-none cursor-pointer transition-colors ${
+                                            copiedUsageProduct === p.productName ? 'bg-[#34D399]' : 'bg-[#F56E8B]'
+                                          }`}>
+                                          {copiedUsageProduct === p.productName ? '✓ コピーしました' : 'メッセージをコピー'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
 
                       {/* ホームケアプラン */}
                       {visible('homeCare') && <HomecareAccordion />}
