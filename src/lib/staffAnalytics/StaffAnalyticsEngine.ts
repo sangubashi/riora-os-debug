@@ -22,6 +22,10 @@ export interface StaffAnalyticsRow {
   staffName: string;
   /** 当月(月初〜asOfDate)の売上(このスタッフが担当した来店のtreatment+retail合計)。 */
   monthlySales: number;
+  /** 当月(月初〜asOfDate)にこのスタッフが担当した来店のユニーク顧客数(件数ではなく人数。経営TOPの来店人数と同じ定義。SA-2)。 */
+  visitCount: number;
+  /** 客単価 = monthlySales ÷ visitCount。visitCount=0の場合はnull(SA-2)。 */
+  avgSpend: number | null;
   /** 全履歴のうちこのスタッフが担当した来店の指名率。担当来店0件はnull。 */
   nominationRate: number | null;
   /** 全履歴のうちこのスタッフが担当した来店のリピート率(visit_count_at>1の割合)。担当来店0件はnull。 */
@@ -98,7 +102,11 @@ export function computeStaffAnalytics(input: ComputeStaffAnalyticsInput): StaffA
   const rows: StaffAnalyticsRow[] = staff.map((s) => {
     const handledVisits = visits.filter((v) => v.staffId === s.id);
 
-    const monthlySales = sumSales(handledVisits.filter((v) => v.visitDate >= curStart && v.visitDate <= asOfDate));
+    const monthVisits = handledVisits.filter((v) => v.visitDate >= curStart && v.visitDate <= asOfDate);
+    const visitCount = new Set(monthVisits.map((v) => v.customerId)).size;
+
+    const monthlySales = sumSales(monthVisits);
+    const avgSpend = visitCount > 0 ? Math.round(monthlySales / visitCount) : null;
     const previousMonthSales = sumSales(handledVisits.filter((v) => v.visitDate >= prevStart && v.visitDate <= prevEnd));
     const growthRate = previousMonthSales > 0 ? (monthlySales - previousMonthSales) / previousMonthSales : null;
 
@@ -118,6 +126,8 @@ export function computeStaffAnalytics(input: ComputeStaffAnalyticsInput): StaffA
       staffId: s.id,
       staffName: s.name,
       monthlySales,
+      visitCount,
+      avgSpend,
       nominationRate,
       repeatRate,
       ltv,

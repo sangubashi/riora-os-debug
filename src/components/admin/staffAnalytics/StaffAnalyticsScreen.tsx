@@ -42,7 +42,7 @@ function Metric({ label, value, color = '#5C4033' }: { label: string; value: str
   )
 }
 
-function StaffCard({ row, monthLabel }: { row: { staffName: string; monthlySales: number; nominationRate: number | null; repeatRate: number | null; ltv: number | null; growthRate: number | null }; monthLabel: string }) {
+function StaffCard({ row, monthLabel }: { row: { staffName: string; monthlySales: number; visitCount: number; avgSpend: number | null; nominationRate: number | null; repeatRate: number | null; ltv: number | null; growthRate: number | null }; monthLabel: string }) {
   const growth = formatGrowth(row.growthRate)
   return (
     <div style={{ background: '#fff', border: '1px solid #F5EEF0', borderRadius: '16px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -54,6 +54,8 @@ function StaffCard({ row, monthLabel }: { row: { staffName: string; monthlySales
       {/* 売上は必ず指名率・リピート率と同居して表示する(v2.0「売上単体表示を型で禁止」) */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
         <Metric label={`売上(${monthLabel})`} value={formatYen(row.monthlySales)} />
+        <Metric label="来店人数" value={`${row.visitCount}人`} />
+        <Metric label="客単価" value={row.avgSpend === null ? '—' : formatYen(row.avgSpend)} />
         <Metric label="指名率" value={formatPercent(row.nominationRate)} />
         <Metric label="リピート率" value={formatPercent(row.repeatRate)} />
         <Metric label="LTV" value={row.ltv === null ? '—' : formatYen(Math.round(row.ltv))} />

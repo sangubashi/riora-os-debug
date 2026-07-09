@@ -11,6 +11,8 @@ export interface StaffAnalyticsRow {
   staffId: string
   staffName: string
   monthlySales: number
+  visitCount: number
+  avgSpend: number | null
   nominationRate: number | null
   repeatRate: number | null
   ltv: number | null
