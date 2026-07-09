@@ -1314,7 +1314,7 @@ export default function CustomerBottomSheet({
                           <div className="flex flex-col gap-2">
                             {homecareProducts.map(p => (
                               <div key={p.productName} className="bg-white rounded-2xl px-3.5 py-3">
-                                <p className="text-sm font-semibold text-[#5C4033] mb-1">{p.productName}</p>
+                                <p className="text-sm font-semibold text-[#5C4033] mb-1 break-words">{p.productName}</p>
                                 <p className="text-xs text-[#9F7E6C]">
                                   最終購入: {new Date(p.lastPurchasedAt).toLocaleDateString('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric' })}
                                 </p>

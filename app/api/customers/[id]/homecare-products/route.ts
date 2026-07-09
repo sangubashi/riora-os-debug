@@ -22,6 +22,18 @@ export interface HomecareProductEntry {
   lastPurchasedAt: string
 }
 
+/**
+ * 商品名正規化（PHASE HC-2D）
+ * - 先頭の「社販」プレフィックスを除去（例: 社販RIN モイスチャークリーム → RIN モイスチャークリーム）
+ * - 「(※...)」「（※...）」形式の注記を除去（例: LebyRIN サンプル (※購入したものはカルテ記入) → LebyRIN サンプル）
+ */
+function normalizeProductName(raw: string): string {
+  return raw
+    .replace(/^社販/, '')
+    .replace(/[（(]※[^）)]*[）)]/g, '')
+    .trim()
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -62,7 +74,7 @@ export async function GET(
   const stats = new Map<string, { purchaseCount: number; lastPurchasedAt: string }>()
   for (const row of rows) {
     if (!row.retail_category) continue
-    const names = row.retail_category.split('/').map(n => n.trim()).filter(Boolean)
+    const names = row.retail_category.split('/').map(n => normalizeProductName(n)).filter(Boolean)
     for (const name of names) {
       const ex = stats.get(name)
       if (ex) {
