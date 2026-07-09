@@ -283,6 +283,10 @@ export default function CustomerBottomSheet({
   const [expandedUsageCards, setExpandedUsageCards] = useState<Set<string>>(new Set());
   const [copiedUsageProduct, setCopiedUsageProduct] = useState<string | null>(null);
 
+  // ── ホームケアAIメッセージ生成（PHASE HC-6） ─────────────────────────────────
+  const [aiHomecareMessages, setAiHomecareMessages] = useState<Record<string, string>>({});
+  const [aiGeneratingProduct, setAiGeneratingProduct] = useState<string | null>(null);
+
   // ── Priority / Timeline refresh ─────────────────────────────────────────────
   const [insightRefreshKey,  setInsightRefreshKey]  = useState(0);
   const [notesRefreshKey,    setNotesRefreshKey]    = useState(0);
@@ -333,6 +337,8 @@ export default function CustomerBottomSheet({
     setTodayFocus(null);
     setNgTopics([]);
     setHomecareProducts([]);
+    setExpandedUsageCards(new Set());
+    setAiHomecareMessages({});
     setAllDone(false);
     setServiceReplay(null);
     resetActiveSession();
@@ -506,6 +512,8 @@ export default function CustomerBottomSheet({
     setTodayFocus(null);
     setNgTopics([]);
     setHomecareProducts([]);
+    setExpandedUsageCards(new Set());
+    setAiHomecareMessages({});
     setAllDone(false);
     setServiceReplay(null);
     resetActiveSession();
@@ -667,6 +675,36 @@ export default function CustomerBottomSheet({
       setTimeout(() => setCopiedUsageProduct(null), 2500);
     } catch { toast.error('コピーに失敗しました'); }
   }, []);
+
+  // ─── ホームケアAIメッセージ生成（PHASE HC-6・失敗時は辞書メッセージへフォールバック） ──
+  const generateAiHomecareMessage = useCallback(async (
+    productName:       string,
+    lastPurchasedAt:   string,
+    daysSincePurchase: number,
+  ) => {
+    if (!c || aiGeneratingProduct !== null) return;
+    setAiGeneratingProduct(productName);
+    try {
+      const res = await authedFetch(`/api/customers/${c.id}/homecare-message`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ productName, lastPurchasedAt, daysSincePurchase, customerName: c.name }),
+      });
+      const json = res.ok
+        ? await res.json() as { success: boolean; message?: string }
+        : { success: false as const };
+      if (json.success && json.message) {
+        setAiHomecareMessages(prev => ({ ...prev, [productName]: json.message! }));
+        toast.success('AIメッセージを生成しました', { duration: 1500 });
+      } else {
+        toast.error('AI生成に失敗したため既存メッセージのままです');
+      }
+    } catch {
+      toast.error('AI生成に失敗したため既存メッセージのままです');
+    } finally {
+      setAiGeneratingProduct(null);
+    }
+  }, [c, aiGeneratingProduct]);
 
   // ─── Adaptive Priority ────────────────────────────────────────────────────
   const sectionPriority = useSectionPriority(c ?? null, servicePhase, timePressure);
@@ -1371,6 +1409,13 @@ export default function CustomerBottomSheet({
                             {homecareProducts.map(p => {
                               const guide = getHomecareUsageGuide(p.productName);
                               const open  = expandedUsageCards.has(p.productName);
+                              const daysSincePurchase = Math.floor(
+                                (Date.now() - new Date(p.lastPurchasedAt).getTime()) / 86400000
+                              );
+                              const displayedMessage = aiHomecareMessages[p.productName]
+                                ?? guide?.staffMessage(c.name)
+                                ?? '';
+                              const generating = aiGeneratingProduct === p.productName;
                               return (
                                 <div key={p.productName} className="bg-white rounded-2xl overflow-hidden">
                                   <div className="flex items-center justify-between px-3.5 py-3 gap-2">
@@ -1399,12 +1444,22 @@ export default function CustomerBottomSheet({
                                         <p className="text-xs text-[#C05060] leading-relaxed">{guide.caution}</p>
                                       </div>
                                       <div className="bg-[#FFF8F7] rounded-2xl p-3 border border-[#F5E6E8]">
-                                        <p className="text-[10px] text-[#C8A58C] tracking-[0.08em] mb-1.5">スタッフ送信用メッセージ</p>
+                                        <div className="flex items-center justify-between mb-1.5">
+                                          <p className="text-[10px] text-[#C8A58C] tracking-[0.08em]">
+                                            {aiHomecareMessages[p.productName] ? 'AIメッセージ' : 'スタッフ送信用メッセージ'}
+                                          </p>
+                                          <button
+                                            onClick={() => generateAiHomecareMessage(p.productName, p.lastPurchasedAt, daysSincePurchase)}
+                                            disabled={generating}
+                                            className="text-[10px] font-semibold text-[#8060A8] bg-[#F5F0FA] border-none rounded-full px-2.5 py-1 cursor-pointer whitespace-nowrap disabled:opacity-60">
+                                            {generating ? '生成中…' : '✨ AIメッセージ生成'}
+                                          </button>
+                                        </div>
                                         <p className="text-xs text-[#5C4033] leading-[1.7] whitespace-pre-wrap mb-2.5">
-                                          {guide.staffMessage(c.name)}
+                                          {displayedMessage}
                                         </p>
                                         <button
-                                          onClick={() => copyUsageMessage(p.productName, guide.staffMessage(c.name))}
+                                          onClick={() => copyUsageMessage(p.productName, displayedMessage)}
                                           className={`w-full py-2 rounded-full text-xs font-bold text-white border-none cursor-pointer transition-colors ${
                                             copiedUsageProduct === p.productName ? 'bg-[#34D399]' : 'bg-[#F56E8B]'
                                           }`}>
