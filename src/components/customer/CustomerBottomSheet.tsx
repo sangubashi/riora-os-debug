@@ -1335,15 +1335,28 @@ export default function CustomerBottomSheet({
                           <p className="text-xs text-[#C8A58C] py-1">購入履歴なし</p>
                         ) : (
                           <div className="flex flex-col gap-2">
-                            {homecareProducts.map(p => (
-                              <div key={p.productName} className="bg-white rounded-2xl px-3.5 py-3">
-                                <p className="text-sm font-semibold text-[#5C4033] mb-1 break-words">{p.productName}</p>
-                                <p className="text-xs text-[#9F7E6C]">
-                                  最終購入: {new Date(p.lastPurchasedAt).toLocaleDateString('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric' })}
-                                </p>
-                                <p className="text-xs text-[#9F7E6C]">購入回数: {p.purchaseCount}回</p>
-                              </div>
-                            ))}
+                            {homecareProducts.map(p => {
+                              // PHASE HC-5: today - lastPurchasedAt の日数差のみ（予測ロジックなし・事実表示）
+                              const daysSincePurchase = Math.floor(
+                                (Date.now() - new Date(p.lastPurchasedAt).getTime()) / 86400000
+                              );
+                              const elapsedStyle =
+                                daysSincePurchase >= 61
+                                  ? 'text-[#C05060] font-bold'      // 61日以上: 強調表示
+                                  : daysSincePurchase >= 31
+                                    ? 'text-[#C8A070] font-medium'  // 31〜60日: 少し薄い注意表示
+                                    : 'text-[#9F7E6C]';             // 0〜30日: 通常表示
+                              return (
+                                <div key={p.productName} className="bg-white rounded-2xl px-3.5 py-3">
+                                  <p className="text-sm font-semibold text-[#5C4033] mb-1 break-words">{p.productName}</p>
+                                  <p className="text-xs text-[#9F7E6C]">
+                                    最終購入: {new Date(p.lastPurchasedAt).toLocaleDateString('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric' })}
+                                  </p>
+                                  <p className={`text-xs ${elapsedStyle}`}>前回購入から{daysSincePurchase}日</p>
+                                  <p className="text-xs text-[#9F7E6C]">購入回数: {p.purchaseCount}回</p>
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
