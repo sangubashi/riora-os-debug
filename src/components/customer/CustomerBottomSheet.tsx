@@ -50,6 +50,7 @@ import {
   type HomecarePlanInput,
 } from '@/lib/homecare/generateHomecarePlan';
 import { getHomecareUsageGuide } from '@/lib/homecare/homecareUsageGuide';
+import { getConversationHints } from '@/lib/homecare/homecareConversationHints';
 import { logAction, fetchRecentActions, type ActionLogRow } from '@/lib/actionLog';
 import { buildServiceReplay } from '@/lib/phase5/serviceReplay';
 import { Mutex, prodLog } from '@/lib/stability';
@@ -1416,6 +1417,7 @@ export default function CustomerBottomSheet({
                                 ?? guide?.staffMessage(c.name)
                                 ?? '';
                               const generating = aiGeneratingProduct === p.productName;
+                              const conversationHints = getConversationHints(p.productName);
                               return (
                                 <div key={p.productName} className="bg-white rounded-2xl overflow-hidden">
                                   <div className="flex items-center justify-between px-3.5 py-3 gap-2">
@@ -1465,6 +1467,18 @@ export default function CustomerBottomSheet({
                                           }`}>
                                           {copiedUsageProduct === p.productName ? '✓ コピーしました' : 'メッセージをコピー'}
                                         </button>
+                                      </div>
+
+                                      {/* 接客ヒント（PHASE HC-7・ルールベースのみ・AI不使用） */}
+                                      <div>
+                                        <p className="text-[10px] text-[#8060A8] tracking-[0.08em] mb-1">
+                                          💬 接客ヒント
+                                        </p>
+                                        <div className="flex flex-col gap-1">
+                                          {conversationHints.hints.map((hint, i) => (
+                                            <p key={i} className="text-xs text-[#5C4033] leading-relaxed">・{hint}</p>
+                                          ))}
+                                        </div>
                                       </div>
                                     </div>
                                   )}
