@@ -137,6 +137,13 @@ interface VisitHistoryEntry {
   staffName: string | null;
 }
 
+/** ホームケア使用商品1件（PHASE HC-2B・/api/customers/[id]/homecare-products のレスポンス型） */
+interface HomecareProductEntry {
+  productName:     string;
+  purchaseCount:   number;
+  lastPurchasedAt: string;
+}
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface CustomerBottomSheetProps {
@@ -267,6 +274,10 @@ export default function CustomerBottomSheet({
   const [todayFocus, setTodayFocus] = useState<string | null>(null);
   const [ngTopics,   setNgTopics]   = useState<string[]>([]);
 
+  // ── ホームケア使用商品（PHASE HC-2B） ────────────────────────────────────────
+  const [homecareProducts,        setHomecareProducts]        = useState<HomecareProductEntry[]>([]);
+  const [homecareProductsLoading, setHomecareProductsLoading] = useState(false);
+
   // ── Priority / Timeline refresh ─────────────────────────────────────────────
   const [insightRefreshKey,  setInsightRefreshKey]  = useState(0);
   const [notesRefreshKey,    setNotesRefreshKey]    = useState(0);
@@ -316,6 +327,7 @@ export default function CustomerBottomSheet({
     setVisitHistory([]);
     setTodayFocus(null);
     setNgTopics([]);
+    setHomecareProducts([]);
     setAllDone(false);
     setServiceReplay(null);
     resetActiveSession();
@@ -405,6 +417,20 @@ export default function CustomerBottomSheet({
       }
     })();
 
+    // ホームケア使用商品（PHASE HC-2B）
+    void (async () => {
+      setHomecareProductsLoading(true);
+      try {
+        const res = await authedFetch(`/api/customers/${c.id}/homecare-products`);
+        if (res.ok) {
+          const json = await res.json() as { success: boolean; products: HomecareProductEntry[] };
+          if (json.success) setHomecareProducts(json.products);
+        }
+      } finally {
+        setHomecareProductsLoading(false);
+      }
+    })();
+
     // 今日気をつけること — 今日のFocus（timeline_summary_cache、生成済みキャッシュのみ参照）
     void (async () => {
       const { data } = await supabase
@@ -474,6 +500,7 @@ export default function CustomerBottomSheet({
     setVisitHistory([]);
     setTodayFocus(null);
     setNgTopics([]);
+    setHomecareProducts([]);
     setAllDone(false);
     setServiceReplay(null);
     resetActiveSession();
@@ -1273,6 +1300,30 @@ export default function CustomerBottomSheet({
 
                       {/* 肌タグ */}
                       <SkinTagSection />
+
+                      {/* ホームケア使用商品（PHASE HC-2B） */}
+                      <div className="bg-[#F8F1F3] rounded-[22px] p-4">
+                        <p className="text-[11px] tracking-[0.18em] text-[#C8A58C] font-semibold mb-2.5">
+                          🏠 ホームケア使用商品
+                        </p>
+                        {homecareProductsLoading ? (
+                          <p className="text-xs text-[#C8A58C] py-1">読み込み中…</p>
+                        ) : homecareProducts.length === 0 ? (
+                          <p className="text-xs text-[#C8A58C] py-1">購入履歴なし</p>
+                        ) : (
+                          <div className="flex flex-col gap-2">
+                            {homecareProducts.map(p => (
+                              <div key={p.productName} className="bg-white rounded-2xl px-3.5 py-3">
+                                <p className="text-sm font-semibold text-[#5C4033] mb-1">{p.productName}</p>
+                                <p className="text-xs text-[#9F7E6C]">
+                                  最終購入: {new Date(p.lastPurchasedAt).toLocaleDateString('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric' })}
+                                </p>
+                                <p className="text-xs text-[#9F7E6C]">購入回数: {p.purchaseCount}回</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
 
                       {/* ホームケアプラン */}
                       {visible('homeCare') && <HomecareAccordion />}
