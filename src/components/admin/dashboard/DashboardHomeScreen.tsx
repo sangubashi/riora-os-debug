@@ -15,6 +15,7 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { TrendingUp, Target, CalendarCheck, MessageCircleHeart, AlertTriangle, AlertCircle, Info, UploadCloud, Loader2, Users, Settings } from 'lucide-react'
 import { useDashboardTopStore, type TodayAction } from '@/store/useDashboardTopStore'
+import { useBusinessSettingsStore } from '@/store/useBusinessSettingsStore'
 import { useMonthStore } from '@/store/useMonthStore'
 import MonthSelector from '../MonthSelector'
 import { DEMO_STORE_ID } from '@/lib/constants'
@@ -38,6 +39,33 @@ function formatYen(amount: number): string {
 
 function formatPercent(rate: number | null): string {
   return rate === null ? '—' : `${Math.round(rate * 100)}%`
+}
+
+/**
+ * 人件費率（PHASE MD-1）に含める fixedCosts 内訳キー。
+ * ユーザー承認済みの範囲（役員報酬・外注費・固定給・社会保険料）のみを合算する。
+ * DashboardAggregator/APIの計算式は変更せず、既存の business_settings.fixedCosts を
+ * フロント側で読み替えるだけ。
+ */
+const LABOR_COST_KEYS = [
+  'officer_suzuki',
+  'officer_kishi',
+  'outsource_kubota',
+  'salary_kameyama',
+  'salary_todate',
+  'social_insurance_estimate',
+  'social_insurance_actual',
+] as const
+
+function sumLaborCosts(fixedCosts: Record<string, unknown> | null): number | null {
+  if (!fixedCosts) return null
+  let total = 0
+  let hasValue = false
+  for (const key of LABOR_COST_KEYS) {
+    const v = fixedCosts[key]
+    if (typeof v === 'number' && Number.isFinite(v)) { total += v; hasValue = true }
+  }
+  return hasValue ? total : null
 }
 
 function formatDateTime(iso: string): string {
@@ -92,6 +120,7 @@ function SalesTrendChart({ points }: { points: { snapshotDate: string; monthlySa
 
 function DashboardHomeContent() {
   const { data, isLoading, error, fetchTop } = useDashboardTopStore()
+  const { settings: businessSettings, fetchSettings } = useBusinessSettingsStore()
   const { selectedMonth, setSelectedMonth } = useMonthStore()
   const searchParams = useSearchParams()
 
@@ -107,6 +136,12 @@ function DashboardHomeContent() {
   useEffect(() => {
     fetchTop(DEMO_STORE_ID, selectedMonth)
   }, [fetchTop, selectedMonth])
+
+  // PHASE MD-1: 人件費率の内訳取得。既存の /api/admin/business-settings
+  // （BusinessSettingsFormが既に使用しているAPI）をそのまま流用し、新規API・API変更は行わない。
+  useEffect(() => {
+    fetchSettings(DEMO_STORE_ID, `${selectedMonth}-01`)
+  }, [fetchSettings, selectedMonth])
 
   if (isLoading && !data) {
     return (
@@ -129,6 +164,17 @@ function DashboardHomeContent() {
 
   const { required4, kpi4, extendedKpi, todayActions, salesTrend, csvImportStatus } = data
 
+  // PHASE MD-1: 客単価 = monthlySales ÷ visitCount（フロント側derived値。バックエンド集計は追加しない）
+  const avgSpend = extendedKpi.visitCount !== null && extendedKpi.visitCount > 0
+    ? Math.round(required4.monthlySales / extendedKpi.visitCount)
+    : null
+
+  // PHASE MD-1: 人件費率 = (人件費合計 ÷ monthlySales) × 100
+  const laborCostTotal = sumLaborCosts(businessSettings?.fixedCosts ?? null)
+  const laborCostRate = laborCostTotal !== null && required4.monthlySales > 0
+    ? (laborCostTotal / required4.monthlySales) * 100
+    : null
+
   const currentYM = new Date().toISOString().slice(0, 7)
   const isCurrentMonth = selectedMonth === currentYM
   const monthLabel = isCurrentMonth
@@ -150,10 +196,18 @@ function DashboardHomeContent() {
             color={required4.profit !== null && required4.profit < 0 ? '#D14F4F' : '#5C4033'}
           />
           <Stat
+            label="損益分岐点"
+            value={required4.breakevenPoint === null ? '—' : formatYen(required4.breakevenPoint)}
+          />
+          <Stat
             label="損益分岐まで"
             value={required4.breakevenRemaining === null ? '—' : formatYen(required4.breakevenRemaining)}
           />
           <Stat label="着地予測" value={formatYen(required4.forecastSales)} />
+          <Stat
+            label="人件費率"
+            value={laborCostRate === null ? '—' : `${laborCostRate.toFixed(1)}%`}
+          />
         </div>
         {!required4.fixedCostsConfigured && (
           <Link
@@ -180,6 +234,7 @@ function DashboardHomeContent() {
       <SectionCard title="来店・リピート・指名(月次)" icon={<Users size={16} color="#D98292" />}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
           <Stat label="来店人数" value={extendedKpi.visitCount !== null ? `${extendedKpi.visitCount}人` : '—'} />
+          <Stat label="客単価" value={avgSpend === null ? '—' : formatYen(avgSpend)} />
           <Stat label="リピート率(30日)" value={formatPercent(extendedKpi.repeat30)} />
           <Stat label="リピート率(90日)" value={formatPercent(extendedKpi.repeat90)} />
           <Stat label="指名率" value={formatPercent(extendedKpi.nominationRate)} />
