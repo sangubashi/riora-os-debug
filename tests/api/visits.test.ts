@@ -60,7 +60,7 @@ const VALID_PAYLOAD = {
 
 const mockRepos = {
   customerRepo: { findById: vi.fn(), listByStore: vi.fn() },
-  visitRepo: { recentByCustomer: vi.fn(), create: vi.fn(), countByCustomer: vi.fn() },
+  visitRepo: { recentByCustomer: vi.fn(), createSequenced: vi.fn() },
   lineQueueRepo: { enqueue: vi.fn(), listPendingByStore: vi.fn(), updateStatus: vi.fn() },
   dashboardRepo: { latestByStore: vi.fn() },
   briefingRepo: { latestByCustomer: vi.fn() },
@@ -80,8 +80,7 @@ describe('POST /api/visits (SaveVisitRecord)', () => {
     vi.clearAllMocks();
     vi.mocked(getRepos).mockReturnValue(mockRepos as never);
     mockRepos.customerRepo.findById.mockResolvedValue(CUSTOMER);
-    mockRepos.visitRepo.countByCustomer.mockResolvedValue(3);
-    mockRepos.visitRepo.create.mockResolvedValue(CREATED_VISIT);
+    mockRepos.visitRepo.createSequenced.mockResolvedValue(CREATED_VISIT);
   });
 
   it('正常な入力で201とvisitを返す', async () => {
@@ -92,16 +91,18 @@ describe('POST /api/visits (SaveVisitRecord)', () => {
     expect(body).toEqual({ success: true, visit: CREATED_VISIT });
   });
 
-  it('visitCountAtはvisitRepo.countByCustomer()+1で算出する', async () => {
+  it('visitRepo.createSequenced()のみを呼び出し、visitCountAtは渡さない(DB側RPCが原子的に採番する。MD-5E)', async () => {
     await POST(buildRequest(VALID_PAYLOAD));
 
-    expect(mockRepos.visitRepo.create).toHaveBeenCalledWith(expect.objectContaining({ visitCountAt: 4 }));
+    expect(mockRepos.visitRepo.createSequenced).toHaveBeenCalledTimes(1);
+    const arg = mockRepos.visitRepo.createSequenced.mock.calls[0][0] as Record<string, unknown>;
+    expect(arg).not.toHaveProperty('visitCountAt');
   });
 
   it('storeIdはcustomerRepo.findById()の結果から設定する', async () => {
     await POST(buildRequest(VALID_PAYLOAD));
 
-    expect(mockRepos.visitRepo.create).toHaveBeenCalledWith(
+    expect(mockRepos.visitRepo.createSequenced).toHaveBeenCalledWith(
       expect.objectContaining({ storeId: 'store-1', customerId: 'cust-1' })
     );
   });
@@ -109,7 +110,7 @@ describe('POST /api/visits (SaveVisitRecord)', () => {
   it('treatmentAmount/visitScoreは0を設定する(Engine呼び出しなし)', async () => {
     await POST(buildRequest(VALID_PAYLOAD));
 
-    expect(mockRepos.visitRepo.create).toHaveBeenCalledWith(
+    expect(mockRepos.visitRepo.createSequenced).toHaveBeenCalledWith(
       expect.objectContaining({ treatmentAmount: 0, visitScore: 0 })
     );
   });
@@ -117,7 +118,7 @@ describe('POST /api/visits (SaveVisitRecord)', () => {
   it('省略可能フィールドはデフォルト値を適用する', async () => {
     await POST(buildRequest(VALID_PAYLOAD));
 
-    expect(mockRepos.visitRepo.create).toHaveBeenCalledWith(
+    expect(mockRepos.visitRepo.createSequenced).toHaveBeenCalledWith(
       expect.objectContaining({
         retailAmount: 0,
         retailCategory: null,
@@ -168,8 +169,10 @@ describe('POST /api/visits (SaveVisitRecord)', () => {
     expect(res.status).toBe(500);
   });
 
-  it('visitRepo.create()が例外をthrowした場合は500を返す', async () => {
-    mockRepos.visitRepo.create.mockRejectedValue(new Error('VisitRepo.create failed: insert failed'));
+  it('visitRepo.createSequenced()が例外をthrowした場合は500を返す', async () => {
+    mockRepos.visitRepo.createSequenced.mockRejectedValue(
+      new Error('Failed to create sequenced visit: lock timeout')
+    );
 
     const res = await POST(buildRequest(VALID_PAYLOAD));
 

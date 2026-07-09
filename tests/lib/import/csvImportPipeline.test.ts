@@ -175,6 +175,19 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
         state.visits.push(created);
         return created;
       },
+      // MD-5D: csvImportPipeline.tsはcountByCustomer()+create()ではなくcreateSequenced()を
+      // 呼ぶ。visitCountAtは受け取らず、fake側でCOALESCE(MAX(visit_count_at),0)+1相当を
+      // 顧客ごとに算出する(本番RPC insert_visit_with_sequenceと同じ採番方式)。
+      createSequenced: async (visit) => {
+        visitSeq += 1;
+        const priorForCustomer = state.visits.filter(v => v.customerId === visit.customerId);
+        const nextVisitCountAt = priorForCustomer.length > 0
+          ? Math.max(...priorForCustomer.map(v => v.visitCountAt)) + 1
+          : 1;
+        const created: Visit = { ...visit, id: `visit-${visitSeq}`, visitCountAt: nextVisitCountAt };
+        state.visits.push(created);
+        return created;
+      },
       reconcile: async (id, input) => {
         const v = state.visits.find(x => x.id === id);
         if (!v) throw new Error('not found');

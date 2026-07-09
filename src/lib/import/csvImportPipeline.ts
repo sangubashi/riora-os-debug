@@ -336,7 +336,6 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
   let needsReviewCount = 0
   let hashMatchedCount = 0
   let menuUnresolvedSkippedCount = 0
-  const visitCountCache = new Map<string, number>()
   const menuResolutionByRawName = new Map<string, MenuResolutionLogEntry>()
 
   for (const agg of aggregates) {
@@ -410,17 +409,12 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
       })
       visitsImported += 1
     } else if (!existingVisit) {
-      const visitCountAt = visitCountCache.get(customerId)
-        ?? await repos.visitRepo.countByCustomer(customerId)
-      visitCountCache.set(customerId, visitCountAt + 1)
-
-      await repos.visitRepo.create({
+      await repos.visitRepo.createSequenced({
         storeId: input.storeId,
         customerId,
         staffId: staffRes.staffId,
         menuId: menuRes.menuId,
         visitDate,
-        visitCountAt: visitCountAt + 1,
         isNomination: agg.isDesignated,
         treatmentAmount: agg.netServiceSales,
         retailAmount: agg.retailSales,

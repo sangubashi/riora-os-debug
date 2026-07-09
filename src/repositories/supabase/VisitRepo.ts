@@ -39,6 +39,39 @@ export class VisitRepo implements IVisitRepo {
     return toVisit(data as unknown as BrainVisitRow);
   }
 
+  /**
+   * public.insert_visit_with_sequence(MD-5B migration)をRPC呼び出しし、
+   * visit_count_atをDB側で原子的に採番したvisitを1件作成する(MD-5C)。
+   * countByCustomer()+create()の非原子パターンは使わない(呼び出し側はvisitCountAtを渡さない)。
+   */
+  async createSequenced(visit: Omit<Visit, 'id' | 'visitCountAt'>): Promise<Visit> {
+    const { data, error } = await this.client
+      .rpc('insert_visit_with_sequence', {
+        p_store_id: visit.storeId,
+        p_customer_id: visit.customerId,
+        p_staff_id: visit.staffId,
+        p_menu_id: visit.menuId,
+        p_visit_date: visit.visitDate,
+        p_is_nomination: visit.isNomination,
+        p_treatment_amount: visit.treatmentAmount,
+        p_retail_amount: visit.retailAmount,
+        p_retail_category: visit.retailCategory,
+        p_homecare_purchased: visit.homecarePurchased,
+        p_homecare_declined: visit.homecareDeclined,
+        p_next_booking_made: visit.nextBookingMade,
+        p_no_booking_reason: visit.noBookingReason,
+        p_voice_memo_url: visit.voiceMemoUrl,
+        p_visit_score: visit.visitScore,
+        p_source: visit.source ?? 'staff_input',
+      })
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to create sequenced visit: ${error.message}`);
+    }
+    return toVisit(data as unknown as BrainVisitRow);
+  }
+
   async countByCustomer(customerId: UUID): Promise<number> {
     const { count, error } = await this.client
       .from('brain_visits')

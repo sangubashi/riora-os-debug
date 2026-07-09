@@ -120,6 +120,14 @@ export interface IVisitRepo {
   /** brain_visitsをcustomer_idで件数取得する(deleted_at IS NULL)。SaveVisitRecordのvisit_count_at算出に使用。 */
   countByCustomer(customerId: UUID): Promise<number>;
   /**
+   * brain_visitsへ1件追加し、visit_count_atをDB側RPC(public.insert_visit_with_sequence、
+   * MD-5B)にpg_advisory_xact_lock配下で原子的に採番させる(MD-5C)。
+   * 呼び出し側はvisitCountAtを渡さない(渡せない)。countByCustomer()+create()の
+   * 非原子パターン(MD-2〜MD-4で確認した不整合の原因)を新規呼び出し元では使わせないための
+   * 追加メソッド。create()/countByCustomer()は非破壊のため残置する。
+   */
+  createSequenced(visit: Omit<Visit, 'id' | 'visitCountAt'>): Promise<Visit>;
+  /**
    * brain_visitsをcustomer_id+visit_dateで1件取得する(deleted_at IS NULL)。
    * CSV Importの突合キー(W19: customer_id+visit_dateで既存idx_brain_visits_customer_dateを再利用)。
    * 同日複数件は来店時刻情報がCSVに無いため先頭1件を返す。存在しない場合はnull。

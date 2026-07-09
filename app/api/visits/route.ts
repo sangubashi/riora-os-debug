@@ -3,7 +3,8 @@
  *
  * VisitInputを受け取り、brain_visitsへ1件追加する。
  * - storeIdはcustomerRepo.findById()から取得する(入力には含まれない)。
- * - visitCountAtはvisitRepo.countByCustomer()+1で算出する。
+ * - visitCountAtはvisitRepo.createSequenced()(RPC public.insert_visit_with_sequence、
+ *   MD-5B/MD-5E)がDB側でpg_advisory_xact_lock配下で原子的に採番する。
  * - treatmentAmount/visitScoreはDBデフォルト(0)に合わせて0を設定する
  *   (Engine呼び出し禁止のため、本Stepではスコアリングを行わない)。
  */
@@ -45,15 +46,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'customer_not_found' }, { status: 404 });
     }
 
-    const visitedCount = await repos.visitRepo.countByCustomer(input.customerId);
-
-    const visit = await repos.visitRepo.create({
+    const visit = await repos.visitRepo.createSequenced({
       storeId: customer.storeId,
       customerId: input.customerId,
       staffId: input.staffId,
       menuId: input.menuId,
       visitDate: new Date().toISOString(),
-      visitCountAt: visitedCount + 1,
       isNomination: input.isNomination,
       treatmentAmount: 0,
       retailAmount: input.retailAmount ?? 0,
