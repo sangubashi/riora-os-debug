@@ -8,18 +8,12 @@
  * 数値を直接見せない。自然言語で状態を表現。
  */
 import { useState, useEffect, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { toast } from 'sonner'
 import {
   buildRiskProfile,
   buildRelationshipState,
   fetchRiskEngineContext,
   type RiskEngineInput,
 } from '@/lib/phase5/customerRiskEngine'
-import {
-  generateSmartFollowDraft,
-  type SmartFollowInput,
-} from '@/lib/phase5/smartFollowDraft'
 import { getMenuCycleDays } from '@/lib/homecare/generateHomecarePlan'
 import { semanticInsightSummary } from '@/lib/phase8/kpiHintEngine'
 import type {
@@ -29,7 +23,6 @@ import type {
 import {
   RELATIONSHIP_LABEL, RELATIONSHIP_EMOJI,
 } from '@/types'
-import type { SmartFollowDraft } from '@/lib/phase5/smartFollowDraft'
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -52,7 +45,7 @@ interface CustomerRiskCardProps {
 
 export default function CustomerRiskCard(props: CustomerRiskCardProps) {
   const {
-    customerId, customerName, visits, totalSales,
+    customerId, visits, totalSales,
     lineResponseRate, vipRank, churnRisk, daysSinceLastVisit,
     skinTags, menuName, avgPrice, recommendedCycleDays,
   } = props
@@ -62,10 +55,7 @@ export default function CustomerRiskCard(props: CustomerRiskCardProps) {
   const [loading,       setLoading]       = useState(true)
   const [risk,          setRisk]          = useState<CustomerRiskProfile | null>(null)
   const [relationship,  setRelationship]  = useState<RelationshipState | null>(null)
-  const [followDraft,   setFollowDraft]   = useState<SmartFollowDraft | null>(null)
-  const [showDraft,     setShowDraft]     = useState(false)
   const [semanticHint,  setSemanticHint]  = useState<string>('')
-  const [draftCopied,   setDraftCopied]   = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -81,35 +71,17 @@ export default function CustomerRiskCard(props: CustomerRiskCardProps) {
     const riskProfile  = buildRiskProfile(ruleInput)
     const relState     = buildRelationshipState(ruleInput)
 
-    const followInput: SmartFollowInput = {
-      customerName, daysSinceLastVisit, recommendedCycleDays: cycleDays,
-      relationshipState: relState, skinTags,
-      insightTags: ctx.insightTags, menuName, lineResponseRate,
-    }
-    const draft = generateSmartFollowDraft(followInput)
-
     setRisk(riskProfile)
     setRelationship(relState)
-    setFollowDraft(draft)
 
     // Semantic Summary
     const semantic = semanticInsightSummary(ctx.insightTags, skinTags as string[])
     setSemanticHint(semantic)
 
     setLoading(false)
-  }, [customerId, visits, totalSales, lineResponseRate, vipRank, churnRisk, daysSinceLastVisit, cycleDays, avgPrice, customerName, skinTags, menuName]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [customerId, visits, totalSales, lineResponseRate, vipRank, churnRisk, daysSinceLastVisit, cycleDays, avgPrice, skinTags]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load() }, [load])
-
-  const copyDraft = useCallback(async () => {
-    if (!followDraft?.draft) return
-    try {
-      await navigator.clipboard.writeText(followDraft.draft)
-      setDraftCopied(true)
-      toast.success('LINE下書きをコピーしました', { duration: 1500 })
-      setTimeout(() => setDraftCopied(false), 2500)
-    } catch { toast.error('コピーに失敗しました') }
-  }, [followDraft])
 
   // ── ローディング ─────────────────────────────────────────────────────────
   if (loading) {
@@ -165,52 +137,6 @@ export default function CustomerRiskCard(props: CustomerRiskCardProps) {
               <p style={{ fontSize: '12px', color: '#9F7E6C', lineHeight: 1.55 }}>{f}</p>
             </div>
           ))}
-        </div>
-      )}
-
-      {/* ── Smart Follow Draft ── */}
-      {followDraft && (
-        <div style={{ background: '#F0FAF5', borderRadius: '16px', border: '1px solid rgba(52,160,112,0.2)', overflow: 'hidden' }}>
-          <button
-            onClick={() => setShowDraft(v => !v)}
-            style={{ width: '100%', padding: '11px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'none', border: 'none', cursor: 'pointer' }}
-          >
-            <div>
-              <p style={{ fontSize: '11px', letterSpacing: '0.14em', color: '#34A070', fontWeight: 600 }}>💬 フォローLINE下書き</p>
-              <p style={{ fontSize: '10px', color: '#9F7E6C', marginTop: '2px' }}>{followDraft.sendTiming} · {followDraft.tone}</p>
-            </div>
-            <span style={{ fontSize: '13px', color: '#34A070', transform: showDraft ? 'rotate(180deg)' : 'none', transition: 'transform 0.22s', display: 'inline-block' }}>▾</span>
-          </button>
-
-          <AnimatePresence>
-            {showDraft && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.25 }}
-                style={{ overflow: 'hidden' }}
-              >
-                <div style={{ padding: '0 14px 12px' }}>
-                  {/* 理由説明 */}
-                  <p style={{ fontSize: '10px', color: '#9F7E6C', marginBottom: '8px', lineHeight: 1.5 }}>
-                    📌 {followDraft.reason}
-                  </p>
-                  {/* 本文 */}
-                  <div style={{ background: '#fff', borderRadius: '12px', padding: '11px', border: '1px solid rgba(52,160,112,0.15)', marginBottom: '8px' }}>
-                    <p style={{ fontSize: '13px', color: '#3C5C45', lineHeight: 1.8, whiteSpace: 'pre-wrap', fontFamily: 'Noto Sans JP, sans-serif' }}>
-                      {followDraft.draft}
-                    </p>
-                  </div>
-                  {/* コピーボタン */}
-                  <button onClick={copyDraft}
-                    style={{ width: '100%', padding: '9px', borderRadius: '999px', border: `1px solid ${draftCopied ? 'rgba(52,160,112,0.4)' : 'rgba(52,160,112,0.25)'}`, background: draftCopied ? 'rgba(52,160,112,0.12)' : 'rgba(52,160,112,0.06)', color: '#34A070', fontSize: '12px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', transition: 'all 0.18s' }}>
-                    {draftCopied ? '✓ コピー済み' : '📋 テキストをコピー'}
-                  </button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
       )}
 

@@ -1063,8 +1063,9 @@ export default function CustomerBottomSheet({
                           ⚠️ 今日気をつけること
                         </p>
                         <div className="flex flex-col gap-2.5">
+                          {/* PHASE UX-3C: 今日のFocus(timeline_summary_cache.focus)は構造的に常にnullのため非表示化。
+                              取得ロジック自体は変更しない(ロジック変更禁止) */}
                           {([
-                            { label: '今日のFocus', value: todayFocus },
                             { label: 'アレルギー',    value: allergyText },
                             { label: '触れない話題',   value: ngTopics.length > 0 ? ngTopics.join('、') : null },
                           ] as const).map(({ label, value }) => (
