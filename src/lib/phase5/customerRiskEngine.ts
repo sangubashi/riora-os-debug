@@ -162,8 +162,8 @@ export function buildRiskProfile(input: RiskEngineInput): CustomerRiskProfile {
   if (cycleOverRate > 1.8) { churnScore += 20; riskFactors.push(`来店周期が大幅に超過`) }
   else if (cycleOverRate > 1.2) { churnScore += 10; riskFactors.push(`来店周期がやや遅れ気味`) }
 
-  // LINE低反応で加算
-  if (lineResponseRate < 40) { churnScore += 15; riskFactors.push(`LINE返信率が低め`) }
+  // LINE低反応で加算（PHASE UX-2: churnScoreへの加点は維持・表示文言のみ削除）
+  if (lineResponseRate < 40) { churnScore += 15 }
   else if (lineResponseRate < 65) { churnScore += 7 }
 
   // フォローアクションなし
@@ -175,11 +175,10 @@ export function buildRiskProfile(input: RiskEngineInput): CustomerRiskProfile {
     riskFactors.push(`最近フォローできていません`)
   }
 
-  // ポジティブ要因
+  // ポジティブ要因（PHASE UX-2: 「LINE反応率が高い」を削除）
   if (hasRecentPurchase) positiveFactors.push(`最近商品を購入しています`)
   if (insightTags.includes('high_motivation')) positiveFactors.push(`来店モチベーションが高い`)
   if (visits >= 10) positiveFactors.push(`長期ご愛顧のお客様`)
-  if (lineResponseRate >= 80) positiveFactors.push(`LINE反応率が高い`)
 
   const churnProbability: CustomerRiskProfile['churnProbability'] =
     churnScore >= 70 ? 'high' : churnScore >= 40 ? 'medium' : 'low'

@@ -28,7 +28,7 @@ export function buildPredictiveSuggestions(
   const {
     visits, daysSinceLastVisit, recommendedCycleDays,
     insightTags, skinTags, lineResponseRate,
-    hasRecentPurchase, vipRank, recentActionTypes,
+    hasRecentPurchase, recentActionTypes,
   } = input
 
   const results: PredictiveSuggestion[] = []
@@ -59,17 +59,7 @@ export function buildPredictiveSuggestions(
   }
 
   // ── future（2〜4週間以内に必要） ────────────────────────────────────────
-
-  // VIP化チャンス
-  if (vipRank < 3 && visits >= 7 && lineResponseRate >= 70) {
-    results.push({
-      id:       'pred_vip_candidate',
-      horizon:  'future',
-      title:    'VIP化のアプローチを検討する時期',
-      description: '来店回数・反応率からVIP化の素地ができています。特別感のある提案でランクアップを。',
-      triggerReason: `来店${visits}回・LINE反応率${lineResponseRate}%`,
-    })
-  }
+  // PHASE UX-2: VIP化チャンス提案（VIP関連ロジック含む）を削除
 
   // 季節ケア切り替え（肌タグ×季節）
   if (skinTags.includes('dry') || skinTags.includes('aging')) {

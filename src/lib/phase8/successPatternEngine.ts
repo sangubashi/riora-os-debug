@@ -123,11 +123,11 @@ export async function fetchRetrievalSuggestions(input: {
   if (patterns.length > 0) {
     const top = patterns[0]
     const seqLabel = top.actionContent
-    const scoreLabel = top.outcome.successScore
+    // PHASE UX-2: 「成功スコア○%」の数値表示を削除・成功事例テキストのみ残す（confidenceの算出ロジックは維持）
     suggestions.push({
       id:          `ret-pattern-${top.id.slice(0, 8)}`,
       title:       `${seqLabel} の流れが効果的です`,
-      description: `当店では「${seqLabel}」のパターンが成功スコア${scoreLabel}%で実績があります。`,
+      description: `当店では「${seqLabel}」のパターンで実績があります。`,
       basedOn:     `直近90日の成功パターンから`,
       confidence:  top.outcome.successScore / 100,
     })
