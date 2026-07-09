@@ -236,6 +236,7 @@ function DashboardHomeContent() {
           <Stat label="来店人数" value={extendedKpi.visitCount !== null ? `${extendedKpi.visitCount}人` : '—'} />
           <Stat label="客単価" value={avgSpend === null ? '—' : formatYen(avgSpend)} />
           <Stat label="リピート率(30日)" value={formatPercent(extendedKpi.repeat30)} />
+          <Stat label="リピート率(60日)" value={formatPercent(extendedKpi.repeat60)} />
           <Stat label="リピート率(90日)" value={formatPercent(extendedKpi.repeat90)} />
           <Stat label="指名率" value={formatPercent(extendedKpi.nominationRate)} />
         </div>
