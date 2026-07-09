@@ -35,6 +35,8 @@ interface NextActionPanelProps {
   onActionLogged:       () => void
   /** STEP5: medium/low 時に compact 表示 */
   compact?:             boolean
+  /** PHASE UX-1: 特定のルールIDを表示から除外する（生成ロジック・文言は変更しない） */
+  excludeIds?:          string[]
 }
 
 // ─── コンポーネント ───────────────────────────────────────────────────────────
@@ -44,7 +46,7 @@ export default function NextActionPanel(props: NextActionPanelProps) {
     customerId, staffId, visits, totalSales, lineResponseRate,
     vipRank, churnRisk, daysSinceLastVisit, skinTags,
     menuName, recommendedCycleDays, reservationId, onActionLogged,
-    compact = false,
+    compact = false, excludeIds,
   } = props
 
   const [actions,    setActions]    = useState<NextAction[]>([])
@@ -69,7 +71,7 @@ export default function NextActionPanel(props: NextActionPanelProps) {
         menuName,
         recommendedCycleDays,
       })
-      setActions(results)
+      setActions(excludeIds?.length ? results.filter(a => !excludeIds.includes(a.id)) : results)
     } catch (e) {
       console.error('[NextActionPanel] 生成エラー:', e)
       setActions([])
@@ -78,7 +80,7 @@ export default function NextActionPanel(props: NextActionPanelProps) {
     }
   }, [
     customerId, visits, totalSales, lineResponseRate, vipRank,
-    churnRisk, daysSinceLastVisit, skinTags, menuName, recommendedCycleDays,
+    churnRisk, daysSinceLastVisit, skinTags, menuName, recommendedCycleDays, excludeIds,
   ])
 
   useEffect(() => {

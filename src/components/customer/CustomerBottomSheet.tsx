@@ -25,6 +25,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 
 // ── Supabase ─────────────────────────────────────────────────────────────────
 import { supabase } from '@/lib/supabase';
+import { authedFetch } from '@/lib/api/authedFetch';
 
 // ── 型 ────────────────────────────────────────────────────────────────────────
 import type {
@@ -125,7 +126,16 @@ const ACTION_BUTTONS: Array<{ action: ActionType; emoji: string; label: string }
   { action: 'product_purchased',   emoji: '✅', label: '商品を購入した' },
 ];
 
-type SectionKey = 'homecare' | 'line' | 'history' | 'voice';
+type SectionKey = 'homecare' | 'line' | 'voice';
+
+/** 来店履歴1件（Phase UX-1・/api/customers/[id]/visit-history のレスポンス型） */
+interface VisitHistoryEntry {
+  id:        string;
+  visitDate: string;
+  menuName:  string | null;
+  amount:    number;
+  staffName: string | null;
+}
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -249,6 +259,14 @@ export default function CustomerBottomSheet({
   const [recentActions,  setRecentActions]  = useState<ActionLogRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  // ── 来店履歴（Phase UX-1） ────────────────────────────────────────────────────
+  const [visitHistory,        setVisitHistory]        = useState<VisitHistoryEntry[]>([]);
+  const [visitHistoryLoading, setVisitHistoryLoading] = useState(false);
+
+  // ── 今日気をつけること（PHASE UX-1: Focus / 触れない話題） ─────────────────────
+  const [todayFocus, setTodayFocus] = useState<string | null>(null);
+  const [ngTopics,   setNgTopics]   = useState<string[]>([]);
+
   // ── Priority / Timeline refresh ─────────────────────────────────────────────
   const [insightRefreshKey,  setInsightRefreshKey]  = useState(0);
   const [notesRefreshKey,    setNotesRefreshKey]    = useState(0);
@@ -295,6 +313,9 @@ export default function CustomerBottomSheet({
     setHandover(null);
     setHandoverCollapsed(false);
     setContraindications([]);
+    setVisitHistory([]);
+    setTodayFocus(null);
+    setNgTopics([]);
     setAllDone(false);
     setServiceReplay(null);
     resetActiveSession();
@@ -369,6 +390,52 @@ export default function CustomerBottomSheet({
         setContraindicationsLoading(false);
       }
     })();
+
+    // 来店履歴（Phase UX-1）
+    void (async () => {
+      setVisitHistoryLoading(true);
+      try {
+        const res = await authedFetch(`/api/customers/${c.id}/visit-history`);
+        if (res.ok) {
+          const json = await res.json() as { success: boolean; visits: VisitHistoryEntry[] };
+          if (json.success) setVisitHistory(json.visits);
+        }
+      } finally {
+        setVisitHistoryLoading(false);
+      }
+    })();
+
+    // 今日気をつけること — 今日のFocus（timeline_summary_cache、生成済みキャッシュのみ参照）
+    void (async () => {
+      const { data } = await supabase
+        .from('timeline_summary_cache')
+        .select('focus')
+        .eq('customer_id', c.id)
+        .maybeSingle();
+      setTodayFocus((data as { focus: string | null } | null)?.focus ?? null);
+    })();
+
+    // 今日気をつけること — 触れない話題（voice_notes.ng_topics 最新1件 + customer_memories(is_sensitive=true)）
+    void (async () => {
+      const [voiceRes, memoryRes] = await Promise.all([
+        supabase.from('voice_notes')
+          .select('ng_topics')
+          .eq('customer_id', c.id)
+          .not('ng_topics', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(1),
+        supabase.from('customer_memories')
+          .select('content')
+          .eq('customer_id', c.id)
+          .eq('is_sensitive', true)
+          .order('created_at', { ascending: false }),
+      ]);
+      const ngFromVoice = Array.isArray(voiceRes.data?.[0]?.ng_topics)
+        ? (voiceRes.data![0].ng_topics as string[])
+        : [];
+      const ngFromMemory = (memoryRes.data ?? []).map((m: { content: string }) => m.content);
+      setNgTopics([...ngFromVoice, ...ngFromMemory]);
+    })();
   }, [c?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── ロード ────────────────────────────────────────────────────────────────
@@ -404,6 +471,9 @@ export default function CustomerBottomSheet({
     setHomecarePlan(null);
     setDoneActions(new Set());
     setRecentActions([]);
+    setVisitHistory([]);
+    setTodayFocus(null);
+    setNgTopics([]);
     setAllDone(false);
     setServiceReplay(null);
     resetActiveSession();
@@ -586,6 +656,13 @@ export default function CustomerBottomSheet({
   const visible = (section: DisplaySection) =>
     !sectionPriority || isSectionVisible(sectionPriority[section], timePressure);
 
+  // ── 今日気をつけること: アレルギー表示（PHASE UX-1・contraindicationsから抽出） ──
+  const allergyText = useMemo(() => {
+    const item = contraindications.find(ci => ci.title.includes('アレルギー'));
+    if (!item) return null;
+    return item.description || item.title;
+  }, [contraindications]);
+
   // [DEBUG] マウント時: customer.id を確認
   useEffect(() => {
     if (!c) return
@@ -624,8 +701,6 @@ export default function CustomerBottomSheet({
   const aiAdvice = aiSuggestion?.strategy_logic?.adviceMessage
     ?? (c && fallback ? `${c.name}様には「${fallback.goal}」を意識した接客を心がけましょう。` : '');
   const aiNg = fallback?.ng ?? '';
-  const formatYen = (n: number) =>
-    (n === 0 || n == null) ? '¥—' : `¥${n.toLocaleString('ja-JP')}`;
   const returnInfo = r ? getReturnTiming(r.menu, r.days_since_last_visit ?? 0) : null;
 
   // ─── Store Learnings ────────────────────────────────────────────────────────
@@ -927,32 +1002,6 @@ export default function CustomerBottomSheet({
                 </div>
               )}
 
-              {/* フェーズ切り替えタブ */}
-              {page === 'overview' && (
-                <div className="flex-shrink-0 flex gap-1.5 px-5 pb-2.5 overflow-x-auto"
-                  style={{ scrollbarWidth: 'none' }}>
-                  {([
-                    { phase: 'counseling' as const, label: '🗣 カウンセリング' },
-                    { phase: 'treatment'  as const, label: '💆 施術中' },
-                    { phase: 'aftercare'  as const, label: '✨ アフター' },
-                    { phase: 'checkout'   as const, label: '👋 退店' },
-                  ] as const).map(({ phase, label }) => (
-                    <button key={phase}
-                      onClick={() => storeSetServicePhase(phase)}
-                      className="flex-shrink-0 text-[10px] px-3 py-1 rounded-full whitespace-nowrap transition-all"
-                      style={{
-                        border: `1px solid ${servicePhase === phase ? '#F56E8B' : '#F0E8E8'}`,
-                        background: servicePhase === phase ? 'rgba(245,110,139,0.08)' : 'transparent',
-                        color: servicePhase === phase ? '#F56E8B' : '#C8A8B0',
-                        fontWeight: servicePhase === phase ? 600 : 400,
-                        transition: 'all 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-                      }}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              )}
-
               {/* SHEET コンテンツ（flex-1 で残り高さを埋める） */}
               <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               <AnimatePresence mode="wait">
@@ -1004,6 +1053,88 @@ export default function CustomerBottomSheet({
                         </button>
                       </div>
 
+                      {/* ════════════════════════════
+                          PHASE UX-1: 5秒で接客準備できるブリーフィング
+                      ════════════════════════════ */}
+
+                      {/* 今日気をつけること */}
+                      <div className="bg-[#FFF0F2] rounded-[22px] p-4 border border-[#F5D0D5]">
+                        <p className="text-[11px] tracking-[0.18em] text-[#C05060] font-semibold mb-2.5">
+                          ⚠️ 今日気をつけること
+                        </p>
+                        <div className="flex flex-col gap-2.5">
+                          {([
+                            { label: '今日のFocus', value: todayFocus },
+                            { label: 'アレルギー',    value: allergyText },
+                            { label: '触れない話題',   value: ngTopics.length > 0 ? ngTopics.join('、') : null },
+                          ] as const).map(({ label, value }) => (
+                            <div key={label}>
+                              <p className="text-[10px] text-[#C8886E] tracking-[0.08em] mb-0.5">{label}</p>
+                              <p className="text-sm text-[#5C4033] leading-relaxed">{value || '登録なし'}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 前回施術 */}
+                      {visitHistory[0] && (
+                        <div className="bg-[#F8F1F3] rounded-[22px] p-4">
+                          <p className="text-[11px] tracking-[0.18em] text-[#C8A58C] font-semibold mb-2.5">
+                            💆 前回施術
+                          </p>
+                          <div className="grid grid-cols-3 gap-2 text-center">
+                            <div>
+                              <p className="text-[10px] text-[#9F7E6C] mb-1">来店日</p>
+                              <p className="text-sm font-bold text-[#5C4033]">
+                                {new Date(visitHistory[0].visitDate).toLocaleDateString('ja-JP', { month: 'long', day: 'numeric' })}
+                              </p>
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[10px] text-[#9F7E6C] mb-1">メニュー</p>
+                              <p className="text-sm font-bold text-[#5C4033] truncate">
+                                {visitHistory[0].menuName ?? '—'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-[#9F7E6C] mb-1">金額</p>
+                              <p className="text-sm font-bold text-[#5C4033]">
+                                ¥{visitHistory[0].amount.toLocaleString()}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 来店履歴（直近4件） */}
+                      <div className="bg-[#F8F1F3] rounded-[22px] p-4">
+                        <p className="text-[11px] tracking-[0.18em] text-[#C8A58C] font-semibold mb-2.5">
+                          📅 来店履歴
+                        </p>
+                        {visitHistoryLoading ? (
+                          <p className="text-xs text-[#C8A58C] py-1">読み込み中…</p>
+                        ) : visitHistory.length === 0 ? (
+                          <p className="text-xs text-[#C8A58C] py-1">来店履歴がありません</p>
+                        ) : (
+                          <div className="flex flex-col gap-2 mb-1">
+                            {visitHistory.slice(0, 4).map(v => (
+                              <div key={v.id}
+                                className="flex items-center justify-between bg-white rounded-2xl px-3.5 py-2.5">
+                                <span className="text-xs font-semibold text-[#5C4033] flex-shrink-0">
+                                  {new Date(v.visitDate).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' })}
+                                </span>
+                                <span className="text-xs text-[#9F7E6C] truncate ml-2">
+                                  {v.menuName ?? 'メニュー未登録'}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <button onClick={() => setPage('timeline')}
+                          className="w-full text-center text-xs text-[#F56E8B] font-semibold py-2 bg-transparent border-none cursor-pointer">
+                          詳しく見る（前回・履歴・AIまとめ）
+                        </button>
+                      </div>
+
                       {/* 覚えておくこと — 接客前ブリーフィング（AI提案より上） */}
                       <ErrorBoundary label="CustomerMemorySection" silentFail>
                         <CustomerMemorySection
@@ -1033,10 +1164,9 @@ export default function CustomerBottomSheet({
                         />
                       </ErrorBoundary>
 
-                      {/* KPI 横3列 */}
-                      <div className="grid grid-cols-3 gap-2">
+                      {/* KPI 横2列(AUTH-2b: 累計売上を削除。金額をスタッフ間の比較材料にしない方針) */}
+                      <div className="grid grid-cols-2 gap-2">
                         {[
-                          { label: '累計売上',   value: formatYen(c.total_sales) },
                           { label: '来店回数',   value: `${c.visits}回` },
                           { label: 'LINE反応率', value: `${c.line_response_rate}%` },
                         ].map(({ label, value }) => (
@@ -1085,6 +1215,7 @@ export default function CustomerBottomSheet({
                             reservationId={r.id}
                             onActionLogged={() => loadRecentActions(c.id)}
                             compact={isCompact('nextAction')}
+                            excludeIds={['phase_new_rebook']}
                           />
                         </ErrorBoundary>
                       )}
@@ -1332,7 +1463,7 @@ export default function CustomerBottomSheet({
                       <div className="bg-[#F8F1F3] rounded-[18px] px-4 py-3 flex items-center justify-between flex-shrink-0">
                         <span className="text-sm font-bold text-[#5C4033]">{c.name} 様</span>
                         <span className="text-xs text-[#9F7E6C]">
-                          来店 {c.visits}回 · {formatYen(c.total_sales)} · 最終来店 {r.days_since_last_visit ?? 0}日前
+                          来店 {c.visits}回 · 最終来店 {r.days_since_last_visit ?? 0}日前
                         </span>
                       </div>
 
