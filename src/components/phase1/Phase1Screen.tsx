@@ -219,8 +219,8 @@ export default function Phase1Screen() {
               style={{ color: '#C8A8B0', fontFamily: 'Inter, sans-serif' }}>
               SALON RIORA
             </p>
-            <h1 className="text-[22px] font-semibold leading-tight" style={{ color: '#4A2C2A' }}>
-              今日の予約
+            <h1 className="text-[24px] font-light leading-tight" style={{ color: '#4A2C2A', fontFamily: 'Playfair Display, serif' }}>
+              Today
             </h1>
             <p className="text-[13px] mt-0.5" style={{ color: '#9E8090' }}>
               {dateLabel()}

@@ -29,9 +29,11 @@ const ServiceReplayCardInner = function ServiceReplayCard({ replay }: ServiceRep
       {replay.strengths.length > 0 && (
         <div style={{ marginBottom: '10px' }}>
           <p style={{ fontSize: '10px', color: '#34A070', fontWeight: 600, letterSpacing: '0.1em', marginBottom: '5px' }}>💪 良かった点</p>
-          {replay.strengths.map((s, i) => (
-            <p key={i} style={{ fontSize: '12px', color: '#5C4033', lineHeight: 1.65, marginBottom: '3px' }}>・{s}</p>
-          ))}
+          {replay.strengths
+            .filter(s => s?.trim())
+            .map((s, i) => (
+              <p key={i} style={{ fontSize: '12px', color: '#5C4033', lineHeight: 1.65, marginBottom: '3px' }}>・{s}</p>
+            ))}
         </div>
       )}
 
@@ -39,9 +41,11 @@ const ServiceReplayCardInner = function ServiceReplayCard({ replay }: ServiceRep
       {replay.suggestions.length > 0 && (
         <div style={{ marginBottom: '10px' }}>
           <p style={{ fontSize: '10px', color: '#A07020', fontWeight: 600, letterSpacing: '0.1em', marginBottom: '5px' }}>🔧 次回さらに良くするために</p>
-          {replay.suggestions.map((s, i) => (
-            <p key={i} style={{ fontSize: '12px', color: '#9F7E6C', lineHeight: 1.65, marginBottom: '3px' }}>・{s}</p>
-          ))}
+          {replay.suggestions
+            .filter(s => s?.trim())
+            .map((s, i) => (
+              <p key={i} style={{ fontSize: '12px', color: '#9F7E6C', lineHeight: 1.65, marginBottom: '3px' }}>・{s}</p>
+            ))}
         </div>
       )}
 

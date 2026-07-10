@@ -260,11 +260,13 @@ export default function CustomerMemorySection({ customerId, onManage, refreshKey
                   ⚠ 触れない話題
                 </p>
                 <div className="flex flex-col gap-1">
-                  {sensitive.map(m => (
-                    <p key={m.id} className="text-[11px] text-[#884050] leading-snug">
-                      ・{m.content}
-                    </p>
-                  ))}
+                  {sensitive
+                    .filter(m => m.content?.trim())
+                    .map(m => (
+                      <p key={m.id} className="text-[11px] text-[#884050] leading-snug">
+                        ・{m.content}
+                      </p>
+                    ))}
                 </div>
               </div>
             )}

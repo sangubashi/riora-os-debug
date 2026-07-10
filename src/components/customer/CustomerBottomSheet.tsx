@@ -986,9 +986,11 @@ export default function CustomerBottomSheet({
               items.length > 0 && (
                 <div key={label} className={`${cls.split(' ')[0]} rounded-2xl px-3 py-2.5`}>
                   <p className={`text-[10px] font-semibold tracking-[0.1em] mb-1.5 ${cls.split(' ')[1]}`}>{label}</p>
-                  {items.map((item, i) => (
-                    <p key={i} className="text-xs text-[#5C4033] leading-relaxed mb-1 last:mb-0">・{item}</p>
-                  ))}
+                  {items
+                    .filter((item) => item?.trim())
+                    .map((item, i) => (
+                      <p key={i} className="text-xs text-[#5C4033] leading-relaxed mb-1 last:mb-0">・{item}</p>
+                    ))}
                 </div>
               )
             )}
@@ -1475,9 +1477,11 @@ export default function CustomerBottomSheet({
                                           💬 接客ヒント
                                         </p>
                                         <div className="flex flex-col gap-1">
-                                          {conversationHints.hints.map((hint, i) => (
-                                            <p key={i} className="text-xs text-[#5C4033] leading-relaxed">・{hint}</p>
-                                          ))}
+                                          {conversationHints.hints
+                                            .filter((hint) => hint?.trim())
+                                            .map((hint, i) => (
+                                              <p key={i} className="text-xs text-[#5C4033] leading-relaxed">・{hint}</p>
+                                            ))}
                                         </div>
                                       </div>
                                     </div>

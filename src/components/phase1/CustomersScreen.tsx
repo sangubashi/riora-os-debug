@@ -126,7 +126,7 @@ export default function CustomersScreen() {
         <p className="text-[10px] font-medium tracking-[0.32em] mb-0.5" style={{ color: '#C8A8B0' }}>
           SALON RIORA
         </p>
-        <h1 className="text-[22px] font-semibold" style={{ color: '#4A2C2A' }}>顧客一覧</h1>
+        <h1 className="text-[24px] font-light leading-tight" style={{ color: '#4A2C2A', fontFamily: 'Playfair Display, serif' }}>Customers</h1>
         <p className="text-[13px] mt-0.5" style={{ color: '#9E8090' }}>
           {isLoading ? '読み込み中…' : `${customers.length}名登録`}
         </p>

@@ -52,16 +52,18 @@ function ItemRow({ emoji, label, items, color, bgColor }: RowItem) {
       }}>
         {emoji} {label}
       </p>
-      {items.map((item, i) => (
-        <p key={i} style={{
-          fontSize:   '12px',
-          color:      '#4A3060',
-          lineHeight: 1.6,
-          margin:     0,
-        }}>
-          ・{item}
-        </p>
-      ))}
+      {items
+        .filter(item => item?.trim())
+        .map((item, i) => (
+          <p key={i} style={{
+            fontSize:   '12px',
+            color:      '#4A3060',
+            lineHeight: 1.6,
+            margin:     0,
+          }}>
+            ・{item}
+          </p>
+        ))}
     </div>
   )
 }
