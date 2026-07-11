@@ -108,7 +108,11 @@ export function computeStaffAnalytics(input: ComputeStaffAnalyticsInput): StaffA
     const monthlySales = sumSales(monthVisits);
     const avgSpend = visitCount > 0 ? Math.round(monthlySales / visitCount) : null;
     const previousMonthSales = sumSales(handledVisits.filter((v) => v.visitDate >= prevStart && v.visitDate <= prevEnd));
-    const growthRate = previousMonthSales > 0 ? (monthlySales - previousMonthSales) / previousMonthSales : null;
+    // 当月の来店が1件も無い場合は「前月比−100%(業績急落)」ではなく「比較データなし」を
+    // 意味するため、あえてnullを返す(PHASE MD-2要件4: 当月未蓄積と実悪化の混同防止)。
+    const growthRate = previousMonthSales > 0 && monthVisits.length > 0
+      ? (monthlySales - previousMonthSales) / previousMonthSales
+      : null;
 
     const nominationRate = handledVisits.length > 0
       ? handledVisits.filter((v) => v.isNomination).length / handledVisits.length

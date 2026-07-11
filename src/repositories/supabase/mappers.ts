@@ -694,6 +694,38 @@ export interface BrainMenuRow {
   target_types: CustomerType[];
 }
 
+/** MenuCreateInput(camelCase) → brain_menus INSERT行(snake_case)。 */
+export function fromMenuCreateInput(input: {
+  storeId: string;
+  name: string;
+  price: number;
+  role: Exclude<MenuRole, 'imported_other'>;
+  targetTypes: CustomerType[];
+}): Record<string, unknown> {
+  return {
+    store_id: input.storeId,
+    name: input.name,
+    price: input.price,
+    role: input.role,
+    target_types: input.targetTypes,
+  };
+}
+
+/** MenuUpdateInput(camelCase) → brain_menus UPDATE行(snake_case)。undefinedのキーは含めない(SET対象外)。 */
+export function fromMenuUpdateInput(input: {
+  name?: string;
+  price?: number;
+  role?: Exclude<MenuRole, 'imported_other'>;
+  targetTypes?: CustomerType[];
+}): Record<string, unknown> {
+  const patch: Record<string, unknown> = {};
+  if (input.name !== undefined) patch.name = input.name;
+  if (input.price !== undefined) patch.price = input.price;
+  if (input.role !== undefined) patch.role = input.role;
+  if (input.targetTypes !== undefined) patch.target_types = input.targetTypes;
+  return patch;
+}
+
 export function toMenu(row: BrainMenuRow): Menu {
   return {
     id: row.id,

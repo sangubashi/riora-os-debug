@@ -49,7 +49,14 @@ function createRepos(overrides: { customers?: Customer[]; visits?: Visit[]; menu
       listByStore: async () => overrides.visits ?? [],
       updateMenuId: async () => {},
     },
-    menuRepo: { listByStore: async () => overrides.menus ?? [] },
+    menuRepo: {
+      listByStore: async () => overrides.menus ?? [],
+      findById: async () => null,
+      create: async (input) => ({ id: 'menu-new', storeId: input.storeId, name: input.name, price: input.price, role: input.role, targetTypes: input.targetTypes }),
+      update: async () => null,
+      softDelete: async () => {},
+      countVisitsByMenuId: async () => 0,
+    },
   };
   return { repos, updateSpy };
 }

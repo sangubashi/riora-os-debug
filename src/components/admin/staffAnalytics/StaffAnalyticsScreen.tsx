@@ -9,7 +9,7 @@
  * 五十音順表示。本コンポーネントはAPIが返した配列順(五十音順)をそのまま描画するのみで、
  * クライアント側で並び替え・順位番号・スタッフ間の比較強調は一切行わない。
  */
-import { useEffect, Suspense } from 'react'
+import { useEffect, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Loader2, User } from 'lucide-react'
 import { useStaffAnalyticsStore } from '@/store/useStaffAnalyticsStore'
@@ -26,7 +26,9 @@ function formatPercent(rate: number | null): string {
 }
 
 function formatGrowth(rate: number | null): { text: string; color: string } {
-  if (rate === null) return { text: '—', color: '#9F7E6C' }
+  // rate=nullは「前月データが無い」「当月データがまだ無い」のいずれか(PHASE MD-2要件4)。
+  // どちらも実際の業績悪化ではないため、赤字の−100%等ではなく中立色の「データなし」を表示する。
+  if (rate === null) return { text: 'データなし', color: '#9F7E6C' }
   const pct = Math.round(rate * 100)
   if (pct > 0) return { text: `+${pct}%`, color: '#3C9D5C' }
   if (pct < 0) return { text: `${pct}%`, color: '#D14F4F' }
@@ -44,6 +46,19 @@ function Metric({ label, value, color = '#5C4033' }: { label: string; value: str
 
 function StaffCard({ row, monthLabel }: { row: { staffName: string; monthlySales: number; visitCount: number; avgSpend: number | null; nominationRate: number | null; repeatRate: number | null; ltv: number | null; growthRate: number | null }; monthLabel: string }) {
   const growth = formatGrowth(row.growthRate)
+  // 当月の担当来店が1件も無いスタッフ(例: 久保田)は、指標が軒並みnullになり
+  // 「—」だらけで壊れて見えるため、専用の空状態メッセージに置き換える(PHASE MD-2要件5)。
+  if (row.visitCount === 0) {
+    return (
+      <div style={{ background: '#fff', border: '1px solid #F5EEF0', borderRadius: '16px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <User size={15} color="#D98292" />
+          <span style={{ fontSize: '14px', fontWeight: 700, color: '#5C4033' }}>{row.staffName} さん</span>
+        </div>
+        <p style={{ fontSize: '12px', color: '#C8A8B0' }}>担当来店データがありません</p>
+      </div>
+    )
+  }
   return (
     <div style={{ background: '#fff', border: '1px solid #F5EEF0', borderRadius: '16px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -66,20 +81,35 @@ function StaffCard({ row, monthLabel }: { row: { staffName: string; monthlySales
 }
 
 function StaffAnalyticsContent() {
-  const { staffAnalytics, isLoading, error, fetchStaffAnalytics } = useStaffAnalyticsStore()
+  const { staffAnalytics, isLoading, error, autoSelectedLatestMonth, fetchStaffAnalytics } = useStaffAnalyticsStore()
   const { selectedMonth, setSelectedMonth } = useMonthStore()
   const searchParams = useSearchParams()
+  // 直近にfetch済みの月を覚えておき、自動判定直後の二重fetchを防ぐ(PHASE MD-2)。
+  const lastFetchedMonthRef = useRef<string | null>(null)
 
-  // URL の ?month= を読んでストアに反映(リロード復元)
+  // 初回マウント時: URLの?month=があればそれを最優先(要件2)。無ければmonthを
+  // 省略してfetchし、APIが自動選択した最新データ月をselectedMonthへ反映する(要件1)。
   useEffect(() => {
     const urlMonth = searchParams.get('month')
     if (urlMonth && /^\d{4}-\d{2}$/.test(urlMonth)) {
       setSelectedMonth(urlMonth)
+      return
     }
+    fetchStaffAnalytics(DEMO_STORE_ID).then(() => {
+      const resolved = useStaffAnalyticsStore.getState().resolvedMonth
+      if (resolved) {
+        lastFetchedMonthRef.current = resolved
+        setSelectedMonth(resolved)
+      }
+    })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // selectedMonthの変化(月セレクタ操作・URL反映)に追従して再取得。
+  // 初回自動判定で既に取得済みの月と同一なら再取得しない(二重fetch防止)。
   useEffect(() => {
+    if (lastFetchedMonthRef.current === selectedMonth) return
+    lastFetchedMonthRef.current = selectedMonth
     fetchStaffAnalytics(DEMO_STORE_ID, selectedMonth)
   }, [fetchStaffAnalytics, selectedMonth])
 
@@ -100,6 +130,11 @@ function StaffAnalyticsContent() {
         <p style={{ fontSize: '12px', color: '#9F7E6C', marginTop: '4px' }}>
           五十音順に表示しています。ランキング・順位はありません。
         </p>
+        {autoSelectedLatestMonth && (
+          <p style={{ fontSize: '11px', color: '#9F7E6C', marginTop: '4px' }}>
+            最新データ月（{selectedMonth}）を表示しています
+          </p>
+        )}
       </div>
 
       {isLoading && (

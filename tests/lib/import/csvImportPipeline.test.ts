@@ -114,6 +114,11 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
     },
     menuRepo: {
       listByStore: async () => menus,
+      findById: async () => null,
+      create: async (input) => ({ id: 'menu-new', storeId: input.storeId, name: input.name, price: input.price, role: input.role, targetTypes: input.targetTypes }),
+      update: async () => null,
+      softDelete: async () => {},
+      countVisitsByMenuId: async () => 0,
     },
     customerRepo: {
       findById: async (id) => state.customers.find(c => c.id === id) ?? null,

@@ -27,7 +27,7 @@
  */
 import type {
   IVisitRepo, IBusinessSettingsRepo, IDashboardRepo, ICustomerRepo, IStaffRepo, ISubscriptionRepo,
-  DashboardDailyUpsertInput,
+  IOpsLogRepo, DashboardDailyUpsertInput,
 } from '../../repositories/interfaces';
 import type { Visit } from '../../types/riora.types';
 import { computeAIWarnings } from './AIWarningEngine';
@@ -39,6 +39,11 @@ export interface DashboardAggregatorRepos {
   customerRepo: ICustomerRepo;
   staffRepo: IStaffRepo;
   subscriptionRepo: ISubscriptionRepo;
+}
+
+/** refreshDashboardAfterImport()専用。DashboardAggregatorReposにopsLogRepoを加えたもの。 */
+export interface DashboardRebuildRepos extends DashboardAggregatorRepos {
+  opsLogRepo: IOpsLogRepo;
 }
 
 export type DashboardAggregate = DashboardDailyUpsertInput;
@@ -231,4 +236,38 @@ export async function runDashboardAggregator(
 
   await repos.dashboardRepo.upsertDaily(finalResult);
   return finalResult;
+}
+
+/**
+ * CSV取込(売上明細/予約)完了直後にDashboardAggregatorを自動実行し、brain_dashboard_dailyを
+ * 即時最新化する(PHASE MD-4)。実行前後のmonthlySales/visitCountをbrain_ops_logsへ
+ * kind='dashboard_rebuild'で記録する。
+ *
+ * 失敗時の扱い(要件③): 本関数が例外をthrowした場合、CSV取込自体を失敗扱いにしないのは
+ * 呼び出し側(各CSV取込APIルート)の責務。本関数はここではcatchせずそのまま投げる
+ * (呼び出し側でtry/catchしWarningログのみ出力する設計のため)。
+ */
+export async function refreshDashboardAfterImport(
+  repos: DashboardRebuildRepos,
+  storeId: string
+): Promise<DashboardAggregate> {
+  const snapshotDate = new Date().toISOString().slice(0, 10);
+  const before = await repos.dashboardRepo.latestByStore(storeId);
+
+  const result = await runDashboardAggregator({ storeId, snapshotDate }, repos);
+
+  await repos.opsLogRepo.insert({
+    storeId,
+    kind: 'dashboard_rebuild',
+    actorId: null,
+    detail: {
+      snapshotDate,
+      beforeMonthlySales: before?.monthlySales ?? null,
+      afterMonthlySales: result.monthlySales,
+      beforeVisitCount: before?.visitCount ?? null,
+      afterVisitCount: result.visitCount,
+    },
+  });
+
+  return result;
 }

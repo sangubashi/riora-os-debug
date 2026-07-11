@@ -15,6 +15,7 @@
 import type {
   UUID,
   CustomerType,
+  MenuRole,
   Candidate,
   CellKey,
   CellStats,
@@ -172,9 +173,40 @@ export interface IStaffRepo {
   addNameAlias(staffId: UUID, alias: string): Promise<Staff | null>;
 }
 
+/**
+ * brain_menus新規作成入力(メニューマスタ管理画面専用)。
+ * role='imported_other'はCSV突合エンジンのフォールバック専用行のため、
+ * 新規作成時の選択肢からは除外する(API層でも二重にガードする)。
+ */
+export interface MenuCreateInput {
+  storeId:     UUID;
+  name:        string;
+  price:       number;
+  role:        Exclude<MenuRole, 'imported_other'>;
+  targetTypes: CustomerType[];
+}
+
+/** brain_menus部分更新入力(メニューマスタ管理画面専用)。指定したフィールドのみSET。 */
+export interface MenuUpdateInput {
+  name?:        string;
+  price?:       number;
+  role?:        Exclude<MenuRole, 'imported_other'>;
+  targetTypes?: CustomerType[];
+}
+
 export interface IMenuRepo {
   /** brain_menusをstore_idで一覧取得する(deleted_at IS NULL)。CSV Importのmenuリゾルバが名称突合に使う。 */
   listByStore(storeId: UUID): Promise<Menu[]>;
+  /** idで1件取得する(deleted_at IS NULL)。メニューマスタ管理画面の編集/削除前チェック用。 */
+  findById(id: UUID): Promise<Menu | null>;
+  /** 新規メニューを作成する。 */
+  create(input: MenuCreateInput): Promise<Menu>;
+  /** 指定idのメニューを部分更新する。対象が存在しない(または論理削除済み)場合はnull。 */
+  update(id: UUID, input: MenuUpdateInput): Promise<Menu | null>;
+  /** 論理削除(deleted_at更新)。物理削除は行わない(brain_visits.menu_idのON DELETE RESTRICTのため)。 */
+  softDelete(id: UUID): Promise<void>;
+  /** 指定menu_idを参照するbrain_visits件数。削除可否判定(参照中は削除拒否)に使う。 */
+  countVisitsByMenuId(id: UUID): Promise<number>;
 }
 
 /**

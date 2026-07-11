@@ -13,6 +13,7 @@ import { DEMO_STORE_ID } from '@/lib/constants';
 import { decodeCsvBuffer } from '@/lib/import/csvEncoding';
 import { runReservationImportPipeline } from '@/lib/import/reservationImportPipeline';
 import { requireAdmin } from '@/lib/auth/requireAdmin';
+import { refreshDashboardAfterImport } from '@/lib/dashboard/DashboardAggregator';
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
@@ -67,6 +68,14 @@ export async function POST(req: NextRequest) {
     );
     if (!result.ok) {
       return NextResponse.json({ success: false, error: result.code, message: result.message }, { status: 400 });
+    }
+
+    // PHASE MD-4: 取込成功後にbrain_dashboard_dailyを自動再生成する。
+    // 失敗してもCSV取込自体は成功のまま扱う(要件③・Warningログのみ)。
+    try {
+      await refreshDashboardAfterImport(repos, storeId);
+    } catch (e) {
+      console.warn('[reservation-import] dashboard rebuild failed (non-fatal):', e);
     }
 
     return NextResponse.json({ success: true, ...result.report });
