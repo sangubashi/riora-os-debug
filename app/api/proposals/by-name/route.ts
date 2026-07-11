@@ -71,7 +71,8 @@ export async function GET(req: NextRequest) {
     try {
       const repos = getRepos();
       // 管理者は DEFAULT_STAFF、スタッフは自身の ID でプロポーザルを生成
-      const staffIdForProposal = staff.isAdmin ? DEFAULT_STAFF : staff.staffBrainId
+      // (非adminはextractStaffFromRequest側でstaffBrainId必須のため、ここではnon-null)
+      const staffIdForProposal = staff.isAdmin ? DEFAULT_STAFF : staff.staffBrainId!
       const result = await generateCustomerProposal(
         { storeId: STORE_ID, customerId: bc.id, staffId: staffIdForProposal, legacyClient: client },
         repos
