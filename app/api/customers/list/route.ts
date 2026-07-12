@@ -2,7 +2,9 @@
  * GET /api/customers/list
  * brain_customers + brain_visits + brain_staff から顧客一覧を返す。
  * service role 経由（RLS bypass）。
- * Authorization: Bearer <token> 必須。担当顧客 + NULL(共有)顧客のみ返す。
+ * Authorization: Bearer <token> 必須。
+ * 担当判定は AUTH-1 V2（canAccessCustomer.ts の Rule A'/B'/C）に準拠。
+ * assignedStaffId/staffName の表示値も直近来店(Rule A')基準（旧assigned_staff_idは不使用）。
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '../../../lib/repos';
@@ -38,16 +40,17 @@ export async function GET(req: NextRequest) {
     const [custRes, visitRes, staffRes] = await Promise.allSettled([
       supabase
         .from('brain_customers')
-        .select('id, name, customer_type, churn_score, assigned_staff_id, first_visit_date, is_subscriber')
+        .select('id, name, customer_type, churn_score, first_visit_date, is_subscriber')
         .eq('store_id', STORE_ID)
         .is('deleted_at', null)
         .order('name'),
 
       supabase
         .from('brain_visits')
-        .select('customer_id, treatment_amount, retail_amount, visit_date')
+        .select('customer_id, staff_id, treatment_amount, retail_amount, visit_date')
         .eq('store_id', STORE_ID)
-        .is('deleted_at', null),
+        .is('deleted_at', null)
+        .order('visit_date', { ascending: false }),
 
       supabase
         .from('brain_staff')
@@ -68,13 +71,18 @@ export async function GET(req: NextRequest) {
     )
     const customers = allCustomers.filter((c: { id: string }) => accessibleIds.has(c.id));
 
-    // 来店集計マップ
-    const visitStats: Record<string, { visitCount: number; totalSpent: number; lastVisitDate: string | null }> = {};
+    // 来店集計マップ（AUTH1 V2 Rule A': 直近来店(visit_date最新)のstaff_idを「担当」表示に採用。
+    // visitsはvisit_date降順で取得済みのため、顧客ごとに最初に出現したstaff_idが最新来店の担当。
+    // assigned_staff_id(書き込み経路なし・カバー率54%)はもう担当表示の根拠に使わない。
+    const visitStats: Record<string, { visitCount: number; totalSpent: number; lastVisitDate: string | null; latestStaffId: string | null }> = {};
     for (const v of visits) {
-      const ex = visitStats[v.customer_id] ?? { visitCount: 0, totalSpent: 0, lastVisitDate: null };
+      const ex = visitStats[v.customer_id] ?? { visitCount: 0, totalSpent: 0, lastVisitDate: null, latestStaffId: null };
       ex.visitCount++;
       ex.totalSpent += (v.treatment_amount ?? 0) + (v.retail_amount ?? 0);
-      if (!ex.lastVisitDate || v.visit_date > ex.lastVisitDate) ex.lastVisitDate = v.visit_date;
+      if (!ex.lastVisitDate || v.visit_date > ex.lastVisitDate) {
+        ex.lastVisitDate  = v.visit_date;
+        ex.latestStaffId  = v.staff_id ?? null;
+      }
       visitStats[v.customer_id] = ex;
     }
 
@@ -83,11 +91,12 @@ export async function GET(req: NextRequest) {
     for (const s of staffList) staffMap[s.id] = s.name;
 
     const rows = customers.map(c => {
-      const stats       = visitStats[c.id] ?? { visitCount: 0, totalSpent: 0, lastVisitDate: null };
+      const stats       = visitStats[c.id] ?? { visitCount: 0, totalSpent: 0, lastVisitDate: null, latestStaffId: null };
       const type        = resolveType(c.customer_type);
       const lastVisit   = stats.lastVisitDate
         ? Math.max(0, Math.floor((Date.now() - new Date(stats.lastVisitDate).getTime()) / 86_400_000))
         : 0;
+      // AUTH1 V2 Rule A': 「担当」表示は直近来店staff_id基準（旧assigned_staff_idは不使用）
       return {
         id:               c.id,
         name:             c.name,
@@ -98,9 +107,9 @@ export async function GET(req: NextRequest) {
         lastVisit,
         lastVisitDate:    stats.lastVisitDate,
         isVip:            type === 'VIP型' || stats.totalSpent >= 100000,
-        assignedStaffId:  c.assigned_staff_id ?? null,
+        assignedStaffId:  stats.latestStaffId,
         treatments:       [] as string[],
-        staffName:        c.assigned_staff_id ? (staffMap[c.assigned_staff_id] ?? '') : '',
+        staffName:        stats.latestStaffId ? (staffMap[stats.latestStaffId] ?? '') : '',
         lineResponseRate: 0,
         hasNextRebook:    false,
       };
