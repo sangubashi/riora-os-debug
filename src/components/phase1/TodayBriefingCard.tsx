@@ -6,8 +6,12 @@
  * 配色・レイアウトは参照HTMLに準拠（アプリ既存のピンク系トーンとは別系統として、
  * この画面のみで採用する暖色系パレット）。データはすべて GET /api/today-briefing 経由の実データ。
  *
- * 表示順: 次のお客様 → 今日、気をつけること（①禁忌 ②触れないこと ③今日の焦点・最大3行）
- *        → くわしく見る（折りたたみ） → このあとの予約
+ * 表示順（PHASE TODAY-UX-1）: 完了済み（過去予約・縮小） → 次のお客様（大型・主役）
+ *        → 今日、気をつけること（①禁忌 ②触れないこと ③今日の焦点・最大3行）
+ *        → くわしく見る（折りたたみ） → このあとの予約（未来予約・通常表示）
+ *
+ * 過去/未来の振り分けは表示専用のクライアント側判定（scheduledAt と現在時刻の比較）であり、
+ * APIレスポンス（TodayBriefingResponse）のデータ構造は変更していない。
  */
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -73,6 +77,13 @@ export default function TodayBriefingCard({ onSelectCustomer }: Props) {
 
   const { next, cautions, detail, upcoming } = briefing
 
+  // UI表示専用の過去/未来振り分け（データ構造・APIは変更しない。scheduledAtの
+  // クライアント側比較のみ）。upcomingは元々scheduled_at昇順のため、過去分は
+  // 常に未来分より前に来る＝フィルタしても順序は保たれる。
+  const nowMs     = Date.now()
+  const pastList  = upcoming.filter(u => new Date(u.scheduledAt).getTime() <  nowMs)
+  const futureList = upcoming.filter(u => new Date(u.scheduledAt).getTime() >= nowMs)
+
   return (
     <motion.div
       initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
@@ -80,37 +91,59 @@ export default function TodayBriefingCard({ onSelectCustomer }: Props) {
       className="mx-4 mt-3 rounded-2xl p-4"
       style={{ background: C.card, border: `1px solid ${C.line}`, boxShadow: '0 8px 30px rgba(92,64,51,0.08)' }}
     >
-      {/* ── 次のお客様まで あとN分 ── */}
-      <p
-        className="text-[11px] tracking-[0.1em] text-center mb-3"
-        style={{ color: C.gold, fontFamily: 'Inter, sans-serif' }}
-      >
-        次のお客様まで あと {next.minutesUntil}分
-      </p>
-
-      {/* ── 次のお客様 ── */}
-      <button
-        onClick={() => onSelectCustomer(next.reservationId)}
-        className="w-full flex items-center gap-3 pb-3 text-left"
-        style={{ borderBottom: `1px solid ${C.line}` }}
-      >
-        <div className="w-11 h-11 rounded-full flex-shrink-0" style={{ background: '#E7CFC0' }} />
-        <div className="flex-1 min-w-0">
-          <p className="text-[16px] font-semibold truncate" style={{ color: C.ink }}>
-            {next.customerName} 様
-          </p>
-          <p className="text-[11px] mt-0.5" style={{ color: C.ink2, fontFamily: 'Inter, sans-serif' }}>
-            {next.visitCount}回目 ・ {next.customerType}
-            {next.staffName && <> ・ 担当 {next.staffName}</>}
-          </p>
+      {/* ── A. 過去予約（縮小・完了済み）── */}
+      {pastList.length > 0 && (
+        <div className="mb-3">
+          <p className="text-[10px] tracking-[0.08em] mb-1.5" style={{ color: C.ink2 }}>完了済み</p>
+          {pastList.map(u => (
+            <button
+              key={u.reservationId}
+              onClick={() => onSelectCustomer(u.reservationId)}
+              className="w-full flex items-center justify-between text-[11px] px-2.5 py-1.5 rounded-[8px] mb-1"
+              style={{ background: '#FAF6F5', opacity: 0.6 }}
+            >
+              <span className="truncate" style={{ color: C.ink2 }}>{u.customerName} 様</span>
+              <span className="flex-shrink-0 ml-2" style={{ color: C.ink2, fontFamily: 'Inter, sans-serif' }}>
+                {formatTime(u.scheduledAt)}
+              </span>
+            </button>
+          ))}
         </div>
-        <span
-          className="text-[11px] text-white rounded-full px-2.5 py-1 flex-shrink-0"
-          style={{ background: C.gold, fontFamily: 'Inter, sans-serif' }}
+      )}
+
+      {/* ── B. 次のお客様（大型表示・主役）── */}
+      <div
+        className="rounded-2xl p-4 mb-1"
+        style={{ background: 'linear-gradient(135deg, #FBF0E8 0%, #FFFFFF 100%)', border: `1.5px solid ${C.gold}` }}
+      >
+        <p
+          className="text-[11px] tracking-[0.1em] text-center mb-3"
+          style={{ color: C.gold, fontFamily: 'Inter, sans-serif' }}
         >
-          {formatTime(next.scheduledAt)}
-        </span>
-      </button>
+          次のお客様まで あと {next.minutesUntil}分
+        </p>
+        <button
+          onClick={() => onSelectCustomer(next.reservationId)}
+          className="w-full flex items-center gap-4 text-left"
+        >
+          <div className="w-16 h-16 rounded-full flex-shrink-0" style={{ background: '#E7CFC0' }} />
+          <div className="flex-1 min-w-0">
+            <p className="text-[20px] font-bold truncate" style={{ color: C.ink }}>
+              {next.customerName} 様
+            </p>
+            <p className="text-[12px] mt-1" style={{ color: C.ink2, fontFamily: 'Inter, sans-serif' }}>
+              {next.visitCount}回目 ・ {next.customerType}
+              {next.staffName && <> ・ 担当 {next.staffName}</>}
+            </p>
+          </div>
+          <span
+            className="text-[13px] font-semibold text-white rounded-full px-3 py-1.5 flex-shrink-0"
+            style={{ background: C.gold, fontFamily: 'Inter, sans-serif' }}
+          >
+            {formatTime(next.scheduledAt)}
+          </span>
+        </button>
+      </div>
 
       {/* ── 今日、気をつけること（最大3行・優先順固定）── */}
       {cautions.length > 0 && (
@@ -185,11 +218,11 @@ export default function TodayBriefingCard({ onSelectCustomer }: Props) {
         </AnimatePresence>
       </div>
 
-      {/* ── このあとの予約 ── */}
-      {upcoming.length > 0 && (
+      {/* ── C. それ以降の未来予約（通常表示）── */}
+      {futureList.length > 0 && (
         <div className="mt-4">
           <p className="text-[11px] mb-2" style={{ color: C.ink2 }}>このあとの予約</p>
-          {upcoming.map(u => (
+          {futureList.map(u => (
             <button
               key={u.reservationId}
               onClick={() => onSelectCustomer(u.reservationId)}
