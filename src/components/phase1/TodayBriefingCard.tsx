@@ -16,8 +16,12 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronDown, ChevronRight } from 'lucide-react'
+import Image from 'next/image'
 import { useTodayBriefingStore } from '@/store/useTodayBriefingStore'
 import type { TodayBriefingCaution } from '@/types/todayBriefing'
+
+// 全顧客共通のアバター（リオくま）。顧客ごとの写真切替は行わない。
+const AVATAR_SRC = '/assets/rio-kuma.png'
 
 const C = {
   bg:    '#F8F1F3',
@@ -133,7 +137,12 @@ export default function TodayBriefingCard({ onSelectCustomer }: Props) {
               className="w-full flex items-center justify-between text-[11px] px-2.5 py-1.5 rounded-[8px] mb-1"
               style={{ background: '#FAF6F5', opacity: 0.6 }}
             >
-              <span className="truncate" style={{ color: C.ink2 }}>{u.customerName} 様</span>
+              <span className="flex items-center gap-1.5 min-w-0">
+                <span className="w-5 h-5 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center" style={{ background: '#E7CFC0' }}>
+                  <Image src={AVATAR_SRC} alt="" width={20} height={20} className="object-contain" />
+                </span>
+                <span className="truncate" style={{ color: C.ink2 }}>{u.customerName} 様</span>
+              </span>
               <span className="flex-shrink-0 ml-2" style={{ color: C.ink2, fontFamily: 'Inter, sans-serif' }}>
                 {formatTime(u.scheduledAt)}
               </span>
@@ -176,12 +185,10 @@ export default function TodayBriefingCard({ onSelectCustomer }: Props) {
           className="w-full flex items-center gap-4 text-left"
         >
           <div
-            className="w-16 h-16 rounded-full flex-shrink-0 flex items-center justify-center"
+            className="w-16 h-16 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center"
             style={{ background: '#E7CFC0' }}
           >
-            <span className="text-[22px] font-bold" style={{ color: C.ink }}>
-              {next.customerName.trim().charAt(0)}
-            </span>
+            <Image src={AVATAR_SRC} alt="" width={64} height={64} className="object-contain" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[20px] font-bold truncate" style={{ color: C.ink }}>
@@ -286,8 +293,13 @@ export default function TodayBriefingCard({ onSelectCustomer }: Props) {
               className="w-full flex items-center justify-between text-[13px] px-3 py-2.5 rounded-[10px] mb-1.5"
               style={{ background: '#FFFDFD', border: `1px solid ${C.line}` }}
             >
-              <span style={{ color: C.ink }}>{u.customerName} 様 ・ {u.visitCount}回目</span>
-              <span style={{ color: C.gold, fontFamily: 'Inter, sans-serif' }}>{formatTime(u.scheduledAt)}</span>
+              <span className="flex items-center gap-2 min-w-0">
+                <span className="w-6 h-6 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center" style={{ background: '#E7CFC0' }}>
+                  <Image src={AVATAR_SRC} alt="" width={24} height={24} className="object-contain" />
+                </span>
+                <span className="truncate" style={{ color: C.ink }}>{u.customerName} 様 ・ {u.visitCount}回目</span>
+              </span>
+              <span className="flex-shrink-0 ml-2" style={{ color: C.gold, fontFamily: 'Inter, sans-serif' }}>{formatTime(u.scheduledAt)}</span>
             </button>
           ))}
         </div>
