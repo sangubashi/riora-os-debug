@@ -15,7 +15,7 @@
  */
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useTodayBriefingStore } from '@/store/useTodayBriefingStore'
 import type { TodayBriefingCaution } from '@/types/todayBriefing'
 
@@ -48,6 +48,16 @@ function formatMonthDay(dateStr: string) {
   return `${d.getMonth() + 1}/${d.getDate()}`
 }
 
+// 「あと◯分」をクライアント側で再計算（APIレスポンスは開いた瞬間のスナップショットのため）
+function computeMinutesUntil(scheduledAtIso: string): number {
+  const diffMs = new Date(scheduledAtIso).getTime() - Date.now()
+  return Math.max(0, Math.round(diffMs / 60000))
+}
+
+// 完了済み予約: 初期表示は最大3件までとし、主役の「次のお客様」カードが
+// 初期スクロール位置で必ず見えるようにする（表示専用の圧縮・データは変更しない）
+const PAST_VISIBLE_LIMIT = 3
+
 interface Props {
   onSelectCustomer: (reservationId: string) => void
 }
@@ -55,8 +65,19 @@ interface Props {
 export default function TodayBriefingCard({ onSelectCustomer }: Props) {
   const { briefing, isLoading, fetchTodayBriefing } = useTodayBriefingStore()
   const [detailOpen, setDetailOpen] = useState(false)
+  const [pastExpanded, setPastExpanded] = useState(false)
+  const [minutesUntil, setMinutesUntil] = useState<number | null>(null)
 
   useEffect(() => { fetchTodayBriefing() }, [fetchTodayBriefing])
+
+  // 次のお客様までの分数を1分ごとに再計算
+  const nextScheduledAt = briefing?.next?.scheduledAt
+  useEffect(() => {
+    if (!nextScheduledAt) { setMinutesUntil(null); return }
+    setMinutesUntil(computeMinutesUntil(nextScheduledAt))
+    const id = setInterval(() => setMinutesUntil(computeMinutesUntil(nextScheduledAt)), 60_000)
+    return () => clearInterval(id)
+  }, [nextScheduledAt])
 
   if (isLoading && !briefing) {
     return (
@@ -82,7 +103,15 @@ export default function TodayBriefingCard({ onSelectCustomer }: Props) {
   // 常に未来分より前に来る＝フィルタしても順序は保たれる。
   const nowMs     = Date.now()
   const pastList  = upcoming.filter(u => new Date(u.scheduledAt).getTime() <  nowMs)
-  const futureList = upcoming.filter(u => new Date(u.scheduledAt).getTime() >= nowMs)
+  // このあとの予約: scheduledAt昇順であることをコンポーネント側でも明示的に保証する
+  // （表示専用の防御的ソート。APIレスポンスの並び順・データ構造は変更しない）
+  const futureList = upcoming
+    .filter(u => new Date(u.scheduledAt).getTime() >= nowMs)
+    .slice()
+    .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime())
+
+  const visiblePast    = pastExpanded ? pastList : pastList.slice(0, PAST_VISIBLE_LIMIT)
+  const hiddenPastCount = pastList.length - visiblePast.length
 
   return (
     <motion.div
@@ -91,11 +120,13 @@ export default function TodayBriefingCard({ onSelectCustomer }: Props) {
       className="mx-4 mt-3 rounded-2xl p-4"
       style={{ background: C.card, border: `1px solid ${C.line}`, boxShadow: '0 8px 30px rgba(92,64,51,0.08)' }}
     >
-      {/* ── A. 過去予約（縮小・完了済み）── */}
+      {/* ── A. 過去予約（縮小・完了済み・初期表示は最大3件）── */}
       {pastList.length > 0 && (
         <div className="mb-3">
-          <p className="text-[10px] tracking-[0.08em] mb-1.5" style={{ color: C.ink2 }}>完了済み</p>
-          {pastList.map(u => (
+          <p className="text-[10px] tracking-[0.08em] mb-1.5" style={{ color: C.ink2 }}>
+            完了済み{pastList.length > PAST_VISIBLE_LIMIT ? `（${pastList.length}件）` : ''}
+          </p>
+          {visiblePast.map(u => (
             <button
               key={u.reservationId}
               onClick={() => onSelectCustomer(u.reservationId)}
@@ -108,6 +139,24 @@ export default function TodayBriefingCard({ onSelectCustomer }: Props) {
               </span>
             </button>
           ))}
+          {hiddenPastCount > 0 && (
+            <button
+              onClick={() => setPastExpanded(true)}
+              className="w-full text-center text-[10px] py-1"
+              style={{ color: C.ink2 }}
+            >
+              他{hiddenPastCount}件を見る
+            </button>
+          )}
+          {pastExpanded && pastList.length > PAST_VISIBLE_LIMIT && (
+            <button
+              onClick={() => setPastExpanded(false)}
+              className="w-full text-center text-[10px] py-1"
+              style={{ color: C.ink2 }}
+            >
+              閉じる
+            </button>
+          )}
         </div>
       )}
 
@@ -120,13 +169,20 @@ export default function TodayBriefingCard({ onSelectCustomer }: Props) {
           className="text-[11px] tracking-[0.1em] text-center mb-3"
           style={{ color: C.gold, fontFamily: 'Inter, sans-serif' }}
         >
-          次のお客様まで あと {next.minutesUntil}分
+          次のお客様まで あと {minutesUntil ?? next.minutesUntil}分
         </p>
         <button
           onClick={() => onSelectCustomer(next.reservationId)}
           className="w-full flex items-center gap-4 text-left"
         >
-          <div className="w-16 h-16 rounded-full flex-shrink-0" style={{ background: '#E7CFC0' }} />
+          <div
+            className="w-16 h-16 rounded-full flex-shrink-0 flex items-center justify-center"
+            style={{ background: '#E7CFC0' }}
+          >
+            <span className="text-[22px] font-bold" style={{ color: C.ink }}>
+              {next.customerName.trim().charAt(0)}
+            </span>
+          </div>
           <div className="flex-1 min-w-0">
             <p className="text-[20px] font-bold truncate" style={{ color: C.ink }}>
               {next.customerName} 様
@@ -142,6 +198,7 @@ export default function TodayBriefingCard({ onSelectCustomer }: Props) {
           >
             {formatTime(next.scheduledAt)}
           </span>
+          <ChevronRight size={16} className="flex-shrink-0" style={{ color: C.ink2 }} />
         </button>
       </div>
 

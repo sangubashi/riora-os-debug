@@ -70,16 +70,6 @@ export const useHomeStore = create<HomeState>((set) => ({
       const { reservations: raw } =
         await res.json() as { reservations: ReservationWithBrainCustomer[] }
 
-      // ⑤ ログ出力
-      console.log('[HomeStore] 取得件数:', raw.length)
-      console.log('[HomeStore] 顧客名・予約日時:',
-        raw.map(r => ({
-          name:        r.brain_customer?.name ?? '(unknown)',
-          scheduledAt: r.scheduled_at,
-          bcId:        r.brain_customer_id,
-        }))
-      )
-
       let mapped = raw
 
       // ── 2. brain_visits で顧客統計を補完 ─────────────────────────────
