@@ -30,7 +30,7 @@ function DiffValue({ value, unit }: { value: number; unit: string }) {
 }
 
 export default function MyStatsScreen() {
-  const { stats, isLoading, fetchStats } = useMyStatsStore()
+  const { stats, isLoading, notStaffAccount, fetchStats } = useMyStatsStore()
   const { initialized: authInitialized } = useAuthStore()
 
   useEffect(() => {
@@ -118,7 +118,15 @@ export default function MyStatsScreen() {
           </motion.div>
         ))}
 
-        {!isLoading && !stats && (
+        {!isLoading && notStaffAccount && (
+          <div className="flex flex-col items-center justify-center py-16 gap-2">
+            <p className="text-[13px]" style={{ color: '#9E8090' }}>
+              スタッフアカウントでログインしてください
+            </p>
+          </div>
+        )}
+
+        {!isLoading && !stats && !notStaffAccount && (
           <div className="flex flex-col items-center justify-center py-16 gap-2">
             <p className="text-[13px]" style={{ color: '#9E8090' }}>
               データを取得できませんでした

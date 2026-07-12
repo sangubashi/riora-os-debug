@@ -44,6 +44,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
+  // 管理者(owner)アカウントはbrain_staff行を持たずstaffBrainId=nullのため、
+  // staff_idクエリを実行すると常に0件になってしまう(PHASE MYPAGE-AUDIT-1で特定)。
+  // 誤った0表示を返す前にここで弾く。
+  if (staff.isAdmin || !staff.staffBrainId) {
+    return NextResponse.json(
+      { error: 'admin_not_supported', message: '管理者アカウントではご利用いただけません。スタッフアカウントでログインしてください。' },
+      { status: 400 }
+    );
+  }
+
   try {
     const supabase = getServiceClient();
 

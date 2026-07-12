@@ -9,22 +9,32 @@ export interface MyStats {
 }
 
 interface MyStatsState {
-  stats:      MyStats | null
-  isLoading:  boolean
-  error:      string | null
-  fetchStats: () => Promise<void>
+  stats:            MyStats | null
+  isLoading:        boolean
+  error:            string | null
+  /** 管理者アカウントでのアクセス等、対象外アカウントであることを示す(PHASE MYPAGE-1)。 */
+  notStaffAccount:  boolean
+  fetchStats:       () => Promise<void>
 }
 
 export const useMyStatsStore = create<MyStatsState>((set) => ({
-  stats:     null,
-  isLoading: false,
-  error:     null,
+  stats:            null,
+  isLoading:        false,
+  error:            null,
+  notStaffAccount:  false,
 
   fetchStats: async () => {
-    set({ isLoading: true, error: null });
+    set({ isLoading: true, error: null, notStaffAccount: false });
     try {
       const res = await authedFetch('/api/me/monthly-stats');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        if (body?.error === 'admin_not_supported') {
+          set({ notStaffAccount: true, stats: null });
+          return;
+        }
+        throw new Error(`HTTP ${res.status}`);
+      }
       const data = await res.json();
       set({
         stats: {
