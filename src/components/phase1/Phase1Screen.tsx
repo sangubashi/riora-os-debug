@@ -3,8 +3,9 @@
  * Phase1Screen — ホーム画面 + 全フロー制御
  *
  * KPI数値の計算元:
- *   本日売上      brain_visits (visit_date = today)  via /api/kpi/summary
- *   昨日比        brain_visits (visit_date = yesterday) via /api/kpi/summary
+ *   今週の売上    brain_visits 直近7日分（weeklySalesの合算） via /api/kpi/summary
+ *                 （PHASE TODAY-SALES-1: 売上はCSV取込ベースで随時反映されるリアルタイム
+ *                   データではないため、「本日」ではなく「今週（直近7日）」として表示する）
  *   要注意顧客数  brain_customers + brain_visits (最終来院 >90日)
  *   LINE未返信    line_send_logs (lastDirection=incoming)
  *
@@ -13,7 +14,6 @@
  */
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { motion, AnimatePresence }               from 'framer-motion'
-import { TrendingUp, TrendingDown }              from 'lucide-react'
 import Image                                     from 'next/image'
 import { useRouter }                             from 'next/navigation'
 
@@ -132,8 +132,7 @@ export default function Phase1Screen() {
   const { reservations: rawReservations, fetchTodayReservations } = useHomeStore()
 
   const {
-    todaySales,
-    yesterdaySales,
+    weeklySales,
     churnRiskCount,
     activeCustomerCount,
     fetchAll: fetchKpiAll,
@@ -162,11 +161,13 @@ export default function Phase1Screen() {
   }, [initialized, session]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── KPI 計算（brain_visits ベース）────────────────────────────────────────
-  // dayDiff = (今日 - 昨日) / 昨日 × 100  ← 両値とも brain_visits
-  const dayDiff = yesterdaySales > 0
-    ? +((( todaySales - yesterdaySales) / yesterdaySales) * 100).toFixed(1)
-    : 0
-  const isUp = dayDiff >= 0
+  // 今週の売上 = weeklySales（直近7日の日別売上、/api/kpi/summary が既に返す値）の合算。
+  // 集計ロジック自体はAPI側を変更せず、既存のweeklySalesをクライアント側で合計するのみ。
+  // AUTH-2a: 店舗全体売上はowner/管理者以外にはAPIがnullを返すため、
+  // その場合は売上カード自体を表示しない(下記レンダー部参照)。
+  const weekSales = weeklySales
+    ? weeklySales.reduce((sum, p) => sum + p.sales, 0)
+    : null
 
   // ── 変換 ─────────────────────────────────────────────────────────────────
   const reservations: Phase1Reservation[] = useMemo(
@@ -284,23 +285,25 @@ export default function Phase1Screen() {
             border:      '1px solid rgba(245,160,181,0.22)',
             boxShadow:   '0 2px 10px rgba(245,160,181,0.10)',
           }}>
-          <span className="text-[16px] flex-shrink-0">💰</span>
-          <div className="flex-1 min-w-0">
-            <p className="text-[9px] tracking-widest" style={{ color: '#B09090' }}>本日売上</p>
-            <p className="text-[15px] font-semibold tabular-nums leading-tight truncate"
-              style={{ color: '#4A2C2A', fontFamily: 'Inter, sans-serif' }}>
-              ¥{(todaySales / 10000).toFixed(1)}万
-            </p>
-          </div>
-          {dayDiff !== 0 && (
-            <div className="flex items-center gap-0.5 text-[11px] font-semibold flex-shrink-0"
-              style={{ color: isUp ? '#34D399' : '#E84050' }}>
-              {isUp ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-              <span>{Math.abs(dayDiff)}%</span>
-            </div>
+          {/* AUTH-2a: 店舗全体売上はowner/管理者以外にはAPIがnullを返すため非表示にする
+              (店舗全体の売上数字をスタッフ間の比較材料にしない方針) */}
+          {weekSales !== null && (
+            <>
+              <span className="text-[16px] flex-shrink-0">💰</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[9px] tracking-widest" style={{ color: '#B09090' }}>今週の売上</p>
+                <p className="text-[15px] font-semibold tabular-nums leading-tight truncate"
+                  style={{ color: '#4A2C2A', fontFamily: 'Inter, sans-serif' }}>
+                  ¥{(weekSales / 10000).toFixed(1)}万
+                </p>
+                <p className="text-[8px] leading-tight truncate" style={{ color: '#C0A8A8' }}>
+                  CSV反映済みデータ
+                </p>
+              </div>
+              <div className="w-px h-6 flex-shrink-0" style={{ background: '#F5E6E8' }} />
+            </>
           )}
-          <div className="w-px h-6 flex-shrink-0" style={{ background: '#F5E6E8' }} />
-          <div className="flex-shrink-0 text-right">
+          <div className={weekSales !== null ? 'flex-shrink-0 text-right' : 'flex-1 min-w-0'}>
             <p className="text-[9px] tracking-widest" style={{ color: '#B09090' }}>LINE未返信</p>
             <p className="text-[15px] font-semibold tabular-nums leading-tight"
               style={{ color: unreadCount > 0 ? '#E84050' : '#4A2C2A', fontFamily: 'Inter, sans-serif' }}>
