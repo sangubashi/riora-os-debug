@@ -59,7 +59,6 @@ import {
   calculateSectionPriorities,
   type AdaptivePriorityInput,
 } from '@/lib/adaptivePriority';
-import { useStoreLearnings } from '@/hooks/useStoreLearnings';
 import {
   fetchBookingPrompt,
   generateAndSave,
@@ -82,7 +81,6 @@ import CustomerInsightPanel from '@/components/customer/CustomerInsightPanel';
 import NextActionPanel from '@/components/customer/NextActionPanel';
 import CustomerRiskCard from '@/components/customer/CustomerRiskCard';
 import ServiceReplayCard from '@/components/customer/ServiceReplayCard';
-import StoreLearningSection from '@/components/customer/StoreLearningSection';
 import VoiceMemoSection from '@/components/customer/VoiceMemoSection';
 import CustomerNotesSection from '@/components/customer/CustomerNotesSection';
 import BookingPromptSection from '@/components/customer/BookingPromptSection';
@@ -792,15 +790,6 @@ export default function CustomerBottomSheet({
   const aiNg = fallback?.ng ?? '';
   const returnInfo = r ? getReturnTiming(r.menu, r.days_since_last_visit ?? 0) : null;
 
-  // ─── Store Learnings ────────────────────────────────────────────────────────
-  const customerTagsForLearning = useMemo(
-    () => [...skinTags, ...(c?.customer_type ? [c.customer_type] : [])],
-    [skinTags, c?.customer_type] // eslint-disable-line react-hooks/exhaustive-deps
-  );
-  const { learnings: storeLearnings } = useStoreLearnings(
-    customerTagsForLearning, servicePhase, 2
-  );
-
   // ─── ─────────────────────────────────────────────────────────────────────────
   //  サブコンポーネント（state 共有のため関数内定義）
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1320,16 +1309,6 @@ export default function CustomerBottomSheet({
                             menuName={r.menu}
                             avgPrice={c.avg_price}
                             recommendedCycleDays={c.recommended_cycle_days}
-                          />
-                        </ErrorBoundary>
-                      )}
-
-                      {/* Store Learning（成功パターン知見）— データがある時だけ表示 */}
-                      {visible('storeLearning') && storeLearnings.length > 0 && (
-                        <ErrorBoundary label="StoreLearningSection" silentFail>
-                          <StoreLearningSection
-                            learnings={storeLearnings}
-                            compact={isCompact('storeLearning')}
                           />
                         </ErrorBoundary>
                       )}
