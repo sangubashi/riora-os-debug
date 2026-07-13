@@ -70,28 +70,28 @@ export interface LineTemplate {
 // ─── Mock data (フォールバック) ───────────────────────────────────────────────
 
 const MOCK_THREADS: LineThread[] = [
-  { id:'th-001', customerId:'c-001', customerName:'鈴木 恵',    customerType:'感情重視型', lastMessage:'キャンセルしたいのですが…',   lastMessageAt: new Date(Date.now()-1*3600000).toISOString(), unreadCount:1, isUrgent:true,  churnRisk:85, daysSinceVisit:15, tags:['キャンセル','フォロー必要'] },
-  { id:'th-002', customerId:'c-002', customerName:'山田 花子',  customerType:'慎重・不安型',lastMessage:'ご確認お願いします',          lastMessageAt: new Date(Date.now()-3*3600000).toISOString(), unreadCount:2, isUrgent:true,  churnRisk:72, daysSinceVisit:22, tags:['長期未来店'] },
-  { id:'th-003', customerId:'c-003', customerName:'田中 美咲',  customerType:'VIP型',      lastMessage:'ありがとうございます！',       lastMessageAt: new Date(Date.now()-5*3600000).toISOString(), unreadCount:1, isUrgent:false, churnRisk:15, daysSinceVisit:5,  tags:['VIP','施術後フォロー'] },
-  { id:'th-004', customerId:'c-004', customerName:'佐藤 のり子',customerType:'効果重視型', lastMessage:'次回もよろしくお願いします',   lastMessageAt: new Date(Date.now()-1*86400000).toISOString(),unreadCount:0, isUrgent:false, churnRisk:20, daysSinceVisit:8,  tags:[] },
-  { id:'th-005', customerId:'c-005', customerName:'高橋 みき',  customerType:'信頼構築型', lastMessage:'いつもありがとうございます', lastMessageAt: new Date(Date.now()-3*86400000).toISOString(),unreadCount:0, isUrgent:false, churnRisk:10, daysSinceVisit:3,  tags:[] },
+  { id:'th-001', customerId:'c-001', customerName:'サンプル顧客A',customerType:'感情重視型', lastMessage:'キャンセルしたいのですが…',   lastMessageAt: new Date(Date.now()-1*3600000).toISOString(), unreadCount:1, isUrgent:true,  churnRisk:85, daysSinceVisit:15, tags:['キャンセル','フォロー必要'] },
+  { id:'th-002', customerId:'c-002', customerName:'サンプル顧客B',customerType:'慎重・不安型',lastMessage:'ご確認お願いします',          lastMessageAt: new Date(Date.now()-3*3600000).toISOString(), unreadCount:2, isUrgent:true,  churnRisk:72, daysSinceVisit:22, tags:['長期未来店'] },
+  { id:'th-003', customerId:'c-003', customerName:'サンプル顧客C',customerType:'VIP型',      lastMessage:'ありがとうございます！',       lastMessageAt: new Date(Date.now()-5*3600000).toISOString(), unreadCount:1, isUrgent:false, churnRisk:15, daysSinceVisit:5,  tags:['VIP','施術後フォロー'] },
+  { id:'th-004', customerId:'c-004', customerName:'サンプル顧客D',customerType:'効果重視型', lastMessage:'次回もよろしくお願いします',   lastMessageAt: new Date(Date.now()-1*86400000).toISOString(),unreadCount:0, isUrgent:false, churnRisk:20, daysSinceVisit:8,  tags:[] },
+  { id:'th-005', customerId:'c-005', customerName:'サンプル顧客E',customerType:'信頼構築型', lastMessage:'いつもありがとうございます', lastMessageAt: new Date(Date.now()-3*86400000).toISOString(),unreadCount:0, isUrgent:false, churnRisk:10, daysSinceVisit:3,  tags:[] },
 ]
 
 const MOCK_AI: Record<string, AiReplySuggestion[]> = {
   'th-001': [
-    { id:'ai1', type:'cancel_recovery', reason:'キャンセルフォロー', body:'鈴木様、ご連絡ありがとうございます。またご都合の良い日程をお知らせいただければ、お席をご用意いたします🌸 ご不明な点がございましたらお気軽にご相談ください。' },
-    { id:'ai2', type:'follow_up',       reason:'代替日程提案',      body:'鈴木様、かしこまりました。来週でしたら空きがございます。またのご来店を心よりお待ちしております✨' },
+    { id:'ai1', type:'cancel_recovery', reason:'キャンセルフォロー', body:'サンプル顧客A様、ご連絡ありがとうございます。またご都合の良い日程をお知らせいただければ、お席をご用意いたします🌸 ご不明な点がございましたらお気軽にご相談ください。' },
+    { id:'ai2', type:'follow_up',       reason:'代替日程提案',      body:'サンプル顧客A様、かしこまりました。来週でしたら空きがございます。またのご来店を心よりお待ちしております✨' },
   ],
   'th-003': [
-    { id:'ai5', type:'vip',     reason:'VIP様特別案内',    body:'田中様、いつもご来店ありがとうございます✨ 新しいエイジングケアコースが入荷いたしました。いかがでしょうか？' },
-    { id:'ai6', type:'revisit', reason:'施術後5日フォロー', body:'田中様、先日はご来店ありがとうございました🌸 施術後のお肌の調子はいかがでしょうか？次回は1ヶ月後頃がおすすめです。' },
+    { id:'ai5', type:'vip',     reason:'VIP様特別案内',    body:'サンプル顧客C様、いつもご来店ありがとうございます✨ 新しいエイジングケアコースが入荷いたしました。いかがでしょうか？' },
+    { id:'ai6', type:'revisit', reason:'施術後5日フォロー', body:'サンプル顧客C様、先日はご来店ありがとうございました🌸 施術後のお肌の調子はいかがでしょうか？次回は1ヶ月後頃がおすすめです。' },
   ],
 }
 
 const MOCK_TODAY: TodayContact[] = [
-  { customerId:'c-001', customerName:'鈴木 恵',   reason:'キャンセルのフォローが必要です',   urgency:'high',   daysSinceVisit:15, threadId:'th-001' },
-  { customerId:'c-002', customerName:'山田 花子', reason:'22日間未来店、失客リスクあり',      urgency:'high',   daysSinceVisit:22, threadId:'th-002' },
-  { customerId:'c-003', customerName:'田中 美咲', reason:'施術後5日 — フォローメッセージ推奨',urgency:'medium', daysSinceVisit:5,  threadId:'th-003' },
+  { customerId:'c-001', customerName:'サンプル顧客A', reason:'キャンセルのフォローが必要です',   urgency:'high',   daysSinceVisit:15, threadId:'th-001' },
+  { customerId:'c-002', customerName:'サンプル顧客B', reason:'22日間未来店、失客リスクあり',      urgency:'high',   daysSinceVisit:22, threadId:'th-002' },
+  { customerId:'c-003', customerName:'サンプル顧客C', reason:'施術後5日 — フォローメッセージ推奨',urgency:'medium', daysSinceVisit:5,  threadId:'th-003' },
 ]
 
 let msgCounter = 200

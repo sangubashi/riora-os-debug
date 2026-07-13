@@ -81,7 +81,7 @@ const sections: Section[] = [
           style={{ background: 'rgba(212,169,106,0.08)', border: '1px solid rgba(212,169,106,0.2)' }}
         >
           <p className="font-semibold text-[12px] mb-1" style={{ color: '#D4A96A' }}>担当割り当て</p>
-          <p>担当顧客の変更が必要な場合は、管理者（鈴木）にご連絡ください。</p>
+          <p>担当顧客の変更が必要な場合は、管理者にご連絡ください。</p>
         </div>
       </div>
     ),

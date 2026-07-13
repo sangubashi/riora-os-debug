@@ -69,11 +69,22 @@ function toReservation(c: CustomerRow): Reservation {
 // 検索・一覧のみのシンプル構成。スコア順・フェーズ順ソート、離脱危険ランキング、
 // VIPバッジは評価系UIのため廃止（Riora OS v1.0 再設計書 準拠）。
 
+// ─── 担当軸タブ(私のお客様/全顧客) ─────────────────────────────────────────────
+// PHASE CUSTOMER-FILTER-PASS-C: /api/customers/list(Pass B)は既にAUTH-1 V2の
+// アクセス可能顧客のみを返す(filterAccessibleCustomerIds)。この単一の取得結果を
+// クライアント側でさらに絞り込むだけで、新たな担当判定・API呼び出しは追加しない。
+// assignedStaffId は同APIが直近来店staff_id(Rule A')基準で既に算出済みのフィールド
+// (CustomerRow.assignedStaffId)であり、これが設定されている行のみを「私のお客様」
+// として扱う(Rule C: 来店・本日予約とも無い共有顧客はassignedStaffId=nullのため
+// 「全顧客」タブでのみ表示される。CUSTOMER_FILTER_V2_DESIGN.md §3 に準拠)。
+type OwnerScope = 'mine' | 'all'
+
 export default function CustomersScreen() {
   const { customers, isLoading, fetchCustomers } = useCustomerStore()
   const { initialized: authInitialized } = useAuthStore()
   const [query,            setQuery]           = useState('')
   const [sortKey,          setSortKey]         = useState<'lastVisit' | 'sales'>('lastVisit')
+  const [scope,            setScope]           = useState<OwnerScope>('mine')
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerRow | null>(null)
 
   useEffect(() => {
@@ -82,7 +93,11 @@ export default function CustomersScreen() {
     fetchCustomers()
   }, [authInitialized, fetchCustomers])
 
-  const filtered = customers.filter(c => {
+  const scoped = scope === 'mine'
+    ? customers.filter(c => !!c.assignedStaffId)
+    : customers
+
+  const filtered = scoped.filter(c => {
     if (!query.trim()) return true
     const q = query.trim().toLowerCase()
 
@@ -128,8 +143,30 @@ export default function CustomersScreen() {
         </p>
         <h1 className="text-[24px] font-light leading-tight" style={{ color: '#4A2C2A', fontFamily: 'Playfair Display, serif' }}>Customers</h1>
         <p className="text-[13px] mt-0.5" style={{ color: '#9E8090' }}>
-          {isLoading ? '読み込み中…' : `${customers.length}名登録`}
+          {isLoading ? '読み込み中…' : `${scope === 'mine' ? '私のお客様' : '全顧客'} ${scoped.length}名`}
         </p>
+
+        {/* 担当軸タブ: 私のお客様(デフォルト) / 全顧客 */}
+        <div className="flex gap-2 mt-3">
+          {([
+            { key: 'mine', label: '私のお客様' },
+            { key: 'all',  label: '全顧客' },
+          ] as const).map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setScope(key)}
+              className="flex-1 text-center rounded-[12px] py-2.5 text-[13px] font-semibold transition-all"
+              style={{
+                background: scope === key ? 'linear-gradient(135deg, #F5A0B5, #F0879E)' : '#FFFFFF',
+                color:      scope === key ? '#FFFFFF' : '#9E8090',
+                border:     `1px solid ${scope === key ? 'transparent' : '#F0E8E8'}`,
+                boxShadow:  scope === key ? '0 4px 14px rgba(240,135,158,0.28)' : 'none',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
         {/* 検索 */}
         <div
@@ -265,6 +302,11 @@ export default function CustomersScreen() {
             <p className="text-[13px]" style={{ color: '#9E8090' }}>
               該当する顧客が見つかりません
             </p>
+            {scope === 'mine' && customers.length > scoped.length && (
+              <p className="text-[11px]" style={{ color: '#C8A8B0' }}>
+                「全顧客」タブに切り替えると他の顧客も表示されます
+              </p>
+            )}
           </div>
         )}
       </div>

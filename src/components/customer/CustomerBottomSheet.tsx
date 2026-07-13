@@ -1256,19 +1256,11 @@ export default function CustomerBottomSheet({
                         />
                       </ErrorBoundary>
 
-                      {/* KPI 横2列(AUTH-2b: 累計売上を削除。金額をスタッフ間の比較材料にしない方針) */}
-                      <div className="grid grid-cols-2 gap-2">
-                        {[
-                          { label: '来店回数',   value: `${c.visits}回` },
-                          { label: 'LINE反応率', value: `${c.line_response_rate}%` },
-                        ].map(({ label, value }) => (
-                          <div key={label}
-                            className="bg-[#F8F1F3] rounded-[18px] py-3 px-2 text-center">
-                            <p className="text-base font-bold text-[#5C4033] leading-none mb-1
-                              font-['Inter']">{value}</p>
-                            <p className="text-[10px] text-[#9F7E6C]">{label}</p>
-                          </div>
-                        ))}
+                      {/* KPI(AUTH-2b: 累計売上を削除。金額をスタッフ間の比較材料にしない方針。v1: LINE反応率は非表示) */}
+                      <div className="bg-[#F8F1F3] rounded-[18px] py-3 px-2 text-center">
+                        <p className="text-base font-bold text-[#5C4033] leading-none mb-1
+                          font-['Inter']">{c.visits}回</p>
+                        <p className="text-[10px] text-[#9F7E6C]">来店回数</p>
                       </div>
 
                       {/* AI ノート（Voice Memo → AI解析 → カテゴリ別自動生成） */}

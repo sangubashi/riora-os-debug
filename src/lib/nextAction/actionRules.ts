@@ -81,16 +81,26 @@ export const ACTION_RULES: ActionRule[] = [
   // ──────────────────────────────────────────────────────
   // LINE フォロー
   // ──────────────────────────────────────────────────────
+  // PHASE UI-CLEANUP-3: LINE返信率という概念を撤去。来店間隔(cycleOverRate)・
+  // 最終来店日(daysSinceLastVisit)・失客リスク(churnRisk)のみで判定・文言生成する。
   {
     id:    'line_low_response',
     type:  'line_follow',
-    match: ({ lineResponseRate, daysSinceLastVisit }) =>
-      lineResponseRate < 60 && daysSinceLastVisit >= 14,
-    score: ({ lineResponseRate, daysSinceLastVisit }) =>
-      Math.round((100 - lineResponseRate) * 0.4 + Math.min(daysSinceLastVisit, 60) * 0.3),
-    title: () => 'LINE返信率が低下しています',
-    desc:  ({ lineResponseRate }) =>
-      `LINE反応率 ${lineResponseRate}%。パーソナライズしたメッセージで接点を作りましょう。`,
+    match: ({ daysSinceLastVisit, recommendedCycleDays, churnRisk }) => {
+      const cycleOverRate = recommendedCycleDays > 0
+        ? daysSinceLastVisit / recommendedCycleDays
+        : 0
+      return daysSinceLastVisit >= 14 && (cycleOverRate >= 1.2 || churnRisk >= 40)
+    },
+    score: ({ daysSinceLastVisit, churnRisk }) =>
+      Math.round(Math.min(daysSinceLastVisit, 60) * 0.5 + churnRisk * 0.3),
+    title: () => 'しばらく連絡が取れていません',
+    desc:  ({ daysSinceLastVisit }) =>
+      `前回来店から${daysSinceLastVisit}日経過しています。フォロー連絡を検討しましょう。`,
+    reasons: ({ daysSinceLastVisit }) => [
+      `前回来店${daysSinceLastVisit}日経過`,
+      '来店間隔が空いています',
+    ],
     ctaLabel: 'LINE下書き作成',
     logType:  'next_action_line',
   },
@@ -414,7 +424,9 @@ export const ACTION_RULES: ActionRule[] = [
     logType:  'retail_sold' as ActionType,
   },
 
-  // risk LINE返信率高い → LINEフォロー
+  // risk 来店間隔がまだ軽度 → LINEフォロー
+  // PHASE UI-CLEANUP-2: 判定条件・文言からLINE返信率を排除。
+  // 来店間隔(cycleOverRate)・最終来店日(daysSinceLastVisit)・失客リスク(churnRisk)のみで判定する。
   {
     id:    'phase_risk_line',
     type:  'phase_risk_line' as NextActionType,
@@ -425,23 +437,29 @@ export const ACTION_RULES: ActionRule[] = [
         daysSinceLastVisit: input.daysSinceLastVisit,
         recommendedCycleDays: input.recommendedCycleDays,
       })
+      const cycleOverRate = input.recommendedCycleDays > 0
+        ? input.daysSinceLastVisit / input.recommendedCycleDays
+        : 0
       return phase === 'risk' &&
-        input.lineResponseRate >= 40 &&
+        input.churnRisk < 80 &&
+        cycleOverRate < 2.0 &&
         !input.recentActionTypes.includes('line_sent')
     },
     score: () => 90,
     title: () => 'LINEでフォローする',
-    desc:  ({ lineResponseRate, daysSinceLastVisit }) =>
-      `LINE返信率${lineResponseRate}%と高いお客様です。前回来店${daysSinceLastVisit}日経過しています。「お肌の調子はいかがですか？」と自然な形でLINEしましょう。`,
-    reasons: ({ lineResponseRate, daysSinceLastVisit }) => [
+    desc:  ({ daysSinceLastVisit }) =>
+      `前回来店から${daysSinceLastVisit}日経過しています。「お肌の調子はいかがですか？」と自然な形でLINEしましょう。`,
+    reasons: ({ daysSinceLastVisit }) => [
       `前回来店${daysSinceLastVisit}日経過`,
-      `LINE返信率${lineResponseRate}%`,
+      '来店間隔が空いています',
     ],
     ctaLabel: 'LINE送信済み',
     logType:  'line_sent' as ActionType,
   },
 
-  // risk LINE返信率低い → 電話フォロー
+  // risk 来店間隔が大幅超過・失客リスク高 → 直接フォロー
+  // PHASE UI-CLEANUP-2: 判定条件・文言からLINE返信率を排除。
+  // 来店間隔(cycleOverRate)・最終来店日(daysSinceLastVisit)・失客リスク(churnRisk)のみで判定する。
   {
     id:    'phase_risk_call',
     type:  'phase_risk_line' as NextActionType,
@@ -452,17 +470,20 @@ export const ACTION_RULES: ActionRule[] = [
         daysSinceLastVisit: input.daysSinceLastVisit,
         recommendedCycleDays: input.recommendedCycleDays,
       })
+      const cycleOverRate = input.recommendedCycleDays > 0
+        ? input.daysSinceLastVisit / input.recommendedCycleDays
+        : 0
       return phase === 'risk' &&
-        input.lineResponseRate < 40 &&
+        (input.churnRisk >= 80 || cycleOverRate >= 2.0) &&
         !input.recentActionTypes.includes('churn_followed')
     },
     score: () => 88,
     title: () => '直接フォローを検討する',
-    desc:  ({ lineResponseRate, daysSinceLastVisit }) =>
-      `LINE返信率${lineResponseRate}%と低めです。前回来店${daysSinceLastVisit}日経過しており、LINEよりも直接のご連絡やDMが効果的かもしれません。`,
-    reasons: ({ lineResponseRate, daysSinceLastVisit }) => [
+    desc:  () =>
+      'しばらく連絡が取れていないため、フォロー連絡を検討しましょう。',
+    reasons: ({ daysSinceLastVisit }) => [
       `前回来店${daysSinceLastVisit}日経過`,
-      `LINE返信率${lineResponseRate}%`,
+      '失客リスクが高まっています',
     ],
     ctaLabel: 'フォロー済み',
     logType:  'churn_followed' as ActionType,
