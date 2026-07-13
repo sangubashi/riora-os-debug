@@ -272,21 +272,23 @@ export const useLineStore = create<LineStore>((set, get) => ({
   fetchTemplates: async () => {
     if (DEMO_MODE) return
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('line_templates')
-        .select('id, title, body, tags, used_count')
-        .order('used_count', { ascending: false })
+        .select('id, title, body, tags, use_count')
+        .order('use_count', { ascending: false })
         .limit(20)
+
+      if (error) console.error('[useLineStore] fetchTemplates failed:', error)
 
       if (data && data.length > 0) {
         set({ templates: data.map((r: {
-          id: string; title: string; body: string; tags: string[]; used_count: number
+          id: string; title: string; body: string; tags: string[]; use_count: number
         }) => ({
           id:        r.id,
           title:     r.title,
           body:      r.body,
           tags:      r.tags,
-          usedCount: r.used_count,
+          usedCount: r.use_count,
         }))})
       }
     } catch { /* fallback */ }
@@ -353,11 +355,12 @@ export const useLineStore = create<LineStore>((set, get) => ({
       set(s => ({ templates: [...s.templates, { id: `tmpl-${Date.now()}`, ...tmpl, usedCount: 0 }] }))
       return
     }
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('line_templates')
       .insert({ title: tmpl.title, body: tmpl.body, tags: tmpl.tags })
-      .select('id, title, body, tags, used_count')
+      .select('id, title, body, tags, use_count')
       .single()
+    if (error) console.error('[useLineStore] saveTemplate failed:', error)
     if (data) {
       set(s => ({ templates: [...s.templates, { id: data.id, title: data.title, body: data.body, tags: data.tags, usedCount: 0 }] }))
     }

@@ -6,12 +6,15 @@
  * スタイルには一切手を加えない(統合作業のみ・ユーザー指示2026-06-23)。
  */
 import AdminSidebar from '@/components/admin/AdminSidebar'
+import AdminAuthGuard from '@/components/admin/AdminAuthGuard'
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex flex-col md:flex-row" style={{ minHeight: '100vh', background: '#EDE0E4' }}>
-      <AdminSidebar />
-      <main style={{ flex: 1, minWidth: 0 }}>{children}</main>
-    </div>
+    <AdminAuthGuard>
+      <div className="flex flex-col md:flex-row" style={{ minHeight: '100vh', background: '#EDE0E4' }}>
+        <AdminSidebar />
+        <main style={{ flex: 1, minWidth: 0 }}>{children}</main>
+      </div>
+    </AdminAuthGuard>
   )
 }
