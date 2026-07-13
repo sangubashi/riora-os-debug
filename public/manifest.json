@@ -2,7 +2,7 @@
   "name": "Riora",
   "short_name": "Riora",
   "description": "Salon Riora 接客サポート AI",
-  "start_url": "/phase1",
+  "start_url": "/",
   "id": "/phase1",
   "display": "standalone",
   "orientation": "portrait",
