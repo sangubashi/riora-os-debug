@@ -5,7 +5,7 @@ import { motion }            from 'framer-motion'
 import Image                 from 'next/image'
 import {
   Bell, ChevronRight,
-  CalendarDays, LayoutGrid, MessageCircle, BookOpen,
+  CalendarDays, MessageCircle, BookOpen,
 } from 'lucide-react'
 import { useMenuStore, type FilterTab } from '@/store/useMenuStore'
 import { DEMO_STORE_ID } from '@/lib/constants'
@@ -23,9 +23,11 @@ const FILTER_TABS: { key: FilterTab; label: string }[] = [
 ]
 
 // ─── グリッドメニュー(ナビゲーションのみ・データ無し) ───────────────────────────
+// PHASE MENU-STAFF-CLEANUP-1: 「メニュー管理」ボタンを削除。
+// href: '/menu' で自ページ自身を指す未配線の自己参照リンクだったため
+// (docs/MENU_STAFF_AUDIT_REPORT.md参照。baseline時点から一度も配線されたことがない)。
 const GRID_ITEMS: { label: string; Icon: React.ElementType; href: string; color: string }[] = [
   { label: '予約管理',    Icon: CalendarDays,  href: '/phase1',     color: '#78A8D8' },
-  { label: 'メニュー管理', Icon: LayoutGrid,   href: '/menu',       color: '#D4A96A' },
   { label: 'メッセージ',  Icon: MessageCircle, href: '/line',       color: '#52C87A' },
   { label: '使い方ガイド', Icon: BookOpen,     href: '/menu/guide', color: '#9E8090' },
 ]
@@ -355,13 +357,15 @@ export default function MenuDashboard() {
           </div>
         </div>
 
-        {/* ═══ クイックアクセスグリッド(4項目・2×2) ═══ */}
+        {/* ═══ クイックアクセスグリッド(3項目・2列。奇数件のため最後の1件は幅いっぱいに表示) ═══ */}
         <div className="px-4 mb-5">
           <p className="text-[10px] tracking-[0.2em] font-medium mb-3" style={{ color: '#C8B0B8' }}>
             QUICK ACCESS
           </p>
           <div className="grid grid-cols-2 gap-3">
-            {GRID_ITEMS.map((item, i) => (
+            {GRID_ITEMS.map((item, i) => {
+              const isDanglingLast = GRID_ITEMS.length % 2 !== 0 && i === GRID_ITEMS.length - 1
+              return (
               <motion.button
                 key={item.label}
                 initial={{ opacity: 0, y: 8 }}
@@ -369,7 +373,7 @@ export default function MenuDashboard() {
                 transition={{ delay: 0.38 + i * 0.06, duration: 0.3 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => router.push(item.href)}
-                className="flex items-center gap-3 rounded-2xl p-4"
+                className={`flex items-center gap-3 rounded-2xl p-4 ${isDanglingLast ? 'col-span-2' : ''}`}
                 style={{
                   background: '#FFFFFF',
                   border: '1px solid #F5E6E8',
@@ -386,7 +390,8 @@ export default function MenuDashboard() {
                   {item.label}
                 </span>
               </motion.button>
-            ))}
+              )
+            })}
           </div>
         </div>
 
