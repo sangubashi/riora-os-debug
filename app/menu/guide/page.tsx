@@ -7,7 +7,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronLeft, ChevronDown, ChevronUp, BookOpen, Mic, Brain, Calendar, Star, Shield, HelpCircle } from 'lucide-react'
+import { ChevronLeft, ChevronDown, ChevronUp, BookOpen, Mic, Brain, Calendar, Star, Shield, HelpCircle, Smartphone } from 'lucide-react'
 
 interface Section {
   id:      number
@@ -191,6 +191,35 @@ const sections: Section[] = [
             A. 画面を下にスワイプして更新するか、一度ログアウトして再ログインしてください。
           </p>
         </div>
+      </div>
+    ),
+  },
+  {
+    id:    8,
+    icon:  Smartphone,
+    title: 'ホーム画面に追加する方法',
+    color: '#F5A0B5',
+    content: (
+      <div className="space-y-3 text-[13px]" style={{ color: '#4A2C2A', lineHeight: '1.7' }}>
+        <p>ホーム画面に追加すると、アイコンからすぐにRiora OSを開けます。</p>
+        <div
+          className="rounded-2xl p-3"
+          style={{ background: 'rgba(245,160,181,0.08)', border: '1px solid rgba(245,160,181,0.2)' }}
+        >
+          <p className="font-semibold text-[12px] mb-1" style={{ color: '#D98292' }}>iPhone(Safari)の場合</p>
+          <p>共有ボタン(□に↑)をタップ →「ホーム画面に追加」を選択 →「追加」をタップ</p>
+        </div>
+        <div
+          className="rounded-2xl p-3"
+          style={{ background: 'rgba(120,168,216,0.08)', border: '1px solid rgba(120,168,216,0.2)' }}
+        >
+          <p className="font-semibold text-[12px] mb-1" style={{ color: '#78A8D8' }}>Android(Chrome)の場合</p>
+          <p>右上のメニュー(︙)をタップ →「アプリをインストール」を選択</p>
+        </div>
+        <p className="text-[11px]" style={{ color: '#9E8090' }}>
+          ※ LINEやInstagramなどアプリ内のブラウザで開いている場合は追加できません。
+          「Safariで開く」または「ブラウザで開く」を選んでからお試しください。
+        </p>
       </div>
     ),
   },

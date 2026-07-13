@@ -35,6 +35,7 @@ import ServiceLogView                         from './ServiceLogView'
 import LineUnreadSheet                        from './LineUnreadSheet'
 import AppBottomNav                           from './AppBottomNav'
 import TodayBriefingCard                      from './TodayBriefingCard'
+import InstallPrompt                           from '@/components/pwa/InstallPrompt'
 
 import CustomerBottomSheet from '@/components/customer/CustomerBottomSheet'
 import { useNewCustomerSheetStore } from '@/store/useNewCustomerSheetStore'
@@ -321,6 +322,7 @@ export default function Phase1Screen() {
           paddingBottom: 'calc(68px + max(12px, env(safe-area-inset-bottom)))',
           scrollbarWidth: 'none',
         }}>
+        <InstallPrompt />
         <TodayBriefingCard onSelectCustomer={handleSelectFromBriefing} />
       </div>
 

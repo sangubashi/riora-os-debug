@@ -7,6 +7,7 @@ import { prodLog } from '@/lib/stability'
 
 // 認証不要なパス(本当に公開してよい画面のみ。DEMO_MODEの値に関わらず常にこのリストで判定する)。
 const PUBLIC_PATHS = [
+  '/',
   '/login',
   '/splash',
   '/test',
