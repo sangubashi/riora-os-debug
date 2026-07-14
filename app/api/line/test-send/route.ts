@@ -13,9 +13,10 @@
  *   NEXT_PUBLIC_SUPABASE_URL   — Supabase URL
  */
 
-import { NextResponse }  from 'next/server'
+import { NextRequest, NextResponse }  from 'next/server'
 import { createClient }  from '@supabase/supabase-js'
 import { sendLineMessage } from '../../../lib/line/sender'
+import { requireAdmin } from '@/lib/auth/requireAdmin'
 
 // テスト送信のデフォルトメッセージ
 // 将来: リクエストボディの message_body フィールドで AI 生成文を渡せる
@@ -25,7 +26,10 @@ ${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}
 これは LINE 半自動送信機能のテストメッセージです。
 このメッセージが届いていれば接続成功です。`
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  const gate = await requireAdmin(req)
+  if (gate instanceof NextResponse) return gate
+
   // ── ENV 検証 ──────────────────────────────────────────────────────────────
   const recipientId = process.env.LINE_TEST_USER_ID
   if (!recipientId) {

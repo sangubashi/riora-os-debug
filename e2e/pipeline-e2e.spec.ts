@@ -12,9 +12,13 @@
 
 import { test, expect } from '@playwright/test'
 
-const ANON = 'sb_publishable_0VGV7G9x0Xm7lLUoR90QlA_Dkca2q4Q'
-const SVC  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9oc3p4Z2FqY2t6cGhoZmhkcnN2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NzYxMjM2MiwiZXhwIjoyMDkzMTg4MzYyfQ.YoP7BqHO48zaql9jLDyJCwSsQTgWRTRAzmNd16WhekY'
-const URL  = 'https://ohszxgajckzphhfhdrsv.supabase.co'
+const ANON    = 'sb_publishable_0VGV7G9x0Xm7lLUoR90QlA_Dkca2q4Q'
+const SVC_RAW = process.env.SUPABASE_SERVICE_ROLE_KEY
+if (!SVC_RAW) {
+  throw new Error('SUPABASE_SERVICE_ROLE_KEY is required')
+}
+const SVC: string = SVC_RAW
+const URL     = 'https://ohszxgajckzphhfhdrsv.supabase.co'
 const CID  = '487e4f9f-223c-44a4-8484-8b04177da846'  // 高橋 優太
 
 function hdr(token: string) {

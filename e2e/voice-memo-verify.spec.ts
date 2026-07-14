@@ -11,7 +11,11 @@
 
 import { test, expect, type Page } from '@playwright/test'
 
-const SVC_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9oc3p4Z2FqY2t6cGhoZmhkcnN2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NzYxMjM2MiwiZXhwIjoyMDkzMTg4MzYyfQ.YoP7BqHO48zaql9jLDyJCwSsQTgWRTRAzmNd16WhekY'
+const SVC_KEY_RAW = process.env.SUPABASE_SERVICE_ROLE_KEY
+if (!SVC_KEY_RAW) {
+  throw new Error('SUPABASE_SERVICE_ROLE_KEY is required')
+}
+const SVC_KEY: string = SVC_KEY_RAW
 const SB_URL  = 'https://ohszxgajckzphhfhdrsv.supabase.co'
 
 // ─── MediaRecorder + getUserMedia モック ─────────────────────────────────────

@@ -19,6 +19,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { extractInsightTags } from '@/lib/voiceInsight/extractInsightTags'
+import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest'
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SVC_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -298,9 +299,8 @@ function buildMemoryCandidates(analysis: ClaudeAnalysis, transcript: string): Me
 // ─── メインハンドラー ─────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  // 認証チェック（anon key からは呼べないようにする）
-  const auth = req.headers.get('authorization')
-  if (!auth) {
+  const staff = await extractStaffFromRequest(req)
+  if (!staff) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
 
