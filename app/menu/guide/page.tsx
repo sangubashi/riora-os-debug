@@ -1,13 +1,13 @@
 'use client'
 /**
- * /menu/guide — Riora AI アシスタント 使い方ガイド（7セクション）
+ * /menu/guide — Riora AI アシスタント 使い方ガイド
  *
  * 強調事項: AI 提案は提案であり命令ではない。最終判断はスタッフ。
  */
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronLeft, ChevronDown, ChevronUp, BookOpen, Mic, Brain, Calendar, Star, Shield, HelpCircle, Smartphone } from 'lucide-react'
+import { ChevronLeft, ChevronDown, ChevronUp, BookOpen, Mic, Brain, Calendar, Star, Shield, HelpCircle, Smartphone, Compass, Lock } from 'lucide-react'
 
 interface Section {
   id:      number
@@ -20,6 +20,42 @@ interface Section {
 const sections: Section[] = [
   {
     id:    1,
+    icon:  Compass,
+    title: '1日の利用フロー',
+    color: '#6BA88C',
+    content: (
+      <div className="space-y-3 text-[13px]" style={{ color: '#4A2C2A', lineHeight: '1.7' }}>
+        <p>スタッフの1日の流れに沿って、アプリの使い方をご案内します。</p>
+        <div className="space-y-2.5">
+          {[
+            { n: '①', t: '出勤',       d: 'まず【今日】タブを開き、本日の予約・AIブリーフィング・注意事項を確認します。' },
+            { n: '②', t: '来店前',     d: 'お客様がいらっしゃる前に、顧客ページで前回の施術内容や禁忌事項を確認します。' },
+            { n: '③', t: '接客中',     d: '気づいたことがあれば、音声メモで記録できます。あとでAIが自動で要点をまとめます。' },
+            { n: '④', t: '施術後',     d: 'AIが次回のご提案を用意します。あくまで参考情報のため、最終判断はスタッフが行ってください。' },
+            { n: '⑤', t: '退店後',     d: '音声メモを保存すると、AIが要約して顧客履歴に自動で反映されます。' },
+            { n: '⑥', t: '次回来店',   d: '次にご来店いただいた際は、前回までの履歴がすぐに確認できます。' },
+            { n: '⑦', t: '振り返り',   d: '【メモ】タブでは、これまで記録した内容をいつでも振り返ることができます。' },
+            { n: '⑧', t: 'マイページ', d: '退勤前に【マイページ】で、ご自身の実績を確認できます。' },
+          ].map(step => (
+            <div key={step.t} className="flex gap-2.5 items-start">
+              <span
+                className="text-[11px] font-bold w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
+                style={{ background: '#6BA88C', color: '#fff' }}
+              >
+                {step.n}
+              </span>
+              <div>
+                <p className="font-semibold">{step.t}</p>
+                <p style={{ color: '#6B4C4C' }}>{step.d}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    ),
+  },
+  {
+    id:    2,
     icon:  Brain,
     title: 'AI 提案は「参考情報」です',
     color: '#D98292',
@@ -45,7 +81,7 @@ const sections: Section[] = [
     ),
   },
   {
-    id:    2,
+    id:    3,
     icon:  Calendar,
     title: '予約管理の使い方',
     color: '#78A8D8',
@@ -64,7 +100,7 @@ const sections: Section[] = [
     ),
   },
   {
-    id:    3,
+    id:    4,
     icon:  Star,
     title: 'VIP 顧客管理',
     color: '#D4A96A',
@@ -87,7 +123,7 @@ const sections: Section[] = [
     ),
   },
   {
-    id:    4,
+    id:    5,
     icon:  Mic,
     title: 'Voice Memo（音声メモ）',
     color: '#52C87A',
@@ -119,7 +155,7 @@ const sections: Section[] = [
     ),
   },
   {
-    id:    5,
+    id:    6,
     icon:  BookOpen,
     title: '覚えておくこと（Customer Memory）',
     color: '#A078D4',
@@ -145,7 +181,7 @@ const sections: Section[] = [
     ),
   },
   {
-    id:    6,
+    id:    7,
     icon:  Shield,
     title: 'セキュリティと権限',
     color: '#E88C5A',
@@ -165,7 +201,24 @@ const sections: Section[] = [
     ),
   },
   {
-    id:    7,
+    id:    8,
+    icon:  Lock,
+    title: '安心してご利用いただくために',
+    color: '#6B8FB0',
+    content: (
+      <div className="space-y-3 text-[13px]" style={{ color: '#4A2C2A', lineHeight: '1.7' }}>
+        <p>安心してご利用いただくために、以下の点をお約束します。</p>
+        <ul className="space-y-2 pl-1">
+          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span>接客に必要な情報以外の、不要な個人情報を収集することはありません</span></li>
+          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span>クレジットカード番号などの決済情報は、アプリ内に保存されません</span></li>
+          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span>お客様の情報はアクセス権限に応じて保護されています</span></li>
+          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span>音声メモは接客品質向上を目的としたものであり、それ以外の目的では使用されません</span></li>
+        </ul>
+      </div>
+    ),
+  },
+  {
+    id:    9,
     icon:  HelpCircle,
     title: 'よくある質問',
     color: '#9E8090',
@@ -195,7 +248,7 @@ const sections: Section[] = [
     ),
   },
   {
-    id:    8,
+    id:    10,
     icon:  Smartphone,
     title: 'ホーム画面に追加する方法',
     color: '#F5A0B5',

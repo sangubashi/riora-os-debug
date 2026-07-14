@@ -5,7 +5,7 @@ import { motion }            from 'framer-motion'
 import Image                 from 'next/image'
 import {
   Bell, ChevronRight,
-  CalendarDays, MessageCircle, BookOpen,
+  CalendarDays, MessageCircle, BookOpen, LayoutGrid,
 } from 'lucide-react'
 import { useMenuStore, type FilterTab } from '@/store/useMenuStore'
 import { DEMO_STORE_ID } from '@/lib/constants'
@@ -23,13 +23,11 @@ const FILTER_TABS: { key: FilterTab; label: string }[] = [
 ]
 
 // ─── グリッドメニュー(ナビゲーションのみ・データ無し) ───────────────────────────
-// PHASE MENU-STAFF-CLEANUP-1: 「メニュー管理」ボタンを削除。
-// href: '/menu' で自ページ自身を指す未配線の自己参照リンクだったため
-// (docs/MENU_STAFF_AUDIT_REPORT.md参照。baseline時点から一度も配線されたことがない)。
 const GRID_ITEMS: { label: string; Icon: React.ElementType; href: string; color: string }[] = [
-  { label: '予約管理',    Icon: CalendarDays,  href: '/phase1',     color: '#78A8D8' },
-  { label: 'メッセージ',  Icon: MessageCircle, href: '/line',       color: '#52C87A' },
-  { label: '使い方ガイド', Icon: BookOpen,     href: '/menu/guide', color: '#9E8090' },
+  { label: '予約管理',    Icon: CalendarDays,  href: '/phase1',        color: '#78A8D8' },
+  { label: 'メッセージ',  Icon: MessageCircle, href: '/line',          color: '#52C87A' },
+  { label: '全機能紹介',  Icon: LayoutGrid,    href: '/menu/features', color: '#D4A96A' },
+  { label: '使い方ガイド', Icon: BookOpen,     href: '/menu/guide',    color: '#9E8090' },
 ]
 
 function formatPct(value: number | null, placeholder = '未実装'): string {
