@@ -4,16 +4,21 @@
  * service role 経由（RLS bypass）。外部認証不要。
  *
  * 返却フィールド:
- *   todaySales       brain_visits.visit_date = today の売上合計
- *   yesterdaySales   brain_visits.visit_date = yesterday の売上合計
- *   monthlySales     brain_visits.visit_date >= 月初 の売上合計
+ *   todaySales       brain_visits.visit_date = today の売上合計 (admin以外はnull・AUTH-2a)
+ *   yesterdaySales   brain_visits.visit_date = yesterday の売上合計 (admin以外はnull・AUTH-2a)
+ *   monthlySales     brain_visits.visit_date >= 月初 の売上合計 (admin以外はnull・AUTH-2a)
  *   nominationCount  今月の指名来店数
  *   nextBookingRate  次回予約率 (%)
  *   todayVisitCount  本日の来店件数 (brain_visits)
  *   churnRiskCount   最終来院 > 90日 or 来院なし の顧客数 (brain_customers + brain_visits)
  *   activeCustomerCount brain_customers アクティブ件数
- *   weeklySales      直近7日の日別売上配列
- *   staffPerformance スタッフ別月次実績
+ *   weeklySales      直近7日の日別売上配列 (admin以外はnull・AUTH-2a)
+ *   avgSpend         今月客単価 (admin以外はnull・AUTH-2a)
+ *   staffPerformance スタッフ別月次実績 (自分の分+adminのみ他スタッフ分を閲覧可、既存実装のまま)
+ *
+ * AUTH-2a: 店舗全体の売上数字はスタッフ間の比較・嫉妬を生むため、owner/管理者以外には
+ *   店舗全体売上系の数字(todaySales/yesterdaySales/monthlySales/weeklySales/avgSpend)を
+ *   一切返さない(0ではなくnullとして「非表示」であることを明示する)。
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '../../../lib/repos';
@@ -248,19 +253,22 @@ export async function GET(req: NextRequest) {
       ? Math.round(intervals.reduce((a, b) => a + b, 0) / intervals.length)
       : 0;
 
+    // AUTH-2a: 店舗全体売上系の数字は owner/管理者のみ。それ以外は null(非表示)を返す。
+    const canViewStoreSales = staff.isAdmin;
+
     return NextResponse.json({
-      todaySales,
-      yesterdaySales,
-      monthlySales,
+      todaySales:     canViewStoreSales ? todaySales     : null,
+      yesterdaySales: canViewStoreSales ? yesterdaySales : null,
+      monthlySales:   canViewStoreSales ? monthlySales   : null,
       nominationCount,
       nextBookingRate,
       todayVisitCount,
       churnRiskCount,
       activeCustomerCount,
-      weeklySales,
+      weeklySales:    canViewStoreSales ? weeklySales    : null,
       staffPerformance,
       repeatRate,
-      avgSpend,
+      avgSpend:       canViewStoreSales ? avgSpend       : null,
       visitCycleDays,
     });
   } catch (e) {
