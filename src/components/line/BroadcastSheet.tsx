@@ -1,5 +1,5 @@
 'use client'
-import { useState }  from 'react'
+import { useState, useRef }  from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Send, Calendar, Users, ChevronRight } from 'lucide-react'
 import { useLineCrmStore, SEGMENTS, type Segment } from '@/store/useLineStore'
@@ -37,6 +37,23 @@ export default function BroadcastSheet() {
 
   const [sent, setSent] = useState(false)
   const reach = calcReach(broadcastSegments)
+
+  // テンプレート挿入時のみ、入力欄が見えるようスクロールコンテナを動かす
+  // (broadcastBodyの変化を監視するuseEffectは使わない。手入力onChangeでは発火しない)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const textareaRef        = useRef<HTMLTextAreaElement>(null)
+
+  const handleTemplateInsert = (body: string) => {
+    setBroadcastBody(body)
+    const container = scrollContainerRef.current
+    const el = textareaRef.current
+    if (container && el) {
+      const containerTop = container.getBoundingClientRect().top
+      const elTop        = el.getBoundingClientRect().top
+      const targetTop     = elTop - containerTop + container.scrollTop - 16
+      container.scrollTo({ top: targetTop, behavior: 'smooth' })
+    }
+  }
 
   const handleSend = () => {
     if (!broadcastBody.trim() || !broadcastSegments.length) return
@@ -96,7 +113,7 @@ export default function BroadcastSheet() {
               </div>
 
               {/* Scrollable content */}
-              <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4" style={{ scrollbarWidth: 'none' }}>
+              <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4" style={{ scrollbarWidth: 'none' }}>
 
                 {/* Segment selector */}
                 <div>
@@ -138,6 +155,7 @@ export default function BroadcastSheet() {
                     </button>
                   </div>
                   <textarea
+                    ref={textareaRef}
                     value={broadcastBody}
                     onChange={e => setBroadcastBody(e.target.value)}
                     placeholder="配信メッセージを入力…"
@@ -209,7 +227,7 @@ export default function BroadcastSheet() {
           </div>
 
           {/* Template Sheet (z above broadcast sheet) */}
-          <TemplateSheet onInsert={(body) => setBroadcastBody(body)} />
+          <TemplateSheet onInsert={handleTemplateInsert} />
         </>
       )}
     </AnimatePresence>
