@@ -341,7 +341,7 @@ export default function MenuDashboard() {
                 </div>
                 <div className="text-right">
                   <span className="text-[12px] tabular-nums" style={{ color: '#9E8090' }}>
-                    {formatYen(menu.price)}
+                    {formatYen(menu.monthlyRevenue)}
                   </span>
                   <span className="block text-[9px] tabular-nums" style={{ color: '#C8A8B0' }}>
                     今月{menu.monthlyCount}件
