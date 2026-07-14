@@ -20,6 +20,15 @@ export interface HomecareUsageGuide {
   caution:       string
   /** スタッフがそのままコピーして送れるメッセージ文面を生成する */
   staffMessage:  (customerName: string) => string
+  /**
+   * customer_type別のワンポイント（任意）。PHASE HOMECARE-V12-MVP-1。
+   * brain_customers.customer_type（'A_acne'|'B_pore'|'C_sensitive'|'D_aging'|'E_bridal'）を
+   * そのままキーとして使う。一致するキーが無い商品・customer_type未設定の顧客は
+   * 従来どおり汎用のfrequency/timing/cautionのみ表示される(フォールバック)。
+   * 型はRecord<string, string>とし、Customer.customer_typeの別定義(接客スタイル型)との
+   * 衝突を避けている(詳細: docs/HOMECARE_V12_MVP_REPORT.md)。
+   */
+  byCustomerType?: Partial<Record<string, string>>
 }
 
 function buildMessage(
@@ -62,6 +71,9 @@ export const HOMECARE_USAGE_GUIDE: Record<string, HomecareUsageGuide> = {
     timing:    '洗顔後、10〜15分程度パック',
     caution:   'ピリつきや赤みを感じた場合はすぐに取り外し洗い流してください。',
     staffMessage: (name) => buildMessage(name, 'CO2シートマスク', '週1〜2回', '洗顔後10〜15分程度のパック', 'ピリつきや赤みを感じた場合はすぐに取り外し洗い流してください。'),
+    byCustomerType: {
+      B_pore: '毛穴の引き締めを意識し、パック後は化粧水でしっかり保湿してください',
+    },
   },
   'GD-11 アンプルミスト': {
     frequency: '1日2〜3回',
@@ -86,18 +98,27 @@ export const HOMECARE_USAGE_GUIDE: Record<string, HomecareUsageGuide> = {
     timing:    '化粧水の後、クリームの前に',
     caution:   '肌が敏感な時期は使用頻度を減らしてください。',
     staffMessage: (name) => buildMessage(name, 'HARIBINダーマエッセンス', '朝晩1日2回', '化粧水の後、クリームの前', '肌が敏感な時期は使用頻度を減らしてください。'),
+    byCustomerType: {
+      C_sensitive: '肌がゆらぎやすい時期は少量から試し、赤みやかゆみを感じたら使用を中止してください',
+    },
   },
   'LebyRIN クリーム': {
     frequency: '朝晩1日2回',
     timing:    'スキンケアの最後、保湿の仕上げに',
     caution:   'つけすぎるとべたつく場合があるため少量ずつのばしてください。',
     staffMessage: (name) => buildMessage(name, 'LebyRINクリーム', '朝晩1日2回', 'スキンケアの最後、保湿の仕上げ', 'つけすぎるとべたつく場合があるため少量ずつのばしてください。'),
+    byCustomerType: {
+      A_acne: '摩擦を避け、気になる部分にもやさしく少量ずつのばしてください',
+    },
   },
   'LebyRIN クレンジング': {
     frequency: '1日1回（夜）',
     timing:    'メイクオフ時、乾いた手・顔に使用',
     caution:   '目や口に入らないよう注意し、使用後はよくすすいでください。',
     staffMessage: (name) => buildMessage(name, 'LebyRINクレンジング', '1日1回（夜）', 'メイクオフ時、乾いた手・顔への使用', '目や口に入らないよう注意し、使用後はよくすすいでください。'),
+    byCustomerType: {
+      B_pore: '毛穴の奥までしっかりなじませてから、ぬるま湯で丁寧に洗い流してください',
+    },
   },
   'LebyRIN セラム': {
     frequency: '朝晩1日2回',
@@ -116,6 +137,9 @@ export const HOMECARE_USAGE_GUIDE: Record<string, HomecareUsageGuide> = {
     timing:    '洗顔時、よく泡立ててから使用',
     caution:   'ゴシゴシこすらず、泡でやさしく包むように洗ってください。',
     staffMessage: (name) => buildMessage(name, 'LebyRIN洗顔', '朝晩1日2回', '洗顔時（よく泡立ててから使用）', 'ゴシゴシこすらず、泡でやさしく包むように洗ってください。'),
+    byCustomerType: {
+      B_pore: 'こすらず、泡でTゾーンの毛穴汚れを包み込むように洗ってください',
+    },
   },
   'LedyRIN UVクリーム': {
     frequency: '朝1回（日中は2〜3時間おきに塗り直し）',
@@ -134,6 +158,9 @@ export const HOMECARE_USAGE_GUIDE: Record<string, HomecareUsageGuide> = {
     timing:    'スキンケアの最後、就寝前に',
     caution:   '使用直後に肌がピリつくことがあるため初回は少量から試してください。',
     staffMessage: (name) => buildMessage(name, 'RINスピキュールクリーム', '週2〜3回（夜）', 'スキンケアの最後、就寝前', '使用直後に肌がピリつくことがあるため初回は少量から試してください。'),
+    byCustomerType: {
+      D_aging: '就寝前の習慣として続けることを意識し、翌朝は保湿を丁寧に行ってください',
+    },
   },
   'RIN モイスチャークリーム': {
     frequency: '朝晩1日2回',

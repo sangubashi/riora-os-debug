@@ -14,6 +14,8 @@ export interface CustomerRow {
   id:               string
   name:             string
   type:             CustomerType
+  /** brain_customers.customer_type の生値(PHASE HOMECARE-V12-MVP-1)。typeとは別物 */
+  skinConcernType:  string | null
   visitCount:       number
   totalSpent:       number
   churnRisk:        number

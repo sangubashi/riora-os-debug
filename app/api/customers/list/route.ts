@@ -101,6 +101,11 @@ export async function GET(req: NextRequest) {
         id:               c.id,
         name:             c.name,
         type,
+        // PHASE HOMECARE-V12-MVP-1: brain_customers.customer_type の生値
+        // ('A_acne'|'B_pore'|'C_sensitive'|'D_aging'|null)。上のtypeは
+        // resolveType()で接客スタイル型へ変換済みの別物のため、
+        // ホームケアのcustomer_type別tip出し分けにはこちらを使う。
+        skinConcernType:  c.customer_type,
         visitCount:       stats.visitCount,
         totalSpent:       stats.totalSpent,
         churnRisk:        Number(c.churn_score) || 0,

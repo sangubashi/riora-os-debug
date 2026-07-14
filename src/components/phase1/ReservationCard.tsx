@@ -23,6 +23,8 @@ export interface Phase1Reservation {
   menu:               string
   customerName:       string
   customerType:       CustomerType
+  /** brain_customers.customer_type の生値(PHASE HOMECARE-V12-MVP-1)。customerTypeとは別軸 */
+  skinConcernType?:   string | null
   visitCount:         number
   totalSpent:         number
   isVip:              boolean

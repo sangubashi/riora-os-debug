@@ -101,6 +101,18 @@ const TYPE_COPY: Record<string, { goal: string; ng: string }> = {
   'VIP型':       { goal: '特別感を最大演出。他のお客様より一歩先のご案内', ng: '「他のお客様も使っています」などの一般化' },
 };
 
+/**
+ * ホームケア使い方カードの customer_type別ワンポイント見出し（PHASE HOMECARE-V12-MVP-1）。
+ * brain_customers.customer_type（'A_acne'|'B_pore'|'C_sensitive'|'D_aging'|'E_bridal'）の
+ * 文字列をそのままキーに使う。TYPE_COPY（接客スタイル型）とは別軸の値のため衝突しない。
+ */
+const CUSTOMER_TYPE_HINT_LABEL: Record<string, string> = {
+  A_acne:      'ニキビが気になる方へ',
+  B_pore:      '毛穴が気になる方へ',
+  C_sensitive: '敏感肌の方へ',
+  D_aging:     'エイジングケアを意識される方へ',
+};
+
 /** KPIログ項目（ワンタップ記録） */
 const LOG_ITEMS: Array<{
   key: 'next_reserved' | 'ai_adopted' | 'retail_sold' | 'option_sold' | 'churn_followed';
@@ -1418,6 +1430,19 @@ export default function CustomerBottomSheet({
                                         <p className="text-[10px] text-[#C05060] tracking-[0.08em] mb-0.5">注意事項</p>
                                         <p className="text-xs text-[#C05060] leading-relaxed">{guide.caution}</p>
                                       </div>
+                                      {/* customer_type別ワンポイント（PHASE HOMECARE-V12-MVP-1・任意・一致時のみ表示）
+                                          ※ c.customer_typeは接客スタイル型(別軸)のため、肌質由来の
+                                             skinConcernTypeを使う。DBの生値と一致した場合のみ表示 */}
+                                      {c.skinConcernType && guide.byCustomerType?.[c.skinConcernType] && (
+                                        <div className="bg-[#FFF0F5] rounded-2xl p-3 border border-[#F5D6DB]">
+                                          <p className="text-[10px] text-[#D98292] tracking-[0.08em] mb-0.5">
+                                            ✨ {CUSTOMER_TYPE_HINT_LABEL[c.skinConcernType] ?? 'あなたへのワンポイント'}
+                                          </p>
+                                          <p className="text-xs text-[#5C4033] leading-relaxed">
+                                            {guide.byCustomerType[c.skinConcernType]}
+                                          </p>
+                                        </div>
+                                      )}
                                       <div className="bg-[#FFF8F7] rounded-2xl p-3 border border-[#F5E6E8]">
                                         <div className="flex items-center justify-between mb-1.5">
                                           <p className="text-[10px] text-[#C8A58C] tracking-[0.08em]">

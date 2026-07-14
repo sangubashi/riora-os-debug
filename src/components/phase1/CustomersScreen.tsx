@@ -39,6 +39,7 @@ function toCustomer(c: CustomerRow): Customer {
     avg_price:             c.visitCount > 0 ? Math.round(c.totalSpent / c.visitCount) : 0,
     last_visit:            c.lastVisitDate ?? new Date(Date.now() - c.lastVisit * 86400000).toISOString().slice(0, 10),
     customer_type:         c.type,
+    skinConcernType:       c.skinConcernType,
     vip_rank:              c.isVip ? 4 : 1,
     churn_risk:            c.churnRisk,
     line_response_rate:    c.lineResponseRate,

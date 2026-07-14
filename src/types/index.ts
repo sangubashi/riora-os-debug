@@ -104,6 +104,9 @@ export interface Customer {
   avg_price: number;
   last_visit: string;
   customer_type: CustomerType;
+  /** brain_customers.customer_type の生値(PHASE HOMECARE-V12-MVP-1)。
+   *  customer_type(接客スタイル型)とは別軸。ホームケアのbyCustomerType出し分けに使用 */
+  skinConcernType?: string | null;
   vip_rank: number;
   churn_risk: number;
   line_response_rate: number;
@@ -161,6 +164,7 @@ export const SKIN_TAG_LABELS: Record<string, string> = {
   redness:      '赤み',
   dehydration:  '水分不足',
   aging:        'エイジング',
+  pore:         '毛穴',
 }
 
 export const SKIN_TAG_KEYS = Object.keys(SKIN_TAG_LABELS) as SkinTagKey[]
