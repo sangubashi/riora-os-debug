@@ -251,3 +251,29 @@ export interface ReservationImportReport {
   needsReviewCount: number
   durationMs: number
 }
+
+/** brain_ops_logs.detail.skippedDetail 1件分(CSV_IMPORT_HISTORY_UI_1: 履歴画面でのスキップ理由確認用)。 */
+export interface SkippedDetailEntry {
+  rowNumber: number
+  customerName: string
+  reasonCode: ReservationSkipReasonCode
+}
+
+export const SKIPPED_DETAIL_REASON_LABEL: Record<ReservationSkipReasonCode, string> = {
+  missing_field: '必須項目不足',
+  invalid_datetime: '日付形式不正',
+  unresolved_status: 'ステータス変換失敗',
+  unresolved_staff: 'スタッフ未解決',
+}
+
+/** GET /api/admin/csv/history の予約CSV取込(kind='reservation_csv_import')側レスポンス項目。 */
+export interface ReservationImportHistoryItem {
+  id: string
+  importedAt: string
+  actorName: string
+  created: number
+  updated: number
+  skipped: number
+  needsReviewCount: number
+  skippedDetail: SkippedDetailEntry[]
+}

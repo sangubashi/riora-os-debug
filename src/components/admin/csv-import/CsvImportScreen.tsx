@@ -17,13 +17,14 @@ import {
   UserCog, Users, History, BookUser, Loader2, Info,
 } from 'lucide-react'
 import {
-  mockDryRun, mockRunImport, mockFetchHistory, mockAddStaffAlias, mockFetchStaffAliases,
-  reservationDryRun, reservationRunImport,
+  mockDryRun, mockRunImport, mockFetchHistory, mockFetchReservationHistory,
+  mockAddStaffAlias, mockFetchStaffAliases, reservationDryRun, reservationRunImport,
 } from './mockApi'
 import StaffAliasManager from './StaffAliasManager'
+import ReservationSkippedDetailModal from './ReservationSkippedDetailModal'
 import type {
-  ImportHistoryItem, ImportReport, ImportState, ReservationImportReport,
-  ReservationValidationResult, ReviewDecisionValue, StaffOption, ValidationResult,
+  ImportHistoryItem, ImportReport, ImportState, ReservationImportHistoryItem, ReservationImportReport,
+  ReservationValidationResult, ReviewDecisionValue, SkippedDetailEntry, StaffOption, ValidationResult,
 } from './types'
 import { SKIP_REASON_LABEL } from './types'
 
@@ -91,6 +92,12 @@ export default function CsvImportScreen() {
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [showAliasManager, setShowAliasManager] = useState(false)
 
+  // 予約CSV取込履歴(CSV_IMPORT_HISTORY_UI_1)。既存history(売上明細CSV)とは別state。
+  const [resHistory, setResHistory] = useState<ReservationImportHistoryItem[]>([])
+  const [resHistoryLoading, setResHistoryLoading] = useState(true)
+  const [resHistoryError, setResHistoryError] = useState<string | null>(null)
+  const [skippedDetailModal, setSkippedDetailModal] = useState<SkippedDetailEntry[] | null>(null)
+
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true)
     setHistoryError(null)
@@ -104,9 +111,23 @@ export default function CsvImportScreen() {
     }
   }, [])
 
+  const loadReservationHistory = useCallback(async () => {
+    setResHistoryLoading(true)
+    setResHistoryError(null)
+    try {
+      const rows = await mockFetchReservationHistory()
+      setResHistory(rows)
+    } catch (e) {
+      setResHistoryError(String(e))
+    } finally {
+      setResHistoryLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     loadHistory()
-  }, [loadHistory])
+    loadReservationHistory()
+  }, [loadHistory, loadReservationHistory])
 
   useEffect(() => {
     mockFetchStaffAliases().then(({ staffOptions }) => setStaffOptions(staffOptions))
@@ -219,6 +240,7 @@ export default function CsvImportScreen() {
         setProgress({ processed: validation.totalRows, total: validation.totalRows })
         setResReport(resResult)
         setState('done')
+        loadReservationHistory()
         return
       }
 
@@ -232,7 +254,7 @@ export default function CsvImportScreen() {
       setError(String(e))
       setState('error')
     }
-  }, [validation, canImport, reviewDecisions, loadHistory])
+  }, [validation, canImport, reviewDecisions, loadHistory, loadReservationHistory])
 
   return (
     <div style={{
@@ -729,6 +751,49 @@ export default function CsvImportScreen() {
           )}
         </SectionCard>
 
+        {/* ── 予約CSV取込履歴(CSV_IMPORT_HISTORY_UI_1) ── */}
+        <SectionCard title="予約CSV取込履歴" icon={<History size={15} color="#C9A055" />}>
+          {resHistoryLoading ? (
+            <p style={{ fontSize: '11px', color: '#C8A8B0', textAlign: 'center', padding: '12px' }}>読み込み中...</p>
+          ) : resHistoryError ? (
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: '7px', padding: '10px 12px',
+              background: '#FFF0F0', borderRadius: '10px', border: '1px solid #FCCDD8',
+            }}>
+              <AlertCircle size={14} color="#EF476F" style={{ flexShrink: 0, marginTop: '1px' }} />
+              <p style={{ fontSize: '11px', color: '#EF476F', lineHeight: 1.5 }}>履歴取得エラー: {resHistoryError}</p>
+            </div>
+          ) : resHistory.length === 0 ? (
+            <p style={{ fontSize: '11px', color: '#C8A8B0', textAlign: 'center', padding: '12px' }}>予約CSV取込履歴はまだありません</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {resHistory.map((h) => (
+                <div key={h.id} style={{
+                  display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', flexWrap: 'wrap',
+                  borderRadius: '10px', background: '#FFFBF0',
+                }}>
+                  <span style={{ fontSize: '11px', color: '#9F7E6C', minWidth: '78px' }}>{formatDateTime(h.importedAt)}</span>
+                  <span style={{ fontSize: '11px', color: '#5C4033' }}>
+                    新規{h.created} 更新{h.updated} 除外{h.skipped} 要確認{h.needsReviewCount}
+                  </span>
+                  {h.skipped > 0 && (
+                    <button
+                      onClick={() => setSkippedDetailModal(h.skippedDetail)}
+                      style={{
+                        marginLeft: 'auto', fontSize: '10px', fontWeight: 700, color: '#EF476F',
+                        background: '#FFF0F0', border: '1px solid #FCCDD8', borderRadius: '999px',
+                        padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap',
+                      }}
+                    >
+                      スキップ理由を見る
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </SectionCard>
+
         {/* ── スタッフ名エイリアス管理 ── */}
         <button onClick={() => setShowAliasManager(true)} style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
@@ -741,6 +806,15 @@ export default function CsvImportScreen() {
 
       <AnimatePresence>
         {showAliasManager && <StaffAliasManager onClose={() => setShowAliasManager(false)} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {skippedDetailModal && (
+          <ReservationSkippedDetailModal
+            entries={skippedDetailModal}
+            onClose={() => setSkippedDetailModal(null)}
+          />
+        )}
       </AnimatePresence>
     </div>
   )

@@ -17,6 +17,7 @@ import { authedFetch } from '@/lib/api/authedFetch'
 import type {
   ImportHistoryItem,
   ImportReport,
+  ReservationImportHistoryItem,
   ReservationImportReport,
   ReservationValidationResult,
   ReviewDecisionValue,
@@ -67,6 +68,13 @@ export async function mockFetchHistory(): Promise<ImportHistoryItem[]> {
   const res = await authedFetch(`/api/admin/csv/history?storeId=${DEMO_STORE_ID}`)
   const { history } = await readJson(res)
   return history as unknown as ImportHistoryItem[]
+}
+
+/** GET /api/admin/csv/history の予約CSV取込側(CSV_IMPORT_HISTORY_UI_1)。 */
+export async function mockFetchReservationHistory(): Promise<ReservationImportHistoryItem[]> {
+  const res = await authedFetch(`/api/admin/csv/history?storeId=${DEMO_STORE_ID}`)
+  const { reservationHistory } = await readJson(res)
+  return reservationHistory as unknown as ReservationImportHistoryItem[]
 }
 
 export async function mockFetchStaffAliases(): Promise<StaffAliasListResponse> {
