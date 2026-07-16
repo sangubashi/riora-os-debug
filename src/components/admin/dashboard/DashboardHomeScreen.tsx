@@ -33,8 +33,22 @@ const ACTION_TYPE_LABEL: Record<TodayAction['actionType'], string> = {
   upsell_campaign: 'アップセル提案',
 }
 
+/**
+ * 経営TOPのサマリー金額用（DASHBOARD_CURRENCY_IMPLEMENT_2）。
+ * 金額の大小に関わらず万円単位（整数丸め）で統一表示する。
+ * K表記（英語圏の千単位表記）は日本の商習慣に馴染まないため廃止。
+ */
 function formatYen(amount: number): string {
-  return `¥${Math.round(amount / 1000).toLocaleString()}K`
+  const man = Math.round(amount / 10000)
+  return `${man.toLocaleString('ja-JP')}万円`
+}
+
+/**
+ * 客単価専用（DASHBOARD_CURRENCY_IMPLEMENT_1・変更禁止対象）。
+ * 万円表示への丸めは行わず、常にフル桁で表示する。
+ */
+function formatYenFull(amount: number): string {
+  return `¥${amount.toLocaleString('ja-JP')}`
 }
 
 function formatPercent(rate: number | null): string {
@@ -234,7 +248,7 @@ function DashboardHomeContent() {
       <SectionCard title="来店・リピート・指名(月次)" icon={<Users size={16} color="#D98292" />}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
           <Stat label="来店人数" value={extendedKpi.visitCount !== null ? `${extendedKpi.visitCount}人` : '—'} />
-          <Stat label="客単価" value={avgSpend === null ? '—' : formatYen(avgSpend)} />
+          <Stat label="客単価" value={avgSpend === null ? '—' : formatYenFull(avgSpend)} />
           <Stat label="リピート率(30日)" value={formatPercent(extendedKpi.repeat30)} />
           <Stat label="リピート率(60日)" value={formatPercent(extendedKpi.repeat60)} />
           <Stat label="リピート率(90日)" value={formatPercent(extendedKpi.repeat90)} />
