@@ -1,12 +1,19 @@
 'use client'
 
 /**
- * CustomerMemorySection — 覚えておくこと（Phase 3）
+ * CustomerMemorySection — 覚えておくこと（Phase 3 / CUSTOMER_MEMORY_IMPLEMENT_1でサマリー拡張）
  *
  * - ブリーフィング: 顧客ヘッダー直下・AI提案より上
  * - インライン追加: "+ Memory" → add form view（AnimatePresence）
  * - Sensitive 別カード: ⚠ 触れない話題
  * - 編集/削除: onManage() → CustomerMemoryTab
+ * - サマリー行（禁忌/引継ぎ/前回施術/前回の様子/最近の会話）: 親（CustomerBottomSheet）が既取得の
+ *   データをpropsで渡す。「覚えていること」の上に表示
+ *
+ * CUSTOMER_MEMORY_OPTIMIZE_1: 「最近の会話」用の customer_notes 取得は、このコンポーネント内で
+ * 独自クエリ（fetchRecentCustomerNotes）を発行せず、CustomerBottomSheet が①メモ欄プリフィル用と
+ * 統合して1回のクエリで取得した結果を recentNotes prop として受け取る方式に変更した
+ * （CUSTOMER_MEMORY_REVIEW_1で指摘された重複クエリの解消）。
  *
  * 絶対ルール: このファイルを ProposalOrchestrator / FireScore /
  * PatternEngine / LINE提案 へ import しないこと。content 参照禁止。
@@ -17,7 +24,9 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, ChevronLeft, Mic } from 'lucide-react'
 import { toast } from 'sonner'
 import type { CustomerMemory, MemoryType, MemoryImportance } from '@/types/customerMemory'
+import type { CustomerNote } from '@/types'
 import { authedFetch } from '@/lib/api/authedFetch'
+import { fetchVoiceNotes } from '@/lib/voiceNote'
 import {
   MEMORY_TYPE_EMOJI,
   MEMORY_TYPE_LABELS,
@@ -30,6 +39,14 @@ interface Props {
   customerId:  string
   onManage:    () => void
   refreshKey?: number
+  /** 最重要禁忌事項1件（親が既取得の contraindications から渡す。新規取得なし） */
+  topContraindication?: { title: string; description: string } | null
+  /** 引継ぎの最優先1件（handover.open_tasks[0] または summary。親から渡す） */
+  handoverTask?: string | null
+  /** 前回施術（visitHistory[0]。親から渡す） */
+  lastVisit?: { date: string; menuName: string | null } | null
+  /** 最近の会話（customer_notes 最新分。親が既取得・空文字除外済みのものを渡す。新規取得なし） */
+  recentNotes?: CustomerNote[]
 }
 
 // ── Form ─────────────────────────────────────────────────────────────────────
@@ -109,12 +126,19 @@ const IMP_STYLE: Record<MemoryImportance, { bg: string; color: string }> = {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function CustomerMemorySection({ customerId, onManage, refreshKey }: Props) {
+export default function CustomerMemorySection({
+  customerId, onManage, refreshKey,
+  topContraindication = null, handoverTask = null, lastVisit = null,
+  recentNotes = [],
+}: Props) {
   const [memories, setMemories] = useState<CustomerMemory[]>([])
   const [loading,  setLoading]  = useState(true)
   const [view,     setView]     = useState<'briefing' | 'add'>('briefing')
   const [form,     setForm]     = useState<FormState>({ ...EMPTY_FORM })
   const [saving,   setSaving]   = useState(false)
+
+  // 前回の様子（voice_notes.summary 最新1件。VoiceMemoSection が既に使う fetchVoiceNotes() を再利用）
+  const [lastVoiceSummary, setLastVoiceSummary] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -130,6 +154,14 @@ export default function CustomerMemorySection({ customerId, onManage, refreshKey
   // refreshKey が変化するたびに再フェッチ（VoiceMemoSection の onSaved からトリガー）
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load() }, [load, refreshKey])
+
+  useEffect(() => {
+    let cancelled = false
+    void fetchVoiceNotes(customerId, 1).then(rows => {
+      if (!cancelled) setLastVoiceSummary(rows[0]?.summary ?? null)
+    })
+    return () => { cancelled = true }
+  }, [customerId, refreshKey])
 
   async function handleSave() {
     if (!form.content.trim()) { toast.error('内容を入力してください'); return }
@@ -200,7 +232,57 @@ export default function CustomerMemorySection({ customerId, onManage, refreshKey
               </div>
             </div>
 
-            {/* 通常メモリー */}
+            {/* サマリー行（禁忌/引継ぎ/前回施術/前回の様子） — 既取得データのみ表示。1件も無ければ非表示 */}
+            {(topContraindication || handoverTask || lastVisit || lastVoiceSummary) && (
+              <div className="px-4 pb-3 flex flex-col gap-[7px]">
+                {topContraindication && (
+                  <div className="rounded-[12px] px-3 py-2" style={{ background: 'rgba(210,50,50,0.05)' }}>
+                    <p className="text-[9px] font-bold text-[#B84050] tracking-wider mb-0.5">⚠ 禁忌</p>
+                    <p className="text-[12px] text-[#5C4033] leading-snug">
+                      {topContraindication.title}
+                      {topContraindication.description ? `：${topContraindication.description}` : ''}
+                    </p>
+                  </div>
+                )}
+                {handoverTask && (
+                  <div className="rounded-[12px] px-3 py-2" style={{ background: 'rgba(245,110,139,0.06)' }}>
+                    <p className="text-[9px] font-bold text-[#C8909C] tracking-wider mb-0.5">📋 引継ぎ</p>
+                    <p className="text-[12px] text-[#5C4033] leading-snug">{handoverTask}</p>
+                  </div>
+                )}
+                {lastVisit && (
+                  <div className="rounded-[12px] px-3 py-2" style={{ background: '#F8F1F3' }}>
+                    <p className="text-[9px] font-bold text-[#C8A58C] tracking-wider mb-0.5">💆 前回施術</p>
+                    <p className="text-[12px] text-[#5C4033] leading-snug">
+                      {new Date(lastVisit.date).toLocaleDateString('ja-JP', { month: 'long', day: 'numeric' })}
+                      {lastVisit.menuName ? `：${lastVisit.menuName}` : ''}
+                    </p>
+                  </div>
+                )}
+                {lastVoiceSummary && (
+                  <div className="rounded-[12px] px-3 py-2" style={{ background: '#F0F5FA' }}>
+                    <p className="text-[9px] font-bold text-[#7098B8] tracking-wider mb-0.5">🎙 前回の様子</p>
+                    <p className="text-[12px] text-[#5C4033] leading-snug">{lastVoiceSummary}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 最近の会話（customer_notes: AIノート＋手動メモ） */}
+            {recentNotes.length > 0 && (
+              <div className="px-4 pb-3">
+                <p className="text-[9px] font-bold text-[#9F8060] tracking-wider mb-1.5">🗣 最近の会話</p>
+                <div className="flex flex-col gap-1">
+                  {recentNotes.map(n => (
+                    <p key={n.id} className="text-[12px] text-[#5C4033] leading-snug">
+                      ・{n.note}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 通常メモリー（覚えていること） */}
             <div className="px-4 pb-3 flex flex-col gap-[9px]">
               {normal.length === 0 && sensitive.length === 0 ? (
                 <p className="text-[11px] text-[#C8A8B0]">まだ登録されていません</p>

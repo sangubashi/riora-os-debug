@@ -35,11 +35,13 @@ import type {
   ActionType,
   ServicePhase,
   DisplaySection,
+  CustomerNote,
 } from '@/types';
 import {
   SKIN_TAG_LABELS,
   SKIN_TAG_KEYS,
   ACTION_TYPE_LABELS,
+  CONTRAINDICATION_SEVERITY_ORDER,
 } from '@/types';
 import type { HomecarePlan, ServiceReplay } from '@/types';
 
@@ -258,6 +260,9 @@ export default function CustomerBottomSheet({
   const [savedMemoText, setSavedMemoText] = useState('');
   const [memoEditing,   setMemoEditing]   = useState(false);
 
+  // ── customer_notes 最新分（CUSTOMER_MEMORY_OPTIMIZE_1: プリフィル用 + 最近の会話用を統合取得） ──
+  const [recentNotes, setRecentNotes] = useState<CustomerNote[]>([]);
+
   // ── 肌タグ ──────────────────────────────────────────────────────────────────
   const [skinTags,    setSkinTags]    = useState<SkinTagKey[]>([]);
   const [tagSaving,   setTagSaving]   = useState(false);
@@ -336,6 +341,7 @@ export default function CustomerBottomSheet({
     setHomecarePlan(null);
     setDoneActions(new Set());
     setRecentActions([]);
+    setRecentNotes([]);
     setInsightRefreshKey(0);
     setNotesRefreshKey(0);
     setMemoryRefreshKey(0);
@@ -357,15 +363,12 @@ export default function CustomerBottomSheet({
     setCompletionHint(null);
     if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
 
-    supabase
-        .from('customer_notes')
-        .select('note')
-        .eq('customer_id', c.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .then(({ data }) => {
-          if (data?.[0]?.note) { setSavedMemoText(data[0].note); setMemo(data[0].note); }
-        });
+    // customer_notes 最新分を1回だけ取得し、①メモ欄プリフィル ②「最近の会話」の両方に使う
+    // （CUSTOMER_MEMORY_OPTIMIZE_1: 従来は limit(1) のプリフィル用取得と
+    //   CustomerMemorySection 側の別クエリ(limit 3)が並走していたのを統合）
+    void loadRecentNotes(c.id).then(rows => {
+      if (rows[0]?.note) { setSavedMemoText(rows[0].note); setMemo(rows[0].note); }
+    });
 
       {
         const tags = (c.skin_tags ?? []) as SkinTagKey[];
@@ -487,6 +490,21 @@ export default function CustomerBottomSheet({
   }, [c?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── ロード ────────────────────────────────────────────────────────────────
+  // customer_notes 最新分を1回のクエリで取得（①メモ欄プリフィル ②「最近の会話」表示の両方が使う）
+  // CUSTOMER_MEMORY_OPTIMIZE_1: recentNotes state だけ更新。savedMemoText/memo の上書きは
+  // 呼び出し元（顧客切替時）でのみ行い、音声メモ保存後の再取得では編集中メモを壊さないようにする
+  const loadRecentNotes = useCallback(async (customerId: string): Promise<CustomerNote[]> => {
+    const { data } = await supabase
+      .from('customer_notes')
+      .select('id, customer_id, staff_id, note, category, source, voice_note_id, created_at')
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false })
+      .limit(6);
+    const rows = (data ?? []) as CustomerNote[];
+    setRecentNotes(rows.filter(n => n.note?.trim()).slice(0, 3));
+    return rows;
+  }, []);
+
   const loadRecentActions = useCallback(async (customerId: string) => {
     setHistoryLoading(true);
     const rows = await fetchRecentActions(customerId, 15);
@@ -519,6 +537,7 @@ export default function CustomerBottomSheet({
     setHomecarePlan(null);
     setDoneActions(new Set());
     setRecentActions([]);
+    setRecentNotes([]);
     setVisitHistory([]);
     setTodayFocus(null);
     setNgTopics([]);
@@ -761,6 +780,25 @@ export default function CustomerBottomSheet({
     if (!item) return null;
     return item.description || item.title;
   }, [contraindications]);
+
+  // ── Customer Memory サマリー行（CUSTOMER_MEMORY_IMPLEMENT_1）: 既取得データのみ使用 ──
+  const topContraindication = useMemo(() => {
+    if (contraindications.length === 0) return null;
+    const sorted = [...contraindications].sort(
+      (a, b) => CONTRAINDICATION_SEVERITY_ORDER.indexOf(a.severity) - CONTRAINDICATION_SEVERITY_ORDER.indexOf(b.severity)
+    );
+    return { title: sorted[0].title, description: sorted[0].description ?? '' };
+  }, [contraindications]);
+
+  const handoverTask = useMemo(() => {
+    if (!handover) return null;
+    return handover.open_tasks?.[0] ?? handover.summary ?? null;
+  }, [handover]);
+
+  const lastVisitForMemory = useMemo(() => {
+    const v = visitHistory[0];
+    return v ? { date: v.visitDate, menuName: v.menuName } : null;
+  }, [visitHistory]);
 
   // [DEBUG] マウント時: customer.id を確認
   useEffect(() => {
@@ -1234,6 +1272,10 @@ export default function CustomerBottomSheet({
                           customerId={c.id}
                           onManage={() => setPage('memory')}
                           refreshKey={memoryRefreshKey}
+                          topContraindication={topContraindication}
+                          handoverTask={handoverTask}
+                          lastVisit={lastVisitForMemory}
+                          recentNotes={recentNotes}
                         />
                       </ErrorBoundary>
 
@@ -1523,7 +1565,10 @@ export default function CustomerBottomSheet({
                                 setInsightRefreshKey(p => p + 1);
                                 setMemoryRefreshKey(p => p + 1);
                                 // AI分析完了後に customer_notes・booking_prompt・handover を再取得
-                                setTimeout(() => setNotesRefreshKey(p => p + 1), 2000);
+                                setTimeout(() => {
+                                  setNotesRefreshKey(p => p + 1);
+                                  void loadRecentNotes(c.id);
+                                }, 2000);
                                 setTimeout(async () => {
                                   const updated = await fetchBookingPrompt(c.id, r.id);
                                   if (updated) setBookingPrompt(updated);

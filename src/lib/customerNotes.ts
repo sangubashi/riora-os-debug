@@ -67,6 +67,36 @@ export async function fetchCustomerNotes(customerId: string): Promise<CustomerNo
   return (data ?? []) as CustomerNote[]
 }
 
+// ─── 最近の会話（AIノート + 手動メモ 両方・CUSTOMER_MEMORY_IMPLEMENT_2） ────────────
+
+/**
+ * category を問わず（AIノート・手動メモ両方）最新のノートを取得する。
+ * 空文字のnoteは除外。CustomerMemorySection の「🗣 最近の会話」で使用。
+ */
+export async function fetchRecentCustomerNotes(
+  customerId: string,
+  limit = 3,
+): Promise<CustomerNote[]> {
+  if (DEMO_MODE && !VOICE_NOTES_LIVE) {
+    return DEMO_NOTES.filter(n => n.customer_id === 'demo').slice(0, limit)
+  }
+
+  const { data, error } = await supabase
+    .from('customer_notes')
+    .select('id, customer_id, staff_id, note, category, source, voice_note_id, created_at')
+    .eq('customer_id', customerId)
+    .order('created_at', { ascending: false })
+    .limit(limit * 4) // 空文字を除外した後にlimit件確保できるようバッファを持って取得
+
+  if (error) {
+    prodLog('error', '[customerNotes] fetchRecent failed', error.message)
+    return []
+  }
+  return ((data ?? []) as CustomerNote[])
+    .filter(n => n.note?.trim())
+    .slice(0, limit)
+}
+
 // ─── AI保存（重複チェック付き） ───────────────────────────────────────────────
 
 export async function saveAiCustomerNotes(params: {
