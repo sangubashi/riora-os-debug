@@ -51,4 +51,20 @@ export class StaffRepo implements IStaffRepo {
     }
     return toStaff(data as unknown as BrainStaffRow);
   }
+
+  async deactivate(staffId: UUID): Promise<Staff | null> {
+    const { data, error } = await this.client
+      .from('brain_staff')
+      .update({ is_active: false })
+      .eq('id', staffId)
+      .is('deleted_at', null)
+      .select(STAFF_COLUMNS)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`StaffRepo.deactivate failed: ${error.message}`);
+    }
+    if (!data) return null;
+    return toStaff(data as unknown as BrainStaffRow);
+  }
 }

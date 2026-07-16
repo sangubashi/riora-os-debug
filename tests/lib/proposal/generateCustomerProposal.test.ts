@@ -65,7 +65,7 @@ function createFakeRepos(overrides: { customer?: Customer | null; visits?: Visit
       create: async (v) => ({ ...v, id: 'new-visit' }), countByCustomer: async () => 0, findByCustomerAndDate: async () => null,
       reconcile: async (id) => ({ ...visit(), id }), sumSalesByStoreAndDate: async () => 0, listByStore: async () => [], updateMenuId: async () => {},
     },
-    staffRepo: { listByStore: async () => [staff()], addNameAlias: async () => null },
+    staffRepo: { listByStore: async () => [staff()], addNameAlias: async () => null, deactivate: async () => null },
     subscriptionRepo: { listByStore: async () => [] },
     outcomeRepo: { recent: async () => [] },
     candidateRepo: { loadActive: async () => overrides.candidates ?? [candidate()] },

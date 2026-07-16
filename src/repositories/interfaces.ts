@@ -171,6 +171,11 @@ export interface IStaffRepo {
    * 更新後の行を返す。対象staffIdが存在しない場合はnull。
    */
   addNameAlias(staffId: UUID, alias: string): Promise<Staff | null>;
+  /**
+   * brain_staff.is_active を false に更新する(退職処理・STAFF_MANAGEMENT_PHASE1)。
+   * 対象staffIdが存在しない場合はnull。
+   */
+  deactivate(staffId: UUID): Promise<Staff | null>;
 }
 
 /**

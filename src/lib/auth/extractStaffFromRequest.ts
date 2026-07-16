@@ -54,11 +54,14 @@ export async function extractStaffFromRequest(
 
   // brain_staff を user_id で引く（service role で確実に取得）
   // maybeSingle: 0件でも例外を投げない(admin はbrain_staff非依存で認証成功させるため)
+  // is_active=true 限定: 退職済みスタッフ(is_active=false)は brain_staff 行が見つからない
+  // 扱いとし、一般スタッフとしては認証失敗させる(STAFF_MANAGEMENT_PHASE1_IMPLEMENT_1)
   const service = getServiceClient()
   const { data: staff } = await service
     .from('brain_staff')
     .select('id')
     .eq('user_id', user.id)
+    .eq('is_active', true)
     .maybeSingle()
 
   // 一般スタッフはbrain_staffが本人特定の主キーのため、行が無ければ認証失敗のまま

@@ -111,6 +111,7 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
     staffRepo: {
       listByStore: async () => staff,
       addNameAlias: async () => null,
+      deactivate: async () => null,
     },
     menuRepo: {
       listByStore: async () => menus,
