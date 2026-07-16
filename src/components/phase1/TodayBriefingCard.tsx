@@ -52,6 +52,13 @@ function formatMonthDay(dateStr: string) {
   return `${d.getMonth() + 1}/${d.getDate()}`
 }
 
+// CUSTOMER_BRIEFING_IMPLEMENT_2: 前回来店日の表示専用（YYYY/MM/DD）。既存の
+// formatMonthDay（くわしく見る内の「前回(M/D)」表記）はそのまま残し、変更しない。
+function formatFullDate(dateStr: string) {
+  const d = new Date(dateStr)
+  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
+}
+
 // 「あと◯分」をクライアント側で再計算（APIレスポンスは開いた瞬間のスナップショットのため）
 function computeMinutesUntil(scheduledAtIso: string): number {
   const diffMs = new Date(scheduledAtIso).getTime() - Date.now()
@@ -101,6 +108,13 @@ export default function TodayBriefingCard({ onSelectCustomer }: Props) {
   }
 
   const { next, cautions, detail, upcoming } = briefing
+
+  // CUSTOMER_BRIEFING_IMPLEMENT_3: 禁忌事項は既存の cautions（kind='contraindication'）
+  // をそのまま表示専用に絞り込むだけで、APIレスポンス・データ構造は変更しない。
+  const contraindicationText = cautions
+    .filter(c => c.kind === 'contraindication')
+    .map(c => c.text)
+    .join('、')
 
   // UI表示専用の過去/未来振り分け（データ構造・APIは変更しない。scheduledAtの
   // クライアント側比較のみ）。upcomingは元々scheduled_at昇順のため、過去分は
@@ -207,6 +221,49 @@ export default function TodayBriefingCard({ onSelectCustomer }: Props) {
           </span>
           <ChevronRight size={16} className="flex-shrink-0" style={{ color: C.ink2 }} />
         </button>
+        {(next.reservationMenu || detail.lastVisitDate || detail.lastVisitMenu || contraindicationText
+          || detail.handoverNote || detail.recentChange || detail.nextFocus.length > 0) && (
+          <div className="mt-2.5 pt-2.5" style={{ borderTop: `1px dashed ${C.line}` }}>
+            {next.reservationMenu && (
+              <p className="text-[12px]" style={{ color: C.ink }}>
+                予約メニュー：{next.reservationMenu}
+              </p>
+            )}
+            {detail.lastVisitDate && (
+              <p className="text-[12px] mt-1.5" style={{ color: C.ink }}>
+                前回来店：{formatFullDate(detail.lastVisitDate)}
+              </p>
+            )}
+            {detail.lastVisitMenu && (
+              <p className="text-[12px] mt-1.5" style={{ color: C.ink }}>
+                前回施術：{detail.lastVisitMenu}
+              </p>
+            )}
+            {contraindicationText && (
+              <p className="text-[12px] mt-1.5" style={{ color: C.warn }}>
+                注意：{contraindicationText}
+              </p>
+            )}
+            {detail.handoverNote && (
+              <p className="text-[12px] mt-1.5" style={{ color: C.ink }}>
+                引継ぎ：{detail.handoverNote}
+              </p>
+            )}
+            {detail.recentChange && (
+              <p className="text-[12px] mt-1.5" style={{ color: C.ink }}>
+                最近の変化：{detail.recentChange}
+              </p>
+            )}
+            {detail.nextFocus.length > 0 && (
+              <div className="text-[12px] mt-1.5" style={{ color: C.ink }}>
+                今回意識すること：
+                {detail.nextFocus.map((f, i) => (
+                  <p key={i} className="mt-0.5">・{f}</p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── 今日、気をつけること（最大3行・優先順固定）── */}
@@ -257,6 +314,11 @@ export default function TodayBriefingCard({ onSelectCustomer }: Props) {
                       前回{detail.lastVisitDate ? `(${formatMonthDay(detail.lastVisitDate)})` : ''}
                     </b>
                     ：{detail.lastVisitMenu ?? '記録なし'}
+                  </div>
+                )}
+                {next.reservationNotes && (
+                  <div className="pt-1.5 mt-1.5" style={{ borderTop: `1px dashed ${C.line}` }}>
+                    <b style={{ color: C.ink }}>予約備考</b>：{next.reservationNotes}
                   </div>
                 )}
                 {detail.memoryNote && (

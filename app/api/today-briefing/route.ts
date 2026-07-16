@@ -8,12 +8,20 @@
  *
  * データ源:
  *   予約         reservations × brain_customers（/api/home/reservations と同じJOIN）
+ *   予約メニュー・予約備考  reservations.menu / reservations.notes（CUSTOMER_BRIEFING_IMPLEMENT_1・
+ *                値がある場合のみ返す。既存のreservations取得クエリに列を追加しただけで新規クエリなし）
  *   来店回数・前回施術  brain_visits（+ brain_menus でメニュー名解決）
  *   ①禁忌        contraindications
  *   ②触れないこと  voice_notes.ng_topics（最新1件）+ customer_memories(is_sensitive=true)
  *   ③今日の焦点   timeline_summary_cache.focus（生成済みキャッシュのみ。新規生成はしない）
  *   覚えておくこと customer_memories(is_sensitive=false)
  *   AIまとめ      booking_prompts.summary（次の予約に紐づくもの）→ 無ければ handover_notes.summary
+ *   引継ぎメモ    handover_notes.summary（CUSTOMER_BRIEFING_IMPLEMENT_3・AIまとめとは別に単独公開。
+ *                既存のhandoverRes取得結果を再利用するのみで新規クエリなし）
+ *   最近の変化    timeline_summary_cache.recent_change（TODAY_BRIEFING_IMPLEMENT_4・
+ *                既存のfocusRes取得クエリにSELECT列を追加しただけで新規クエリなし。
+ *                生成済みキャッシュのみ参照・新規LLM呼び出しはしない）
+ *   今回意識すること timeline_summary_cache.next_focus（同上。最大3件）
  *
  * ID空間の注意（2026-07-03 監査で確定）:
  *   contraindications / voice_notes / handover_notes の customer_id は
@@ -80,10 +88,20 @@ function todayJst(): { start: string; end: string } {
 
 const SEVERITY_ORDER: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 }
 
+/** 空欄なら非表示にするため null へ正規化する（CUSTOMER_BRIEFING_IMPLEMENT_1）。 */
+function blankToNull(v: unknown): string | null {
+  if (typeof v !== 'string') return null
+  const trimmed = v.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
 const EMPTY_RESPONSE: TodayBriefingResponse = {
   next: null,
   cautions: [],
-  detail: { lastVisitDate: null, lastVisitMenu: null, memoryNote: null, aiSummary: null },
+  detail: {
+    lastVisitDate: null, lastVisitMenu: null, memoryNote: null, aiSummary: null, handoverNote: null,
+    recentChange: null, nextFocus: [],
+  },
   upcoming: [],
 }
 
@@ -104,6 +122,8 @@ export async function GET(req: NextRequest) {
         brain_customer_id,
         staff_id,
         scheduled_at,
+        menu,
+        notes,
         brain_customer:brain_customers!brain_customer_id (
           id,
           name,
@@ -173,7 +193,7 @@ export async function GET(req: NextRequest) {
         ? supabase.from('voice_notes').select('ng_topics').eq('customer_id', legacyCustomerId).not('ng_topics', 'is', null).order('created_at', { ascending: false }).limit(1)
         : Promise.resolve({ data: [] }),
       supabase.from('customer_memories').select('content, is_sensitive').eq('customer_id', customerId).order('created_at', { ascending: false }),
-      supabase.from('timeline_summary_cache').select('focus').eq('customer_id', customerId).maybeSingle(),
+      supabase.from('timeline_summary_cache').select('focus, recent_change, next_focus').eq('customer_id', customerId).maybeSingle(),
       supabase.from('booking_prompts').select('summary').eq('reservation_id', nextReservation.id).maybeSingle(),
       legacyCustomerId
         ? supabase.from('handover_notes').select('summary').eq('customer_id', legacyCustomerId).order('created_at', { ascending: false }).limit(1)
@@ -227,6 +247,13 @@ export async function GET(req: NextRequest) {
     const focus = focusRes.status === 'fulfilled' ? (focusRes.value.data?.focus ?? null) : null
     if (focus) cautions.push({ kind: 'focus', text: focus })
 
+    // ── 最近の変化・今回意識すること: timeline_summary_cache（生成済みキャッシュのみ）──
+    const recentChange = focusRes.status === 'fulfilled' ? blankToNull(focusRes.value.data?.recent_change ?? null) : null
+    const nextFocusRaw = focusRes.status === 'fulfilled' ? focusRes.value.data?.next_focus : null
+    const nextFocus: string[] = Array.isArray(nextFocusRaw)
+      ? nextFocusRaw.filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+      : []
+
     // ── AIまとめ: 次の予約に紐づくbooking_prompt → 無ければhandover_notes ──
     const bookingPromptSummary = bookingPromptRes.status === 'fulfilled' ? bookingPromptRes.value.data?.summary : null
     const handoverSummary      = handoverRes.status === 'fulfilled' ? handoverRes.value.data?.[0]?.summary : null
@@ -254,6 +281,8 @@ export async function GET(req: NextRequest) {
         staffName,
         scheduledAt:  nextReservation.scheduled_at,
         minutesUntil: Math.max(0, Math.round((new Date(nextReservation.scheduled_at).getTime() - now) / 60000)),
+        reservationMenu:  blankToNull(nextReservation.menu),
+        reservationNotes: blankToNull(nextReservation.notes),
       },
       cautions: cautions.slice(0, 3),
       detail: {
@@ -261,6 +290,9 @@ export async function GET(req: NextRequest) {
         lastVisitMenu,
         memoryNote: nonSensitiveMemories[0]?.content ?? null,
         aiSummary,
+        handoverNote: blankToNull(handoverSummary),
+        recentChange,
+        nextFocus,
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       upcoming: upcomingRows.map((r: any): TodayBriefingUpcoming => ({
