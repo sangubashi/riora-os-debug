@@ -23,13 +23,19 @@
  *                生成済みキャッシュのみ参照・新規LLM呼び出しはしない）
  *   今回意識すること timeline_summary_cache.next_focus（同上。最大3件）
  *
- * ID空間の注意（2026-07-03 監査で確定）:
+ * ID空間の注意（2026-07-03 監査で確定、2026-07-19 TODAY_BRIEFING_CUSTOMER_MAPPING_AUDIT_V1
+ * により解決方式を修正）:
  *   contraindications / voice_notes / handover_notes の customer_id は
  *   legacy customers.id を参照するFK制約が付いている（brain_customers.id ではない）。
  *   customer_memories / timeline_summary_cache の customer_id は brain_customers.id 基準
  *   （canAccessCustomer.ts の実装で確認済み）。
- *   このため上記3テーブルへの問い合わせ前に getLegacyCustomerIdFromBrainCustomer() で
- *   legacy customers.id へ変換する。
+ *   このため上記3テーブルへの問い合わせ前に resolveLegacyCustomerIds() で
+ *   legacy customers.id の候補（複数）を求める。
+ *   brain_customers ↔ customers はactive顧客137/137件で直接ID一致（ミラー行）が
+ *   成立している（CUSTOMER_IDENTITY_AUDIT_V1.md §3-5）ため、brainCustomerId自身を
+ *   第一候補とする。ミラーが無いが reservations 行が新旧両IDを偶然併記している
+ *   ケース（同監査で1件確認済み）を取りこぼさないよう、reservations.customer_id
+ *   経由のブリッジも第二候補として残す。
  */
 import { NextRequest, NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -42,18 +48,22 @@ import type {
 } from '@/types/todayBriefing'
 
 /**
- * brain_customers.id → legacy customers.id への変換。
+ * brain_customers.id → legacy customers.id（候補配列）への変換。
  *
- * reservations は brain_customer_id と customer_id(legacy) を両方持ちうる列だが、
- * 直近の予約行では customer_id が NULL のことが多い（brain移行後に作られた予約は
- * legacy側と紐付けられていないため）。そのため「この brain_customer_id を一度でも
- * 持ったことがある予約」全体から customer_id が入っている行を探す。
- * 見つからない場合は null（= legacy側にデータが存在しない顧客）。
+ * ① brainCustomerId 自身を第一候補とする（customers 側にミラー行がある場合、
+ *    直接ID一致する。TODAY_BRIEFING_CUSTOMER_MAPPING_AUDIT_V1.md §3-6でactive
+ *    顧客137/137件の成立を確認済み）。
+ * ② reservations.customer_id 経由のブリッジを第二候補として追加する（ミラーが
+ *    無いが、同一予約行に新旧IDが偶然併記されているケースの救済。既知1件）。
+ * 該当データが無い候補IDはクエリが単に0件を返すだけなので、事前の存在確認は
+ * 行わない。戻り値は必ず1件以上（brainCustomerId自身）を含む。
  */
-async function getLegacyCustomerIdFromBrainCustomer(
+async function resolveLegacyCustomerIds(
   supabase: SupabaseClient,
   brainCustomerId: string
-): Promise<string | null> {
+): Promise<string[]> {
+  const ids = new Set<string>([brainCustomerId])
+
   const { data } = await supabase
     .from('reservations')
     .select('customer_id')
@@ -61,7 +71,10 @@ async function getLegacyCustomerIdFromBrainCustomer(
     .not('customer_id', 'is', null)
     .limit(1)
     .maybeSingle()
-  return (data as { customer_id: string } | null)?.customer_id ?? null
+  const bridged = (data as { customer_id: string } | null)?.customer_id
+  if (bridged) ids.add(bridged)
+
+  return Array.from(ids)
 }
 
 const BRAIN_TYPE_MAP: Record<string, string> = {
@@ -174,7 +187,7 @@ export async function GET(req: NextRequest) {
     const allCustomerIds = reservations.map((r: any) => r.brain_customer.id as string)
 
     // contraindications / voice_notes / handover_notes は legacy customers.id 基準のため変換
-    const legacyCustomerId = await getLegacyCustomerIdFromBrainCustomer(supabase, customerId)
+    const legacyCustomerIds = await resolveLegacyCustomerIds(supabase, customerId)
 
     const [
       visitsRes, staffRes, contraRes, voiceRes, memoryRes, focusRes, bookingPromptRes, handoverRes,
@@ -186,18 +199,12 @@ export async function GET(req: NextRequest) {
       nextReservation.brain_customer.assigned_staff_id
         ? supabase.from('brain_staff').select('name').eq('id', nextReservation.brain_customer.assigned_staff_id).maybeSingle()
         : Promise.resolve({ data: null }),
-      legacyCustomerId
-        ? supabase.from('contraindications').select('severity, title, description').eq('customer_id', legacyCustomerId)
-        : Promise.resolve({ data: [] }),
-      legacyCustomerId
-        ? supabase.from('voice_notes').select('ng_topics').eq('customer_id', legacyCustomerId).not('ng_topics', 'is', null).order('created_at', { ascending: false }).limit(1)
-        : Promise.resolve({ data: [] }),
+      supabase.from('contraindications').select('severity, title, description').in('customer_id', legacyCustomerIds),
+      supabase.from('voice_notes').select('ng_topics').in('customer_id', legacyCustomerIds).not('ng_topics', 'is', null).order('created_at', { ascending: false }).limit(1),
       supabase.from('customer_memories').select('content, is_sensitive').eq('customer_id', customerId).order('created_at', { ascending: false }),
       supabase.from('timeline_summary_cache').select('focus, recent_change, next_focus').eq('customer_id', customerId).maybeSingle(),
       supabase.from('booking_prompts').select('summary').eq('reservation_id', nextReservation.id).maybeSingle(),
-      legacyCustomerId
-        ? supabase.from('handover_notes').select('summary').eq('customer_id', legacyCustomerId).order('created_at', { ascending: false }).limit(1)
-        : Promise.resolve({ data: [] }),
+      supabase.from('handover_notes').select('summary').in('customer_id', legacyCustomerIds).order('created_at', { ascending: false }).limit(1),
     ])
 
     // ── 来店回数・前回施術 ──────────────────────────────────────────────
@@ -262,7 +269,7 @@ export async function GET(req: NextRequest) {
     if (process.env.NODE_ENV === 'development') {
       console.info('[today-briefing]', {
         customerName:      nextReservation.brain_customer.name,
-        legacyCustomerId,
+        legacyCustomerIds,
         contraindications: contraRows.length,
         handoverNotes:     handoverRes.status === 'fulfilled' ? (handoverRes.value.data?.length ?? 0) : 0,
         voiceNotes:        voiceRes.status === 'fulfilled' ? (voiceRes.value.data?.length ?? 0) : 0,
