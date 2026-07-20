@@ -117,7 +117,7 @@ function parseAndAggregate(csvText: string): ParseResult {
   }
 }
 
-interface ResolutionContext {
+export interface ResolutionContext {
   staffLookup:       StaffLookup
   menuLookup:        MenuLookup
   existingCustomers: Customer[]
@@ -169,7 +169,105 @@ async function findAlreadyImportedCandidate(
   return matches.length === 1 ? matches[0] : null
 }
 
-async function matchCustomer(agg: SalonBoardCheckoutAggregate, ctx: ResolutionContext, repos: PipelineRepos) {
+/** 案A(来店日近傍)で「拮抗している」とみなす閾値(日数)。この差未満なら不確実として自動統合しない。 */
+const VISIT_PROXIMITY_MARGIN_DAYS = 3
+
+/**
+ * 単一候補ケース(案C追加ガード・docs/PASS_AC_GAP_GUARD_OPTIONS_AUDIT.md §4.3準拠)。
+ * candidateのvisit実績がSINGLE_CANDIDATE_MIN_VISITS_FOR_UNLIMITED件未満、かつ最終来店日
+ * からのギャップがSINGLE_CANDIDATE_GAP_LIMIT_DAYSを超える場合は自動統合せずneeds_review
+ * へ落とす(実績の浅い候補への誤統合リスクを下げるため)。visit実績が閾値以上の候補は
+ * ギャップ無制限のまま(現状維持)。
+ */
+const SINGLE_CANDIDATE_MIN_VISITS_FOR_UNLIMITED = 3
+const SINGLE_CANDIDATE_GAP_LIMIT_DAYS = 90
+
+function daysBetween(a: string, b: string): number {
+  const da = new Date(`${a}T00:00:00Z`).getTime()
+  const db = new Date(`${b}T00:00:00Z`).getTime()
+  return Math.abs(da - db) / 86_400_000
+}
+
+export type VisitProximityMethod = 'visit_proximity_single' | 'visit_proximity_closest'
+
+/**
+ * Pass A+C(重複生成停止フェーズ・docs/DUPLICATE_PREVENTION_IMPLEMENTATION_PLAN.md準拠)。
+ *
+ * 会員番号が無く氏名一致候補が2件以上あるケースは、既存のPass N(直上の単一候補
+ * フォールバック)が構造的に機能しない(候補が2件以上になった瞬間、その氏名の顧客は
+ * 以降ずっとneeds_review→既定'new'に落ち続け、来店のたびに新規顧客が量産される
+ * カスケードバグが起きる。docs/CSV_IMPORT_DUPLICATE_ROOT_CAUSE_AUDIT_V1.md §2.2参照)。
+ *
+ * これを埋めるため、以下の条件を満たす場合のみ確定マッチとする(自動統合対象は
+ * 「完全氏名一致(findNameCandidatesで既に保証済み)+来店日非衝突+visit実績あり」の
+ * みに限定し、不確実なものはnullを返してneeds_review(自動統合しない)に委ねる):
+ *
+ *   1. 候補のいずれかが今回と同日のvisitを既に持つ場合 → 衝突とみなしnull
+ *      (同日一致による確定マッチはfindAlreadyImportedCandidateの役割であり、
+ *      ここでは扱わない。安全側に倒しnullを返す)
+ *   2. 候補をvisit実績(直近1件)が存在するものだけに絞り込む(案C: 過去visit存在)。
+ *      表記ゆれ由来のスタブ(visit=0の重複候補、AUDIT_V1で確認したパターンA)は
+ *      この時点で除外される
+ *   3a. 絞り込んだ結果が1件のみ → 確定マッチ(visit_proximity_single)。ただし
+ *       候補のvisit実績が3件未満かつギャップが90日超の場合は、実績が浅い候補への
+ *       誤統合リスクを下げるため`status: 'declined'`を返しneeds_reviewへ委ねる
+ *       (PASS_AC_GAP_GUARD_OPTIONS_AUDIT.md §4.3のC案)
+ *   3b. 絞り込んだ結果が2件以上 → 来店日ギャップ(案A: 来店日近傍)が最小の候補を
+ *       採用する(visit_proximity_closest)。ただし次点候補とのギャップ差が
+ *       VISIT_PROXIMITY_MARGIN_DAYS未満(僅差)の場合は誤統合リスクが高いとみなし
+ *       `status: 'declined'`を返す
+ *
+ * 戻り値は3値(matched/no_visit_history/declined)を区別する。`no_visit_history`
+ * (候補が1件もvisit実績を持たない)場合のみ、呼び出し側は旧Pass N(firstVisitDateベース)
+ * へフォールバックしてよい。`declined`(visit実績はあるがガード/僅差判定で見送った)場合は
+ * 旧Pass Nへは絶対にフォールバックしない — visit実績がある候補に対して意図的に
+ * needs_reviewへ倒した判断を、日付方向のみで無条件マッチする旧Pass Nが上書きしてしまうと
+ * C案ガードの効果が実質的に無効化されるため(実データ検証で確認した既知の抜け穴)。
+ */
+async function resolveByVisitProximity(
+  candidates: CustomerCandidate[],
+  visitDate: string,
+  repos: PipelineRepos
+): Promise<
+  | { status: 'matched'; customerId: string; method: VisitProximityMethod }
+  | { status: 'no_visit_history' }
+  | { status: 'declined' }
+> {
+  const withVisits: { customerId: string; lastVisitDate: string }[] = []
+  for (const c of candidates) {
+    const recent = await repos.visitRepo.recentByCustomer(c.customerId, 1)
+    if (recent.length === 0) continue
+    if (recent[0].visitDate === visitDate) return { status: 'declined' }
+    withVisits.push({ customerId: c.customerId, lastVisitDate: recent[0].visitDate })
+  }
+
+  if (withVisits.length === 0) return { status: 'no_visit_history' }
+  if (withVisits.length === 1) {
+    const sole = withVisits[0]
+    const gapDays = daysBetween(sole.lastVisitDate, visitDate)
+    if (gapDays > SINGLE_CANDIDATE_GAP_LIMIT_DAYS) {
+      const visitCount = await repos.visitRepo.countByCustomer(sole.customerId)
+      if (visitCount < SINGLE_CANDIDATE_MIN_VISITS_FOR_UNLIMITED) {
+        return { status: 'declined' }
+      }
+    }
+    return { status: 'matched', customerId: sole.customerId, method: 'visit_proximity_single' }
+  }
+
+  const withGap = withVisits
+    .map(w => ({ ...w, gapDays: daysBetween(w.lastVisitDate, visitDate) }))
+    .sort((a, b) => a.gapDays - b.gapDays)
+  const [best, second] = withGap
+  if (second && (second.gapDays - best.gapDays) < VISIT_PROXIMITY_MARGIN_DAYS) {
+    return { status: 'declined' }
+  }
+  return { status: 'matched', customerId: best.customerId, method: 'visit_proximity_closest' }
+}
+
+export type CustomerMatchMethod = 'hash' | 'idempotent_same_day' | 'pass_n_single_candidate' | VisitProximityMethod | null
+
+/** Before/After実測(docs/DUPLICATE_PREVENTION_IMPLEMENTATION_PLAN.md実装検証)のため公開する。 */
+export async function matchCustomer(agg: SalonBoardCheckoutAggregate, ctx: ResolutionContext, repos: PipelineRepos) {
   const hash = agg.customerNumber ? hashExternalKey(agg.customerNumber, ctx.anonSalt) : null
   const matchedByHash = hash ? ctx.byExternalHash.get(hash) ?? null : null
   // 会員番号(external_key_hash)による確定一致かどうか(Pass D拡張・customerResolutionRateの算出に使用)。
@@ -182,24 +280,65 @@ async function matchCustomer(agg: SalonBoardCheckoutAggregate, ctx: ResolutionCo
     // 既存importedビジット照合: 同一顧客が同日のvisitを持つ場合(同一CSV再取込の冪等化)
     const alreadyImportedId = await findAlreadyImportedCandidate(nameCandidates, visitDate, repos)
     if (alreadyImportedId) {
-      return { hash, decision: { status: 'matched' as const, customerId: alreadyImportedId }, nameCandidates, isHashMatch }
-    }
-
-    // Pass N フォールバック③: 氏名 + 初回来店日
-    // 会員番号(external_key_hash)が無い場合に候補が1件のみ存在し、かつその顧客の
-    // 初回来店日がこの来店日以前であれば同一顧客への来店と判定してauto-matchする。
-    // これにより (a)同一CSV内で同一人物が異なる日付で複数行ある場合、
-    // (b)別CSVで同一人物の別日来店を取り込む場合、のどちらも重複顧客を生成しない。
-    if (hash === null && nameCandidates.length === 1) {
-      const sole = ctx.existingCustomers.find(c => c.id === nameCandidates[0].customerId)
-      if (sole?.firstVisitDate != null && sole.firstVisitDate <= visitDate) {
-        return { hash, decision: { status: 'matched' as const, customerId: sole.id }, nameCandidates, isHashMatch }
+      return {
+        hash, decision: { status: 'matched' as const, customerId: alreadyImportedId },
+        nameCandidates, isHashMatch, matchMethod: 'idempotent_same_day' as CustomerMatchMethod, proximityDeclined: false,
       }
     }
+
+    // Pass A+C(重複生成停止フェーズ・docs/DUPLICATE_PREVENTION_IMPLEMENTATION_PLAN.md準拠)。
+    // 候補が1件でも複数件でも、まずこちらを優先して試す。
+    //
+    // 実データ検証(小林絵里等の再現テスト)で判明した通り、旧Pass N(直下)は
+    // 「候補のfirstVisitDate <= 今回のvisitDate」という一方向の日付比較のため、
+    // CSV行の並び順が来店日の昇順になっていない場合(会計ID順等、実データで確認済み)、
+    // 候補が1件しか無い場合でも新しい行の来店日が既存候補の初回来店日より「前」だと
+    // マッチに失敗し、needs_review→既定'new'で重複が生成される。これが実際の
+    // 重複発生の主要因だった(CSV_IMPORT_DUPLICATE_ROOT_CAUSE_AUDIT_V1.md時点では
+    // 候補複数件のケースのみを主要因と推定していたが、実データの created_at 順序を
+    // 検証した結果、候補1件の日付逆転ケースも実際に発生していたことを確認した)。
+    // resolveByVisitProximityは日付の前後を問わない対称な近傍判定のため、この
+    // ケースも含めて解決できる。
+    let proximityDeclined = false
+    let allowLegacyPassNFallback = true
+    if (hash === null && nameCandidates.length >= 1) {
+      const resolved = await resolveByVisitProximity(nameCandidates, visitDate, repos)
+      if (resolved.status === 'matched') {
+        return {
+          hash, decision: { status: 'matched' as const, customerId: resolved.customerId },
+          nameCandidates, isHashMatch, matchMethod: resolved.method as CustomerMatchMethod, proximityDeclined: false,
+        }
+      }
+      // resolveByVisitProximityが確定できなかった場合をDry Run表示強化(proximity_review_
+      // count)のために記録する。ただし旧Pass Nへのフォールバック可否は理由によって分ける:
+      // 'no_visit_history'(候補がvisit実績を1件も持たない)場合のみフォールバックを許可し、
+      // 'declined'(visit実績はあるがガード/僅差判定で意図的に見送った)場合はフォールバック
+      // しない。ここでフォールバックを許してしまうと、旧Pass N(firstVisitDateの方向のみ見て
+      // 日数無制限でマッチする)がC案ガードの判断を無条件に上書きしてしまい、ガードを追加した
+      // 意味が失われる(実装検証で確認済みの抜け穴)。
+      proximityDeclined = true
+      allowLegacyPassNFallback = resolved.status === 'no_visit_history'
+    }
+
+    // Pass N フォールバック③(旧ロジック・氏名 + 初回来店日): 候補にvisit実績が無く
+    // (brain_visitsが1件も無い)Pass A+Cが判定不能だったが、customer.firstVisitDate
+    // 自体は設定されている候補が1件だけ存在する場合の最終フォールバックとして残す。
+    if (hash === null && nameCandidates.length === 1 && allowLegacyPassNFallback) {
+      const sole = ctx.existingCustomers.find(c => c.id === nameCandidates[0].customerId)
+      if (sole?.firstVisitDate != null && sole.firstVisitDate <= visitDate) {
+        return {
+          hash, decision: { status: 'matched' as const, customerId: sole.id },
+          nameCandidates, isHashMatch, matchMethod: 'pass_n_single_candidate' as CustomerMatchMethod, proximityDeclined,
+        }
+      }
+    }
+
+    const decision = decideCustomerMatch({ matchedByHash, nameCandidates })
+    return { hash, decision, nameCandidates, isHashMatch, matchMethod: (isHashMatch ? 'hash' : null) as CustomerMatchMethod, proximityDeclined }
   }
 
   const decision = decideCustomerMatch({ matchedByHash, nameCandidates })
-  return { hash, decision, nameCandidates, isHashMatch }
+  return { hash, decision, nameCandidates, isHashMatch, matchMethod: (isHashMatch ? 'hash' : null) as CustomerMatchMethod, proximityDeclined: false }
 }
 
 // ───────────────────────── Dry Run ─────────────────────────
@@ -228,6 +367,9 @@ export async function buildDryRunResult(input: DryRunInput, repos: PipelineRepos
   const unresolvedStaffMap = new Map<string, UnresolvedStaffName>()
   const preview: PreviewRow[] = []
   let hashMatchedCount = 0
+  let nameProximityMatchedCount = 0
+  let visitProximityClosestCount = 0
+  let proximityReviewCount = 0
 
   for (const agg of aggregates) {
     const staffRes = resolveStaffId(agg.staffNameRaw, ctx.staffLookup)
@@ -250,8 +392,13 @@ export async function buildDryRunResult(input: DryRunInput, repos: PipelineRepos
       continue
     }
 
-    const { decision, isHashMatch } = await matchCustomer(agg, ctx, repos)
+    const { decision, isHashMatch, matchMethod, proximityDeclined } = await matchCustomer(agg, ctx, repos)
     if (isHashMatch) hashMatchedCount += 1
+    if (matchMethod === 'visit_proximity_single' || matchMethod === 'visit_proximity_closest') {
+      nameProximityMatchedCount += 1
+    }
+    if (matchMethod === 'visit_proximity_closest') visitProximityClosestCount += 1
+    if (proximityDeclined) proximityReviewCount += 1
     if (decision.status === 'needs_review') {
       needsReview.push({
         rowNumber: agg.lineNumber,
@@ -281,7 +428,8 @@ export async function buildDryRunResult(input: DryRunInput, repos: PipelineRepos
     .reduce((sum, u) => sum + u.occurrenceCount, 0)
   const qualityReport = computeCsvQualityReport({
     aggregates, menuLookup: ctx.menuLookup, unresolvedStaffCount, needsReviewCount: needsReview.length,
-    hashMatchedCount, parseLevelErrorCount: skipped.length, menuUnresolvedSkippedCount: additionalSkipped.length,
+    hashMatchedCount, nameProximityMatchedCount, visitProximityClosestCount, proximityReviewCount,
+    parseLevelErrorCount: skipped.length, menuUnresolvedSkippedCount: additionalSkipped.length,
   })
 
   return {
@@ -335,6 +483,9 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
   let unresolvedStaffCount = 0
   let needsReviewCount = 0
   let hashMatchedCount = 0
+  let nameProximityMatchedCount = 0
+  let visitProximityClosestCount = 0
+  let proximityReviewCount = 0
   let menuUnresolvedSkippedCount = 0
   const menuResolutionByRawName = new Map<string, MenuResolutionLogEntry>()
 
@@ -352,8 +503,13 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
       continue
     }
 
-    const { hash, decision, isHashMatch } = await matchCustomer(agg, ctx, repos)
+    const { hash, decision, isHashMatch, matchMethod, proximityDeclined } = await matchCustomer(agg, ctx, repos)
     if (isHashMatch) hashMatchedCount += 1
+    if (matchMethod === 'visit_proximity_single' || matchMethod === 'visit_proximity_closest') {
+      nameProximityMatchedCount += 1
+    }
+    if (matchMethod === 'visit_proximity_closest') visitProximityClosestCount += 1
+    if (proximityDeclined) proximityReviewCount += 1
     let customerId: string
 
     if (decision.status === 'matched') {
@@ -439,7 +595,8 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
   // 「未解決スタッフによりスキップされた行が何件あるか」自体を可視化する目的のため全件対象にする)。
   const qualityReport = computeCsvQualityReport({
     aggregates, menuLookup: ctx.menuLookup, unresolvedStaffCount, needsReviewCount,
-    hashMatchedCount, parseLevelErrorCount: skipped.length, menuUnresolvedSkippedCount,
+    hashMatchedCount, nameProximityMatchedCount, visitProximityClosestCount, proximityReviewCount,
+    parseLevelErrorCount: skipped.length, menuUnresolvedSkippedCount,
   })
 
   await repos.opsLogRepo.insert({
@@ -456,6 +613,14 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
       rows: parsed.data.totalRows,
       type: input.csvType ?? 'detail',
       newCustomers, updatedCustomers, visitsImported, piiFoundTotal, unresolvedStaffCount, durationMs, menuResolution, qualityReport,
+      // Pass A+C監査ログ(docs/PASS_AC_FINAL_GO_NOGO_AUDIT.md §④監視項目対応)。
+      // visit_proximity_closest(複数候補タイブレーク)は実データ検証時点で発動0件だった
+      // ため、本番初回運用でこのreasonが何件記録されるかを事後確認できるようにする。
+      proximityAudit: {
+        reason: 'visit_proximity_closest',
+        visitProximityClosestCount,
+        proximityReviewCount,
+      },
     },
   })
 

@@ -25,7 +25,8 @@ const EMPTY_QUALITY_REPORT = {
   score: 100, level: 'excellent' as const, totalCheckouts: 0, warnings: [],
   menuResolution: { exactMatch: 0, normalizedMatch: 0, partialMatch: 0, fallbackOther: 0, unresolved: 0, entries: [] },
   duplicateCustomerNames: [],
-  rates: { customerResolutionRate: 0, staffResolutionRate: 1, menuResolutionRate: 1, importedOtherRate: 0, errorCount: 0, skippedCount: 0 },
+  proximityMatchCount: 0, proximityReviewCount: 0, visitProximityClosestCount: 0,
+  rates: { customerResolutionRate: 0, nameProximityResolutionRate: 0, combinedCustomerResolutionRate: 0, staffResolutionRate: 1, menuResolutionRate: 1, importedOtherRate: 0, errorCount: 0, skippedCount: 0 },
 };
 
 function buildFileReq(opts: { file?: File; storeId?: string }) {

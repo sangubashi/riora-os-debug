@@ -65,6 +65,25 @@ export interface ComputeCsvQualityReportInput {
   needsReviewCount: number
   /** 会員番号(external_key_hash)による確定一致件数(customerResolutionRateの算出に使用)。 */
   hashMatchedCount: number
+  /**
+   * 氏名+来店日近傍ロジック(Pass A+C・重複生成停止フェーズ)による確定一致件数。
+   * 会員番号が無いCSVで、氏名一致候補が複数件あってもPass N(単一候補フォールバック)が
+   * 機能しないケースを補う。docs/DUPLICATE_PREVENTION_IMPLEMENTATION_PLAN.md準拠。
+   */
+  nameProximityMatchedCount: number
+  /**
+   * nameProximityMatchedCountのうち、複数候補タイブレーク(visit_proximity_closest)
+   * 経由で確定した件数(docs/PASS_AC_FINAL_GO_NOGO_AUDIT.md §④監視項目対応)。
+   * 実データ検証時点では0件だったため、本番初回運用での発動有無を確認する目的で分離集計する。
+   */
+  visitProximityClosestCount: number
+  /**
+   * Pass A+Cロジック(resolveByVisitProximity)が氏名一致候補を検討したが確定できず、
+   * needs_review(自動統合しない)へ委ねた件数。同日衝突・複数候補の僅差・単一候補時の
+   * C案ガード(visit実績3件未満+90日超)のいずれかに該当した行を含む
+   * (docs/PASS_AC_GAP_GUARD_OPTIONS_AUDIT.md §4.3準拠)。
+   */
+  proximityReviewCount: number
   /** パース/会計集約段階のエラー件数(severity='error'・会計内不整合や必須列欠落等)。 */
   parseLevelErrorCount: number
   /** メニュー名がフォールバック行も無く未解決のままスキップされた件数。 */
@@ -75,7 +94,8 @@ export interface ComputeCsvQualityReportInput {
 export function computeCsvQualityReport(input: ComputeCsvQualityReportInput): CsvQualityReport {
   const {
     aggregates, menuLookup, unresolvedStaffCount, needsReviewCount,
-    hashMatchedCount, parseLevelErrorCount, menuUnresolvedSkippedCount,
+    hashMatchedCount, nameProximityMatchedCount, visitProximityClosestCount, proximityReviewCount,
+    parseLevelErrorCount, menuUnresolvedSkippedCount,
   } = input
 
   const menuResolutionByRawName = new Map<string, MenuResolutionLogEntry>()
@@ -153,8 +173,13 @@ export function computeCsvQualityReport(input: ComputeCsvQualityReportInput): Cs
     warnings,
     menuResolution,
     duplicateCustomerNames,
+    proximityMatchCount: nameProximityMatchedCount,
+    proximityReviewCount,
+    visitProximityClosestCount,
     rates: {
       customerResolutionRate: rate(hashMatchedCount),
+      nameProximityResolutionRate: rate(nameProximityMatchedCount),
+      combinedCustomerResolutionRate: rate(hashMatchedCount + nameProximityMatchedCount),
       staffResolutionRate: 1 - rate(unresolvedStaffCount),
       menuResolutionRate: 1 - rate(menuFallbackCount),
       importedOtherRate: rate(menuFallbackCount),

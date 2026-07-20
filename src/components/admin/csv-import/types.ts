@@ -144,6 +144,12 @@ export interface CsvImportRates {
   /** 会員番号(external_key_hash)による確定一致の割合。会員番号が無いCSVでは常に低くなる
    *  (=氏名のみでの突合に依存している割合が高いことを意味し、重複顧客リスクの直接の指標)。 */
   customerResolutionRate: number
+  /** 氏名+来店日近傍ロジック(Pass A+C・重複生成停止フェーズ)による確定一致の割合。
+   *  docs/DUPLICATE_PREVENTION_IMPLEMENTATION_PLAN.md準拠。 */
+  nameProximityResolutionRate: number
+  /** customerResolutionRate + nameProximityResolutionRateの合算(重複を生成せず確定
+   *  マッチできた行の割合。会員番号が無いCSVでの実質的な名寄せ精度指標)。 */
+  combinedCustomerResolutionRate: number
   /** スタッフ名が解決できた割合(1 - unresolvedStaffCount/totalCheckouts)。 */
   staffResolutionRate: number
   /** メニュー名がexact/normalized/partialのいずれかで解決できた割合(imported_otherへ
@@ -165,6 +171,19 @@ export interface CsvQualityReport {
   menuResolution: MenuResolutionSummary
   /** 会員番号が無いCSVで同一氏名が複数回出現する顧客(顧客名寄せの重複リスク・自動マージはしない)。 */
   duplicateCustomerNames: { name: string; occurrenceCount: number }[]
+  /**
+   * Pass A+C(氏名+来店日近傍ロジック)で自動統合された件数(Dry Run表示強化・
+   * docs/PASS_AC_FINAL_GO_NOGO_AUDIT.md §④監視項目対応)。「何件自動統合されたか」を
+   * 運用者が確認できるようにする。
+   */
+  proximityMatchCount: number
+  /**
+   * Pass A+Cロジックが確定できず自動統合を見送り、needs_reviewへ委ねた件数。
+   * 「何件保留になったか」を運用者が確認できるようにする。
+   */
+  proximityReviewCount: number
+  /** proximityMatchCountのうち、複数候補タイブレーク(visit_proximity_closest)経由の件数。 */
+  visitProximityClosestCount: number
   rates: CsvImportRates
 }
 
