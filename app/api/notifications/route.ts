@@ -17,7 +17,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getServiceClient, getRepos } from '../../lib/repos'
+import { getServiceClient } from '../../lib/repos'
 import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest'
 import { normalizeProductName } from '../customers/[id]/homecare-products/route'
 import { detectNotifications, type NotificationCustomerInput } from '@/lib/notifications/detectNotifications'
@@ -25,8 +25,6 @@ import { buildVisitReminders, type VisitReminderInput } from '@/lib/notification
 import { buildNewReservationNotifications, type NewReservationInput } from '@/lib/notifications/detectNewReservations'
 import { todayJst, tomorrowJst } from '../today-briefing/route'
 import { resolveLegacyCustomerIds } from '@/lib/resolveLegacyCustomerIds'
-import { computeChurnRisk } from '@/lib/churn/ChurnRiskEngine'
-import { DEMO_STORE_ID } from '@/lib/constants'
 import type { StaffNotification } from '@/types/notifications'
 
 /** is_internal_user=trueの顧客IDセット。全通知種別・全ロール(管理者含む)へ一律適用する。 */
@@ -336,45 +334,18 @@ export async function GET(req: NextRequest) {
       newReservationNotifications = buildNewReservationNotifications(newReservationInputs)
     }
 
-    // ── 👔 管理者向け通知(§1後半・NT-4): 離脱予兆・承認待ち ────────────────
-    // スタッフには一切出さない(設計書「離脱予兆・売上・承認待ちは管理者向けのみ」)。
-    const adminNotifications: StaffNotification[] = []
-    if (staff.isAdmin) {
-      const repos = getRepos()
-      const [churnCustomers, churnVisits, churnStaff, pendingQueue] = await Promise.all([
-        repos.customerRepo.listByStore(DEMO_STORE_ID),
-        repos.visitRepo.listByStore(DEMO_STORE_ID),
-        repos.staffRepo.listByStore(DEMO_STORE_ID),
-        repos.lineQueueRepo.listPendingByStore(DEMO_STORE_ID),
-      ])
-      // 社内利用者は離脱予兆の集計対象から除外(管理者向けでも例外なく適用)。
-      const dangerCustomers = computeChurnRisk({
-        asOfDate: new Date().toISOString().slice(0, 10),
-        customers: churnCustomers.filter((c) => !internalUserIds.has(c.id)),
-        visits: churnVisits,
-        staff: churnStaff,
-      })
-      if (dangerCustomers.length > 0) {
-        adminNotifications.push({
-          id: 'churn_risk_admin:summary',
-          kind: 'churn_risk_admin',
-          emoji: '⚠️',
-          title: `今週対応したい離脱予兆 ${dangerCustomers.length}名`,
-        })
-      }
-      if (pendingQueue.length > 0) {
-        adminNotifications.push({
-          id: 'approval_pending_admin:summary',
-          kind: 'approval_pending_admin',
-          emoji: '📊',
-          title: `承認待ち ${pendingQueue.length}件`,
-        })
-      }
-    }
+    // 管理者向け通知(離脱予兆・承認待ち等)はこのAPIでは扱わない。本エンドポイントは
+    // スタッフアプリ(Phase1Screen)専用であり、経営分析・管理者向け情報は
+    // 管理者アプリ(app/admin/**)側に集約する設計方針のため(PHASE NOTIF_STAFF_ONLY_1)。
+
+    // 通知は最大5件まで(現場で読み切れる件数に絞る・PHASE NOTIF_STAFF_ONLY_1)。
+    // 優先順: 本日の来店リマインド → 新規予約 → 祝福/気遣い/事実系。
+    const MAX_NOTIFICATIONS = 5
+    const allNotifications = [...visitReminders, ...newReservationNotifications, ...notifications]
 
     return NextResponse.json({
       success: true,
-      notifications: [...adminNotifications, ...visitReminders, ...newReservationNotifications, ...notifications],
+      notifications: allNotifications.slice(0, MAX_NOTIFICATIONS),
       scannedCount: customers.length,
     })
   } catch (e) {
