@@ -42,14 +42,12 @@ export class ReservationRepo implements IReservationRepo {
   constructor(private readonly client: SupabaseClient) {}
 
   async findByNaturalKey(
-    staffId: UUID,
     scheduledAt: string,
     brainCustomerId: UUID | null
   ): Promise<ReservationRow | null> {
     let query = this.client
       .from('reservations')
       .select('id')
-      .eq('staff_id', staffId)
       .eq('scheduled_at', scheduledAt);
 
     query = brainCustomerId

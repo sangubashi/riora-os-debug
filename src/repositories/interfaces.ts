@@ -239,11 +239,15 @@ export interface ReservationRow {
 
 export interface IReservationRepo {
   /**
-   * 暫定複合キー(staff_id, scheduled_at, brain_customer_id)で既存行を検索する
-   * (RES-3確定の暫定UPSERTキー。「予約番号」列が無いための代替。リスケジュール時は
-   * 別行として扱われる既知の制約がある)。
+   * 暫定複合キー(scheduled_at, brain_customer_id)で既存行を検索する
+   * (RES-3確定の暫定UPSERTキー。「予約番号」列が無いための代替。RESERVATION_
+   * DUPLICATE_FIX_1でstaff_idをキーから除外した: 同一顧客・同一日時のCSV行は
+   * 担当スタッフの表記がCSV上で変わっただけでも同一予約とみなし、update対象と
+   * する(1顧客が同一日時に複数の施術を受けることは想定しないため、担当者の
+   * 揺れで新規重複行を作らないほうが安全側)。リスケジュール(scheduled_at変更)
+   * 時は依然として別行として扱われる既知の制約が残る。
    */
-  findByNaturalKey(staffId: UUID, scheduledAt: string, brainCustomerId: UUID | null): Promise<ReservationRow | null>;
+  findByNaturalKey(scheduledAt: string, brainCustomerId: UUID | null): Promise<ReservationRow | null>;
   /** reservationsへ1件追加し、生成された行(id付き)を返す。 */
   create(input: ReservationUpsertInput): Promise<ReservationRow>;
   /** reservationsを1件更新する(再取込時の冪等更新)。 */

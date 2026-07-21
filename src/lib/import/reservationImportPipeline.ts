@@ -288,7 +288,7 @@ export async function runReservationImportPipeline(
       notes:           row.notes,
     }
 
-    const existing = await repos.reservationRepo.findByNaturalKey(resolved.profileId, resolved.scheduledAt, brainCustomerId)
+    const existing = await repos.reservationRepo.findByNaturalKey(resolved.scheduledAt, brainCustomerId)
     if (existing) {
       await repos.reservationRepo.update(existing.id, upsertInput)
       updated += 1

@@ -158,9 +158,12 @@ export default function CsvImportScreen() {
 
       // 予約CSV(RES-5): 既存dry-runは検出のみ(空プレビュー)を返すため、
       // 予約CSV専用エンドポイントで実際のプレビューを追加取得する。
+      // RESERVATION_DUPLICATE_FIX_1: 予約CSVのneeds_reviewは、売上明細CSVと違い
+      // ここでデフォルト値を仕込まない(=未回答のまま残す)。canImportが未回答の
+      // 存在を検知して取込実行ボタンをdisabledにするため、「回答済みかどうか」を
+      // reviewDecisionsのキー有無で区別できる必要がある。
       if (result.csvType === 'reservation') {
         const resResult = await reservationDryRun(file)
-        resResult.needsReview.forEach((r) => { defaults[r.rowNumber] = 'new' })
         setResValidation(resResult)
       }
 
@@ -215,12 +218,24 @@ export default function CsvImportScreen() {
     return validation.unresolvedStaff.every((u) => staffDecisions[u.rawName])
   }, [validation, staffDecisions])
 
+  // RESERVATION_DUPLICATE_FIX_1 ②: 予約CSVの要確認顧客(同姓同名)は、reviewDecisionsに
+  // 明示的な回答(merge/new)が無いままだと"新規顧客"として無条件にimportされてしまう
+  // (reservationImportPipeline.tsのデフォルトフォールバック)。1件でも未回答があれば
+  // 取込実行ボタン自体をdisabledにし、運用者に必ず選択させる。
+  const unansweredReservationReviewCount = useMemo(() => {
+    if (!resValidation || validation?.csvType !== 'reservation') return 0
+    return resValidation.needsReview.filter((r) => reviewDecisions[r.rowNumber] === undefined).length
+  }, [resValidation, validation, reviewDecisions])
+
   const canImport = useMemo(() => {
     if (!validation) return false
     if (validation.csvType === 'detail') return allStaffResolved
-    if (validation.csvType === 'reservation') return !!resValidation && resValidation.importable > 0
+    if (validation.csvType === 'reservation') {
+      if (!resValidation || resValidation.importable <= 0) return false
+      return unansweredReservationReviewCount === 0
+    }
     return false
-  }, [validation, allStaffResolved, resValidation])
+  }, [validation, allStaffResolved, resValidation, unansweredReservationReviewCount])
 
   const remainingUnresolvedCount = useMemo(() => {
     if (!validation) return 0
@@ -576,45 +591,62 @@ export default function CsvImportScreen() {
           </SectionCard>
         )}
 
-        {/* ── ④ 要確認顧客(同姓同名) ── */}
-        {validation && validation.needsReview.length > 0 && state !== 'parsing' && state !== 'idle' && (
-          <SectionCard title="④ 要確認顧客(同姓同名)" icon={<Users size={15} color="#D98292" />}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {validation.needsReview.map((r) => {
-                const decision = reviewDecisions[r.rowNumber] ?? 'new'
-                return (
-                  <div key={r.rowNumber} style={{
-                    display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap',
-                    padding: '9px 12px', borderRadius: '10px', background: '#FFF8F7', border: '1px solid #F5EEF0',
-                  }}>
-                    <div style={{ flex: '1 1 160px' }}>
-                      <p style={{ fontSize: '12px', fontWeight: 600, color: '#5C4033' }}>{r.customerName}(行{r.rowNumber})</p>
-                      <p style={{ fontSize: '10px', color: '#C8A8B0' }}>候補: {r.candidateMatchName}</p>
+        {/* ── ④ 要確認顧客(同姓同名) ──
+            RESERVATION_DUPLICATE_FIX_1 ①: 従来は売上明細CSV(validation.needsReview)専用
+            だったこのセクションを、予約CSV(resValidation.needsReview)でも表示する。
+            ReviewItem/ReservationNeedsReviewItemは形状が同一(rowNumber/customerName/
+            candidateMatchName)のため、同じmerge/new選択UIをそのまま流用する。 */}
+        {(() => {
+          const activeNeedsReview = validation?.csvType === 'reservation'
+            ? (resValidation?.needsReview ?? [])
+            : (validation?.needsReview ?? [])
+          if (activeNeedsReview.length === 0 || state === 'parsing' || state === 'idle') return null
+          return (
+            <SectionCard title="④ 要確認顧客(同姓同名)" icon={<Users size={15} color="#D98292" />}>
+              {unansweredReservationReviewCount > 0 && (
+                <p style={{ fontSize: '11px', color: '#C9A055', marginBottom: '10px' }}>
+                  未回答が{unansweredReservationReviewCount}件あります。全件で「同一人物として統合」または「別人として新規」を選択するまで取込は実行できません。
+                </p>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {activeNeedsReview.map((r) => {
+                  const decision = reviewDecisions[r.rowNumber]
+                  return (
+                    <div key={r.rowNumber} style={{
+                      display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap',
+                      padding: '9px 12px', borderRadius: '10px',
+                      background: decision === undefined ? '#FFF4E8' : '#FFF8F7',
+                      border: decision === undefined ? '1px solid #FFE2A8' : '1px solid #F5EEF0',
+                    }}>
+                      <div style={{ flex: '1 1 160px' }}>
+                        <p style={{ fontSize: '12px', fontWeight: 600, color: '#5C4033' }}>{r.customerName}(行{r.rowNumber})</p>
+                        <p style={{ fontSize: '10px', color: '#C8A8B0' }}>候補: {r.candidateMatchName}</p>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button onClick={() => setReviewDecision(r.rowNumber, 'merge')} style={{
+                          fontSize: '11px', fontWeight: 600, borderRadius: '8px', padding: '5px 10px', cursor: 'pointer',
+                          border: decision === 'merge' ? 'none' : '1px solid #F0E4E7',
+                          background: decision === 'merge' ? '#D98292' : '#fff',
+                          color: decision === 'merge' ? '#fff' : '#9F7E6C',
+                        }}>
+                          同一人物として統合
+                        </button>
+                        <button onClick={() => setReviewDecision(r.rowNumber, 'new')} style={{
+                          fontSize: '11px', fontWeight: 600, borderRadius: '8px', padding: '5px 10px', cursor: 'pointer',
+                          border: decision === 'new' ? 'none' : '1px solid #F0E4E7',
+                          background: decision === 'new' ? '#5C4033' : '#fff',
+                          color: decision === 'new' ? '#fff' : '#9F7E6C',
+                        }}>
+                          別人として新規
+                        </button>
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      <button onClick={() => setReviewDecision(r.rowNumber, 'merge')} style={{
-                        fontSize: '11px', fontWeight: 600, borderRadius: '8px', padding: '5px 10px', cursor: 'pointer',
-                        border: decision === 'merge' ? 'none' : '1px solid #F0E4E7',
-                        background: decision === 'merge' ? '#D98292' : '#fff',
-                        color: decision === 'merge' ? '#fff' : '#9F7E6C',
-                      }}>
-                        同一人物として統合
-                      </button>
-                      <button onClick={() => setReviewDecision(r.rowNumber, 'new')} style={{
-                        fontSize: '11px', fontWeight: 600, borderRadius: '8px', padding: '5px 10px', cursor: 'pointer',
-                        border: decision === 'new' ? 'none' : '1px solid #F0E4E7',
-                        background: decision === 'new' ? '#5C4033' : '#fff',
-                        color: decision === 'new' ? '#fff' : '#9F7E6C',
-                      }}>
-                        別人として新規
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </SectionCard>
-        )}
+                  )
+                })}
+              </div>
+            </SectionCard>
+          )
+        })()}
 
         {/* ── ⑤ 取込実行 / 進捗 / 完了レポート ── */}
         {validation && state === 'dryrun_done' && (
