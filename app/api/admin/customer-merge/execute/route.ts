@@ -14,8 +14,8 @@
  *   4. handover_notes.customer_id を統合元→統合先へ付け替え(CUSTOMER_MERGE_
  *      HANDOVER_NOTES_MIGRATION_1。全14件の重複候補グループ全てにhandover_notesの
  *      実データが存在することが判明したため対応。handover_notesはlegacy customers.id
- *      空間を参照するため、resolveLegacyCustomerIds()(today-briefing/route.tsからexport
- *      済み・candidates/[groupKey]/route.tsと同じ橋渡しパターン)でbrain_customers.id→
+ *      空間を参照するため、resolveLegacyCustomerIds()(src/lib/resolveLegacyCustomerIds.ts・
+ *      candidates/[groupKey]/route.tsと同じ橋渡しパターン)でbrain_customers.id→
  *      legacy customers.idへ変換してから付け替える)
  *   5. 統合先の first_visit_date をグループ内最古の日付へ補正
  *   6. 統合元(消える側)を brain_customers.deleted_at で論理削除(物理削除はしない)
@@ -41,7 +41,7 @@ import {
   type SimulateMergeReservationInput, type SimulateMergeHandoverNoteInput,
 } from '@/lib/customerMerge/simulateMerge'
 import { classifyCategory } from '@/lib/customerMerge/detectDuplicateGroups'
-import { resolveLegacyCustomerIds } from '../../../today-briefing/route'
+import { resolveLegacyCustomerIds } from '@/lib/resolveLegacyCustomerIds'
 import { toValidationErrorResponse } from '../../../_schemas/common'
 import type { CustomerMergeAuditDetail } from '@/types/customerMerge'
 

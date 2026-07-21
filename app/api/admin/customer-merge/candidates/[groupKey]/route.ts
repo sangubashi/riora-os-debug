@@ -4,7 +4,7 @@
  * 設計根拠: docs/DUPLICATE_MERGE_QUEUE_DESIGN.md §2・§3
  *
  * groupKeyは toNameKey() の結果(URLエンコード済み)。禁忌情報はlegacy customers.id
- * 空間を参照するため、resolveLegacyCustomerIds()(today-briefing/route.tsからexport済み・
+ * 空間を参照するため、resolveLegacyCustomerIds()(src/lib/resolveLegacyCustomerIds.ts・
  * app/api/notifications/route.tsと同じ橋渡しパターン)でbrain_customers.id → legacy
  * customers.id へ変換してから取得する。
  */
@@ -12,7 +12,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '../../../../../lib/repos'
 import { requireAdmin } from '@/lib/auth/requireAdmin'
 import { DEMO_STORE_ID } from '@/lib/constants'
-import { resolveLegacyCustomerIds } from '../../../../today-briefing/route'
+import { resolveLegacyCustomerIds } from '@/lib/resolveLegacyCustomerIds'
 import {
   buildGroupDetail,
   type DuplicateDetectionCustomerInput,
