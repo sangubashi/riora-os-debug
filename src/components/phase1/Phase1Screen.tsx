@@ -36,6 +36,9 @@ import LineUnreadSheet                        from './LineUnreadSheet'
 import AppBottomNav                           from './AppBottomNav'
 import TodayBriefingCard                      from './TodayBriefingCard'
 import InstallPrompt                           from '@/components/pwa/InstallPrompt'
+import NotificationSheet                      from '@/components/notifications/NotificationSheet'
+import { useNotificationsStore }              from '@/store/useNotificationsStore'
+import { Bell } from 'lucide-react'
 
 import CustomerBottomSheet from '@/components/customer/CustomerBottomSheet'
 import { useNewCustomerSheetStore } from '@/store/useNewCustomerSheetStore'
@@ -130,6 +133,7 @@ export default function Phase1Screen() {
   const [view,          setView]          = useState<AppView>('home')
   const [selected,      setSelected]      = useState<Phase1Reservation | null>(null)
   const [lineSheetOpen, setLineSheetOpen] = useState(false)
+  const [notifSheetOpen, setNotifSheetOpen] = useState(false)
 
   // ── データストア ──────────────────────────────────────────────────────────
   const { reservations: rawReservations, fetchTodayReservations } = useHomeStore()
@@ -144,6 +148,9 @@ export default function Phase1Screen() {
   const { unreadCount, fetchUnreads } = useLineUnreadStore()
   const { session, initialized }      = useAuthStore()
   const fetchedRef                    = useRef(false)
+
+  const notifUnreadCount = useNotificationsStore((s) => s.unreadCount())
+  const fetchNotifications = useNotificationsStore((s) => s.fetchNotifications)
 
   useEffect(() => {
     if (fetchedRef.current) return
@@ -160,6 +167,7 @@ export default function Phase1Screen() {
       ...(uid ? [fetchTodayReservations(role ?? 'staff', uid)] : []),
       fetchKpiAll(),
       fetchUnreads(),
+      fetchNotifications(),
     ])
   }, [initialized, session]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -188,6 +196,13 @@ export default function Phase1Screen() {
   // reservationId で引き当てて既存のCustomerBottomSheetフローに合流させる
   function handleSelectFromBriefing(reservationId: string) {
     const match = reservations.find(r => r.id === reservationId)
+    if (match) handleCardTap(match)
+  }
+
+  // 通知タップ → 対象顧客が本日の予約に含まれていれば既存の顧客詳細フローへ合流させる
+  // (通知APIは予約情報を返さないため、詳細表示は「本日の予約がある顧客」の範囲に限る)
+  function handleSelectCustomerFromNotification(customerId: string) {
+    const match = reservations.find(r => r.customerId === customerId)
     if (match) handleCardTap(match)
   }
 
@@ -233,6 +248,22 @@ export default function Phase1Screen() {
             </p>
           </div>
 
+          <div className="flex items-center gap-2">
+          <motion.button
+            className="relative w-10 h-10 rounded-full flex items-center justify-center"
+            whileTap={{ scale: 0.92 }}
+            style={{ background: 'rgba(217,130,146,0.10)' }}
+            onClick={() => setNotifSheetOpen(true)}
+          >
+            <Bell size={18} style={{ color: '#B06070' }} />
+            {notifUnreadCount > 0 && (
+              <span
+                className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] px-1 rounded-full text-[9px] text-white flex items-center justify-center font-bold"
+                style={{ background: '#D98292' }}>
+                {notifUnreadCount}
+              </span>
+            )}
+          </motion.button>
           <motion.button className="relative" whileTap={{ scale: 0.92 }}
             onClick={() => setLineSheetOpen(true)}>
             <motion.div
@@ -254,6 +285,7 @@ export default function Phase1Screen() {
               </span>
             )}
           </motion.button>
+          </div>
         </div>
 
         {/* サマリーチップ */}
@@ -333,6 +365,11 @@ export default function Phase1Screen() {
       {/* ════════════ OVERLAYS ════════════ */}
 
       <LineUnreadSheet isOpen={lineSheetOpen} onClose={() => setLineSheetOpen(false)} />
+      <NotificationSheet
+        isOpen={notifSheetOpen}
+        onClose={() => setNotifSheetOpen(false)}
+        onSelectCustomer={handleSelectCustomerFromNotification}
+      />
 
       {newSheetOpen && newSheetCustomer && newSheetReservation && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 60 }}>
