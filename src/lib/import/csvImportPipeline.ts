@@ -560,7 +560,10 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
         staffId: staffRes.staffId,
         menuId: menuRes.menuId,
         isNomination: agg.isDesignated,
-        treatmentAmount: agg.netServiceSales,
+        // 施術行はあるが割引額が施術売上を上回る会計はnetServiceSalesが負になりうる
+        // (brain_visits.treatment_amount>=0制約に違反しinsert/reconcileが例外を投げる)。
+        // 0未満は0にクランプする(TREATMENT_AMOUNT_NEGATIVE_FIX_1)。
+        treatmentAmount: Math.max(0, agg.netServiceSales),
         retailAmount: agg.retailSales,
       })
       visitsImported += 1
@@ -572,7 +575,8 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
         menuId: menuRes.menuId,
         visitDate,
         isNomination: agg.isDesignated,
-        treatmentAmount: agg.netServiceSales,
+        // reconcile()側と同じ理由でクランプする(TREATMENT_AMOUNT_NEGATIVE_FIX_1)。
+        treatmentAmount: Math.max(0, agg.netServiceSales),
         retailAmount: agg.retailSales,
         retailCategory: agg.retailNames.length > 0 ? agg.retailNames.join('/') : null,
         homecarePurchased: agg.retailSales > 0,
