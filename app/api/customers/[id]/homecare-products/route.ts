@@ -27,7 +27,7 @@ export interface HomecareProductEntry {
  * - 先頭の「社販」プレフィックスを除去（例: 社販RIN モイスチャークリーム → RIN モイスチャークリーム）
  * - 「(※...)」「（※...）」形式の注記を除去（例: LebyRIN サンプル (※購入したものはカルテ記入) → LebyRIN サンプル）
  */
-function normalizeProductName(raw: string): string {
+export function normalizeProductName(raw: string): string {
   return raw
     .replace(/^社販/, '')
     .replace(/[（(]※[^）)]*[）)]/g, '')

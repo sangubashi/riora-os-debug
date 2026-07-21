@@ -57,14 +57,22 @@ function resolveType(t: string | null): string {
   return '信頼構築型'
 }
 
-function todayJst(): { start: string; end: string } {
+export function todayJst(): { start: string; end: string } {
   const now = new Date()
   const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000)
   const date = jst.toISOString().split('T')[0]
   return { start: `${date}T00:00:00+09:00`, end: `${date}T23:59:59+09:00` }
 }
 
-const SEVERITY_ORDER: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 }
+/** todayJst()と同じJST基準で「翌日」の開始・終了を返す(来店リマインドの前日〜当日判定用)。 */
+export function tomorrowJst(): { start: string; end: string } {
+  const now = new Date()
+  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000 + 24 * 60 * 60 * 1000)
+  const date = jst.toISOString().split('T')[0]
+  return { start: `${date}T00:00:00+09:00`, end: `${date}T23:59:59+09:00` }
+}
+
+export const SEVERITY_ORDER: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 }
 
 /** 空欄なら非表示にするため null へ正規化する（CUSTOMER_BRIEFING_IMPLEMENT_1）。 */
 function blankToNull(v: unknown): string | null {
