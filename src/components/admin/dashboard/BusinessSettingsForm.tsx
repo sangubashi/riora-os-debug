@@ -43,6 +43,22 @@ const VARIABLE_RATE_FIELDS: { key: string; label: string }[] = [
   { key: 'retail_cost_rate', label: '物販原価率' },
 ]
 
+// PHASE SALES_TARGET_GUARD_1: sales_target=210のような単位間違い(万円のつもりで
+// 円単位のまま保存)を防ぐための警告閾値。ハードブロックはせず、確認ダイアログで
+// 一呼吸置くだけに留める(正当な理由で閾値外の値を入れたいケースを塞がないため)。
+const SALES_TARGET_MIN_WARN = 100_000
+const SALES_TARGET_MAX_WARN = 50_000_000
+
+function salesTargetWarning(value: number): string | null {
+  if (value < SALES_TARGET_MIN_WARN) {
+    return `売上目標が¥${value.toLocaleString('ja-JP')}です。円単位の入力で合っていますか?(万円のつもりで入力していませんか?)`
+  }
+  if (value > SALES_TARGET_MAX_WARN) {
+    return `売上目標が¥${value.toLocaleString('ja-JP')}です。金額の桁数が大きすぎませんか?`
+  }
+  return null
+}
+
 type Draft = Record<string, string>
 
 function toDraft(breakdown: Record<string, unknown> | null | undefined, fields: { key: string }[]): Draft {
@@ -105,6 +121,13 @@ export default function BusinessSettingsForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+
+    const trimmed = salesTarget.trim()
+    if (trimmed !== '') {
+      const warning = salesTargetWarning(Number(trimmed))
+      if (warning && !window.confirm(`${warning}\n\n本当にこの値で保存しますか?`)) return
+    }
+
     await saveSettings({
       storeId: DEMO_STORE_ID,
       month,
@@ -132,6 +155,9 @@ export default function BusinessSettingsForm() {
       <section style={{ background: '#fff', border: '1px solid #F5EEF0', borderRadius: '16px', padding: '16px 18px' }}>
         <p style={{ fontSize: '13px', fontWeight: 700, color: '#5C4033', marginBottom: '12px' }}>売上目標</p>
         <NumberField label="今月の売上目標(円)" value={salesTarget} onChange={setSalesTarget} />
+        <p style={{ fontSize: '11px', color: '#9F7E6C', marginTop: '6px' }}>
+          円単位で入力してください(万円ではありません)。例: 210万円の場合は 2100000 と入力
+        </p>
       </section>
 
       <section style={{ background: '#fff', border: '1px solid #F5EEF0', borderRadius: '16px', padding: '16px 18px' }}>
