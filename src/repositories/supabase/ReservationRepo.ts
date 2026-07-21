@@ -9,6 +9,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { UUID } from '../../types/riora.types';
 import type { IReservationRepo, ReservationRow, ReservationUpsertInput } from '../interfaces';
+import { prodLog } from '@/lib/stability';
 
 interface ReservationRowRaw {
   id:                 string;
@@ -41,25 +42,45 @@ function toDbInput(input: ReservationUpsertInput) {
 export class ReservationRepo implements IReservationRepo {
   constructor(private readonly client: SupabaseClient) {}
 
+  /**
+   * (scheduled_at, brain_customer_id)は真の一意キーではない(予約番号列が存在しないための
+   * 暫定キー。docs/design/RESERVATION_IMPORT_V1.md §6)。Customer Merge後に同一キーへ
+   * 複数のreservationsが集約されるケースが実際に発生したため(RESERVATION_DUPLICATE_
+   * FIX_2)、.maybeSingle()は使わず配列で取得し、複数件ヒット時はcreated_at昇順で
+   * 最古の1件を「正」として返す(既存の重複行は削除しない・別途のクリーンアップ対象)。
+   */
   async findByNaturalKey(
     scheduledAt: string,
     brainCustomerId: UUID | null
   ): Promise<ReservationRow | null> {
     let query = this.client
       .from('reservations')
-      .select('id')
+      .select('id, created_at')
       .eq('scheduled_at', scheduledAt);
 
     query = brainCustomerId
       ? query.eq('brain_customer_id', brainCustomerId)
       : query.is('brain_customer_id', null);
 
-    const { data, error } = await query.maybeSingle();
+    const { data, error } = await query.order('created_at', { ascending: true });
 
     if (error) {
       throw new Error(`ReservationRepo.findByNaturalKey failed: ${error.message}`);
     }
-    return (data as { id: string } | null) ? { id: (data as { id: string }).id } : null;
+
+    const rows = (data ?? []) as { id: string; created_at: string }[];
+    if (rows.length === 0) return null;
+
+    if (rows.length > 1) {
+      prodLog('warn', 'ReservationRepo.findByNaturalKey: 同一(scheduled_at, brain_customer_id)に複数のreservationsが存在', {
+        scheduledAt,
+        brainCustomerId,
+        duplicateCount: rows.length,
+        reservationIds: rows.map((r) => r.id),
+      });
+    }
+
+    return { id: rows[0].id };
   }
 
   async create(input: ReservationUpsertInput): Promise<ReservationRow> {
