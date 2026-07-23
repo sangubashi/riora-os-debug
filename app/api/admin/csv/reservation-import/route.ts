@@ -14,6 +14,7 @@ import { decodeCsvBuffer } from '@/lib/import/csvEncoding';
 import { runReservationImportPipeline } from '@/lib/import/reservationImportPipeline';
 import { requireAdmin } from '@/lib/auth/requireAdmin';
 import { refreshDashboardAfterImport } from '@/lib/dashboard/DashboardAggregator';
+import { runCustomerTypeClassification } from '@/lib/customerType/runCustomerTypeClassification';
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
@@ -76,6 +77,14 @@ export async function POST(req: NextRequest) {
       await refreshDashboardAfterImport(repos, storeId);
     } catch (e) {
       console.warn('[reservation-import] dashboard rebuild failed (non-fatal):', e);
+    }
+
+    // PHASE 1-A: 取込成功後にcustomer_type未設定顧客の再分類を試みる(MD-4と同じnon-fatalパターン)。
+    // 既存customer_type保護はrunCustomerTypeClassification内部で担保済み(既存値は上書きしない)。
+    try {
+      await runCustomerTypeClassification(storeId, repos);
+    } catch (e) {
+      console.warn('[reservation-import] customer type classification failed (non-fatal):', e);
     }
 
     return NextResponse.json({ success: true, ...result.report });
