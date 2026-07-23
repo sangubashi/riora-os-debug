@@ -355,6 +355,7 @@ export interface Candidate {
   channel: 'in_store' | 'dm';
   patternCode: string | null; // 店内のみ
   stepNo: number | null;
+  customerType: CustomerType | null; // パターンの対象customer_type(Phase 1-Ea)。null時は既存互換維持のためtype制約を適用しない
   proposalKind: ProposalKind;
   isSales: boolean;
   priorityClass: 1 | 2 | 3 | 4;

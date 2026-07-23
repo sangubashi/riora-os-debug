@@ -10,7 +10,7 @@ import type { Candidate } from '../../../src/types/riora.types';
 
 function candidate(overrides: Partial<Candidate> = {}): Candidate {
   return {
-    uid: 'cand-1', code: 'A1-step2', channel: 'in_store', patternCode: 'A1', stepNo: 2,
+    uid: 'cand-1', code: 'A1-step2', channel: 'in_store', patternCode: 'A1', stepNo: 2, customerType: null,
     proposalKind: 'homecare', isSales: true, priorityClass: 1, hardCondition: { '==': [1, 1] },
     softFeatures: { weights: {} }, baseScript: 'base', cooldownVisits: 2, lifecycleStatus: 'active', version: 1,
     ...overrides,

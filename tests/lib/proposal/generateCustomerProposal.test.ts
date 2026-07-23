@@ -37,7 +37,7 @@ function staff(): Staff {
 
 function candidate(overrides: Partial<Candidate> = {}): Candidate {
   return {
-    uid: 'cand-1', code: 'B1-step1', channel: 'in_store', patternCode: 'B1', stepNo: 1,
+    uid: 'cand-1', code: 'B1-step1', channel: 'in_store', patternCode: 'B1', stepNo: 1, customerType: null,
     proposalKind: 'none', isSales: false, priorityClass: 1, hardCondition: { '==': [1, 1] },
     softFeatures: { weights: {} }, baseScript: '実際の台本', cooldownVisits: 0, lifecycleStatus: 'active', version: 1,
     ...overrides,

@@ -138,10 +138,15 @@ export class ProposalOrchestrator {
       // 1. StaffAffinity解決(採点中w4 + 出力時style/constraints)
       const affinity = this.deps.staffAdjust.resolveAffinity(staff, adjustments, styleAffinity);
 
+      // 1.5. customer_type一致フィルタ(Phase 1-Ea): パターンのcustomer_typeが
+      // 顧客のcustomer_typeと異なる候補は評価対象から除外する。candidate.customerTypeが
+      // null(旧データ等)の場合は既存互換維持のためフィルタしない。
+      const typeFiltered = candidates.filter((c) => c.customerType == null || c.customerType === ctx.customerType);
+
       // 2-3. 候補ごとにtiming_offset仮context -> Hard判定
       const tempCtxByUid = new Map<string, PatternContext>();
       const eligible: Candidate[] = [];
-      for (const c of candidates) {
+      for (const c of typeFiltered) {
         const tempCtx = this.deps.staffAdjust.applyTimingOffset(ctx, c, affinity);
         tempCtxByUid.set(c.uid, tempCtx);
 

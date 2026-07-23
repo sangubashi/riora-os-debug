@@ -76,6 +76,7 @@ export interface SuccessPatternRow {
   id: string;
   lifecycle_status: LifecycleStatus;
   version: number;
+  customer_type: CustomerType | null;
   brain_pattern_steps: PatternStepRow[];
 }
 
@@ -91,6 +92,7 @@ export function toCandidate(pattern: SuccessPatternRow, step: PatternStepRow): C
     channel: 'in_store',
     patternCode: pattern.id,
     stepNo: step.step_no,
+    customerType: pattern.customer_type ?? null,
     proposalKind: step.proposal_kind,
     isSales: SALES_KINDS.has(step.proposal_kind),
     priorityClass: PRIORITY_CLASS_BY_KIND[step.proposal_kind],

@@ -71,6 +71,7 @@ function buildCandidate(overrides: Partial<ScenarioCandidate> = {}): ScenarioCan
     channel: 'dm',
     patternCode: null,
     stepNo: null,
+    customerType: null,
     proposalKind: 'none',
     isSales: false,
     priorityClass: 2,

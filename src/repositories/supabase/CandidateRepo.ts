@@ -10,7 +10,7 @@ export class CandidateRepo implements ICandidateRepo {
     const { data, error } = await this.client
       .from('brain_success_patterns')
       .select(
-        `id, lifecycle_status, version,
+        `id, lifecycle_status, version, customer_type,
          brain_pattern_steps (
            id, step_no, proposal_kind, fire_condition, base_script,
            cooldown_visits, soft_features, optimal_visit

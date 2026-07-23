@@ -24,6 +24,7 @@ describe('mappers', () => {
       id: 'B1',
       lifecycle_status: 'active',
       version: 2,
+      customer_type: 'B_pore',
       brain_pattern_steps: [
         {
           id: 'step-uuid-1',
@@ -58,6 +59,7 @@ describe('mappers', () => {
       expect(homecare.channel).toBe('in_store');
       expect(homecare.patternCode).toBe('B1');
       expect(homecare.stepNo).toBe(2);
+      expect(homecare.customerType).toBe('B_pore');
       expect(homecare.lifecycleStatus).toBe('active');
       expect(homecare.version).toBe(2);
     });

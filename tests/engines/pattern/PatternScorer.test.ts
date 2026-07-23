@@ -45,6 +45,7 @@ function buildCandidate(overrides: Partial<Candidate> = {}): Candidate {
     channel: 'in_store',
     patternCode: 'B1',
     stepNo: 1,
+    customerType: null,
     proposalKind: 'rebooking',
     isSales: false,
     priorityClass: 2,
