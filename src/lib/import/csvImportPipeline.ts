@@ -264,7 +264,9 @@ async function resolveByVisitProximity(
   return { status: 'matched', customerId: best.customerId, method: 'visit_proximity_closest' }
 }
 
-export type CustomerMatchMethod = 'hash' | 'idempotent_same_day' | 'pass_n_single_candidate' | VisitProximityMethod | null
+export type CustomerMatchMethod =
+  | 'hash' | 'idempotent_same_day' | 'pass_n_single_candidate'
+  | 'stub_zero_visit_single_candidate' | VisitProximityMethod | null
 
 /** Before/After実測(docs/DUPLICATE_PREVENTION_IMPLEMENTATION_PLAN.md実装検証)のため公開する。 */
 export async function matchCustomer(agg: SalonBoardCheckoutAggregate, ctx: ResolutionContext, repos: PipelineRepos) {
@@ -323,12 +325,22 @@ export async function matchCustomer(agg: SalonBoardCheckoutAggregate, ctx: Resol
     // Pass N フォールバック③(旧ロジック・氏名 + 初回来店日): 候補にvisit実績が無く
     // (brain_visitsが1件も無い)Pass A+Cが判定不能だったが、customer.firstVisitDate
     // 自体は設定されている候補が1件だけ存在する場合の最終フォールバックとして残す。
+    //
+    // firstVisitDateがnullの候補(予約CSV取込が作るスタブ顧客。会計未了のため
+    // firstVisitDateが一度も設定されない)は、この時点で既に allowLegacyPassNFallback
+    // (resolveByVisitProximityの'no_visit_history'判定)によって「候補1件・visit実績0件」
+    // であることが確定済みのため、日付比較する対象(過去のvisit)自体が存在しない。
+    // よってfirstVisitDate===nullの場合は日付条件を課さずそのまま確定マッチとする
+    // (docs/CUSTOMER_DUPLICATE_ROOT_CAUSE.md参照。予約CSVスタブ×売上CSVの
+    // クロスパイプライン重複の再発防止)。
     if (hash === null && nameCandidates.length === 1 && allowLegacyPassNFallback) {
       const sole = ctx.existingCustomers.find(c => c.id === nameCandidates[0].customerId)
-      if (sole?.firstVisitDate != null && sole.firstVisitDate <= visitDate) {
+      if (sole && (sole.firstVisitDate == null || sole.firstVisitDate <= visitDate)) {
+        const matchMethod: CustomerMatchMethod =
+          sole.firstVisitDate == null ? 'stub_zero_visit_single_candidate' : 'pass_n_single_candidate'
         return {
           hash, decision: { status: 'matched' as const, customerId: sole.id },
-          nameCandidates, isHashMatch, matchMethod: 'pass_n_single_candidate' as CustomerMatchMethod, proximityDeclined,
+          nameCandidates, isHashMatch, matchMethod, proximityDeclined,
         }
       }
     }
@@ -486,6 +498,7 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
   let nameProximityMatchedCount = 0
   let visitProximityClosestCount = 0
   let proximityReviewCount = 0
+  let stubZeroVisitMatchedCount = 0
   let menuUnresolvedSkippedCount = 0
   const menuResolutionByRawName = new Map<string, MenuResolutionLogEntry>()
 
@@ -509,6 +522,7 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
       nameProximityMatchedCount += 1
     }
     if (matchMethod === 'visit_proximity_closest') visitProximityClosestCount += 1
+    if (matchMethod === 'stub_zero_visit_single_candidate') stubZeroVisitMatchedCount += 1
     if (proximityDeclined) proximityReviewCount += 1
     let customerId: string
 
@@ -624,6 +638,13 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
         reason: 'visit_proximity_closest',
         visitProximityClosestCount,
         proximityReviewCount,
+      },
+      // stub_zero_visit_single_candidate監査ログ(docs/CUSTOMER_DUPLICATE_ROOT_CAUSE.md
+      // 再発防止策)。予約CSV由来のスタブ(visit実績0件・firstVisitDate=null)を
+      // 売上明細CSV側で確定マッチできた件数を事後確認できるようにする。
+      stubResolutionAudit: {
+        reason: 'stub_zero_visit_single_candidate',
+        stubZeroVisitMatchedCount,
       },
     },
   })

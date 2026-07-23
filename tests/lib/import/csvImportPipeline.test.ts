@@ -112,6 +112,7 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
       listByStore: async () => staff,
       addNameAlias: async () => null,
       deactivate: async () => null,
+      create: async () => { throw new Error('not implemented in test fake'); },
     },
     menuRepo: {
       listByStore: async () => menus,
@@ -496,6 +497,51 @@ describe('csvImportPipeline', () => {
         expect(result.report.updatedCustomers).toBe(1);
         expect(result.report.visitsImported).toBe(1);
       }
+    });
+
+    it('重複防止④: 予約CSV由来のスタブ顧客(visit=0・firstVisitDate=null)は候補1件ならneeds_reviewに落とさずmatchedとして解決する(docs/CUSTOMER_DUPLICATE_ROOT_CAUSE.md再発防止)', async () => {
+      // 小宮山仁美・佐々英之ケースの再現: 予約CSV取込は会計未了の予約から顧客を作るため
+      // firstVisitDateを設定しない(reservationImportPipeline.tsの仕様)。この状態のまま
+      // 売上明細CSVが同姓同名1件のみを候補として見つけた場合、旧ロジックでは
+      // firstVisitDate!=nullを要求するPass Nが発動できずneeds_review→既定'new'で
+      // 重複顧客が生成されていた。
+      const repos = createFakeRepos();
+      repos.state.customers.push({
+        id: 'cust-stub', storeId: STORE_ID, name: '小宮山仁美', ageGroup: null,
+        customerType: null, typeConfidence: 0, goalNote: null, weddingDate: null,
+        acquisitionChannel: null, firstVisitDate: null, assignedStaffId: null,
+        isSubscriber: false, subscribedAt: null, churnScore: 0, churnReason: null,
+        consentAnonymizedLearning: false, prefecture: null, city: null, externalKeyHash: null,
+      });
+
+      // Dry Run: needsReviewに出ないことを確認
+      const dryRunCsv = buildCsv([
+        row({ checkoutId: 'S1', date: '2026-07-22', staff: '鈴木', customerName: '小宮山仁美' }),
+      ]);
+      const dryRun = await buildDryRunResult({ storeId: STORE_ID, fileName: 'test.csv', csvText: dryRunCsv }, repos);
+      expect(dryRun.ok).toBe(true);
+      if (dryRun.ok) expect(dryRun.result.needsReview).toHaveLength(0);
+
+      // Import実行: 新規顧客を作らずcust-stubへ確定マッチし、visitのみ追加される
+      const result = await runImportPipeline({ storeId: STORE_ID, csvText: dryRunCsv, reviewDecisions: {} }, repos);
+
+      expect(result.ok).toBe(true);
+      expect(repos.state.customers).toHaveLength(1);
+      expect(repos.state.customers[0].id).toBe('cust-stub');
+      expect(repos.state.visits).toHaveLength(1);
+      expect(repos.state.visits[0].customerId).toBe('cust-stub');
+      if (result.ok) {
+        expect(result.report.newCustomers).toBe(0);
+        expect(result.report.updatedCustomers).toBe(1);
+        expect(result.report.visitsImported).toBe(1);
+      }
+
+      // 監査ログ(brain_ops_logs)にstub_zero_visit_single_candidateの発動件数が記録される
+      expect(repos.state.opsLogs).toHaveLength(1);
+      expect(repos.state.opsLogs[0].detail.stubResolutionAudit).toEqual({
+        reason: 'stub_zero_visit_single_candidate',
+        stubZeroVisitMatchedCount: 1,
+      });
     });
 
     it('メニュー名が不一致でフォールバックも無い場合はその会計をスキップする(来店・顧客を作らない)', async () => {
