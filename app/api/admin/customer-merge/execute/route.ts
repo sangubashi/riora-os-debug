@@ -42,11 +42,15 @@ import {
 } from '@/lib/customerMerge/simulateMerge'
 import { classifyCategory } from '@/lib/customerMerge/detectDuplicateGroups'
 import { resolveLegacyCustomerIds } from '@/lib/resolveLegacyCustomerIds'
-import { toValidationErrorResponse } from '../../../_schemas/common'
+import { idSchema, toValidationErrorResponse } from '../../../_schemas/common'
 import type { CustomerMergeAuditDetail } from '@/types/customerMerge'
 
 const ExecuteMergeSchema = z.object({
-  storeId: z.string().uuid().optional(),
+  // DEMO_STORE_ID('00000000-0000-0000-0000-000000000001')はzod v4のuuid()が要求する
+  // バージョン/バリアントニブルを満たさず、strictな.uuid()では常にvalidation_errorに
+  // なっていた(実運用のstoreIdは事実上固定値のため、他フィールドと違い形式チェックの
+  // 恩恵が薄い)。idSchema(非空文字列のみ検証)に合わせる。
+  storeId: idSchema.optional(),
   mergeGroupId: z.string().min(1),
   survivorId: z.string().uuid(),
   mergedIds: z.array(z.string().uuid()).min(1),

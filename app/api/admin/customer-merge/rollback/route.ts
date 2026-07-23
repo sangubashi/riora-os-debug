@@ -21,11 +21,12 @@ import { z } from 'zod'
 import { getServiceClient, getRepos } from '../../../../lib/repos'
 import { requireAdmin } from '@/lib/auth/requireAdmin'
 import { DEMO_STORE_ID } from '@/lib/constants'
-import { toValidationErrorResponse } from '../../../_schemas/common'
+import { idSchema, toValidationErrorResponse } from '../../../_schemas/common'
 import type { CustomerMergeAuditDetail, CustomerMergeRollbackAuditDetail } from '@/types/customerMerge'
 
 const RollbackSchema = z.object({
-  storeId: z.string().uuid().optional(),
+  // execute/route.tsと同じ理由(DEMO_STORE_IDがzod v4のuuid()を満たさない)でidSchemaに変更。
+  storeId: idSchema.optional(),
   opsLogId: z.string().uuid(),
 })
 
