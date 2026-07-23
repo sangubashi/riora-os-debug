@@ -226,6 +226,22 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
       recentByStoreAndKind: async (storeId, kind, n) =>
         state.opsLogs.filter(l => l.storeId === storeId && l.kind === kind).slice(0, n),
     },
+    // Phase 1-Bc: csvImportPipeline.tsがvisit確定直後にrecordProposalOutcome()を呼ぶが、
+    // このテストでは事前にfire_logを積んでいないため常に候補0件(no_eligible_fire_log)で
+    // 早期returnする。既存テストの挙動(outcomes書込なし)を変えないための最小フェイク。
+    briefingRepo: {
+      latestByCustomer: async () => null,
+      insert: async (input) => ({
+        id: 'fire-log-fake', customerId: input.customerId, customerName: '', visitId: input.visitId,
+        decisionRecord: input.decisionRecord as unknown as import('../../../src/types/riora.types').DecisionRecord,
+        explanation: input.explanation, createdAt: new Date().toISOString(),
+      }),
+      recentByCustomer: async () => [],
+    },
+    outcomeRepo: {
+      recent: async () => [],
+      create: async () => ({ id: 'outcome-fake' }),
+    },
   };
 
   return { ...repos, state };

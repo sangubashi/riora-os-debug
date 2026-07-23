@@ -38,6 +38,10 @@ import type {
   RevisionScope,
   Subscription,
   AIInsight,
+  StaffInvite,
+  BlogArticle,
+  ProposalKind,
+  StaffStyle,
 } from '../types/riora.types';
 import type { StyleAffinityTable, BrainEvent, BrainEventType } from '../types/brain.types';
 
@@ -64,9 +68,29 @@ export interface IParamsRepo {
   styleAffinity(cluster: string): Promise<StyleAffinityTable>;
 }
 
+/** brain_proposal_outcomesへの新規1件分の入力(Phase 1-Bc: outcome記録の書込経路)。 */
+export interface CreateProposalOutcomeInput {
+  storeId: UUID;
+  customerId: UUID;
+  visitId: UUID;
+  staffId: UUID;
+  patternId: string;
+  stepNo: number;
+  proposalKind: ProposalKind;
+  visitCountAt: number;
+  wasBriefed: boolean;
+  wasExecuted: boolean;
+  wasAccepted: boolean;
+  amount: number;
+  customerType: CustomerType;
+  staffStyle: StaffStyle;
+}
+
 export interface IOutcomeRepo {
   /** brain_proposal_outcomesから直近n件を新しい順で返す(G-COOL/G-FREQ判定の入力)。 */
   recent(customerId: UUID, n: number): Promise<OutcomeLite[]>;
+  /** brain_proposal_outcomesへ1件追加し、生成された行のidを返す(Phase 1-Bc)。 */
+  create(input: CreateProposalOutcomeInput): Promise<{ id: UUID }>;
 }
 
 // ================================================================
@@ -163,6 +187,18 @@ export interface IVisitRepo {
   listByStore(storeId: UUID): Promise<Visit[]>;
 }
 
+/**
+ * 招待経由の新規スタッフ作成入力(STAFF_MANAGEMENT_PHASE2_1)。
+ * docs/STAFF_MANAGEMENT_PHASE2_DESIGN_2.md 8章準拠。
+ */
+export interface CreateStaffInput {
+  /** supabase.auth.admin.createUser() で発行済みの auth.users.id(新規発行のみ許可)。既存user_idの使い回し・admin流用は禁止(StaffRepo.create()内でassertNotAdminAuthUid()により防止)。 */
+  authUid: UUID;
+  name: string;
+  storeId: UUID;
+  role: 'staff' | 'owner';
+}
+
 export interface IStaffRepo {
   /** brain_staffをstore_idで一覧取得する(deleted_at IS NULL)。CSV Importのstaffリゾルバが1回だけ全件取得して使う。 */
   listByStore(storeId: UUID): Promise<Staff[]>;
@@ -176,6 +212,89 @@ export interface IStaffRepo {
    * 対象staffIdが存在しない場合はnull。
    */
   deactivate(staffId: UUID): Promise<Staff | null>;
+  /**
+   * 招待経由の新規スタッフ作成(STAFF_MANAGEMENT_PHASE2_1)。profiles/brain_staffへの
+   * 直接INSERTは行わず、必ず provision_staff() RPC(単一トランザクション)のみを呼ぶこと
+   * (profiles欠落事故の再発防止・docs/STAFF_MANAGEMENT_PHASE2_DESIGN_2.md 3章)。
+   */
+  create(input: CreateStaffInput): Promise<Staff>;
+}
+
+/** 招待発行入力(STAFF_MANAGEMENT_PHASE2_2)。 */
+export interface CreateInviteInput {
+  storeId: UUID;
+  role: 'staff' | 'owner';
+  staffName: string;
+  email: string;
+}
+
+export interface IInviteRepo {
+  /**
+   * staff_invitesへ1件追加する。tokenは呼び出し側(inviteLink.generateInviteToken())が
+   * 生成した生トークンを渡すが、DBにはハッシュ化して保存する(実装側の責務)。
+   * expiresAtは実装側が既定の有効期限(7日)を設定する。
+   */
+  createInvite(input: CreateInviteInput, rawToken: string): Promise<StaffInvite>;
+  /**
+   * 生トークンをハッシュ化してstaff_invitesを検索する。存在しない場合はnull。
+   * 期限切れ・使用済みの判定は行わない(呼び出し側がStaffInvite.expiresAt/usedAtを見て判定する)。
+   */
+  validateInvite(rawToken: string): Promise<StaffInvite | null>;
+  /**
+   * used_atをnow()に更新する(1回限りの消費)。既に使用済み・存在しない場合はnullを返し、
+   * 何も更新しない(冪等な二重消費防止)。
+   */
+  consumeInvite(rawToken: string): Promise<StaffInvite | null>;
+}
+
+/**
+ * ブログ記事登録入力(BLOG_CONTENT_PHASE1)。記事本文は受け取らない(URL登録のみ)。
+ * category/summary/publishedAtはKNOWLEDGE_IMPORT_PHASE1のCSV取込専用の追加項目
+ * (省略可・既存のBLOG_CONTENT_PHASE1呼び出し元は指定しないため既存挙動は変わらない)。
+ */
+export interface CreateBlogArticleInput {
+  title: string;
+  sourceUrl: string;
+  products: string[];
+  keywords: string[];
+  category?: string | null;
+  summary?: string | null;
+  publishedAt?: string | null;
+}
+
+/**
+ * ブログ記事更新入力(BLOG_CONTENT_PHASE1)。isCustomerSafe/statusを含む更新は
+ * 「承認切替」操作を表す(呼び出し側=BlogArticleRepo.update()が両者を連動させる)。
+ * category/summary/publishedAtはKNOWLEDGE_IMPORT_PHASE1のCSV取込専用の追加項目。
+ */
+export interface UpdateBlogArticleInput {
+  title?: string;
+  sourceUrl?: string;
+  products?: string[];
+  keywords?: string[];
+  isCustomerSafe?: boolean;
+  status?: 'draft' | 'approved';
+  category?: string | null;
+  summary?: string | null;
+  publishedAt?: string | null;
+}
+
+export interface IBlogArticleRepo {
+  /** brain_blog_articlesを全件取得する(created_at降順)。店舗軸を持たないため引数なし。 */
+  listAll(): Promise<BlogArticle[]>;
+  /**
+   * 商品名配列のいずれかとproductsが重複し、is_customer_safe=true かつ
+   * status='approved' の記事のみを返す(BLOG_CONTENT_PHASE2・顧客向け表示専用)。
+   * limit件までcreated_at降順で返す。productNamesが空配列の場合は空配列を返す
+   * (無条件に承認済み記事を返さない・呼び出し側の商品名と無関係な記事を出さないため)。
+   */
+  listApprovedByProducts(productNames: string[], limit: number): Promise<BlogArticle[]>;
+  /** brain_blog_articlesへ1件追加する。status/is_customer_safeは既定値(draft/false)のまま作成する。 */
+  create(input: CreateBlogArticleInput): Promise<BlogArticle>;
+  /** brain_blog_articlesを1件更新する。対象idが存在しない場合はnull。 */
+  update(id: UUID, input: UpdateBlogArticleInput): Promise<BlogArticle | null>;
+  /** brain_blog_articlesから1件物理削除する(論理削除は行わない)。成功時true。 */
+  delete(id: UUID): Promise<boolean>;
 }
 
 /**
@@ -377,6 +496,7 @@ export interface DashboardDailyUpsertInput {
   repeat60: number | null;
   repeat90: number | null;
   nominationRate: number | null;
+  rebookingRate: number | null;
   aiInsights?: AIInsight[];
 }
 
@@ -439,6 +559,13 @@ export interface IBriefingRepo {
    * (jsonb列のため型はRecord<string, unknown>で受ける)。visitIdは未確定の場合null可。
    */
   insert(input: { storeId: UUID; customerId: UUID; visitId: UUID | null; decisionRecord: Record<string, unknown>; explanation: string }): Promise<BriefingEntry>;
+  /**
+   * brain_pattern_fire_logをcustomer_idでcreated_at降順に直近n件取得する(Phase 1-Bc:
+   * recordProposalOutcome()がvisit確定時にfire_logを逆引きするための候補取得に使用)。
+   * customerNameは呼び出し側で使わないため空文字で返す(latestByCustomerと違い
+   * brain_customersへの追加クエリは行わない)。
+   */
+  recentByCustomer(customerId: UUID, n: number): Promise<BriefingEntry[]>;
 }
 
 export interface IRevisionRepo {

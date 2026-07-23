@@ -27,6 +27,7 @@
  */
 import type {
   ICustomerRepo, IVisitRepo, IStaffRepo, IMenuRepo, IStoreRepo, IOpsLogRepo,
+  IBriefingRepo, IOutcomeRepo,
 } from '../../repositories/interfaces'
 import type { Customer } from '../../types/riora.types'
 import {
@@ -38,6 +39,7 @@ import { buildStaffLookup, resolveStaffId, type StaffLookup } from './staffResol
 import { buildMenuLookup, resolveMenuId, type MenuLookup } from './menuResolver'
 import { findNameCandidates, decideCustomerMatch, type CustomerCandidate } from './customerMatcher'
 import { recordMenuResolution, summarizeMenuResolution, computeCsvQualityReport } from './csvImportQualityReport'
+import { recordProposalOutcome } from '../proposal/recordProposalOutcome'
 import type {
   ValidationResult, SkipItem, ReviewItem, UnresolvedStaffName, PreviewRow,
   ImportReport, SkipReasonCode, ReviewDecisionValue,
@@ -51,6 +53,8 @@ export interface PipelineRepos {
   menuRepo:     IMenuRepo
   storeRepo:    IStoreRepo
   opsLogRepo:   IOpsLogRepo
+  briefingRepo: IBriefingRepo
+  outcomeRepo:  IOutcomeRepo
 }
 
 const FATAL_ISSUE_CODES = new Set(['empty_csv', 'missing_required_columns'])
@@ -570,7 +574,7 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
     const existingVisit = await repos.visitRepo.findByCustomerAndDate(customerId, visitDate)
 
     if (existingVisit && existingVisit.source !== 'reconciled' && existingVisit.source !== 'salonboard_import') {
-      await repos.visitRepo.reconcile(existingVisit.id, {
+      const reconciledVisit = await repos.visitRepo.reconcile(existingVisit.id, {
         staffId: staffRes.staffId,
         menuId: menuRes.menuId,
         isNomination: agg.isDesignated,
@@ -581,8 +585,16 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
         retailAmount: agg.retailSales,
       })
       visitsImported += 1
+
+      // PHASE 1-Bc: 会計確定(reconcile)直後にfire_logを逆引きしbrain_proposal_outcomes
+      // へ記録を試みる(Phase 1-Aと同じnon-fatalパターン。失敗してもCSV取込自体は成功扱い)。
+      try {
+        await recordProposalOutcome({ storeId: input.storeId, visit: reconciledVisit }, repos)
+      } catch (e) {
+        console.warn('[proposal-outcome] record failed (non-fatal):', e)
+      }
     } else if (!existingVisit) {
-      await repos.visitRepo.createSequenced({
+      const createdVisit = await repos.visitRepo.createSequenced({
         storeId: input.storeId,
         customerId,
         staffId: staffRes.staffId,
@@ -602,6 +614,13 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
         source: 'salonboard_import',
       })
       visitsImported += 1
+
+      // PHASE 1-Bc: 新規visit作成直後にも同様にoutcomes記録を試みる(non-fatal)。
+      try {
+        await recordProposalOutcome({ storeId: input.storeId, visit: createdVisit }, repos)
+      } catch (e) {
+        console.warn('[proposal-outcome] record failed (non-fatal):', e)
+      }
     }
     // 既存visitが既にreconciled/salonboard_import済み → 同一CSV再取込の冪等スキップ(増分ゼロ)
   }

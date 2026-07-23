@@ -69,4 +69,18 @@ export class BriefingRepo implements IBriefingRepo {
     const customerName = (customer as { name: string } | null)?.name ?? '';
     return toBriefingEntry(data as unknown as BrainFireLogRow, customerName);
   }
+
+  async recentByCustomer(customerId: UUID, n: number): Promise<BriefingEntry[]> {
+    const { data, error } = await this.client
+      .from('brain_pattern_fire_log')
+      .select(FIRE_LOG_COLUMNS)
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false })
+      .limit(n);
+
+    if (error) {
+      throw new Error(`BriefingRepo.recentByCustomer failed: ${error.message}`);
+    }
+    return ((data ?? []) as unknown as BrainFireLogRow[]).map((row) => toBriefingEntry(row, ''));
+  }
 }
