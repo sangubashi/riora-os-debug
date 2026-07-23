@@ -32,4 +32,11 @@ export class StatsRepo implements IStatsRepo {
     }
     return result;
   }
+
+  async refreshStepStats(): Promise<void> {
+    const { error } = await this.client.rpc('refresh_pattern_step_stats');
+    if (error) {
+      throw new Error(`StatsRepo.refreshStepStats failed: ${error.message}`);
+    }
+  }
 }

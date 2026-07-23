@@ -242,6 +242,13 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
       recent: async () => [],
       create: async () => ({ id: 'outcome-fake' }),
     },
+    // Phase 1-Cc: このテストではrecordProposalOutcome()が常にno_eligible_fire_logで
+    // 早期returnするため(briefingRepo.recentByCustomerが空配列)、refreshStepStatsは
+    // 呼ばれない想定。呼ばれても副作用の無いno-opフェイクを用意しておく。
+    statsRepo: {
+      loadCells: async () => new Map(),
+      refreshStepStats: async () => {},
+    },
   };
 
   return { ...repos, state };

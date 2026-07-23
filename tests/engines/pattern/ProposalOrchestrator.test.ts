@@ -118,7 +118,10 @@ function buildOverrides(overrides: Partial<Overrides> = {}): Overrides {
 }
 
 function buildStatsRepo(): IStatsRepo & { loadCells: ReturnType<typeof vi.fn> } {
-  return { loadCells: vi.fn(async (_keys: CellKey[]) => new Map<CellKey, CellStats>()) };
+  return {
+    loadCells: vi.fn(async (_keys: CellKey[]) => new Map<CellKey, CellStats>()),
+    refreshStepStats: async () => {},
+  };
 }
 
 function buildDeps(statsRepo: IStatsRepo): GeneratorDeps {

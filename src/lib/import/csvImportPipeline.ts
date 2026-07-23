@@ -27,7 +27,7 @@
  */
 import type {
   ICustomerRepo, IVisitRepo, IStaffRepo, IMenuRepo, IStoreRepo, IOpsLogRepo,
-  IBriefingRepo, IOutcomeRepo,
+  IBriefingRepo, IOutcomeRepo, IStatsRepo,
 } from '../../repositories/interfaces'
 import type { Customer } from '../../types/riora.types'
 import {
@@ -55,6 +55,7 @@ export interface PipelineRepos {
   opsLogRepo:   IOpsLogRepo
   briefingRepo: IBriefingRepo
   outcomeRepo:  IOutcomeRepo
+  statsRepo:    IStatsRepo
 }
 
 const FATAL_ISSUE_CODES = new Set(['empty_csv', 'missing_required_columns'])
@@ -504,6 +505,9 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
   let proximityReviewCount = 0
   let stubZeroVisitMatchedCount = 0
   let menuUnresolvedSkippedCount = 0
+  // PHASE 1-Cc: この取込でbrain_proposal_outcomesへ実際に書き込まれた件数。
+  // 1件以上ある場合のみ、ループ完了後にbrain_pattern_step_statsを1回だけrefreshする。
+  let proposalOutcomesRecorded = 0
   const menuResolutionByRawName = new Map<string, MenuResolutionLogEntry>()
 
   for (const agg of aggregates) {
@@ -589,7 +593,8 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
       // PHASE 1-Bc: 会計確定(reconcile)直後にfire_logを逆引きしbrain_proposal_outcomes
       // へ記録を試みる(Phase 1-Aと同じnon-fatalパターン。失敗してもCSV取込自体は成功扱い)。
       try {
-        await recordProposalOutcome({ storeId: input.storeId, visit: reconciledVisit }, repos)
+        const outcomeResult = await recordProposalOutcome({ storeId: input.storeId, visit: reconciledVisit }, repos)
+        if (outcomeResult.recorded) proposalOutcomesRecorded += 1
       } catch (e) {
         console.warn('[proposal-outcome] record failed (non-fatal):', e)
       }
@@ -617,12 +622,24 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
 
       // PHASE 1-Bc: 新規visit作成直後にも同様にoutcomes記録を試みる(non-fatal)。
       try {
-        await recordProposalOutcome({ storeId: input.storeId, visit: createdVisit }, repos)
+        const outcomeResult = await recordProposalOutcome({ storeId: input.storeId, visit: createdVisit }, repos)
+        if (outcomeResult.recorded) proposalOutcomesRecorded += 1
       } catch (e) {
         console.warn('[proposal-outcome] record failed (non-fatal):', e)
       }
     }
     // 既存visitが既にreconciled/salonboard_import済み → 同一CSV再取込の冪等スキップ(増分ゼロ)
+  }
+
+  // PHASE 1-Cc: この取込でoutcomeが1件以上記録された場合のみ、brain_pattern_step_stats
+  // (マテビュー)を1回だけrefreshする(取込中に毎回refreshすると冗長なため、ループ完了後に
+  // 1回にまとめる)。Phase 1-A/Bcと同じnon-fatalパターンで、失敗してもCSV取込は成功扱い。
+  if (proposalOutcomesRecorded > 0) {
+    try {
+      await repos.statsRepo.refreshStepStats()
+    } catch (e) {
+      console.warn('[proposal-outcome] pattern_step_stats refresh failed (non-fatal):', e)
+    }
   }
 
   const durationMs = Date.now() - startedAt

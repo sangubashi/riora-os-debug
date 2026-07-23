@@ -59,6 +59,12 @@ export interface ICandidateRepo {
 export interface IStatsRepo {
   /** brain_pattern_step_stats(マテビュー)からセル統計をIN句1クエリで取得する。 */
   loadCells(keys: CellKey[]): Promise<Map<CellKey, CellStats>>;
+  /**
+   * brain_pattern_step_stats(マテビュー)をCONCURRENTLY再計算する(Phase 1-Cc、
+   * RPC: refresh_pattern_step_stats)。brain_proposal_outcomesへの書込は自動反映
+   * されないため、呼び出し側(CSV取込完了後)が明示的に呼ぶ必要がある。
+   */
+  refreshStepStats(): Promise<void>;
 }
 
 export interface IParamsRepo {

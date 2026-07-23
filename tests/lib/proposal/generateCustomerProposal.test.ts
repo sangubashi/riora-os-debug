@@ -70,7 +70,7 @@ function createFakeRepos(overrides: { customer?: Customer | null; visits?: Visit
     outcomeRepo: { recent: async () => [], create: async (input) => ({ id: 'new-outcome', ...input }) },
     candidateRepo: { loadActive: async () => overrides.candidates ?? [candidate()] },
     paramsRepo: { weights: async () => weights(), styleAffinity: async () => styleAffinity() },
-    statsRepo: { loadCells: async () => new Map() },
+    statsRepo: { loadCells: async () => new Map(), refreshStepStats: async () => {} },
     storeRepo: { findById: async () => store() },
     lineQueueRepo: { enqueue: async () => 'q1', listPendingByStore: async () => [], updateStatus: async () => null, recentByCustomer: async () => [] },
   };
