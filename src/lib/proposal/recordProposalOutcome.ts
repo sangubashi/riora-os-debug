@@ -1,5 +1,5 @@
 /**
- * recordProposalOutcome.ts — brain_proposal_outcomesへの記録(Phase 1-Bc / 1-Cb)
+ * recordProposalOutcome.ts — brain_proposal_outcomesへの記録(Phase 1-Bc / 1-Cb / 1-Da)
  *
  * fire_log(brain_pattern_fire_log)とvisit(brain_visits)にはvisit_idによる
  * 直接の紐付けが無いため(Phase 1-Bb調査で確認済み)、customer_id + 時刻近傍で
@@ -7,12 +7,18 @@
  *   - customer_id一致 かつ fire_log.created_at <= 基準時刻 のうち最新1件を候補とする
  *   - 候補との時間差が30日を超える場合は採用しない(明らかに無関係なfire_logを拾わない)
  *
- * was_executed/was_accepted/amountの判定(Phase 1-Cb): proposal_kind='homecare'の
- * みvisit.retailAmount(CSV会計データのagg.retailSales由来)で実行結果を判定する
- * (Phase 1-C調査の結論通り、homecareは既存homecarePurchasedロジックと同じ根拠を
- * 使えるため最も信頼できる)。homecare以外(upsell/subscription/pack/rebooking)は
- * 判定材料が不十分・データソースが非同期(Phase 1-C調査参照)なため、Phase 1-Bcと
- * 同じ安全側固定値(false/false/0)のまま据え置く。
+ * was_executed/was_accepted/amountの判定:
+ *   - homecare(Phase 1-Cb): visit.retailAmount(CSV会計データのagg.retailSales由来)で
+ *     判定する(Phase 1-C調査の結論通り、既存homecarePurchasedロジックと同じ根拠を
+ *     使えるため最も信頼できる)。
+ *   - upsell(Phase 1-Da): 呼び出し元(csvImportPipeline.ts)がCSV取込時点でしか
+ *     分からない agg.optionNames.length > 0 を hasOptionPurchase として渡し、これで
+ *     判定する。amountは正確な金額を個別集計する手段が無いため(Phase 1-C調査の
+ *     結論通り、salonBoardDetailParser.tsはオプション行の金額を合算していない)、
+ *     暫定的に0固定とする。
+ *   - subscription/pack/rebooking: 判定材料が不十分・データソースが非同期
+ *     (Phase 1-C調査参照)なため、Phase 1-Bcと同じ安全側固定値(false/false/0)の
+ *     まま据え置く(今回未着手)。
  *
  * 呼び出し元(csvImportPipeline.ts)がvisitRepo.reconcile()/createSequenced()成功
  * 直後に呼ぶ前提のため、Visit型が公開していないcreated_atの代わりに「今」を
@@ -47,6 +53,12 @@ export interface RecordProposalOutcomeRepos {
 export interface RecordProposalOutcomeInput {
   storeId: string;
   visit: Visit;
+  /**
+   * Phase 1-Da: upsell判定用。CSV取込時点のagg.optionNames.length > 0を
+   * 呼び出し元が渡す(brain_visitsにオプション購入有無を表す列が無いため、
+   * Visit型からは導出できない)。homecare等の判定には使用しない。
+   */
+  hasOptionPurchase?: boolean;
 }
 
 export type RecordProposalOutcomeResult =
@@ -57,7 +69,7 @@ export async function recordProposalOutcome(
   input: RecordProposalOutcomeInput,
   repos: RecordProposalOutcomeRepos
 ): Promise<RecordProposalOutcomeResult> {
-  const { visit, storeId } = input;
+  const { visit, storeId, hasOptionPurchase } = input;
   const referenceTime = Date.now();
 
   const recent = await repos.briefingRepo.recentByCustomer(visit.customerId, RECENT_FIRE_LOG_LOOKBACK);
@@ -86,14 +98,29 @@ export async function recordProposalOutcome(
   // (候補数によらず同じ判定ロジックを適用する)、呼び出し元への参考情報としてのみ返す。
   const ambiguousCandidateCount = eligible.length;
 
-  // Phase 1-Cb: homecareのみ、この来店で実際に店販(ホームケア商品)が売上に計上されたか
-  // (visit.retailAmount、CSV会計データのagg.retailSales由来)で実行結果を判定する。
-  // homecare以外(upsell/subscription/pack/rebooking)はPhase 1-Bcのまま安全側固定値。
   const proposalKind = dr.proposalKind as ProposalKind;
   const isHomecare = proposalKind === 'homecare';
-  const wasExecuted = isHomecare && visit.retailAmount > 0;
-  const wasAccepted = isHomecare && visit.retailAmount > 0;
-  const amount = isHomecare ? visit.retailAmount : 0;
+  const isUpsell = proposalKind === 'upsell';
+
+  let wasExecuted = false;
+  let wasAccepted = false;
+  let amount = 0;
+
+  if (isHomecare) {
+    // Phase 1-Cb: この来店で実際に店販(ホームケア商品)が売上に計上されたか
+    // (visit.retailAmount、CSV会計データのagg.retailSales由来)で判定する。無変更。
+    wasExecuted = visit.retailAmount > 0;
+    wasAccepted = visit.retailAmount > 0;
+    amount = visit.retailAmount;
+  } else if (isUpsell) {
+    // Phase 1-Da: この来店でオプション行が1件でも購入されたか
+    // (agg.optionNames.length > 0、呼び出し元からhasOptionPurchaseとして受け取る)で判定する。
+    // amountはオプション単体の金額を個別集計する手段が無いため暫定的に0固定とする。
+    wasExecuted = hasOptionPurchase === true;
+    wasAccepted = hasOptionPurchase === true;
+    amount = 0;
+  }
+  // subscription/pack/rebookingは今回未着手のため false/false/0 のまま(初期値)。
 
   const created = await repos.outcomeRepo.create({
     storeId,

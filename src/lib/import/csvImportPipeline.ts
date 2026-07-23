@@ -593,7 +593,10 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
       // PHASE 1-Bc: 会計確定(reconcile)直後にfire_logを逆引きしbrain_proposal_outcomes
       // へ記録を試みる(Phase 1-Aと同じnon-fatalパターン。失敗してもCSV取込自体は成功扱い)。
       try {
-        const outcomeResult = await recordProposalOutcome({ storeId: input.storeId, visit: reconciledVisit }, repos)
+        const outcomeResult = await recordProposalOutcome(
+          { storeId: input.storeId, visit: reconciledVisit, hasOptionPurchase: agg.optionNames.length > 0 },
+          repos
+        )
         if (outcomeResult.recorded) proposalOutcomesRecorded += 1
       } catch (e) {
         console.warn('[proposal-outcome] record failed (non-fatal):', e)
@@ -622,7 +625,10 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
 
       // PHASE 1-Bc: 新規visit作成直後にも同様にoutcomes記録を試みる(non-fatal)。
       try {
-        const outcomeResult = await recordProposalOutcome({ storeId: input.storeId, visit: createdVisit }, repos)
+        const outcomeResult = await recordProposalOutcome(
+          { storeId: input.storeId, visit: createdVisit, hasOptionPurchase: agg.optionNames.length > 0 },
+          repos
+        )
         if (outcomeResult.recorded) proposalOutcomesRecorded += 1
       } catch (e) {
         console.warn('[proposal-outcome] record failed (non-fatal):', e)
