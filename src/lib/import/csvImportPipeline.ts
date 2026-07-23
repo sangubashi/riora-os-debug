@@ -72,6 +72,21 @@ function dateOnly(visitDateTimeIso: string): string {
   return visitDateTimeIso.slice(0, 10)
 }
 
+/**
+ * PHASE 1-Db: subscription実行結果判定用のキーワード検出(recordProposalOutcome.tsの
+ * hasSubscriptionKeywordに渡す)。brain_menus.roleにサブスクを表す値が存在しないため
+ * (Phase 1-C調査で確認済み)、CSV会計明細の生テキスト(menuName/serviceNames/
+ * retailNames)への単純な部分一致で判定する。表記ゆれ(定期便・月額等)は拾えない
+ * 既知の制約。
+ */
+function hasSubscriptionKeyword(agg: SalonBoardCheckoutAggregate): boolean {
+  const KEYWORD = 'サブスク'
+  if (agg.menuName.includes(KEYWORD)) return true
+  if (agg.serviceNames.some((name) => name.includes(KEYWORD))) return true
+  if (agg.retailNames.some((name) => name.includes(KEYWORD))) return true
+  return false
+}
+
 interface ParsedAndAggregated {
   aggregates:     SalonBoardCheckoutAggregate[]
   skipped:        SkipItem[]
@@ -594,7 +609,11 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
       // へ記録を試みる(Phase 1-Aと同じnon-fatalパターン。失敗してもCSV取込自体は成功扱い)。
       try {
         const outcomeResult = await recordProposalOutcome(
-          { storeId: input.storeId, visit: reconciledVisit, hasOptionPurchase: agg.optionNames.length > 0 },
+          {
+            storeId: input.storeId, visit: reconciledVisit,
+            hasOptionPurchase: agg.optionNames.length > 0,
+            hasSubscriptionKeyword: hasSubscriptionKeyword(agg),
+          },
           repos
         )
         if (outcomeResult.recorded) proposalOutcomesRecorded += 1
@@ -626,7 +645,11 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
       // PHASE 1-Bc: 新規visit作成直後にも同様にoutcomes記録を試みる(non-fatal)。
       try {
         const outcomeResult = await recordProposalOutcome(
-          { storeId: input.storeId, visit: createdVisit, hasOptionPurchase: agg.optionNames.length > 0 },
+          {
+            storeId: input.storeId, visit: createdVisit,
+            hasOptionPurchase: agg.optionNames.length > 0,
+            hasSubscriptionKeyword: hasSubscriptionKeyword(agg),
+          },
           repos
         )
         if (outcomeResult.recorded) proposalOutcomesRecorded += 1

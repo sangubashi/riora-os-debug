@@ -1,5 +1,5 @@
 /**
- * recordProposalOutcome.ts — brain_proposal_outcomesへの記録(Phase 1-Bc / 1-Cb / 1-Da)
+ * recordProposalOutcome.ts — brain_proposal_outcomesへの記録(Phase 1-Bc / 1-Cb / 1-Da / 1-Db)
  *
  * fire_log(brain_pattern_fire_log)とvisit(brain_visits)にはvisit_idによる
  * 直接の紐付けが無いため(Phase 1-Bb調査で確認済み)、customer_id + 時刻近傍で
@@ -16,9 +16,12 @@
  *     判定する。amountは正確な金額を個別集計する手段が無いため(Phase 1-C調査の
  *     結論通り、salonBoardDetailParser.tsはオプション行の金額を合算していない)、
  *     暫定的に0固定とする。
- *   - subscription/pack/rebooking: 判定材料が不十分・データソースが非同期
- *     (Phase 1-C調査参照)なため、Phase 1-Bcと同じ安全側固定値(false/false/0)の
- *     まま据え置く(今回未着手)。
+ *   - subscription(Phase 1-Db): 呼び出し元がCSV取込時点のagg.menuName/serviceNames/
+ *     retailNamesに"サブスク"という文字列を含むかを hasSubscriptionKeyword として渡し、
+ *     これで判定する(Phase 1-C調査の結論通り、構造化列が存在しないためキーワード
+ *     マッチのみ。表記ゆれは拾えない既知の制約)。amountは同じ理由で暫定的に0固定。
+ *   - pack/rebooking: 判定材料が不十分・データソースが非同期(Phase 1-C調査参照)
+ *     なため、Phase 1-Bcと同じ安全側固定値(false/false/0)のまま据え置く(今回未着手)。
  *
  * 呼び出し元(csvImportPipeline.ts)がvisitRepo.reconcile()/createSequenced()成功
  * 直後に呼ぶ前提のため、Visit型が公開していないcreated_atの代わりに「今」を
@@ -59,6 +62,13 @@ export interface RecordProposalOutcomeInput {
    * Visit型からは導出できない)。homecare等の判定には使用しない。
    */
   hasOptionPurchase?: boolean;
+  /**
+   * Phase 1-Db: subscription判定用。CSV取込時点のagg.menuName/serviceNames/
+   * retailNamesのいずれかに"サブスク"という文字列が含まれるかを呼び出し元が渡す
+   * (brain_visitsにサブスク成約有無を表す列が無いため、Visit型からは導出できない)。
+   * homecare/upsell等の判定には使用しない。
+   */
+  hasSubscriptionKeyword?: boolean;
 }
 
 export type RecordProposalOutcomeResult =
@@ -69,7 +79,7 @@ export async function recordProposalOutcome(
   input: RecordProposalOutcomeInput,
   repos: RecordProposalOutcomeRepos
 ): Promise<RecordProposalOutcomeResult> {
-  const { visit, storeId, hasOptionPurchase } = input;
+  const { visit, storeId, hasOptionPurchase, hasSubscriptionKeyword } = input;
   const referenceTime = Date.now();
 
   const recent = await repos.briefingRepo.recentByCustomer(visit.customerId, RECENT_FIRE_LOG_LOOKBACK);
@@ -101,6 +111,7 @@ export async function recordProposalOutcome(
   const proposalKind = dr.proposalKind as ProposalKind;
   const isHomecare = proposalKind === 'homecare';
   const isUpsell = proposalKind === 'upsell';
+  const isSubscription = proposalKind === 'subscription';
 
   let wasExecuted = false;
   let wasAccepted = false;
@@ -115,12 +126,19 @@ export async function recordProposalOutcome(
   } else if (isUpsell) {
     // Phase 1-Da: この来店でオプション行が1件でも購入されたか
     // (agg.optionNames.length > 0、呼び出し元からhasOptionPurchaseとして受け取る)で判定する。
-    // amountはオプション単体の金額を個別集計する手段が無いため暫定的に0固定とする。
+    // amountはオプション単体の金額を個別集計する手段が無いため暫定的に0固定とする。無変更。
     wasExecuted = hasOptionPurchase === true;
     wasAccepted = hasOptionPurchase === true;
     amount = 0;
+  } else if (isSubscription) {
+    // Phase 1-Db: この来店の会計明細(menuName/serviceNames/retailNames)に
+    // "サブスク"という文字列が含まれるか(呼び出し元からhasSubscriptionKeywordとして
+    // 受け取る)で判定する。amountは金額を個別集計する手段が無いため暫定的に0固定とする。
+    wasExecuted = hasSubscriptionKeyword === true;
+    wasAccepted = hasSubscriptionKeyword === true;
+    amount = 0;
   }
-  // subscription/pack/rebookingは今回未着手のため false/false/0 のまま(初期値)。
+  // pack/rebookingは今回未着手のため false/false/0 のまま(初期値)。
 
   const created = await repos.outcomeRepo.create({
     storeId,
