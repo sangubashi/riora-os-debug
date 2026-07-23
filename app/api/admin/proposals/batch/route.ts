@@ -67,6 +67,10 @@ export async function POST(req: NextRequest) {
             return;
           }
 
+          // PHASE 1-Ba: candidateCode文字列のみでは後続のoutcome学習(pattern_id/step_no
+          // 単位の集計)に不十分なため、FiredProposalが既に持つ構造化フィールドを
+          // decision_recordへ素通しで追加保存する(既存フィールドは変更しない・後方互換)。
+          const mandatory = 'degraded' in result.proposal ? null : result.proposal.inStore.mandatory;
           const decisionRecord =
             'degraded' in result.proposal
               ? { degraded: true, reason: result.proposal.reason, contextSnapshot: result.context }
@@ -80,6 +84,10 @@ export async function POST(req: NextRequest) {
                   },
                   contextSnapshot: result.context,
                   explainTexts: result.proposal.explanation,
+                  patternId: mandatory?.patternId ?? null,
+                  stepNo: mandatory?.stepNo ?? null,
+                  proposalKind: mandatory?.proposalKind ?? null,
+                  scriptStyle: mandatory?.scriptStyle ?? null,
                 };
 
           const explanation =
