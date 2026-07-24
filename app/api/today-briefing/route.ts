@@ -118,9 +118,15 @@ export async function GET(req: NextRequest) {
         )
       `)
       .not('brain_customer_id', 'is', null)
+      // Phase 1-F修正版: CSV取込でキャンセル済みに更新された予約を表示対象から除外する
+      // (取込パイプライン側は正しくstatus='cancelled'へ同期しているが、本APIが
+      // ステータスを見ずに全件返していたため、キャンセル済み予約も表示されていた)。
+      .neq('status', 'cancelled')
       .gte('scheduled_at', start)
       .lte('scheduled_at', end)
-      .order('scheduled_at', { ascending: true })
+      // 同一顧客の重複排除(直後)でcreated_at最新を優先するため、取得順はcreated_at降順にする。
+      // 表示用の時系列順(scheduled_at昇順)への並び替えは重複排除の後に行う。
+      .order('created_at', { ascending: false })
 
     if (!staff.isAdmin) {
       query = query.eq('staff_id', staff.authUserId)
@@ -136,14 +142,22 @@ export async function GET(req: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const valid = raw.filter((r: any) => r.brain_customer != null)
 
-    // 同一顧客の重複予約は先頭1件のみ残す
+    // 同一顧客・同日に複数予約がある場合(リスケジュール等)はcreated_at最新の1件のみ残す。
+    // 取得順が既にcreated_at降順のため、先頭1件を残すだけでよい。
     const seen = new Set<string>()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const reservations = valid.filter((r: any) => {
+    const deduped = valid.filter((r: any) => {
       if (seen.has(r.brain_customer_id)) return false
       seen.add(r.brain_customer_id)
       return true
     })
+
+    // 以降のロジック(次のお客様特定・このあとの予約一覧)は時系列順を前提とするため、
+    // 重複排除後にscheduled_at昇順へ並び替える。
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const reservations = deduped.sort(
+      (a: any, b: any) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
+    )
 
     if (reservations.length === 0) {
       return NextResponse.json<TodayBriefingResponse>(EMPTY_RESPONSE)

@@ -6,7 +6,10 @@
  * 仕様:
  *   - 今日の予約のみ返す（フォールバックなし）
  *   - 今日0件 → reservations: [] を返す（画面側で「本日の予約はありません」表示）
- *   - 同一 brain_customer_id が重複する場合は最初の1件（scheduled_at 昇順）を残す
+ *   - status='cancelled'の予約は除外する(Phase 1-F修正版)
+ *   - 同一 brain_customer_id が重複する場合はcreated_at最新の1件を残す(Phase 1-F修正版。
+ *     リスケジュール等でscheduled_atが変わった場合に古い時刻の行が優先される不具合の修正)。
+ *     表示自体はscheduled_at昇順のまま。
  *
  * Query params:
  *   role  — 'owner' | 'staff'
@@ -58,15 +61,17 @@ export async function GET(req: NextRequest) {
     const supabase = getServiceClient();
     const { start, end } = todayJst();
 
-    // 今日の予約（brain_customer_id 連携済みのみ、時刻昇順）
+    // 今日の予約（brain_customer_id 連携済み・キャンセル除く）
     // 管理者は全スタッフ分、スタッフは自分の担当分のみ
+    // 同一顧客の重複排除(直後)でcreated_at最新を優先するため、取得順はcreated_at降順にする。
     let query = supabase
       .from('reservations')
       .select(RESERVATION_SELECT)
       .not('brain_customer_id', 'is', null)
+      .neq('status', 'cancelled')
       .gte('scheduled_at', start)
       .lte('scheduled_at', end)
-      .order('scheduled_at', { ascending: true });
+      .order('created_at', { ascending: false });
 
     if (!staff.isAdmin) {
       // reservations.staff_id は profiles.id (= auth.users.id) を格納する。
@@ -81,13 +86,20 @@ export async function GET(req: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const valid = (data ?? []).filter((r: any) => r.brain_customer != null);
 
-    // 同一 brain_customer_id の重複を排除（先頭1件を残す）
+    // 同一顧客・同日に複数予約がある場合(リスケジュール等)はcreated_at最新の1件のみ残す。
+    // 取得順が既にcreated_at降順のため、先頭1件を残すだけでよい。
     const seen = new Set<string>();
-    const reservations = valid.filter((r: { brain_customer_id: string }) => {
+    const deduped = valid.filter((r: { brain_customer_id: string }) => {
       if (seen.has(r.brain_customer_id)) return false;
       seen.add(r.brain_customer_id);
       return true;
     });
+
+    // 画面表示は来店時刻順(scheduled_at昇順)へ並び替える。
+    const reservations = deduped.sort(
+      (a: { scheduled_at: string }, b: { scheduled_at: string }) =>
+        new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
+    );
 
     return NextResponse.json({ reservations });
   } catch (e) {
