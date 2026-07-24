@@ -301,6 +301,18 @@ export interface IBlogArticleRepo {
    * (無条件に承認済み記事を返さない・呼び出し側の商品名と無関係な記事を出さないため)。
    */
   listApprovedByProducts(productNames: string[], limit: number): Promise<BlogArticle[]>;
+  /**
+   * is_customer_safe=trueかつstatus='approved'の記事のうち、keywordsが1件以上重複するものを返す
+   * (KNOWLEDGE_AI_INTEGRATION_AUDIT_1 PhaseA: AI提案・接客ヒント補強用のタグ一致検索)。
+   * keywordsが空配列の場合はDBへ問い合わせず空配列を返す。
+   */
+  listApprovedByKeywords(keywords: string[], limit: number): Promise<BlogArticle[]>;
+  /**
+   * is_customer_safe=trueかつstatus='approved'の記事のうち、categoryが指定リストに含まれるものを返す
+   * (PHASE2-C追加確認: 生成理由の「◯◯カテゴリ一致」表示用)。
+   * categoriesが空配列の場合はDBへ問い合わせず空配列を返す。
+   */
+  listApprovedByCategories(categories: string[], limit: number): Promise<BlogArticle[]>;
   /** brain_blog_articlesへ1件追加する。status/is_customer_safeは既定値(draft/false)のまま作成する。 */
   create(input: CreateBlogArticleInput): Promise<BlogArticle>;
   /** brain_blog_articlesを1件更新する。対象idが存在しない場合はnull。 */

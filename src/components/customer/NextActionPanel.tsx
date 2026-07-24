@@ -30,6 +30,8 @@ interface NextActionPanelProps {
   skinTags:             SkinTagKey[]
   menuName:             string
   recommendedCycleDays?: number | null
+  /** ホームケア購入商品名（PHASE2-C: 生成理由「◯◯カテゴリ一致」判定用。未指定時は[]） */
+  homecareProductNames?: string[]
   reservationId:        string | null
   /** 保存完了時に親の行動履歴をリロード */
   onActionLogged:       () => void
@@ -45,7 +47,7 @@ export default function NextActionPanel(props: NextActionPanelProps) {
   const {
     customerId, staffId, visits, totalSales, lineResponseRate,
     vipRank, churnRisk, daysSinceLastVisit, skinTags,
-    menuName, recommendedCycleDays, reservationId, onActionLogged,
+    menuName, recommendedCycleDays, homecareProductNames, reservationId, onActionLogged,
     compact = false, excludeIds,
   } = props
 
@@ -70,6 +72,7 @@ export default function NextActionPanel(props: NextActionPanelProps) {
         skinTags,
         menuName,
         recommendedCycleDays,
+        homecareProductNames,
       })
       setActions(excludeIds?.length ? results.filter(a => !excludeIds.includes(a.id)) : results)
     } catch (e) {
@@ -80,7 +83,8 @@ export default function NextActionPanel(props: NextActionPanelProps) {
     }
   }, [
     customerId, visits, totalSales, lineResponseRate, vipRank,
-    churnRisk, daysSinceLastVisit, skinTags, menuName, recommendedCycleDays, excludeIds,
+    churnRisk, daysSinceLastVisit, skinTags, menuName, recommendedCycleDays,
+    homecareProductNames, excludeIds,
   ])
 
   useEffect(() => {

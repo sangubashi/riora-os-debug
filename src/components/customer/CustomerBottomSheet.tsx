@@ -53,6 +53,8 @@ import {
 } from '@/lib/homecare/generateHomecarePlan';
 import { getHomecareUsageGuide } from '@/lib/homecare/homecareUsageGuide';
 import { getConversationHints } from '@/lib/homecare/homecareConversationHints';
+import { buildCustomerTagVocabulary, buildProductCategoryVocabulary, deriveHintsFromMatchedKeywords, buildMatchReasons, GENERAL_HINTS, type MatchReason } from '@/lib/nextAction/knowledgeMatch';
+import { fetchKnowledgeMatch } from '@/lib/nextAction/fetchKnowledgeMatch';
 import { logAction, fetchRecentActions, type ActionLogRow } from '@/lib/actionLog';
 import { buildServiceReplay } from '@/lib/phase5/serviceReplay';
 import { Mutex, prodLog } from '@/lib/stability';
@@ -295,6 +297,23 @@ export default function CustomerBottomSheet({
   const [homecareProducts,        setHomecareProducts]        = useState<HomecareProductEntry[]>([]);
   const [homecareProductsLoading, setHomecareProductsLoading] = useState(false);
 
+  // ── 関連記事（BLOG_CONTENT_PHASE2・ホームケア使用商品の下に表示。タイトルのみ） ──
+  const [relatedArticles,        setRelatedArticles]        = useState<{ id: string; title: string }[]>([]);
+  const [relatedArticlesLoading, setRelatedArticlesLoading] = useState(false);
+
+  // ── 接客ヒント（PHASE2-C-3・ブログ×肌タグのキーワード一致で生成。固定文言は廃止） ──
+  const [knowledgeHints,        setKnowledgeHints]        = useState<string[]>(GENERAL_HINTS);
+  const [knowledgeHintsLoading, setKnowledgeHintsLoading] = useState(false);
+  // 生成理由（PHASE2-C追加確認）。タグ名・カテゴリ名のみ。記事タイトル・summaryは含めない。
+  const [knowledgeReasons,      setKnowledgeReasons]      = useState<MatchReason[]>([]);
+
+  // ── LINEメッセージ生成（PHASE2-C-4・生成→編集→コピーのみ。送信APIは呼ばない） ──
+  const [lineMessageDraft,      setLineMessageDraft]      = useState('');
+  const [lineMessageGenerating, setLineMessageGenerating] = useState(false);
+  const [lineMessageCopied,     setLineMessageCopied]     = useState(false);
+  // 生成理由（PHASE2-C追加確認）。タグ名・カテゴリ名のみ。記事タイトル・summaryは含めない。
+  const [lineMessageReasons,    setLineMessageReasons]    = useState<MatchReason[]>([]);
+
   // ── ホームケア使い方カード（PHASE HC-4） ────────────────────────────────────────
   const [expandedUsageCards, setExpandedUsageCards] = useState<Set<string>>(new Set());
   const [copiedUsageProduct, setCopiedUsageProduct] = useState<string | null>(null);
@@ -356,6 +375,9 @@ export default function CustomerBottomSheet({
     setHomecareProducts([]);
     setExpandedUsageCards(new Set());
     setAiHomecareMessages({});
+    setLineMessageDraft('');
+    setLineMessageCopied(false);
+    setLineMessageReasons([]);
     setAllDone(false);
     setServiceReplay(null);
     resetActiveSession();
@@ -489,6 +511,66 @@ export default function CustomerBottomSheet({
     })();
   }, [c?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── 関連記事（BLOG_CONTENT_PHASE2） ────────────────────────────────────────
+  // homecareProducts(PHASE HC-2B・既存の購入履歴取得)が確定した後にのみ実行する。
+  // 既存のHC-2B取得処理・表示ロジックには一切手を加えず、その結果を読むだけ。
+  useEffect(() => {
+    if (homecareProducts.length === 0) {
+      setRelatedArticles([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      setRelatedArticlesLoading(true);
+      try {
+        const params = new URLSearchParams();
+        for (const p of homecareProducts) params.append('products', p.productName);
+        const res = await authedFetch(`/api/blog-articles/related?${params.toString()}`);
+        if (res.ok) {
+          const json = await res.json() as { success: boolean; articles: { id: string; title: string }[] };
+          if (!cancelled && json.success) setRelatedArticles(json.articles);
+        }
+      } finally {
+        if (!cancelled) setRelatedArticlesLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [homecareProducts]);
+
+  // ── 接客ヒント（PHASE2-C-3） ─────────────────────────────────────────────────
+  // 肌タグから導出した候補語(vocabulary)と、承認済みブログ記事のkeywordsとの一致を
+  // 取得し、一致した語に対応する固定テンプレート文言を選ぶ。一致が無い場合は
+  // GENERAL_HINTS(一般的な質問文)にフォールバックする。記事本文・summaryは扱わない。
+  useEffect(() => {
+    if (homecareProducts.length === 0) {
+      setKnowledgeHints(GENERAL_HINTS);
+      setKnowledgeReasons([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      setKnowledgeHintsLoading(true);
+      try {
+        const tagVocabulary      = buildCustomerTagVocabulary(skinTags);
+        const categoryVocabulary = buildProductCategoryVocabulary(homecareProducts.map(p => p.productName));
+        const { matchedKeywords, matchedCategories } = await fetchKnowledgeMatch(tagVocabulary, categoryVocabulary);
+        if (cancelled) return;
+        setKnowledgeHints(deriveHintsFromMatchedKeywords(matchedKeywords));
+        setKnowledgeReasons(buildMatchReasons({
+          matchedTagKeywords: matchedKeywords,
+          matchedCategories,
+          hasRelatedArticleByProduct: relatedArticles.length > 0,
+          hasHomecareProduct: homecareProducts.length > 0,
+          hasRecentVisit: visitHistory.length > 0,
+          hasRecentPurchase: homecareProducts.length > 0,
+        }));
+      } finally {
+        if (!cancelled) setKnowledgeHintsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [homecareProducts, skinTags, relatedArticles, visitHistory]);
+
   // ─── ロード ────────────────────────────────────────────────────────────────
   // customer_notes 最新分を1回のクエリで取得（①メモ欄プリフィル ②「最近の会話」表示の両方が使う）
   // CUSTOMER_MEMORY_OPTIMIZE_1: recentNotes state だけ更新。savedMemoText/memo の上書きは
@@ -544,6 +626,9 @@ export default function CustomerBottomSheet({
     setHomecareProducts([]);
     setExpandedUsageCards(new Set());
     setAiHomecareMessages({});
+    setLineMessageDraft('');
+    setLineMessageCopied(false);
+    setLineMessageReasons([]);
     setAllDone(false);
     setServiceReplay(null);
     resetActiveSession();
@@ -750,6 +835,54 @@ export default function CustomerBottomSheet({
       setAiGeneratingProduct(null);
     }
   }, [c, aiGeneratingProduct]);
+
+  // ─── LINEメッセージ生成（PHASE2-C-4・生成/編集/コピーのみ。送信APIは呼ばない） ──────
+  const generateLineMessage = useCallback(async () => {
+    if (!c || lineMessageGenerating) return;
+    setLineMessageGenerating(true);
+    try {
+      const res = await authedFetch(`/api/customers/${c.id}/line-message`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          customerName: c.name,
+          skinTags:     skinTags.map(t => SKIN_TAG_LABELS[t]).filter(Boolean),
+          recentVisits: visitHistory.slice(0, 3).map(v => ({ menuName: v.menuName, visitDate: v.visitDate })),
+          homecareProducts: homecareProducts.slice(0, 3).map(p => ({
+            productName: p.productName, lastPurchasedAt: p.lastPurchasedAt,
+          })),
+          recentNoteSummaries: recentNotes.slice(0, 3).map(n => n.note).filter(Boolean),
+        }),
+      });
+      const json = res.ok
+        ? await res.json() as { success: boolean; message?: string; reasons?: MatchReason[] }
+        : { success: false as const };
+      if (json.success && json.message) {
+        setLineMessageDraft(json.message);
+        setLineMessageReasons(json.reasons ?? []);
+        setLineMessageCopied(false);
+        toast.success('LINE文面を生成しました', { duration: 1500 });
+      } else {
+        setLineMessageReasons([]);
+        toast.error('生成に失敗しました。もう一度お試しください');
+      }
+    } catch {
+      setLineMessageReasons([]);
+      toast.error('生成に失敗しました。もう一度お試しください');
+    } finally {
+      setLineMessageGenerating(false);
+    }
+  }, [c, lineMessageGenerating, skinTags, visitHistory, homecareProducts, recentNotes]);
+
+  const copyLineMessageDraft = useCallback(async () => {
+    if (!lineMessageDraft) return;
+    try {
+      await navigator.clipboard.writeText(lineMessageDraft);
+      setLineMessageCopied(true);
+      toast.success('コピーしました', { duration: 1500 });
+      setTimeout(() => setLineMessageCopied(false), 2500);
+    } catch { toast.error('コピーに失敗しました'); }
+  }, [lineMessageDraft]);
 
   // ─── Adaptive Priority ────────────────────────────────────────────────────
   const sectionPriority = useSectionPriority(c ?? null, servicePhase, timePressure);
@@ -1354,6 +1487,7 @@ export default function CustomerBottomSheet({
                             skinTags={skinTags}
                             menuName={r.menu}
                             recommendedCycleDays={c.recommended_cycle_days}
+                            homecareProductNames={homecareProducts.map(p => p.productName)}
                             reservationId={r.id}
                             onActionLogged={() => loadRecentActions(c.id)}
                             compact={isCompact('nextAction')}
@@ -1441,6 +1575,64 @@ export default function CustomerBottomSheet({
                           </div>
                         )}
                       </div>
+
+                      {/* 関連記事・接客ヒント（BLOG_CONTENT_PHASE2・接客ヒントはPHASE2-C-3でAI化）
+                          既存の🏠ホームケア使用商品ブロックの直下に追加表示。記事本文・外部URLは
+                          一切表示しない(タイトルのみ)。残量推定・買い替え提案の文言は使わない。
+                          接客ヒントは肌タグ×承認済みブログ記事のkeywords一致から選ぶ固定テンプレート
+                          文言(knowledgeMatch.ts)。一致が無ければGENERAL_HINTSにフォールバックする。 */}
+                      {homecareProducts.length > 0 && (
+                        <div className="bg-[#F8F1F3] rounded-[22px] p-4">
+                          {relatedArticlesLoading ? (
+                            <p className="text-xs text-[#C8A58C] py-1">読み込み中…</p>
+                          ) : (
+                            <>
+                              {relatedArticles.length > 0 && (
+                                <div className="mb-3">
+                                  <p className="text-[11px] tracking-[0.18em] text-[#C8A58C] font-semibold mb-2">
+                                    📰 関連記事
+                                  </p>
+                                  <div className="flex flex-col gap-1">
+                                    {relatedArticles.map(a => (
+                                      <p key={a.id} className="text-xs text-[#5C4033] leading-relaxed break-words">
+                                        ・{a.title}について
+                                      </p>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              <div>
+                                <p className="text-[11px] tracking-[0.18em] text-[#C8A58C] font-semibold mb-2">
+                                  💬 接客ヒント
+                                </p>
+                                <div className="flex flex-col gap-1">
+                                  {knowledgeHintsLoading ? (
+                                    <p className="text-xs text-[#C8A58C] py-1">読み込み中…</p>
+                                  ) : (
+                                    knowledgeHints.map((hint, i) => (
+                                      <p key={i} className="text-xs text-[#5C4033] leading-relaxed">・{hint}</p>
+                                    ))
+                                  )}
+                                </div>
+                                {/* 生成理由（PHASE2-C追加確認）: タグ名・カテゴリ名のみを表示する。
+                                    記事タイトル・記事本文・summary・URLは一切表示しない。 */}
+                                {!knowledgeHintsLoading && knowledgeReasons.length > 0 && (
+                                  <div className="mt-2.5 pt-2 border-t border-[#F0DCE0]">
+                                    <p className="text-[10px] text-[#C8A8B0] tracking-[0.08em] mb-1">生成理由</p>
+                                    <div className="flex flex-wrap gap-1">
+                                      {knowledgeReasons.map((reason) => (
+                                        <span key={reason.type + reason.label} className="text-[10px] text-[#9F7E6C] bg-white rounded-full px-2 py-0.5 border border-[#F0DCE0]">
+                                          {reason.label}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
 
                       {/* ホームケア使い方カード（PHASE HC-4） */}
                       {homecareProducts.length > 0 && (
@@ -1551,6 +1743,66 @@ export default function CustomerBottomSheet({
 
                       {/* LINE下書き */}
                       {visible('lineDraft') && <LineDraftAccordion />}
+
+                      {/* LINEメッセージ生成（PHASE2-C-4）
+                          仕様: 生成→編集→コピーのみ。送信ボタン・Webhook送信・LINE Messaging API
+                          呼び出しは一切実装しない。送信はスタッフ本人がLINEアプリから手動で行う。 */}
+                      <div className="bg-[#F0FAF5] rounded-[22px] p-4 border border-[#D0F0E0]">
+                        <div className="flex items-center justify-between mb-2.5">
+                          <p className="text-[11px] tracking-[0.18em] text-[#34A070] font-semibold">
+                            ✨ LINEメッセージ生成（AI下書き）
+                          </p>
+                          <button
+                            onClick={generateLineMessage}
+                            disabled={lineMessageGenerating}
+                            className="text-[11px] font-semibold text-[#34A070] bg-white border border-[#C0E8D0] rounded-full px-3 py-1 cursor-pointer whitespace-nowrap disabled:opacity-60"
+                          >
+                            {lineMessageGenerating ? '生成中…' : lineMessageDraft ? '再生成' : '生成する'}
+                          </button>
+                        </div>
+                        {lineMessageDraft ? (
+                          <>
+                            <textarea
+                              value={lineMessageDraft}
+                              onChange={e => { setLineMessageDraft(e.target.value); setLineMessageCopied(false); }}
+                              rows={5}
+                              className="w-full bg-white rounded-2xl p-3 border border-[#C0E8D0] text-sm text-[#3C5C45] leading-[1.8] mb-2.5 resize-none"
+                              placeholder="生成された文面がここに表示されます。自由に編集できます。"
+                            />
+                            <button onClick={copyLineMessageDraft}
+                              className={`w-full py-2.5 rounded-full text-sm font-bold text-white flex items-center justify-center gap-1.5 transition-colors border-none cursor-pointer ${
+                                lineMessageCopied ? 'bg-[#34D399]' : 'bg-[#2ECC8A]'
+                              }`}>
+                              {lineMessageCopied
+                                ? <><Check size={14} strokeWidth={2.5} /> コピーしました</>
+                                : <><Copy size={14} strokeWidth={2} /> コピー</>
+                              }
+                            </button>
+                            <p className="text-[10px] text-[#7C9C88] mt-2 leading-relaxed">
+                              送信はこのアプリからは行いません。コピーした文面をLINEアプリに貼り付けて、ご自身で送信してください。
+                            </p>
+                            {/* 生成理由（PHASE2-C追加確認）: タグ名・カテゴリ名のみを表示する。
+                                記事タイトル・記事本文・summary・URLは一切表示しない。 */}
+                            {lineMessageReasons.length > 0 && (
+                              <div className="mt-2.5 pt-2 border-t border-[#D0F0E0]">
+                                <p className="text-[10px] text-[#7C9C88] tracking-[0.08em] mb-1">生成理由</p>
+                                <div className="flex flex-wrap gap-1">
+                                  {lineMessageReasons.map((reason) => (
+                                    <span key={reason.type + reason.label} className="text-[10px] text-[#3C5C45] bg-white rounded-full px-2 py-0.5 border border-[#D0F0E0]">
+                                      {reason.label}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <p className="text-xs text-[#7C9C88] py-1">
+                            「生成する」を押すと、肌の悩み・来店履歴・ホームケア状況などから
+                            AIがLINEメッセージの下書きを作成します。
+                          </p>
+                        )}
+                      </div>
 
                       {/* 実施済み記録 */}
                       <ActionButtonGroup />

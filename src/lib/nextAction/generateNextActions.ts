@@ -15,6 +15,8 @@ import type { ActionRuleInput } from './actionRules'
 import type { NextAction } from '@/types'
 import type { SkinTagKey, InsightTag } from '@/types'
 import { getMenuCycleDays } from '@/lib/homecare/generateHomecarePlan'
+import { buildCustomerTagVocabulary, buildProductCategoryVocabulary, buildMatchReasons } from './knowledgeMatch'
+import { fetchKnowledgeMatch } from './fetchKnowledgeMatch'
 
 // ─── 入力（BottomSheet から渡される既存データ） ───────────────────────────────
 
@@ -30,6 +32,8 @@ export interface GenerateNextActionsInput {
   skinTags:             SkinTagKey[]
   recommendedCycleDays?: number | null
   menuName:             string
+  /** ホームケア購入商品名（PHASE2-C: 生成理由の「◯◯カテゴリ一致」判定用。未指定時は[]） */
+  homecareProductNames?: string[]
 }
 
 // ─── メイン関数 ───────────────────────────────────────────────────────────────
@@ -53,21 +57,35 @@ export async function generateNextActions(
     skinTags,
     recommendedCycleDays,
     menuName,
+    homecareProductNames = [],
   } = input
 
   // 推奨サイクル: 明示指定 > メニュー名から推定 > デフォルト35日
   const cycleDays = recommendedCycleDays ?? getMenuCycleDays(menuName)
 
   // ── 並列取得 ─────────────────────────────────────────────────────────────
-  const [insightResult, actionResult, purchaseResult] = await Promise.allSettled([
+  const [insightResult, actionResult, purchaseResult, knowledgeResult] = await Promise.allSettled([
     fetchInsightTags(customerId),
     fetchRecentActionTypes(customerId),
     fetchRecentPurchase(customerId),
+    fetchKnowledgeMatchSignals(skinTags, homecareProductNames),
   ])
 
-  const insightTags:        string[] = insightResult.status      === 'fulfilled' ? insightResult.value      : []
-  const recentActionTypes:  string[] = actionResult.status       === 'fulfilled' ? actionResult.value       : []
-  const hasRecentPurchase:  boolean  = purchaseResult.status     === 'fulfilled' ? purchaseResult.value     : false
+  const insightTags:       string[] = insightResult.status  === 'fulfilled' ? insightResult.value  : []
+  const recentActionTypes: string[] = actionResult.status   === 'fulfilled' ? actionResult.value   : []
+  const hasRecentPurchase: boolean  = purchaseResult.status === 'fulfilled' ? purchaseResult.value  : false
+  const knowledgeSignals = knowledgeResult.status === 'fulfilled'
+    ? knowledgeResult.value
+    : { matchedTagKeywords: [], matchedCategories: [] }
+
+  // 生成理由（PHASE2-C追加確認）: タグ名・カテゴリ名・定型文のみ。記事タイトル・本文・
+  // summaryはbuildMatchReasons()の入力にも出力にも一切含まれない。
+  const matchedKnowledgeReasons = buildMatchReasons({
+    matchedTagKeywords: knowledgeSignals.matchedTagKeywords,
+    matchedCategories:  knowledgeSignals.matchedCategories,
+    hasHomecareProduct: homecareProductNames.length > 0,
+    hasRecentPurchase,
+  })
 
   // ── スコアリング入力を組み立て ────────────────────────────────────────────
   const ruleInput: ActionRuleInput = {
@@ -83,6 +101,7 @@ export async function generateNextActions(
     insightTags,
     hasRecentPurchase,
     recentActionTypes,
+    matchedKnowledgeReasons,
   }
 
   const scored      = scoreNextActions(ruleInput)
@@ -112,6 +131,18 @@ async function fetchInsightTags(customerId: string): Promise<InsightTag[]> {
   // 全メモのタグを結合してユニーク化
   const allTags = data.flatMap(r => (r.insight_tags ?? []) as string[])
   return Array.from(new Set(allTags)) as InsightTag[]
+}
+
+async function fetchKnowledgeMatchSignals(
+  skinTags: SkinTagKey[],
+  homecareProductNames: string[]
+): Promise<{ matchedTagKeywords: string[]; matchedCategories: string[] }> {
+  if (DEMO_MODE) return { matchedTagKeywords: [], matchedCategories: [] }
+
+  const tagVocabulary      = buildCustomerTagVocabulary(skinTags as string[])
+  const categoryVocabulary = buildProductCategoryVocabulary(homecareProductNames)
+  const { matchedKeywords, matchedCategories } = await fetchKnowledgeMatch(tagVocabulary, categoryVocabulary)
+  return { matchedTagKeywords: matchedKeywords, matchedCategories }
 }
 
 async function fetchRecentActionTypes(customerId: string): Promise<string[]> {

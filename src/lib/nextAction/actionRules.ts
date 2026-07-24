@@ -8,6 +8,7 @@
 
 import type { NextActionType, ActionType } from '@/types'
 import { calcCustomerPhase } from '@/lib/phase5/customerRiskEngine'
+import type { MatchReason } from './knowledgeMatch'
 
 // ─── ルール入力型（判定に使う全フィールド） ───────────────────────────────────
 
@@ -29,6 +30,11 @@ export interface ActionRuleInput {
   hasRecentPurchase:    boolean   // 直近90日以内の購入あり
   // 過去アクション（直近30日）
   recentActionTypes:    string[]  // ActionType[]の実績
+  // ナレッジ一致による生成理由（PHASE2-C-2/追加確認2: brain_blog_articles承認済み記事との
+  // タグ/カテゴリ一致など。{type,score,label}構造。scoreは内部利用のみで画面には出さない。
+  // 表示するのはlabel(タグ名・カテゴリ名のみ)で記事タイトル・本文・summaryは一切含まない。
+  // src/lib/nextAction/knowledgeMatch.tsのbuildMatchReasons()で生成する）
+  matchedKnowledgeReasons: MatchReason[]
 }
 
 // ─── ルール定義型 ───────────────────────────────────────────────────────────
@@ -163,6 +169,7 @@ export const ACTION_RULES: ActionRule[] = [
     title: ({ skinTags }) => `${skinTags[0]}の様子を聞いてみましょう`,
     desc:  ({ skinTags }) =>
       `${skinTags.slice(0,2).join('・')}について、その後の調子を確認する自然な会話のきっかけです。`,
+    reasons: ({ matchedKnowledgeReasons }) => matchedKnowledgeReasons.map(r => r.label),
     ctaLabel: '会話した',
     logType:  'next_action_product',
   },

@@ -45,6 +45,42 @@ export class BlogArticleRepo implements IBlogArticleRepo {
     return ((data ?? []) as unknown as BrainBlogArticleRow[]).map(toBlogArticle);
   }
 
+  async listApprovedByKeywords(keywords: string[], limit: number): Promise<BlogArticle[]> {
+    if (keywords.length === 0) return [];
+
+    const { data, error } = await this.client
+      .from('brain_blog_articles')
+      .select(ARTICLE_COLUMNS)
+      .eq('is_customer_safe', true)
+      .eq('status', 'approved')
+      .overlaps('keywords', keywords)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      throw new Error(`BlogArticleRepo.listApprovedByKeywords failed: ${error.message}`);
+    }
+    return ((data ?? []) as unknown as BrainBlogArticleRow[]).map(toBlogArticle);
+  }
+
+  async listApprovedByCategories(categories: string[], limit: number): Promise<BlogArticle[]> {
+    if (categories.length === 0) return [];
+
+    const { data, error } = await this.client
+      .from('brain_blog_articles')
+      .select(ARTICLE_COLUMNS)
+      .eq('is_customer_safe', true)
+      .eq('status', 'approved')
+      .in('category', categories)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      throw new Error(`BlogArticleRepo.listApprovedByCategories failed: ${error.message}`);
+    }
+    return ((data ?? []) as unknown as BrainBlogArticleRow[]).map(toBlogArticle);
+  }
+
   async create(input: CreateBlogArticleInput): Promise<BlogArticle> {
     const { data, error } = await this.client
       .from('brain_blog_articles')

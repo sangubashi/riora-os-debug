@@ -96,6 +96,78 @@ describe('BlogArticleRepo', () => {
     });
   });
 
+  describe('listApprovedByKeywords', () => {
+    it('keywordsが空配列の場合は無条件に空配列を返す(DBへ問い合わせない)', async () => {
+      const builder = createQueryBuilderMock({ data: [ARTICLE_ROW], error: null });
+      const client = createSupabaseMock(() => builder);
+      const repo = new BlogArticleRepo(client);
+
+      const result = await repo.listApprovedByKeywords([], 5);
+
+      expect(result).toEqual([]);
+      expect(client.from).not.toHaveBeenCalled();
+    });
+
+    it('is_customer_safe=true・status=approved・keywordsのoverlapsで絞り込む', async () => {
+      const builder = createQueryBuilderMock({ data: [ARTICLE_ROW], error: null });
+      const client = createSupabaseMock(() => builder);
+      const repo = new BlogArticleRepo(client);
+
+      const result = await repo.listApprovedByKeywords(['毛穴', '皮脂'], 5);
+
+      expect(builder.eq).toHaveBeenCalledWith('is_customer_safe', true);
+      expect(builder.eq).toHaveBeenCalledWith('status', 'approved');
+      expect(builder.overlaps).toHaveBeenCalledWith('keywords', ['毛穴', '皮脂']);
+      expect(builder.limit).toHaveBeenCalledWith(5);
+      expect(result).toEqual([ARTICLE_DOMAIN]);
+    });
+
+    it('Supabaseがerrorを返した場合はBlogArticleRepo.listApprovedByKeywords failedで例外を投げる', async () => {
+      const { client } = createSingleTableSupabaseMock({ data: null, error: { message: 'db down' } });
+      const repo = new BlogArticleRepo(client);
+
+      await expect(repo.listApprovedByKeywords(['毛穴'], 5)).rejects.toThrow(
+        'BlogArticleRepo.listApprovedByKeywords failed: db down'
+      );
+    });
+  });
+
+  describe('listApprovedByCategories', () => {
+    it('categoriesが空配列の場合は無条件に空配列を返す(DBへ問い合わせない)', async () => {
+      const builder = createQueryBuilderMock({ data: [ARTICLE_ROW], error: null });
+      const client = createSupabaseMock(() => builder);
+      const repo = new BlogArticleRepo(client);
+
+      const result = await repo.listApprovedByCategories([], 5);
+
+      expect(result).toEqual([]);
+      expect(client.from).not.toHaveBeenCalled();
+    });
+
+    it('is_customer_safe=true・status=approved・categoryのinで絞り込む', async () => {
+      const builder = createQueryBuilderMock({ data: [ARTICLE_ROW], error: null });
+      const client = createSupabaseMock(() => builder);
+      const repo = new BlogArticleRepo(client);
+
+      const result = await repo.listApprovedByCategories(['クレンジング系'], 5);
+
+      expect(builder.eq).toHaveBeenCalledWith('is_customer_safe', true);
+      expect(builder.eq).toHaveBeenCalledWith('status', 'approved');
+      expect(builder.in).toHaveBeenCalledWith('category', ['クレンジング系']);
+      expect(builder.limit).toHaveBeenCalledWith(5);
+      expect(result).toEqual([ARTICLE_DOMAIN]);
+    });
+
+    it('Supabaseがerrorを返した場合はBlogArticleRepo.listApprovedByCategories failedで例外を投げる', async () => {
+      const { client } = createSingleTableSupabaseMock({ data: null, error: { message: 'db down' } });
+      const repo = new BlogArticleRepo(client);
+
+      await expect(repo.listApprovedByCategories(['クレンジング系'], 5)).rejects.toThrow(
+        'BlogArticleRepo.listApprovedByCategories failed: db down'
+      );
+    });
+  });
+
   describe('create', () => {
     it('新規記事を作成しBlogArticleへ変換して返す', async () => {
       const { client } = createSingleTableSupabaseMock({ data: ARTICLE_ROW, error: null });
