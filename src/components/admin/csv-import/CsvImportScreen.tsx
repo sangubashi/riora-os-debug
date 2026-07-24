@@ -401,7 +401,7 @@ export default function CsvImportScreen() {
               </span>
             </div>
 
-            {/* 予約CSV情報メッセージ */}
+            {/* 予約CSV情報メッセージ(現在は常にnull・将来infoMessageを使う形式が追加された場合のため残置) */}
             {validation.csvInfoMessage && (
               <div style={{
                 display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '10px 14px',
@@ -412,74 +412,83 @@ export default function CsvImportScreen() {
               </div>
             )}
 
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
-              <CountStat label="取込可" value={validation.importable} color="#2D6A4F" />
-              <CountStat label="要確認" value={validation.needsReview.length} color="#C9A055" />
-              <CountStat label="除外" value={validation.skipped.length} color="#9F7E6C" />
-              <CountStat label="PII検出" value={validation.piiFoundTotal} color="#EF476F" />
-            </div>
+            {/* Phase 1-F: 予約CSVの詳細statsはここでは表示しない(この節は売上明細CSV専用の
+                buildDryRunResult()の結果を前提としており、予約CSVでは評価していない値=0/空配列
+                になるため「取込可: 0件」等の誤表示を招く)。予約CSVの実際の検証結果は
+                「②予約Dry Run結果」節(resValidation、/api/admin/csv/reservation-dry-run)
+                が正であり、そちらのみを表示する。 */}
+            {validation.csvType !== 'reservation' && (
+              <>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+                  <CountStat label="取込可" value={validation.importable} color="#2D6A4F" />
+                  <CountStat label="要確認" value={validation.needsReview.length} color="#C9A055" />
+                  <CountStat label="除外" value={validation.skipped.length} color="#9F7E6C" />
+                  <CountStat label="PII検出" value={validation.piiFoundTotal} color="#EF476F" />
+                </div>
 
-            <p style={{ fontSize: '10px', color: '#C8A8B0', marginBottom: '6px' }}>破棄した列</p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginBottom: '12px' }}>
-              {validation.droppedColumns.map((col) => (
-                <span key={col} style={{
-                  fontSize: '10px', color: '#9F7E6C', background: '#F8F5F0',
-                  border: '1px solid #EDE5DC', borderRadius: '999px', padding: '2px 9px',
-                }}>
-                  {col}
-                </span>
-              ))}
-            </div>
-
-            {validation.unknownColumns.length > 0 && (
-              <div style={{ marginBottom: '12px' }}>
-                <p style={{ fontSize: '10px', color: '#C8A8B0', marginBottom: '6px' }}>未知の列(無視)</p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
-                  {validation.unknownColumns.map((col) => (
+                <p style={{ fontSize: '10px', color: '#C8A8B0', marginBottom: '6px' }}>破棄した列</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginBottom: '12px' }}>
+                  {validation.droppedColumns.map((col) => (
                     <span key={col} style={{
-                      fontSize: '10px', color: '#C8A8B0', background: '#FAFAFA',
-                      border: '1px dashed #E5E5E5', borderRadius: '999px', padding: '2px 9px',
+                      fontSize: '10px', color: '#9F7E6C', background: '#F8F5F0',
+                      border: '1px solid #EDE5DC', borderRadius: '999px', padding: '2px 9px',
                     }}>
                       {col}
                     </span>
                   ))}
                 </div>
-              </div>
-            )}
 
-            {validation.skipped.length > 0 && (
-              <div style={{ marginBottom: '12px' }}>
-                <p style={{ fontSize: '10px', color: '#C8A8B0', marginBottom: '6px' }}>
-                  除外行({validation.skipped.length}件)
-                </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', maxHeight: '110px', overflowY: 'auto' }}>
-                  {validation.skipped.map((s, i) => (
-                    <p key={s.rowNumber ?? `${s.checkoutId}-${i}`} style={{ fontSize: '10px', color: '#9F7E6C' }}>
-                      {s.rowNumber ? `行${s.rowNumber}` : `会計ID ${s.checkoutId}`}: {SKIP_REASON_LABEL[s.reasonCode]}
+                {validation.unknownColumns.length > 0 && (
+                  <div style={{ marginBottom: '12px' }}>
+                    <p style={{ fontSize: '10px', color: '#C8A8B0', marginBottom: '6px' }}>未知の列(無視)</p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                      {validation.unknownColumns.map((col) => (
+                        <span key={col} style={{
+                          fontSize: '10px', color: '#C8A8B0', background: '#FAFAFA',
+                          border: '1px dashed #E5E5E5', borderRadius: '999px', padding: '2px 9px',
+                        }}>
+                          {col}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {validation.skipped.length > 0 && (
+                  <div style={{ marginBottom: '12px' }}>
+                    <p style={{ fontSize: '10px', color: '#C8A8B0', marginBottom: '6px' }}>
+                      除外行({validation.skipped.length}件)
                     </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', maxHeight: '110px', overflowY: 'auto' }}>
+                      {validation.skipped.map((s, i) => (
+                        <p key={s.rowNumber ?? `${s.checkoutId}-${i}`} style={{ fontSize: '10px', color: '#9F7E6C' }}>
+                          {s.rowNumber ? `行${s.rowNumber}` : `会計ID ${s.checkoutId}`}: {SKIP_REASON_LABEL[s.reasonCode]}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <p style={{ fontSize: '10px', color: '#C8A8B0', marginBottom: '6px' }}>
+                  プレビュー(保持項目のみ・先頭{validation.preview.length}行)
+                </p>
+                <div style={{ border: '1px solid #F5EEF0', borderRadius: '12px', overflow: 'hidden' }}>
+                  {validation.preview.map((row, i) => (
+                    <div key={i} style={{
+                      display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px',
+                      borderBottom: i < validation.preview.length - 1 ? '1px solid #F8F2F3' : 'none',
+                      background: i % 2 === 0 ? '#fff' : '#FFFBF8', fontSize: '11px', color: '#5C4033',
+                    }}>
+                      <span style={{ fontWeight: 600, minWidth: '72px' }}>{row.name}</span>
+                      <span style={{ color: '#9F7E6C', minWidth: '36px' }}>{row.gender ?? '—'}</span>
+                      <span style={{ color: '#9F7E6C', minWidth: '36px' }}>{row.ageGroup ?? '—'}</span>
+                      <span style={{ color: '#9F7E6C', flex: 1 }}>{row.prefecture}{row.city}</span>
+                      <span style={{ color: '#C8A8B0', fontSize: '10px' }}>{row.firstVisitDate}</span>
+                    </div>
                   ))}
                 </div>
-              </div>
+              </>
             )}
-
-            <p style={{ fontSize: '10px', color: '#C8A8B0', marginBottom: '6px' }}>
-              プレビュー(保持項目のみ・先頭{validation.preview.length}行)
-            </p>
-            <div style={{ border: '1px solid #F5EEF0', borderRadius: '12px', overflow: 'hidden' }}>
-              {validation.preview.map((row, i) => (
-                <div key={i} style={{
-                  display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px',
-                  borderBottom: i < validation.preview.length - 1 ? '1px solid #F8F2F3' : 'none',
-                  background: i % 2 === 0 ? '#fff' : '#FFFBF8', fontSize: '11px', color: '#5C4033',
-                }}>
-                  <span style={{ fontWeight: 600, minWidth: '72px' }}>{row.name}</span>
-                  <span style={{ color: '#9F7E6C', minWidth: '36px' }}>{row.gender ?? '—'}</span>
-                  <span style={{ color: '#9F7E6C', minWidth: '36px' }}>{row.ageGroup ?? '—'}</span>
-                  <span style={{ color: '#9F7E6C', flex: 1 }}>{row.prefecture}{row.city}</span>
-                  <span style={{ color: '#C8A8B0', fontSize: '10px' }}>{row.firstVisitDate}</span>
-                </div>
-              ))}
-            </div>
           </SectionCard>
         )}
 

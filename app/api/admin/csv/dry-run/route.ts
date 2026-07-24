@@ -49,7 +49,12 @@ export async function POST(req: NextRequest) {
     const headers = parseHeadersFromCsv(csvText);
     const { type: csvType, infoMessage: csvInfoMessage } = detectCsvType(headers);
 
-    // 予約CSVはエラーにせず情報メッセージのみ返す(次フェーズで対応予定)。
+    // 予約CSVは売上明細CSV専用のbuildDryRunResult()に回さず、形式判定結果のみを返す
+    // (Phase 1-F)。実際の検証結果は画面側が別途呼ぶ予約専用エンドポイント
+    // (POST /api/admin/csv/reservation-dry-run・buildReservationDryRunResult())が
+    // 保持しており、そちらが正。ここでのimportable/qualityReport等は「売上明細CSVとしては
+    // 評価していない」ことを表すプレースホルダーであり、画面側もこの値は表示しない
+    // (CsvImportScreen.tsx: csvType==='reservation'の場合、②の詳細統計は非表示)。
     if (csvType === 'reservation') {
       const totalRows = Math.max(0, csvText.split(/\r?\n/).filter(l => l.trim() !== '').length - 1);
       return NextResponse.json({

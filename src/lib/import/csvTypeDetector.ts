@@ -3,7 +3,10 @@
  *
  * アップロード時にヘッダー行を解析して形式を判定し、画面に判定結果を表示する。
  * SalonBoard売上明細CSV → 'detail'
- * 予約CSV              → 'reservation' + 情報メッセージ(エラーにしない)
+ * 予約CSV              → 'reservation'(予約Import機能はRES-2〜RES-9で実装済み。
+ *                          infoMessageは付与しない。画面側は予約専用Dry Run
+ *                          エンドポイント(/api/admin/csv/reservation-dry-run)の
+ *                          結果を表示する)
  * その他               → 'unknown'
  *
  * 列名ゆらぎ吸収はsalonBoardDetailParser.tsのresolveDetailHeader()を共用する。
@@ -40,10 +43,7 @@ export function detectCsvType(rawHeaders: string[]): CsvTypeDetectionResult {
 
   const reservationMatchCount = rawHeaders.filter(h => RESERVATION_SIGNALS.has(h)).length
   if (reservationMatchCount >= 2) {
-    return {
-      type: 'reservation',
-      infoMessage: '予約CSVを検出しました。予約インポート機能は次フェーズで対応予定です。',
-    }
+    return { type: 'reservation', infoMessage: null }
   }
 
   return { type: 'unknown', infoMessage: null }

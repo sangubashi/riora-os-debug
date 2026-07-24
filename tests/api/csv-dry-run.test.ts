@@ -96,4 +96,46 @@ describe('POST /api/admin/csv/dry-run', () => {
     const res = await POST(buildFileReq({ file, storeId: 'store-1' }));
     expect(res.status).toBe(500);
   });
+
+  // ── 予約CSV分岐(Phase 1-F) ──────────────────────────────────────────────
+  // 予約CSVは売上明細CSV専用のbuildDryRunResult()には回さず、形式判定結果のみを
+  // 返す。かつてはここでcsvInfoMessageに「次フェーズで対応予定」という、実際には
+  // 既に実装済みの機能を「未対応」と誤案内する文言が入っていたが、Phase 1-Fで
+  // 削除した(csvTypeDetector.ts側の修正)。この分岐自体もPhase 1-Fまでテストが
+  // 存在しなかった。
+  const RESERVATION_CSV_HEADER =
+    'ステータス,スタッフ名,来店日,開始時間,終了時間,所要時間,お名前,予約時合計金額';
+
+  it('予約CSVの場合はbuildDryRunResult()を呼ばずcsvType:reservationを返す', async () => {
+    const file = new File([`${RESERVATION_CSV_HEADER}\n受付待ち,鈴木,20260801,1000,1100,60,山田花子,8000\n`], 'r.csv');
+
+    const res = await POST(buildFileReq({ file, storeId: 'store-1' }));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(body.csvType).toBe('reservation');
+    expect(buildDryRunResult).not.toHaveBeenCalled();
+  });
+
+  it('予約CSVの場合はcsvInfoMessageがnullである(「次フェーズで対応予定」等の誤案内を出さない)', async () => {
+    const file = new File([`${RESERVATION_CSV_HEADER}\n受付待ち,鈴木,20260801,1000,1100,60,山田花子,8000\n`], 'r.csv');
+
+    const res = await POST(buildFileReq({ file, storeId: 'store-1' }));
+    const body = await res.json();
+
+    expect(body.csvInfoMessage).toBeNull();
+  });
+
+  it('予約CSVの場合はtotalRowsをCSVの実行数(ヘッダーを除く)から算出する', async () => {
+    const file = new File(
+      [`${RESERVATION_CSV_HEADER}\n受付待ち,鈴木,20260801,1000,1100,60,山田花子,8000\n受付待ち,亀山,20260802,1200,1300,60,佐藤太郎,9000\n`],
+      'r.csv'
+    );
+
+    const res = await POST(buildFileReq({ file, storeId: 'store-1' }));
+    const body = await res.json();
+
+    expect(body.totalRows).toBe(2);
+  });
 });
