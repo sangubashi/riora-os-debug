@@ -76,6 +76,7 @@ export default function MenuDashboard() {
       label: 'メニュー数',
       value: `${summary?.totalMenuCount ?? menus.length}件`,
       sub:   '現在提供中の施術メニュー',
+      pending: false,
     },
     {
       label: '売上 今月',
@@ -83,11 +84,13 @@ export default function MenuDashboard() {
       sub:   summary?.momRevenueChangePct !== null && summary?.momRevenueChangePct !== undefined
         ? `${summary.momRevenueChangePct >= 0 ? '+' : ''}${summary.momRevenueChangePct}% 先月比`
         : '前月データ不足',
+      pending: false,
     },
     {
       label: 'リピート率',
-      value: '集計準備中',
-      sub:   '未実装(実データソース無し)',
+      value: summary?.repeatRate != null ? `${summary.repeatRate}%` : '',
+      sub:   summary?.repeatRate != null ? '過去90日以内の再来店' : '',
+      pending: summary?.repeatRate == null,
     },
   ]
 
@@ -170,14 +173,25 @@ export default function MenuDashboard() {
                 backdropFilter: 'blur(8px)',
               }}
             >
-              <p
-                className="text-[14px] font-medium tabular-nums leading-none"
-                style={{ color: '#D98292' }}
-              >
-                {stat.value}
-              </p>
+              {stat.pending ? (
+                <span
+                  className="inline-block text-[10px] font-semibold rounded-full px-2 py-0.5"
+                  style={{ background: '#F5E6E8', color: '#B08A92' }}
+                >
+                  準備中
+                </span>
+              ) : (
+                <p
+                  className="text-[14px] font-medium tabular-nums leading-none"
+                  style={{ color: '#D98292' }}
+                >
+                  {stat.value}
+                </p>
+              )}
               <p className="text-[9px] mt-1.5 leading-tight" style={{ color: '#9E8090' }}>{stat.label}</p>
-              <p className="text-[9px] mt-0.5 font-semibold" style={{ color: '#D98292' }}>{stat.sub}</p>
+              {!stat.pending && (
+                <p className="text-[9px] mt-0.5 font-semibold" style={{ color: '#D98292' }}>{stat.sub}</p>
+              )}
             </motion.div>
           ))}
         </div>
