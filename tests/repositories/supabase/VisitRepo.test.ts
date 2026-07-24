@@ -351,6 +351,28 @@ describe('VisitRepo', () => {
     });
   });
 
+  describe('updateNextBookingMade', () => {
+    it('next_booking_madeをid指定で更新する', async () => {
+      const builder = createQueryBuilderMock({ data: null, error: null });
+      const client = createSupabaseMock(() => builder);
+      const repo = new VisitRepo(client);
+
+      await repo.updateNextBookingMade('visit-1', true);
+
+      expect(builder.update).toHaveBeenCalledWith({ next_booking_made: true });
+      expect(builder.eq).toHaveBeenCalledWith('id', 'visit-1');
+    });
+
+    it('Supabaseがerrorを返した場合はVisitRepo.updateNextBookingMade failedで例外を投げる', async () => {
+      const { client } = createSingleTableSupabaseMock({ data: null, error: { message: 'update failed' } });
+      const repo = new VisitRepo(client);
+
+      await expect(repo.updateNextBookingMade('visit-1', false)).rejects.toThrow(
+        'VisitRepo.updateNextBookingMade failed: update failed'
+      );
+    });
+  });
+
   describe('listByStore', () => {
     it('store_idに紐づく全訪問をvisit_date昇順でVisit[]へ変換して返す', async () => {
       const { client } = createSingleTableSupabaseMock({ data: [VISIT_ROW], error: null });

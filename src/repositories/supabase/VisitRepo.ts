@@ -143,6 +143,17 @@ export class VisitRepo implements IVisitRepo {
     }
   }
 
+  async updateNextBookingMade(id: UUID, value: boolean): Promise<void> {
+    const { error } = await this.client
+      .from('brain_visits')
+      .update({ next_booking_made: value })
+      .eq('id', id)
+
+    if (error) {
+      throw new Error(`VisitRepo.updateNextBookingMade failed: ${error.message}`)
+    }
+  }
+
   async reconcile(id: UUID, input: {
     staffId: UUID;
     menuId: UUID;

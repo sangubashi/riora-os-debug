@@ -31,3 +31,17 @@ export const visitInputSchema = z.object({
 });
 
 export type VisitInputPayload = z.infer<typeof visitInputSchema>;
+
+/**
+ * RecordServiceCompletion(POST /api/visits/service-complete)の入力検証スキーマ(Phase 1-E)。
+ * 接客ログ画面(CustomerBottomSheet.tsx)からの「次回予約が取れた」記録専用。staffIdは
+ * リクエストのBearerトークンから解決するため入力に含めない(client供給値を信用しない)。
+ */
+export const serviceCompleteInputSchema = z.object({
+  customerId: idSchema,
+  menuName: z.string().min(1, 'menuName is required'),
+  nextBookingMade: z.boolean(),
+  homecarePurchased: z.boolean().optional(),
+});
+
+export type ServiceCompleteInputPayload = z.infer<typeof serviceCompleteInputSchema>;

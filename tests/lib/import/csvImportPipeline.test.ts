@@ -216,6 +216,10 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
         const v = state.visits.find(x => x.id === id && x.source === 'salonboard_import')
         if (v) v.menuId = menuId
       },
+      updateNextBookingMade: async (id, value) => {
+        const v = state.visits.find(x => x.id === id)
+        if (v) v.nextBookingMade = value
+      },
     },
     opsLogRepo: {
       insert: async (log) => {

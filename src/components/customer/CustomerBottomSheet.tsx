@@ -649,6 +649,21 @@ export default function CustomerBottomSheet({
 
     setLogSaved(true);
     toast.success('接客ログを保存しました 🌸', { duration: 2500 });
+
+    // ── brain_visits.next_booking_made反映(Phase 1-E、非致命的) ──────────────
+    // メニュー未解決・当日visit不在等は接客ログ本体(staff_logs)の保存成功に影響させない。
+    if (r?.menu) {
+      authedFetch('/api/visits/service-complete', {
+        method: 'POST',
+        body: JSON.stringify({
+          customerId: c.id,
+          menuName: r.menu,
+          nextBookingMade: logSelected.has('next_reserved'),
+          homecarePurchased: logSelected.has('retail_sold'),
+        }),
+      }).catch(() => { /* next_booking_made反映失敗は無視(接客ログ自体は保存済み) */ });
+    }
+
     setServiceReplay(buildServiceReplay({
       reservationId:      r?.id ?? null,
       customerId:         c.id,

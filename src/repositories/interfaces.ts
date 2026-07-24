@@ -184,6 +184,12 @@ export interface IVisitRepo {
    */
   updateMenuId(id: UUID, menuId: UUID): Promise<void>;
   /**
+   * brain_visits.next_booking_madeをid指定で更新する(Phase 1-E: 接客ログ保存時に
+   * スタッフが「次回予約が取れた」を記録した結果をbrain_visitsへ反映するための専用メソッド)。
+   * 他フィールドは変更しない。
+   */
+  updateNextBookingMade(id: UUID, value: boolean): Promise<void>;
+  /**
    * brain_visitsをstore_idでvisit_date昇順に全件取得する(deleted_at IS NULL)。
    * DashboardAggregatorが月次集計(売上/来店人数/リピート率/指名率)の入力として
    * 1回だけ全件取得し、メモリ上で集計する(行ごとのDB問い合わせはしない)。
