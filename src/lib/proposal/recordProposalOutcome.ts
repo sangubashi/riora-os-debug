@@ -1,5 +1,5 @@
 /**
- * recordProposalOutcome.ts — brain_proposal_outcomesへの記録(Phase 1-Bc / 1-Cb / 1-Da / 1-Db)
+ * recordProposalOutcome.ts — brain_proposal_outcomesへの記録(Phase 1-Bc / 1-Cb / 1-Da / 1-Db / 1-Dd)
  *
  * fire_log(brain_pattern_fire_log)とvisit(brain_visits)にはvisit_idによる
  * 直接の紐付けが無いため(Phase 1-Bb調査で確認済み)、customer_id + 時刻近傍で
@@ -20,8 +20,16 @@
  *     retailNamesに"サブスク"という文字列を含むかを hasSubscriptionKeyword として渡し、
  *     これで判定する(Phase 1-C調査の結論通り、構造化列が存在しないためキーワード
  *     マッチのみ。表記ゆれは拾えない既知の制約)。amountは同じ理由で暫定的に0固定。
- *   - pack/rebooking: 判定材料が不十分・データソースが非同期(Phase 1-C調査参照)
- *     なため、Phase 1-Bcと同じ安全側固定値(false/false/0)のまま据え置く(今回未着手)。
+ *   - rebooking(Phase 1-Dd): visit.nextBookingMade(brain_visits.next_booking_made)で
+ *     判定する。この列はCSV取込のreconcile()が更新対象に含めていないフィールドのため、
+ *     既存visit(source='staff_input')がスタッフの接客ログ画面で入力した値がそのまま
+ *     保持される。CSV取込が新規作成するvisit(createSequenced経由)はnextBookingMade=false
+ *     固定のため、スタッフの事前入力が無い来店は常に「次回予約なし」判定になる
+ *     (reservationsテーブル、予約CSV取込専用の非同期データソースとは連携しない。
+ *     Phase 1-C調査で「データソースが非同期」と指摘された制約はそのまま残る既知の限界)。
+ *     amountは金額概念が無いため0固定。
+ *   - pack: 判定材料が不十分なため、Phase 1-Bcと同じ安全側固定値(false/false/0)の
+ *     まま据え置く(今回未着手)。
  *
  * 呼び出し元(csvImportPipeline.ts)がvisitRepo.reconcile()/createSequenced()成功
  * 直後に呼ぶ前提のため、Visit型が公開していないcreated_atの代わりに「今」を
@@ -112,6 +120,7 @@ export async function recordProposalOutcome(
   const isHomecare = proposalKind === 'homecare';
   const isUpsell = proposalKind === 'upsell';
   const isSubscription = proposalKind === 'subscription';
+  const isRebooking = proposalKind === 'rebooking';
 
   let wasExecuted = false;
   let wasAccepted = false;
@@ -137,8 +146,14 @@ export async function recordProposalOutcome(
     wasExecuted = hasSubscriptionKeyword === true;
     wasAccepted = hasSubscriptionKeyword === true;
     amount = 0;
+  } else if (isRebooking) {
+    // Phase 1-Dd: この来店で次回予約が入ったか(visit.nextBookingMade)で判定する。
+    // amountは金額概念が無いため0固定とする。無変更。
+    wasExecuted = visit.nextBookingMade;
+    wasAccepted = visit.nextBookingMade;
+    amount = 0;
   }
-  // pack/rebookingは今回未着手のため false/false/0 のまま(初期値)。
+  // packは今回未着手のため false/false/0 のまま(初期値)。
 
   const created = await repos.outcomeRepo.create({
     storeId,
