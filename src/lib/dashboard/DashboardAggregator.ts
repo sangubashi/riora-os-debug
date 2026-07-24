@@ -31,6 +31,7 @@ import type {
 } from '../../repositories/interfaces';
 import type { Visit } from '../../types/riora.types';
 import { computeAIWarnings } from './AIWarningEngine';
+import { repeatRateWithin, groupVisitsByCustomer } from '../analytics/repeatRateWithin';
 
 export interface DashboardAggregatorRepos {
   visitRepo: IVisitRepo;
@@ -80,31 +81,6 @@ function hasValidFixedCosts(settings: { fixedCosts: Record<string, unknown> | nu
   return Object.values(settings.fixedCosts).some(v => typeof v === 'number' && Number.isFinite(v));
 }
 
-/**
- * 来店間隔が`withinDays`日以内だった割合を返す(「30/60/90日コホート再来率」の
- * 本実装での定義: 対象月の来店のうち、当該顧客の直前来店からの間隔がwithinDays日
- * 以内だった割合。初回来店(直前来店が無い)は分母から除外する)。
- * 直前来店は対象月より前の来店も含む全履歴から探す(月初直後の来店が前月の来店を
- * 正しく参照できるようにするため)。
- */
-function repeatRateWithin(monthVisits: Visit[], visitsByCustomer: Map<string, Visit[]>, withinDays: number): number | null {
-  let withPrevious = 0;
-  let withinWindow = 0;
-
-  for (const visit of monthVisits) {
-    const history = visitsByCustomer.get(visit.customerId) ?? [];
-    const idx = history.indexOf(visit);
-    if (idx <= 0) continue; // 初回来店(直前来店なし)は対象外
-
-    withPrevious += 1;
-    const previous = history[idx - 1];
-    const gapDays = (Date.parse(visit.visitDate) - Date.parse(previous.visitDate)) / 86_400_000;
-    if (gapDays <= withinDays) withinWindow += 1;
-  }
-
-  return withPrevious > 0 ? withinWindow / withPrevious : null;
-}
-
 export interface ComputeDashboardAggregateInput {
   storeId: string;
   /** 集計対象日(YYYY-MM-DD)。 */
@@ -146,12 +122,7 @@ export function computeDashboardAggregate(input: ComputeDashboardAggregateInput)
     ? monthVisits.filter((v) => v.isNomination).length / monthVisits.length
     : null;
 
-  const visitsByCustomer = new Map<string, Visit[]>();
-  for (const v of visits) {
-    const list = visitsByCustomer.get(v.customerId) ?? [];
-    list.push(v);
-    visitsByCustomer.set(v.customerId, list);
-  }
+  const visitsByCustomer = groupVisitsByCustomer(visits);
 
   return {
     storeId,

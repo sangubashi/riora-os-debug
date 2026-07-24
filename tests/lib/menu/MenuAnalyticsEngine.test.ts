@@ -14,10 +14,12 @@ function menu(opts: { id: string; name: string; price: number }): Menu {
 }
 
 let visitSeq = 0;
-function visit(opts: { menuId: string; visitDate: string; treatmentAmount?: number; nextBookingMade?: boolean }): Visit {
+function visit(opts: {
+  menuId: string; visitDate: string; treatmentAmount?: number; nextBookingMade?: boolean; customerId?: string;
+}): Visit {
   visitSeq += 1;
   return {
-    id: `visit-${visitSeq}`, storeId: 'store-1', customerId: 'c1', staffId: 'staff-1', menuId: opts.menuId,
+    id: `visit-${visitSeq}`, storeId: 'store-1', customerId: opts.customerId ?? 'c1', staffId: 'staff-1', menuId: opts.menuId,
     visitDate: opts.visitDate, visitCountAt: 1, isNomination: false,
     treatmentAmount: opts.treatmentAmount ?? 10000, retailAmount: 0,
     retailCategory: null, homecarePurchased: false, homecareDeclined: false,
@@ -103,5 +105,67 @@ describe('computeMenuAnalytics', () => {
     expect(result.summary.dailyRevenueLast7Days).toHaveLength(7);
     expect(result.summary.dailyRevenueLast7Days[6]).toEqual({ date: '2026-06-25', revenue: 5000 });
     expect(result.summary.dailyRevenueLast7Days[0].date).toBe('2026-06-19');
+  });
+
+  // ── summary.repeatRate(店舗全体・90日以内リピート率、Phase 1-G) ──────────────
+  // src/lib/analytics/repeatRateWithin.ts(経営TOPのrepeat_90と同一関数・同一定義)を
+  // 再利用している。メニュー問わず店舗全体の今月来店が対象。
+  describe('summary.repeatRate', () => {
+    it('今月来店のうち、直前来店(全履歴)から90日以内だった顧客の割合(%)を返す', () => {
+      const result = computeMenuAnalytics({
+        menus: [menu({ id: 'm1', name: 'A', price: 10000 })],
+        visits: [
+          // customer a: 前回来店から40日後に今月来店 → 90日以内(リピート)
+          visit({ menuId: 'm1', customerId: 'a', visitDate: '2026-04-22' }),
+          visit({ menuId: 'm1', customerId: 'a', visitDate: '2026-06-01' }),
+          // customer b: 前回来店から120日後に今月来店 → 90日超(非リピート)
+          visit({ menuId: 'm1', customerId: 'b', visitDate: '2026-02-01' }),
+          visit({ menuId: 'm1', customerId: 'b', visitDate: '2026-06-01' }),
+        ],
+        today,
+      });
+
+      expect(result.summary.repeatRate).toBe(50);
+    });
+
+    it('初回来店(直前来店なし)は分母から除外する', () => {
+      const result = computeMenuAnalytics({
+        menus: [menu({ id: 'm1', name: 'A', price: 10000 })],
+        visits: [
+          // customer c: 今月が初回来店(直前来店なし) → 分母から除外
+          visit({ menuId: 'm1', customerId: 'c', visitDate: '2026-06-10' }),
+        ],
+        today,
+      });
+
+      expect(result.summary.repeatRate).toBeNull();
+    });
+
+    it('メニューをまたいだ来店でも判定する(店舗全体・メニュー別ではない)', () => {
+      const result = computeMenuAnalytics({
+        menus: [
+          menu({ id: 'm1', name: 'A', price: 10000 }),
+          menu({ id: 'm2', name: 'B', price: 8000 }),
+        ],
+        visits: [
+          // customer a: 前回はm1、今月はm2 → メニューが違っても直前来店として判定
+          visit({ menuId: 'm1', customerId: 'a', visitDate: '2026-04-22' }),
+          visit({ menuId: 'm2', customerId: 'a', visitDate: '2026-06-01' }),
+        ],
+        today,
+      });
+
+      expect(result.summary.repeatRate).toBe(100);
+    });
+
+    it('今月来店が0件の場合はnullを返す', () => {
+      const result = computeMenuAnalytics({
+        menus: [menu({ id: 'm1', name: 'A', price: 10000 })],
+        visits: [],
+        today,
+      });
+
+      expect(result.summary.repeatRate).toBeNull();
+    });
   });
 });

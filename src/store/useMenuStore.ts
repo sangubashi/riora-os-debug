@@ -3,7 +3,8 @@
  *
  * GET /api/admin/menuをfetchするだけ(集計はMenuAnalyticsEngine側で完了済み)。
  * brain_menus(メニュー名/価格/role/target_types)+brain_visits(今月の件数・売上/
- * 次回予約率)が実データソース。リピート率/利益率/AI推奨率/アップセル成功率/
+ * 次回予約率)が実データソース。summary.repeatRate(店舗全体の90日リピート率)は
+ * Phase 1-Gで実装済み。メニュー行ごとのrepeatRate/利益率/AI推奨率/アップセル成功率/
  * VIP移行率は実データソースが存在しないため常にnull(UI側で「未実装」等を表示する)。
  */
 import { create } from 'zustand'
@@ -39,6 +40,8 @@ export interface MenuAnalyticsSummary {
   lastMonthRevenueTotal:  number
   momRevenueChangePct:    number | null
   dailyRevenueLast7Days:  DailyRevenuePoint[]
+  /** 店舗全体の90日以内リピート率(0〜100・小数なし、Phase 1-G)。対象来店が0件の場合はnull。 */
+  repeatRate:             number | null
 }
 
 export type FilterTab = 'all' | MenuRole

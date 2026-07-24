@@ -4,11 +4,20 @@
  * brain_menus/brain_visitsをその場で集計する(CustomerAssetEngineと同じく
  * ライブ集計・決定論ルール・LLM/AI不使用)。
  *
- * 実データソースが存在しない指標(repeatRate/profitMargin/aiRecommendRate/
+ * Phase 1-G: summary.repeatRate(店舗全体の90日以内リピート率)は
+ * src/lib/analytics/repeatRateWithin.ts(元DashboardAggregator.ts、経営TOPの
+ * repeat_90と同一定義)を再利用して算出する。メニュー行ごとのrepeatRate
+ * (MenuAnalyticsRow.repeatRate)は今回のスコープ外のため引き続きnull固定。
+ *
+ * 実データソースが存在しない指標(repeatRate(行別)/profitMargin/aiRecommendRate/
  * upsellSuccessRate/vipConversionRate)はnull固定で返す。呼び出し側(UI)は
  * nullを「集計準備中/未実装」として表示すること(数値の推測・ダミー埋めは禁止)。
  */
 import type { Menu, Visit } from '../../types/riora.types';
+import { repeatRateWithin, groupVisitsByCustomer } from '../analytics/repeatRateWithin';
+
+/** 店舗全体リピート率の判定日数(経営TOPダッシュボードの90日リピート率と同一定義)。 */
+const STORE_REPEAT_RATE_WINDOW_DAYS = 90;
 
 export interface MenuAnalyticsRow {
   id: string;
@@ -45,6 +54,12 @@ export interface MenuAnalyticsSummary {
   momRevenueChangePct: number | null;
   /** 基準日を含む直近7日間の日別売上(古い日付順)。 */
   dailyRevenueLast7Days: DailyRevenuePoint[];
+  /**
+   * 店舗全体の90日以内リピート率(0〜100・小数なし、Phase 1-G)。
+   * 経営TOPダッシュボードのrepeat_90と同一定義(今月来店のうち、直前来店から
+   * 90日以内だった割合。初回来店は分母から除外)。対象来店が0件の場合はnull。
+   */
+  repeatRate: number | null;
 }
 
 export interface ComputeMenuAnalyticsInput {
@@ -136,6 +151,15 @@ export function computeMenuAnalytics(input: ComputeMenuAnalyticsInput): ComputeM
     dailyRevenueLast7Days.push({ date: dateStr, revenue });
   }
 
+  // Phase 1-G: 店舗全体の90日以内リピート率(経営TOPのrepeat_90と同一定義・同一関数)。
+  // visitsByCustomerは全履歴(月をまたいだ直前来店探索のため)、対象はメニュー問わず今月の全来店。
+  const monthlyVisitsAllMenus = visits.filter((v) => v.visitDate.slice(0, 7) === thisMonth);
+  const visitsByCustomer = groupVisitsByCustomer(visits);
+  const repeatRate = (() => {
+    const rate = repeatRateWithin(monthlyVisitsAllMenus, visitsByCustomer, STORE_REPEAT_RATE_WINDOW_DAYS);
+    return rate === null ? null : Math.round(rate * 100);
+  })();
+
   return {
     menus: menuRows,
     summary: {
@@ -144,6 +168,7 @@ export function computeMenuAnalytics(input: ComputeMenuAnalyticsInput): ComputeM
       lastMonthRevenueTotal,
       momRevenueChangePct,
       dailyRevenueLast7Days,
+      repeatRate,
     },
   };
 }
