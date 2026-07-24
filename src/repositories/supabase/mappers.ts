@@ -7,6 +7,7 @@
 
 import type {
   AIInsight,
+  BlogArticle,
   BriefingEntry,
   BusinessSettings,
   Candidate,
@@ -814,5 +815,36 @@ export function toRevisionRecord(
     decidedBy: row.decided_by,
     decidedAt: row.decided_at,
     createdAt: row.created_at,
+  };
+}
+
+/** brain_blog_articles(BLOG_CONTENT_PHASE1/KNOWLEDGE_IMPORT_PHASE1)の行。 */
+export interface BrainBlogArticleRow {
+  id: string;
+  title: string;
+  source_url: string;
+  products: string[];
+  keywords: string[];
+  is_customer_safe: boolean;
+  status: 'draft' | 'approved';
+  published_at: string | null;
+  created_at: string;
+  category: string | null;
+  summary: string | null;
+}
+
+export function toBlogArticle(row: BrainBlogArticleRow): BlogArticle {
+  return {
+    id: row.id,
+    title: row.title,
+    sourceUrl: row.source_url,
+    products: row.products,
+    keywords: row.keywords,
+    isCustomerSafe: row.is_customer_safe,
+    status: row.status,
+    publishedAt: row.published_at,
+    createdAt: row.created_at,
+    category: row.category,
+    summary: row.summary,
   };
 }

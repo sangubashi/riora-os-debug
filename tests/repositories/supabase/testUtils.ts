@@ -2,7 +2,7 @@
 // Repository & RPC Layer: SupabaseClientモックヘルパー
 //
 // PostgrestFilterBuilder相当のチェーン可能メソッド(select/eq/in/or/
-// order/limit/is/insert/update/delete)は全てbuilder自身を返し、
+// order/limit/is/insert/update/delete/overlaps)は全てbuilder自身を返し、
 // 最終的にawaitされた時点でthen()がMockResultをそのまま解決する。
 // maybeSingle()/single()はPromise<MockResult>を直接返す。
 // ================================================================
@@ -16,7 +16,7 @@ export interface MockResult<T = unknown> {
   count?: number | null;
 }
 
-const CHAIN_METHODS = ['select', 'eq', 'in', 'or', 'order', 'limit', 'is', 'insert', 'update', 'upsert', 'delete', 'gte', 'lte'] as const;
+const CHAIN_METHODS = ['select', 'eq', 'in', 'or', 'order', 'limit', 'is', 'insert', 'update', 'upsert', 'delete', 'gte', 'lte', 'overlaps'] as const;
 
 export function createQueryBuilderMock(result: MockResult): Record<string, unknown> {
   const builder: Record<string, unknown> = {};

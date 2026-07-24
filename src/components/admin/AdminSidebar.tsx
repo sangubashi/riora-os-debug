@@ -12,7 +12,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { TrendingUp, AlertTriangle, Users, UserCog, UserCheck, BarChart3, UploadCloud, Settings, Menu, X, MessageCircle, LayoutGrid, GitMerge } from 'lucide-react'
+import { TrendingUp, AlertTriangle, Users, UserCog, UserCheck, BarChart3, UploadCloud, Settings, Menu, X, MessageCircle, LayoutGrid, GitMerge, BookOpen, FileText } from 'lucide-react'
 
 const NAV_ITEMS = [
   { href: '/admin/dashboard',         label: '経営TOP',       icon: TrendingUp },
@@ -25,6 +25,8 @@ const NAV_ITEMS = [
   { href: '/admin/occupancy',         label: '稼働率分析',     icon: BarChart3 },
   { href: '/admin/csv-import',        label: 'CSV Import',    icon: UploadCloud },
   { href: '/admin/menu-master',       label: 'メニュー管理',   icon: LayoutGrid },
+  { href: '/admin/blog-content',      label: 'ブログ管理',     icon: BookOpen },
+  { href: '/admin/knowledge-import',  label: 'ナレッジ取込',   icon: FileText },
   { href: '/admin/business-settings', label: '設定',           icon: Settings },
 ] as const
 

@@ -8,6 +8,7 @@
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type {
+  IBlogArticleRepo,
   IBriefingRepo,
   IBusinessSettingsRepo,
   ICandidateRepo,
@@ -27,6 +28,7 @@ import type {
   ISubscriptionRepo,
   IVisitRepo,
 } from '@/repositories/interfaces';
+import { BlogArticleRepo } from '@/repositories/supabase/BlogArticleRepo';
 import { BriefingRepo } from '@/repositories/supabase/BriefingRepo';
 import { BusinessSettingsRepo } from '@/repositories/supabase/BusinessSettingsRepo';
 import { CandidateRepo } from '@/repositories/supabase/CandidateRepo';
@@ -67,6 +69,8 @@ export interface Repos {
   outcomeRepo: IOutcomeRepo;
   /** 予約CSV Import専用(RES-5)。 */
   reservationRepo: IReservationRepo;
+  /** サロンブログ記事(BLOG_CONTENT_PHASE1/KNOWLEDGE_IMPORT_PHASE1)。 */
+  blogArticleRepo: IBlogArticleRepo;
 }
 
 let client: SupabaseClient | null = null;
@@ -116,5 +120,6 @@ export function getRepos(): Repos {
     paramsRepo: new ParamsRepo(supabase),
     outcomeRepo: new OutcomeRepo(supabase),
     reservationRepo: new ReservationRepo(supabase),
+    blogArticleRepo: new BlogArticleRepo(supabase),
   };
 }
