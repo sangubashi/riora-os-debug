@@ -12,10 +12,11 @@
  * LLM/AIによる数値計算は行わない。
  *
  * 対象KPI(本Aggregatorが生成する列。vip_customer_ids/relation_triggers/
- * occupancy/segment_matrix/funnel/staff_matrix/rebooking_rate/dm_to_booking_rate/
+ * occupancy/segment_matrix/funnel/staff_matrix/dm_to_booking_rate/
  * new_ratio/homecare_rate/repeat_rate_90dは対象外・既存値を保持):
  *   monthly_sales / forecast_sales / breakeven_point / month_profit_est /
- *   visit_count / repeat_30 / repeat_60 / repeat_90 / nomination_rate / ai_insights
+ *   visit_count / repeat_30 / repeat_60 / repeat_90 / nomination_rate /
+ *   rebooking_rate(PHASE REBOOKING_FIX_1・brain_visits.next_booking_made基準) / ai_insights
  *
  * 「本日売上」はnightly集計の対象外(GET /api/dashboard/topがVisitRepo.
  * sumSalesByStoreAndDate()で当日visitsを直接ライブ集計する設計・v2.0準拠)。
@@ -122,6 +123,12 @@ export function computeDashboardAggregate(input: ComputeDashboardAggregateInput)
     ? monthVisits.filter((v) => v.isNomination).length / monthVisits.length
     : null;
 
+  // 次回予約率(rebooking_rate): app/api/kpi/summary/route.tsで既に稼働している
+  // next_booking_made率の計算式をそのまま移植(PHASE REBOOKING_FIX_1)。
+  const rebookingRate = monthVisits.length > 0
+    ? monthVisits.filter((v) => v.nextBookingMade).length / monthVisits.length
+    : null;
+
   const visitsByCustomer = groupVisitsByCustomer(visits);
 
   return {
@@ -136,6 +143,7 @@ export function computeDashboardAggregate(input: ComputeDashboardAggregateInput)
     repeat60: repeatRateWithin(monthVisits, visitsByCustomer, 60),
     repeat90: repeatRateWithin(monthVisits, visitsByCustomer, 90),
     nominationRate,
+    rebookingRate,
   };
 }
 

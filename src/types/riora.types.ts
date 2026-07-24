@@ -137,6 +137,46 @@ export interface OpsLog {
   createdAt: string;
 }
 
+/**
+ * スタッフ招待トークン(staff_invites・STAFF_MANAGEMENT_PHASE2_2)。
+ * `token`はDBには平文で保存せずハッシュ化して保持する(InviteRepo参照)ため、
+ * このドメイン型にも生トークンは含めない(URL組み立てはinviteLink.tsが別途担う)。
+ */
+export interface StaffInvite {
+  id: string;
+  storeId: string;
+  role: 'staff' | 'owner';
+  staffName: string;
+  email: string;
+  expiresAt: string;
+  usedAt: string | null;
+  createdAt: string;
+}
+
+/**
+ * サロンブログ記事(brain_blog_articles・BLOG_CONTENT_PHASE1)。
+ * 記事本文は保存しない(URL登録のみ・スクレイピング禁止の方針のため body
+ * フィールドはドメイン型にも存在しない)。isCustomerSafeは管理者が手動でON/OFFする
+ * 承認フラグで、薬機法チェックの自動化・AI判定ロジックは一切持たない。
+ *
+ * category/summaryはKNOWLEDGE_IMPORT_PHASE1で追加。CSV取込画面
+ * (/admin/knowledge-import)専用の列で、LLM等による加工は一切行わずCSVの
+ * 内容をそのまま保持する(管理者が自分で書いた要約を想定・スクレイピングではない)。
+ */
+export interface BlogArticle {
+  id: string;
+  title: string;
+  sourceUrl: string;
+  products: string[];
+  keywords: string[];
+  isCustomerSafe: boolean;
+  status: 'draft' | 'approved';
+  publishedAt: string | null;
+  createdAt: string;
+  category: string | null;
+  summary: string | null;
+}
+
 export interface SkinRecord {
   id: string;
   customerId: string;
