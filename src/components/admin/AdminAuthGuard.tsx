@@ -8,8 +8,7 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
-
-const ADMIN_EMAIL = 'admin@salon-riora.jp'
+import { isAdminEmail } from '@/lib/auth/adminEmail'
 
 function GateScreen() {
   return (
@@ -35,7 +34,7 @@ export default function AdminAuthGuard({ children }: { children: React.ReactNode
   const session     = useAuthStore(s => s.session)
   const initialized = useAuthStore(s => s.initialized)
 
-  const isAdmin = session?.user?.email === ADMIN_EMAIL
+  const isAdmin = isAdminEmail(session?.user?.email)
 
   useEffect(() => {
     if (!initialized) return

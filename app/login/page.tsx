@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/useAuthStore'
+import { isAdminEmail } from '@/lib/auth/adminEmail'
 
 interface DebugInfo {
   uid:        string | null
@@ -52,7 +53,7 @@ export default function LoginPage() {
             role:       (session.user.user_metadata?.role as string | undefined) ?? session.user.role ?? null,
             hasSession: true,
           })
-          router.replace('/phase1')
+          router.replace(isAdminEmail(session.user.email) ? '/admin' : '/phase1')
           return
         }
 
@@ -98,7 +99,7 @@ export default function LoginPage() {
       })
     }
 
-    router.push('/phase1')
+    router.push(isAdminEmail(session?.user.email) ? '/admin' : '/phase1')
   }
 
   // ── ローディング ─────────────────────────────────────────────────────────────
