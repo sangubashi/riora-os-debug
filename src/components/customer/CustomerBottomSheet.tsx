@@ -271,6 +271,9 @@ export default function CustomerBottomSheet({
   const [tagEditing,  setTagEditing]  = useState(false);
   const [editingTags, setEditingTags] = useState<SkinTagKey[]>([]);
 
+  // ── AIタグ（voice_notes.insight_tags・接客ヒントのナレッジ一致語彙補強用） ──────
+  const [insightTags, setInsightTags] = useState<string[]>([]);
+
   // ── ホームケア ──────────────────────────────────────────────────────────────
   const [homecarePlan, setHomecarePlan] = useState<HomecarePlan | null>(null);
   const [openSections, setOpenSections] = useState<Set<SectionKey>>(new Set(['voice'] as SectionKey[]));
@@ -372,6 +375,7 @@ export default function CustomerBottomSheet({
     setVisitHistory([]);
     setTodayFocus(null);
     setNgTopics([]);
+    setInsightTags([]);
     setHomecareProducts([]);
     setExpandedUsageCards(new Set());
     setAiHomecareMessages({});
@@ -509,6 +513,20 @@ export default function CustomerBottomSheet({
       const ngFromMemory = (memoryRes.data ?? []).map((m: { content: string }) => m.content);
       setNgTopics([...ngFromVoice, ...ngFromMemory]);
     })();
+
+    // AIタグ（voice_notes.insight_tags 直近10件のユニーク和・PHASE2-C検証で判明した配線漏れの修正）
+    // generateNextActions.ts の fetchInsightTags と同一クエリ。接客ヒントのナレッジ一致語彙
+    // (buildCustomerTagVocabulary の第2引数)に使うだけで、画面へ直接表示はしない。
+    void (async () => {
+      const { data } = await supabase.from('voice_notes')
+        .select('insight_tags')
+        .eq('customer_id', c.id)
+        .not('insight_tags', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(10);
+      const rows = (data ?? []) as { insight_tags: string[] | null }[];
+      setInsightTags(Array.from(new Set(rows.flatMap(r => r.insight_tags ?? []))));
+    })();
   }, [c?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── 関連記事（BLOG_CONTENT_PHASE2） ────────────────────────────────────────
@@ -551,7 +569,7 @@ export default function CustomerBottomSheet({
     void (async () => {
       setKnowledgeHintsLoading(true);
       try {
-        const tagVocabulary      = buildCustomerTagVocabulary(skinTags);
+        const tagVocabulary      = buildCustomerTagVocabulary(skinTags, insightTags);
         const categoryVocabulary = buildProductCategoryVocabulary(homecareProducts.map(p => p.productName));
         const { matchedKeywords, matchedCategories } = await fetchKnowledgeMatch(tagVocabulary, categoryVocabulary);
         if (cancelled) return;
@@ -569,7 +587,7 @@ export default function CustomerBottomSheet({
       }
     })();
     return () => { cancelled = true; };
-  }, [homecareProducts, skinTags, relatedArticles, visitHistory]);
+  }, [homecareProducts, skinTags, insightTags, relatedArticles, visitHistory]);
 
   // ─── ロード ────────────────────────────────────────────────────────────────
   // customer_notes 最新分を1回のクエリで取得（①メモ欄プリフィル ②「最近の会話」表示の両方が使う）
@@ -623,6 +641,7 @@ export default function CustomerBottomSheet({
     setVisitHistory([]);
     setTodayFocus(null);
     setNgTopics([]);
+    setInsightTags([]);
     setHomecareProducts([]);
     setExpandedUsageCards(new Set());
     setAiHomecareMessages({});

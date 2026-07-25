@@ -64,19 +64,19 @@ export async function generateNextActions(
   const cycleDays = recommendedCycleDays ?? getMenuCycleDays(menuName)
 
   // ── 並列取得 ─────────────────────────────────────────────────────────────
-  const [insightResult, actionResult, purchaseResult, knowledgeResult] = await Promise.allSettled([
+  // knowledgeMatch はタグ語彙にinsightTagsも含めるため、insightTagsの解決を待ってから呼ぶ
+  // (PHASE2-C検証で判明: 従来は同時実行でinsightTagsが未使用のまま渡されていなかった)。
+  const [insightResult, actionResult, purchaseResult] = await Promise.allSettled([
     fetchInsightTags(customerId),
     fetchRecentActionTypes(customerId),
     fetchRecentPurchase(customerId),
-    fetchKnowledgeMatchSignals(skinTags, homecareProductNames),
   ])
 
   const insightTags:       string[] = insightResult.status  === 'fulfilled' ? insightResult.value  : []
   const recentActionTypes: string[] = actionResult.status   === 'fulfilled' ? actionResult.value   : []
   const hasRecentPurchase: boolean  = purchaseResult.status === 'fulfilled' ? purchaseResult.value  : false
-  const knowledgeSignals = knowledgeResult.status === 'fulfilled'
-    ? knowledgeResult.value
-    : { matchedTagKeywords: [], matchedCategories: [] }
+  const knowledgeSignals = await fetchKnowledgeMatchSignals(skinTags, insightTags, homecareProductNames)
+    .catch(() => ({ matchedTagKeywords: [], matchedCategories: [] }))
 
   // 生成理由（PHASE2-C追加確認）: タグ名・カテゴリ名・定型文のみ。記事タイトル・本文・
   // summaryはbuildMatchReasons()の入力にも出力にも一切含まれない。
@@ -135,11 +135,12 @@ async function fetchInsightTags(customerId: string): Promise<InsightTag[]> {
 
 async function fetchKnowledgeMatchSignals(
   skinTags: SkinTagKey[],
+  insightTags: string[],
   homecareProductNames: string[]
 ): Promise<{ matchedTagKeywords: string[]; matchedCategories: string[] }> {
   if (DEMO_MODE) return { matchedTagKeywords: [], matchedCategories: [] }
 
-  const tagVocabulary      = buildCustomerTagVocabulary(skinTags as string[])
+  const tagVocabulary      = buildCustomerTagVocabulary(skinTags as string[], insightTags)
   const categoryVocabulary = buildProductCategoryVocabulary(homecareProductNames)
   const { matchedKeywords, matchedCategories } = await fetchKnowledgeMatch(tagVocabulary, categoryVocabulary)
   return { matchedTagKeywords: matchedKeywords, matchedCategories }
