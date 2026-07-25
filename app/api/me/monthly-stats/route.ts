@@ -9,7 +9,8 @@
  *   nominationDiff     今月の指名来店数 − 先月の指名来店数
  *   repeatRateDiff     今月のリピート率(%) − 先月のリピート率(%)
  *   visitCountDiff     今月の来店数 − 先月の来店数
- *   reviewCount        口コミ件数（未実装。DBにテーブルが存在しないため常に null）
+ *   retailSalesDiff    今月の店販売上(brain_visits.retail_amount合計) − 先月の店販売上
+ *                      (今月・先月とも来店記録が1件も無い場合はnull。「計測中」表示に使う)
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '../../../lib/repos';
@@ -28,6 +29,7 @@ interface VisitRow {
   visit_date:     string;
   is_nomination:  boolean | null;
   visit_count_at: number | null;
+  retail_amount:  number | null;
 }
 
 function summarize(rows: VisitRow[]) {
@@ -35,7 +37,8 @@ function summarize(rows: VisitRow[]) {
   const nominationCount = rows.filter(r => r.is_nomination).length;
   const repeatCount     = rows.filter(r => (r.visit_count_at ?? 0) > 1).length;
   const repeatRate      = visitCount > 0 ? Math.round((repeatCount / visitCount) * 100) : 0;
-  return { visitCount, nominationCount, repeatRate };
+  const retailSales      = rows.reduce((sum, r) => sum + (r.retail_amount ?? 0), 0);
+  return { visitCount, nominationCount, repeatRate, retailSales };
 }
 
 export async function GET(req: NextRequest) {
@@ -66,7 +69,7 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await supabase
       .from('brain_visits')
-      .select('visit_date, is_nomination, visit_count_at')
+      .select('visit_date, is_nomination, visit_count_at, retail_amount')
       .eq('store_id', STORE_ID)
       .eq('staff_id', staff.staffBrainId)
       .gte('visit_date', lastMonthStart)
@@ -81,11 +84,16 @@ export async function GET(req: NextRequest) {
     const thisMonth = summarize(thisMonthRows);
     const lastMonth = summarize(lastMonthRows);
 
+    // 今月・先月とも来店記録が無い場合は比較の土台が無いため、0円差分ではなくnull
+    // (「計測中」表示に使う)。どちらか一方にでも来店記録があれば実際の差分を返す。
+    const hasVisitData     = thisMonthRows.length > 0 || lastMonthRows.length > 0;
+    const retailSalesDiff  = hasVisitData ? thisMonth.retailSales - lastMonth.retailSales : null;
+
     return NextResponse.json({
-      nominationDiff: thisMonth.nominationCount - lastMonth.nominationCount,
-      repeatRateDiff: thisMonth.repeatRate - lastMonth.repeatRate,
-      visitCountDiff: thisMonth.visitCount - lastMonth.visitCount,
-      reviewCount:    null,
+      nominationDiff:  thisMonth.nominationCount - lastMonth.nominationCount,
+      repeatRateDiff:  thisMonth.repeatRate - lastMonth.repeatRate,
+      visitCountDiff:  thisMonth.visitCount - lastMonth.visitCount,
+      retailSalesDiff,
     });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });

@@ -2,10 +2,11 @@ import { create } from 'zustand';
 import { authedFetch } from '@/lib/api/authedFetch';
 
 export interface MyStats {
-  nominationDiff: number
-  repeatRateDiff: number
-  visitCountDiff: number
-  reviewCount:    number | null
+  nominationDiff:  number
+  repeatRateDiff:  number
+  visitCountDiff:  number
+  /** 先月比 店販売上(円)。今月・先月とも来店記録が無い場合はnull(「計測中」表示)。 */
+  retailSalesDiff: number | null
 }
 
 interface MyStatsState {
@@ -38,10 +39,10 @@ export const useMyStatsStore = create<MyStatsState>((set) => ({
       const data = await res.json();
       set({
         stats: {
-          nominationDiff: data.nominationDiff ?? 0,
-          repeatRateDiff: data.repeatRateDiff ?? 0,
-          visitCountDiff: data.visitCountDiff ?? 0,
-          reviewCount:    data.reviewCount ?? null,
+          nominationDiff:  data.nominationDiff ?? 0,
+          repeatRateDiff:  data.repeatRateDiff ?? 0,
+          visitCountDiff:  data.visitCountDiff ?? 0,
+          retailSalesDiff: data.retailSalesDiff ?? null,
         },
       });
     } catch (e) {

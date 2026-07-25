@@ -12,18 +12,31 @@ import AppBottomNav from './AppBottomNav'
 import { useMyStatsStore } from '@/store/useMyStatsStore'
 import { useAuthStore } from '@/store/useAuthStore'
 
-function DiffValue({ value, unit }: { value: number; unit: string }) {
+function formatDiff(value: number, unit: string): string {
+  const isZero = value === 0
+  const isUp   = value > 0
+  const sign   = isZero ? '' : isUp ? '+' : ''
+  return `${sign}${value}${unit}`
+}
+
+function formatYenDiff(value: number): string {
+  const isZero = value === 0
+  const isUp   = value > 0
+  const sign   = isZero ? '' : isUp ? '+' : '-'
+  return `${sign}¥${Math.abs(value).toLocaleString('ja-JP')}`
+}
+
+function DiffValue({ value, text }: { value: number; text: string }) {
   const isZero = value === 0
   const isUp   = value > 0
   // 下降は責めない表示にする(赤ではなく既存の控えめグレー#9E8090を流用)。
   const color  = isUp ? '#52C87A' : '#9E8090'
   const Icon   = isZero ? Minus : isUp ? TrendingUp : TrendingDown
-  const sign   = isZero ? '' : isUp ? '+' : ''
   return (
     <div className="flex items-center gap-1" style={{ color }}>
       <Icon size={14} strokeWidth={2.5} />
       <span className="text-[20px] font-bold tabular-nums" style={{ fontFamily: 'Inter, sans-serif' }}>
-        {sign}{value}{unit}
+        {text}
       </span>
     </div>
   )
@@ -39,15 +52,15 @@ export default function MyStatsScreen() {
   }, [authInitialized, fetchStats])
 
   const cards = stats ? [
-    { label: '先月比 指名',       node: <DiffValue value={stats.nominationDiff} unit="件" /> },
-    { label: '先月比 リピート率', node: <DiffValue value={stats.repeatRateDiff} unit="%" /> },
+    { label: '先月比 指名',       node: <DiffValue value={stats.nominationDiff} text={formatDiff(stats.nominationDiff, '件')} /> },
+    { label: '先月比 リピート率', node: <DiffValue value={stats.repeatRateDiff} text={formatDiff(stats.repeatRateDiff, '%')} /> },
     {
-      label: '先月比 口コミ',
-      node: stats.reviewCount === null
-        ? <span className="text-[14px]" style={{ color: '#C8A8B0' }}>準備中（今後対応）</span>
-        : <DiffValue value={stats.reviewCount} unit="件" />,
+      label: '先月比 店販売上',
+      node: stats.retailSalesDiff === null
+        ? <span className="text-[14px]" style={{ color: '#C8A8B0' }}>計測中</span>
+        : <DiffValue value={stats.retailSalesDiff} text={formatYenDiff(stats.retailSalesDiff)} />,
     },
-    { label: '来店数差分',        node: <DiffValue value={stats.visitCountDiff} unit="件" /> },
+    { label: '来店数差分',        node: <DiffValue value={stats.visitCountDiff} text={formatDiff(stats.visitCountDiff, '件')} /> },
   ] : []
 
   return (
