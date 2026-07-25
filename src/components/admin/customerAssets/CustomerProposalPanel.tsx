@@ -11,6 +11,7 @@
 import { useEffect, useState } from 'react'
 import { Loader2, Sparkles, AlertTriangle, CheckCircle2, MessageSquareWarning } from 'lucide-react'
 import { useProposalStore } from '@/store/useProposalStore'
+import { authedFetch } from '@/lib/api/authedFetch'
 
 interface StaffOption { id: string; name: string }
 
@@ -30,7 +31,7 @@ export default function CustomerProposalPanel({ storeId, customerId, customerNam
 
   useEffect(() => {
     reset()
-    fetch(`/api/admin/staff-aliases?storeId=${encodeURIComponent(storeId)}`)
+    authedFetch(`/api/admin/staff-aliases?storeId=${encodeURIComponent(storeId)}`)
       .then((r) => r.json())
       .then((body) => {
         if (body.success !== false && body.staffOptions) {

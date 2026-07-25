@@ -1,13 +1,13 @@
 'use client'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter }         from 'next/navigation'
 import { motion }            from 'framer-motion'
 import Image                 from 'next/image'
 import {
-  Bell, ChevronRight,
+  Bell, ChevronRight, X,
   CalendarDays, MessageCircle, BookOpen, LayoutGrid, LogOut,
 } from 'lucide-react'
-import { useMenuStore, type FilterTab } from '@/store/useMenuStore'
+import { useMenuStore, type FilterTab, type MenuAnalyticsRow } from '@/store/useMenuStore'
 import { DEMO_STORE_ID } from '@/lib/constants'
 import AppBottomNav from '@/components/phase1/AppBottomNav'
 import { LogoutConfirmModal, useLogoutFlow } from '@/components/common/LogoutConfirmModal'
@@ -39,6 +39,53 @@ function formatYen(value: number): string {
   return `¥${value.toLocaleString('ja-JP')}`
 }
 
+// ─── メニュー詳細モーダル(「詳細」ボタンの遷移先。既に取得済みのmenus/summaryデータを
+//     表示するのみで、新規APIコール・新規データソースは追加しない) ───────────────
+function MenuDetailModal({ menu, onClose }: { menu: MenuAnalyticsRow; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 flex items-center justify-center z-[70] px-4"
+      style={{ background: 'rgba(92,64,51,0.35)' }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full rounded-[22px] p-5"
+        style={{ maxWidth: '360px', background: '#fff' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between mb-3">
+          <p className="text-[16px] font-semibold" style={{ color: '#4A2C2A' }}>{menu.name}</p>
+          <button onClick={onClose} aria-label="閉じる" style={{ color: '#9E8090' }}>
+            <X size={18} />
+          </button>
+        </div>
+        <div className="flex flex-col gap-2.5">
+          <div className="flex items-center justify-between text-[13px]">
+            <span style={{ color: '#9E8090' }}>金額</span>
+            <span style={{ color: '#4A2C2A' }}>{formatYen(menu.price)}</span>
+          </div>
+          <div className="flex items-center justify-between text-[13px]">
+            <span style={{ color: '#9E8090' }}>次回予約率</span>
+            <span style={{ color: '#4A2C2A' }}>{formatPct(menu.nextVisitRate, 'データ未蓄積')}</span>
+          </div>
+          <div className="flex items-center justify-between text-[13px]">
+            <span style={{ color: '#9E8090' }}>今月の来店件数</span>
+            <span style={{ color: '#4A2C2A' }}>{menu.monthlyCount}件</span>
+          </div>
+          <div className="flex items-center justify-between text-[13px]">
+            <span style={{ color: '#9E8090' }}>今月の売上</span>
+            <span style={{ color: '#4A2C2A' }}>{formatYen(menu.monthlyRevenue)}</span>
+          </div>
+          <div className="flex items-center justify-between text-[13px]">
+            <span style={{ color: '#9E8090' }}>累計来店件数</span>
+            <span style={{ color: '#4A2C2A' }}>{menu.totalVisitCount}件</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function MenuDashboard() {
@@ -48,6 +95,7 @@ export default function MenuDashboard() {
     setFilter, fetchMenus,
   } = useMenuStore()
   const { confirming: confirmingLogout, isLoggingOut, openConfirm: openLogoutConfirm, closeConfirm: closeLogoutConfirm, handleLogout } = useLogoutFlow()
+  const [detailMenu, setDetailMenu] = useState<MenuAnalyticsRow | null>(null)
 
   useEffect(() => {
     fetchMenus(DEMO_STORE_ID)
@@ -159,6 +207,20 @@ export default function MenuDashboard() {
           )}
         </div>
 
+        {/* summaryが未取得の間はプレースホルダー文言(0件・データ集計中等)でレイアウトを
+            描画せず、読み込み中表示に統一する。初回訪問時のみ「空データ→実データ」の
+            差し替わりでテキスト幅が変わりレイアウトが横にずれる不具合の修正
+            (2回目以降の訪問はZustandストアに実データが残るため発生しなかった)。 */}
+        {!summary ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-2">
+            {error ? (
+              <p className="text-[12px]" style={{ color: '#F87171' }}>データ取得エラー: {error}</p>
+            ) : (
+              <p className="text-[12px]" style={{ color: '#9E8090' }}>読み込み中…</p>
+            )}
+          </div>
+        ) : (
+        <>
         {/* ═══ 上部サマリー3カード ═══ */}
         <div className="grid grid-cols-3 gap-2 px-4 mb-4">
           {STATS.map((stat, i) => (
@@ -276,6 +338,7 @@ export default function MenuDashboard() {
             <button
               className="text-[11px] flex items-center gap-0.5 flex-shrink-0"
               style={{ color: '#D98292' }}
+              onClick={() => setDetailMenu(topMenu ?? null)}
             >
               詳細 <ChevronRight size={11} />
             </button>
@@ -370,6 +433,8 @@ export default function MenuDashboard() {
             )}
           </div>
         </div>
+        </>
+        )}
 
         {/* ═══ クイックアクセスグリッド(3項目・2列。奇数件のため最後の1件は幅いっぱいに表示) ═══ */}
         <div className="px-4 mb-5">
@@ -449,6 +514,10 @@ export default function MenuDashboard() {
           onConfirm={handleLogout}
           onCancel={closeLogoutConfirm}
         />
+      )}
+
+      {detailMenu && (
+        <MenuDetailModal menu={detailMenu} onClose={() => setDetailMenu(null)} />
       )}
     </div>
   )
