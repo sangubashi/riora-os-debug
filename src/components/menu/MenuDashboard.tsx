@@ -5,11 +5,12 @@ import { motion }            from 'framer-motion'
 import Image                 from 'next/image'
 import {
   Bell, ChevronRight,
-  CalendarDays, MessageCircle, BookOpen, LayoutGrid,
+  CalendarDays, MessageCircle, BookOpen, LayoutGrid, LogOut,
 } from 'lucide-react'
 import { useMenuStore, type FilterTab } from '@/store/useMenuStore'
 import { DEMO_STORE_ID } from '@/lib/constants'
 import AppBottomNav from '@/components/phase1/AppBottomNav'
+import { LogoutConfirmModal, useLogoutFlow } from '@/components/common/LogoutConfirmModal'
 
 // ─── フィルタータブ(brain_menus.roleが実データソース。imported_other(CSV未マッチ分)は
 //     「すべて」にのみ含め、個別タブは出さない) ─────────────────────────────────
@@ -46,6 +47,7 @@ export default function MenuDashboard() {
     menus, summary, filterTab, isLoading, error,
     setFilter, fetchMenus,
   } = useMenuStore()
+  const { confirming: confirmingLogout, isLoggingOut, openConfirm: openLogoutConfirm, closeConfirm: closeLogoutConfirm, handleLogout } = useLogoutFlow()
 
   useEffect(() => {
     fetchMenus(DEMO_STORE_ID)
@@ -407,9 +409,47 @@ export default function MenuDashboard() {
           </div>
         </div>
 
+        {/* ═══ アカウント(STAFF_APP_PRODUCTION_FIX_PASS_2 P1: ログアウト) ═══ */}
+        <div className="px-4 mb-5">
+          <p className="text-[10px] tracking-[0.2em] font-medium mb-3" style={{ color: '#C8B0B8' }}>
+            ACCOUNT
+          </p>
+          <motion.button
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5, duration: 0.3 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={openLogoutConfirm}
+            className="w-full flex items-center gap-3 rounded-2xl p-4"
+            style={{
+              background: '#FFFFFF',
+              border: '1px solid #F5E6E8',
+              boxShadow: '0 2px 10px rgba(245,160,181,0.08)',
+            }}
+          >
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+              style={{ background: 'rgba(209,79,79,0.10)' }}
+            >
+              <LogOut size={20} style={{ color: '#D14F4F' }} strokeWidth={1.8} />
+            </div>
+            <span className="text-[12px] font-medium text-left leading-tight" style={{ color: '#D14F4F' }}>
+              ログアウト
+            </span>
+          </motion.button>
+        </div>
+
       </div>
 
       <AppBottomNav />
+
+      {confirmingLogout && (
+        <LogoutConfirmModal
+          isLoggingOut={isLoggingOut}
+          onConfirm={handleLogout}
+          onCancel={closeLogoutConfirm}
+        />
+      )}
     </div>
   )
 }

@@ -12,7 +12,8 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { TrendingUp, AlertTriangle, Users, UserCog, UserCheck, BarChart3, UploadCloud, Settings, Menu, X, MessageCircle, LayoutGrid, GitMerge, BookOpen, FileText } from 'lucide-react'
+import { TrendingUp, AlertTriangle, Users, UserCog, UserCheck, BarChart3, UploadCloud, Settings, Menu, X, MessageCircle, LayoutGrid, GitMerge, BookOpen, FileText, LogOut } from 'lucide-react'
+import { LogoutConfirmModal, useLogoutFlow } from '@/components/common/LogoutConfirmModal'
 
 const NAV_ITEMS = [
   { href: '/admin/dashboard',         label: '経営TOP',       icon: TrendingUp },
@@ -63,9 +64,27 @@ function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () 
   )
 }
 
+function LogoutButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
+        padding: '10px 14px', borderRadius: '12px', marginTop: '8px',
+        fontSize: '13px', fontWeight: 600, color: '#D14F4F',
+        background: 'transparent', border: '1px solid transparent', cursor: 'pointer',
+      }}
+    >
+      <LogOut size={16} />
+      ログアウト
+    </button>
+  )
+}
+
 export default function AdminSidebar() {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const { confirming, isLoggingOut, openConfirm, closeConfirm, handleLogout } = useLogoutFlow()
 
   return (
     <>
@@ -83,6 +102,9 @@ export default function AdminSidebar() {
           <p style={{ fontSize: '14px', fontWeight: 700, color: '#5C4033' }}>管理者ダッシュボード</p>
         </div>
         <NavLinks pathname={pathname} />
+        <div style={{ marginTop: 'auto', paddingTop: '14px', borderTop: '1px solid #F5EEF0' }}>
+          <LogoutButton onClick={openConfirm} />
+        </div>
       </aside>
 
       {/* ── モバイル: ハンバーガー+ドロワー(768px未満) ── */}
@@ -128,8 +150,19 @@ export default function AdminSidebar() {
               </button>
             </div>
             <NavLinks pathname={pathname} onNavigate={() => setMobileOpen(false)} />
+            <div style={{ marginTop: 'auto', paddingTop: '14px', borderTop: '1px solid #F5EEF0' }}>
+              <LogoutButton onClick={openConfirm} />
+            </div>
           </div>
         </div>
+      )}
+
+      {confirming && (
+        <LogoutConfirmModal
+          isLoggingOut={isLoggingOut}
+          onConfirm={handleLogout}
+          onCancel={closeConfirm}
+        />
       )}
     </>
   )
