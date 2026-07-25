@@ -14,6 +14,7 @@ import type {
   ICandidateRepo,
   ICustomerRepo,
   IDashboardRepo,
+  IInviteRepo,
   ILineQueueRepo,
   IMenuRepo,
   IOccupancyRepo,
@@ -34,6 +35,7 @@ import { BusinessSettingsRepo } from '@/repositories/supabase/BusinessSettingsRe
 import { CandidateRepo } from '@/repositories/supabase/CandidateRepo';
 import { CustomerRepo } from '@/repositories/supabase/CustomerRepo';
 import { DashboardRepo } from '@/repositories/supabase/DashboardRepo';
+import { InviteRepo } from '@/repositories/supabase/InviteRepo';
 import { LineQueueRepo } from '@/repositories/supabase/LineQueueRepo';
 import { MenuRepo } from '@/repositories/supabase/MenuRepo';
 import { OccupancyRepo } from '@/repositories/supabase/OccupancyRepo';
@@ -71,6 +73,8 @@ export interface Repos {
   reservationRepo: IReservationRepo;
   /** サロンブログ記事(BLOG_CONTENT_PHASE1/KNOWLEDGE_IMPORT_PHASE1)。 */
   blogArticleRepo: IBlogArticleRepo;
+  /** スタッフ招待トークン(STAFF_MANAGEMENT_PHASE2_2)。 */
+  inviteRepo: IInviteRepo;
 }
 
 let client: SupabaseClient | null = null;
@@ -121,5 +125,6 @@ export function getRepos(): Repos {
     outcomeRepo: new OutcomeRepo(supabase),
     reservationRepo: new ReservationRepo(supabase),
     blogArticleRepo: new BlogArticleRepo(supabase),
+    inviteRepo: new InviteRepo(supabase),
   };
 }

@@ -37,6 +37,7 @@ import type {
   ScoringWeights,
   SoftFeatureSpec,
   Staff,
+  StaffInvite,
   StaffStyle,
   Store,
   Subscription,
@@ -846,5 +847,32 @@ export function toBlogArticle(row: BrainBlogArticleRow): BlogArticle {
     createdAt: row.created_at,
     category: row.category,
     summary: row.summary,
+  };
+}
+
+// === staff_invites → StaffInvite(STAFF_MANAGEMENT_PHASE2_2・InviteRepo) ===
+
+/** staff_invites(STAFF_MANAGEMENT_PHASE2_2)の行。tokenはハッシュ値のためドメイン型には含めない。 */
+export interface StaffInviteRow {
+  id: string;
+  store_id: string;
+  role: 'owner' | 'staff';
+  staff_name: string;
+  email: string;
+  expires_at: string;
+  used_at: string | null;
+  created_at: string;
+}
+
+export function toStaffInvite(row: StaffInviteRow): StaffInvite {
+  return {
+    id: row.id,
+    storeId: row.store_id,
+    role: row.role,
+    staffName: row.staff_name,
+    email: row.email,
+    expiresAt: row.expires_at,
+    usedAt: row.used_at,
+    createdAt: row.created_at,
   };
 }
