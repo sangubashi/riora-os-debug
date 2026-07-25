@@ -15,14 +15,25 @@ export default function MyStatsPage() {
       return
     }
 
-    supabase.auth.getSession().then(({ data }) => {
-      const session = data.session
+    // /login・ClientShellと同様、getSession()がSafari ITP等で永久ハングしないよう
+    // 4秒でタイムアウトする(このページだけタイムアウトが無く、画面中央のローディング
+    // ドットが固まったまま進まなくなる不具合があったため追加)。
+    let cancelled = false
+    const sessionPromise = supabase.auth.getSession()
+      .then(({ data }) => data.session)
+      .catch(() => null)
+    const timeoutPromise = new Promise<null>(resolve => setTimeout(() => resolve(null), 4000))
+
+    Promise.race([sessionPromise, timeoutPromise]).then(session => {
+      if (cancelled) return
       if (!session) {
         router.replace('/login')
         return
       }
       setReady(true)
     })
+
+    return () => { cancelled = true }
   }, [router])
 
   if (!ready) {
