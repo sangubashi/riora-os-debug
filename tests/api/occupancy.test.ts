@@ -25,7 +25,10 @@ describe('GET /api/admin/occupancy (画面⑤稼働率分析)', () => {
     vi.clearAllMocks();
     vi.mocked(getRepos).mockReturnValue(mockRepos as never);
     mockRepos.occupancyRepo.staffOccupancy.mockResolvedValue([
-      { staffId: 's1', staffName: '鈴木', visitCount: 10, sales: 100000, nominationRate: 0.5 },
+      {
+        staffId: 's1', staffName: '鈴木', visitCount: 10, sales: 100000, nominationRate: 0.5, occupancyRate: null,
+        comparison: { visitCountDiff: 2, salesDiff: 20000, nominationRateDiff: 0.1, occupancyRateDiff: null },
+      },
     ]);
     mockRepos.occupancyRepo.visitsByDayOfWeek.mockResolvedValue([
       { dayOfWeek: 'mon', visitCount: 3 }, { dayOfWeek: 'tue', visitCount: 0 },
@@ -50,7 +53,10 @@ describe('GET /api/admin/occupancy (画面⑤稼働率分析)', () => {
 
     expect(res.status).toBe(200);
     expect(body.staffOccupancy).toEqual([
-      { staffId: 's1', staffName: '鈴木', visitCount: 10, sales: 100000, nominationRate: 0.5 },
+      {
+        staffId: 's1', staffName: '鈴木', visitCount: 10, sales: 100000, nominationRate: 0.5, occupancyRate: null,
+        comparison: { visitCountDiff: 2, salesDiff: 20000, nominationRateDiff: 0.1, occupancyRateDiff: null },
+      },
     ]);
     expect(body.dayOfWeekVisits).toHaveLength(7);
     expect(body.dayOfWeekVisits[0]).toEqual({ dayOfWeek: 'mon', visitCount: 3 });

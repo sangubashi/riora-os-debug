@@ -406,15 +406,39 @@ export interface ISubscriptionRepo {
   listByStore(storeId: UUID): Promise<Subscription[]>;
 }
 
+export interface StaffOccupancyComparison {
+  /** 今月来店件数 − 先月来店件数。 */
+  visitCountDiff: number;
+  /** 今月売上 − 先月売上。 */
+  salesDiff: number;
+  /** 今月指名率 − 先月指名率(0〜1スケールでの差。表示側で%に変換する)。 */
+  nominationRateDiff: number;
+  /** 今月稼働率 − 先月稼働率。稼働率算出式が未実装の間は常にnull(下記occupancyRate参照)。 */
+  occupancyRateDiff: number | null;
+}
+
 export interface StaffOccupancyRow {
   staffId: UUID;
   staffName: string;
-  /** このスタッフが担当した全履歴の来店件数。 */
+  /** 今月(月初〜asOfDate)の来店件数。 */
   visitCount: number;
-  /** このスタッフが担当した全履歴の売上(treatment_amount+retail_amount合計)。 */
+  /** 今月(月初〜asOfDate)の売上(treatment_amount+retail_amount合計)。 */
   sales: number;
-  /** このスタッフが担当した全履歴の指名率(0〜1)。担当来店0件はnull。 */
+  /** 今月(月初〜asOfDate)の指名率(0〜1)。今月の担当来店0件はnull。 */
   nominationRate: number | null;
+  /**
+   * 今月(月初〜asOfDate)の稼働率(0〜1)。算出には稼働分数(reservations.duration_minutes、
+   * ④稼働分数推移で使用中)を利用可能時間(brain_business_settings.seat_capacity)で
+   * 割る必要があるが、seat_capacityは本番未設定かつ具体的なパース仕様も未実装のため、
+   * 現時点では常にnull(画面側は「データ未整備」を表示する)。ユーザー指示によりここで
+   * 新しい算出式は作らない(ADMIN_OCCUPANCY_RATE_FIX・seat_capacity運用開始後に実装予定)。
+   */
+  occupancyRate: number | null;
+  /**
+   * 先月比較。今月・先月ともこのスタッフの担当来店が1件も無い場合は比較の土台が
+   * 無いためnull(画面側は「比較データなし」を表示する)。
+   */
+  comparison: StaffOccupancyComparison | null;
 }
 
 export interface DayOfWeekVisitCount {
@@ -438,10 +462,11 @@ export interface DailyOccupancyPoint {
 export interface IOccupancyRepo {
   /**
    * 画面⑤稼働率分析(MD-5)①スタッフ別稼働状況。brain_visits+brain_staffを集計し、
-   * スタッフごとの来店件数/売上/指名率を返す(MD-4スタッフ分析と算出対象が重複することを
-   * ユーザーが許容済み)。五十音順や順位付けは行わず、brain_staffの取得順をそのまま返す。
+   * スタッフごとの「今月(月初〜asOfDate)」の来店件数/売上/指名率と、先月同期間との
+   * 比較(comparison)を返す(累計値は返さない・ADMIN_OCCUPANCY_MONTHLY_FIX)。
+   * 五十音順や順位付けは行わず、brain_staffの取得順をそのまま返す。
    */
-  staffOccupancy(storeId: UUID): Promise<StaffOccupancyRow[]>;
+  staffOccupancy(storeId: UUID, asOfDate: string): Promise<StaffOccupancyRow[]>;
   /**
    * 画面⑤稼働率分析(MD-5)②曜日別来店数。brain_visits.visit_dateから曜日を算出し、
    * 月〜日の7件(来店が無い曜日は0件)を固定順で返す。

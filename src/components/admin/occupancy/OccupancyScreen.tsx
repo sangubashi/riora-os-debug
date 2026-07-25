@@ -25,6 +25,39 @@ function formatPercent(rate: number | null): string {
   return rate === null ? '—' : `${Math.round(rate * 100)}%`
 }
 
+// スタッフ分析(MD-4・StaffAnalyticsScreen.tsx)のformatGrowthと同じ配色規約
+// (プラス緑#3C9D5C・マイナス赤#D14F4F・0はグレー#9F7E6C)を踏襲する。
+function diffColor(value: number): string {
+  if (value > 0) return '#3C9D5C'
+  if (value < 0) return '#D14F4F'
+  return '#9F7E6C'
+}
+
+function formatCountDiff(value: number): string {
+  return value === 0 ? '±0件' : `${value > 0 ? '+' : ''}${value}件`
+}
+
+function formatYenDiff(value: number): string {
+  if (value === 0) return '±¥0'
+  return `${value > 0 ? '+' : '-'}¥${Math.abs(value).toLocaleString('ja-JP')}`
+}
+
+function formatPercentDiff(value: number): string {
+  const pct = Math.round(value * 100)
+  return pct === 0 ? '±0%' : `${pct > 0 ? '+' : ''}${pct}%`
+}
+
+// 稼働率はseat_capacity未整備のため常にnullで返ってくる(OccupancyRepo参照)。
+// nominationRateのformatPercentの「—」(来店0件でrateが定義できない)とは意味が異なる
+// (「今月の実データが無い」ではなく「算出式自体が未整備」)ため、文言を分けて表示する。
+function formatOccupancyRate(rate: number | null): string {
+  return rate === null ? 'データ未整備' : `${Math.round(rate * 100)}%`
+}
+
+function formatOccupancyRateDiff(diff: number | null): string {
+  return diff === null ? 'データ未整備' : formatPercentDiff(diff)
+}
+
 function SectionCard({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <div style={{ background: '#fff', border: '1px solid #F5EEF0', borderRadius: '16px', padding: '16px 18px' }}>
@@ -86,16 +119,65 @@ export default function OccupancyScreen() {
             {data.staffOccupancy.length === 0 ? (
               <p style={{ fontSize: '12px', color: '#C8A8B0' }}>スタッフが登録されていません</p>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {data.staffOccupancy.map((s) => (
                   <div key={s.staffId} style={{
-                    display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px',
-                    padding: '10px 12px', background: '#FFF8F7', borderRadius: '12px', border: '1px solid #F5EEF0',
+                    padding: '14px 16px', background: '#FFF8F7', borderRadius: '14px', border: '1px solid #F5EEF0',
                   }}>
-                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#5C4033', minWidth: '64px' }}>{s.staffName}</span>
-                    <span style={{ fontSize: '11px', color: '#9F7E6C' }}>来店{s.visitCount}件</span>
-                    <span style={{ fontSize: '11px', color: '#9F7E6C' }}>{formatYen(s.sales)}</span>
-                    <span style={{ fontSize: '11px', color: '#9F7E6C' }}>指名率{formatPercent(s.nominationRate)}</span>
+                    <p style={{ fontSize: '14px', fontWeight: 700, color: '#5C4033', marginBottom: '10px' }}>
+                      {s.staffName}
+                    </p>
+
+                    {/* 今月の実績(最大表示) */}
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                      <div style={{ flex: 1, minWidth: '90px' }}>
+                        <p style={{ fontSize: '10px', color: '#C8A8B0', marginBottom: '2px' }}>今月来店数</p>
+                        <p style={{ fontSize: '20px', fontWeight: 700, color: '#5C4033', fontFamily: 'Inter, sans-serif' }}>
+                          {s.visitCount}件
+                        </p>
+                      </div>
+                      <div style={{ flex: 1, minWidth: '90px' }}>
+                        <p style={{ fontSize: '10px', color: '#C8A8B0', marginBottom: '2px' }}>今月売上</p>
+                        <p style={{ fontSize: '20px', fontWeight: 700, color: '#5C4033', fontFamily: 'Inter, sans-serif' }}>
+                          {formatYen(s.sales)}
+                        </p>
+                      </div>
+                      <div style={{ flex: 1, minWidth: '90px' }}>
+                        <p style={{ fontSize: '10px', color: '#C8A8B0', marginBottom: '2px' }}>今月指名率</p>
+                        <p style={{ fontSize: '20px', fontWeight: 700, color: '#5C4033', fontFamily: 'Inter, sans-serif' }}>
+                          {formatPercent(s.nominationRate)}
+                        </p>
+                      </div>
+                      <div style={{ flex: 1, minWidth: '90px' }}>
+                        <p style={{ fontSize: '10px', color: '#C8A8B0', marginBottom: '2px' }}>今月稼働率</p>
+                        <p style={{ fontSize: '20px', fontWeight: 700, color: '#5C4033', fontFamily: 'Inter, sans-serif' }}>
+                          {formatOccupancyRate(s.occupancyRate)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* 先月比較(小さめ表示) */}
+                    <div style={{ paddingTop: '10px', borderTop: '1px solid #F0E4E8' }}>
+                      <p style={{ fontSize: '10px', color: '#C8A8B0', marginBottom: '4px' }}>先月比較</p>
+                      {s.comparison === null ? (
+                        <p style={{ fontSize: '11px', color: '#9F7E6C' }}>比較データなし</p>
+                      ) : (
+                        <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '11px', color: diffColor(s.comparison.visitCountDiff) }}>
+                            来店 {formatCountDiff(s.comparison.visitCountDiff)}
+                          </span>
+                          <span style={{ fontSize: '11px', color: diffColor(s.comparison.salesDiff) }}>
+                            売上 {formatYenDiff(s.comparison.salesDiff)}
+                          </span>
+                          <span style={{ fontSize: '11px', color: diffColor(s.comparison.nominationRateDiff) }}>
+                            指名率 {formatPercentDiff(s.comparison.nominationRateDiff)}
+                          </span>
+                          <span style={{ fontSize: '11px', color: s.comparison.occupancyRateDiff === null ? '#C8A8B0' : diffColor(s.comparison.occupancyRateDiff) }}>
+                            稼働率 {formatOccupancyRateDiff(s.comparison.occupancyRateDiff)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

@@ -7,12 +7,27 @@
 import { create } from 'zustand'
 import { authedFetch } from '@/lib/api/authedFetch'
 
+export interface StaffOccupancyComparison {
+  visitCountDiff: number
+  salesDiff: number
+  nominationRateDiff: number
+  /** 今月稼働率 − 先月稼働率。稼働率算出式が未実装の間は常にnull。 */
+  occupancyRateDiff: number | null
+}
+
 export interface StaffOccupancyRow {
   staffId: string
   staffName: string
+  /** 今月(月初〜本日)の来店件数。 */
   visitCount: number
+  /** 今月の売上。 */
   sales: number
+  /** 今月の指名率(0〜1)。今月の担当来店0件はnull。 */
   nominationRate: number | null
+  /** 今月の稼働率(0〜1)。seat_capacity未整備のため現時点では常にnull(「データ未整備」表示)。 */
+  occupancyRate: number | null
+  /** 先月比較。今月・先月とも担当来店が無い場合はnull(「比較データなし」表示)。 */
+  comparison: StaffOccupancyComparison | null
 }
 
 export interface DayOfWeekVisitCount {

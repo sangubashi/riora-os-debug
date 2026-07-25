@@ -23,10 +23,37 @@ interface RawVisitRow {
   is_nomination: boolean;
 }
 
+// 今月(月初〜asOfDate)・先月(前月1日〜前月末)の範囲算出。
+// StaffAnalyticsEngine.ts(MD-4)のmonthRange/previousMonthRangeと同じ算出式を
+// Repository層の既存方針(このファイル冒頭コメント参照)に合わせてこちらにも定義する。
+function monthRange(asOfDate: string): { start: string; end: string } {
+  return { start: `${asOfDate.slice(0, 7)}-01`, end: asOfDate };
+}
+
+function previousMonthRange(asOfDate: string): { start: string; end: string } {
+  const year  = Number(asOfDate.slice(0, 4));
+  const month = Number(asOfDate.slice(5, 7));
+  const prevMonthDate = new Date(year, month - 2, 1);
+  const prevYear  = prevMonthDate.getFullYear();
+  const prevMonth = prevMonthDate.getMonth() + 1;
+  const start = `${prevYear}-${String(prevMonth).padStart(2, '0')}-01`;
+  const end   = new Date(prevYear, prevMonth, 0).toISOString().slice(0, 10);
+  return { start, end };
+}
+
+function summarizeVisits(visits: RawVisitRow[]) {
+  const visitCount = visits.length;
+  const sales       = visits.reduce((sum, v) => sum + v.treatment_amount + v.retail_amount, 0);
+  const nominationRate = visitCount > 0
+    ? visits.filter((v) => v.is_nomination).length / visitCount
+    : null;
+  return { visitCount, sales, nominationRate };
+}
+
 export class OccupancyRepo implements IOccupancyRepo {
   constructor(private readonly client: SupabaseClient) {}
 
-  async staffOccupancy(storeId: UUID): Promise<StaffOccupancyRow[]> {
+  async staffOccupancy(storeId: UUID, asOfDate: string): Promise<StaffOccupancyRow[]> {
     const [staffResult, visitResult] = await Promise.all([
       this.client.from('brain_staff').select('id, name').eq('store_id', storeId).is('deleted_at', null),
       this.client.from('brain_visits')
@@ -42,6 +69,9 @@ export class OccupancyRepo implements IOccupancyRepo {
       throw new Error(`OccupancyRepo.staffOccupancy failed: ${visitResult.error.message}`);
     }
 
+    const { start: curStart } = monthRange(asOfDate);
+    const { start: prevStart, end: prevEnd } = previousMonthRange(asOfDate);
+
     const visitsByStaff = new Map<string, RawVisitRow[]>();
     for (const v of (visitResult.data ?? []) as unknown as RawVisitRow[]) {
       const list = visitsByStaff.get(v.staff_id) ?? [];
@@ -50,13 +80,36 @@ export class OccupancyRepo implements IOccupancyRepo {
     }
 
     return ((staffResult.data ?? []) as unknown as { id: string; name: string }[]).map((s) => {
-      const visits = visitsByStaff.get(s.id) ?? [];
-      const visitCount = visits.length;
-      const sales = visits.reduce((sum, v) => sum + v.treatment_amount + v.retail_amount, 0);
-      const nominationRate = visitCount > 0
-        ? visits.filter((v) => v.is_nomination).length / visitCount
+      const allVisits = visitsByStaff.get(s.id) ?? [];
+      const monthVisits = allVisits.filter((v) => v.visit_date >= curStart && v.visit_date <= asOfDate);
+      const prevMonthVisits = allVisits.filter((v) => v.visit_date >= prevStart && v.visit_date <= prevEnd);
+
+      const current  = summarizeVisits(monthVisits);
+      const previous = summarizeVisits(prevMonthVisits);
+
+      // 今月・先月ともこのスタッフの担当来店が無い場合は比較の土台が無いため、
+      // 0件差分ではなくnullを返す(「比較データなし」表示に使う)。
+      const hasComparisonBase = monthVisits.length > 0 || prevMonthVisits.length > 0;
+      const comparison = hasComparisonBase
+        ? {
+            visitCountDiff:      current.visitCount - previous.visitCount,
+            salesDiff:           current.sales - previous.sales,
+            nominationRateDiff: (current.nominationRate ?? 0) - (previous.nominationRate ?? 0),
+            // 稼働率算出式が未実装のため常にnull(StaffOccupancyRow.occupancyRateのコメント参照)。
+            occupancyRateDiff: null,
+          }
         : null;
-      return { staffId: s.id, staffName: s.name, visitCount, sales, nominationRate };
+
+      return {
+        staffId:   s.id,
+        staffName: s.name,
+        visitCount: current.visitCount,
+        sales:      current.sales,
+        nominationRate: current.nominationRate,
+        // seat_capacityが未設定・未実装のため常にnull(interfaces.tsのコメント参照)。
+        occupancyRate: null,
+        comparison,
+      };
     });
   }
 

@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const [staffOccupancy, dayOfWeekVisits, settings, hourlyVisitsData, occupancyTrendData] = await Promise.all([
-      repos.occupancyRepo.staffOccupancy(storeId),
+      repos.occupancyRepo.staffOccupancy(storeId, date),
       repos.occupancyRepo.visitsByDayOfWeek(storeId),
       repos.businessSettingsRepo.findByStoreAndMonth(storeId, firstOfMonth(date)),
       repos.occupancyRepo.hourlyVisits(),
