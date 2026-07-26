@@ -13,11 +13,13 @@ import { getRepos } from '../../../lib/repos';
 import { storeIdQuerySchema } from '../../_schemas/query';
 import { toValidationErrorResponse } from '../../_schemas/common';
 import { computeMenuAnalytics } from '@/lib/menu/MenuAnalyticsEngine';
-import { requireAdmin } from '@/lib/auth/requireAdmin';
+import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
 
 export async function GET(req: NextRequest) {
-  const gate = await requireAdmin(req);
-  if (gate instanceof NextResponse) return gate;
+  const staff = await extractStaffFromRequest(req);
+  if (!staff) {
+    return NextResponse.json({ success: false, error: 'unauthorized' }, { status: 401 });
+  }
 
   const parsed = storeIdQuerySchema.safeParse({
     storeId: req.nextUrl.searchParams.get('storeId'),
