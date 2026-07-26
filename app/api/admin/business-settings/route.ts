@@ -108,9 +108,9 @@ export async function POST(req: NextRequest) {
       detail: {
         month: parsed.data.month,
         before: before
-          ? { fixedCosts: before.fixedCosts, variableCostRate: before.variableCostRate, salesTarget: before.salesTarget }
+          ? { fixedCosts: before.fixedCosts, variableCostRate: before.variableCostRate, salesTarget: before.salesTarget, seatCapacity: before.seatCapacity }
           : null,
-        after: { fixedCosts: settings.fixedCosts, variableCostRate: settings.variableCostRate, salesTarget: settings.salesTarget },
+        after: { fixedCosts: settings.fixedCosts, variableCostRate: settings.variableCostRate, salesTarget: settings.salesTarget, seatCapacity: settings.seatCapacity },
       },
     });
 

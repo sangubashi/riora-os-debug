@@ -16,6 +16,7 @@ export interface BusinessSettingsData {
   fixedCosts: Record<string, unknown> | null
   variableCostRate: number
   variableRates: Record<string, unknown> | null
+  seatCapacity: number | null
 }
 
 export type CostBreakdown = Record<string, number | null>
@@ -36,6 +37,7 @@ interface BusinessSettingsState {
     fixedCosts?: CostBreakdown
     variableCostRate?: number
     variableRates?: CostBreakdown
+    seatCapacity?: number
   }) => Promise<boolean>
 }
 

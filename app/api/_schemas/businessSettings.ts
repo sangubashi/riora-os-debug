@@ -17,6 +17,8 @@ export const businessSettingsUpsertSchema = z.object({
   // DashboardAggregatorのCHECK制約(0<=x<1)に合わせる。計算式自体は変更しない。
   variableCostRate: z.number().min(0).max(0.999999).optional(),
   variableRates: costBreakdownSchema.optional(),
+  // 稼働率分析(画面⑤)の分母となる席数(単純な整数)。ADMIN_SEAT_CAPACITY_SETTING。
+  seatCapacity: z.number().int().positive().optional(),
 });
 
 export type BusinessSettingsUpsertPayload = z.infer<typeof businessSettingsUpsertSchema>;

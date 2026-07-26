@@ -554,7 +554,7 @@ export interface BrainBusinessSettingsRow {
   sales_target: number;
   fixed_costs: Record<string, unknown> | null;
   variable_cost_rate: number | string;
-  seat_capacity: Record<string, unknown> | null;
+  seat_capacity: number | null;
   variable_rates: Record<string, unknown> | null;
 }
 
@@ -578,12 +578,14 @@ export function fromBusinessSettingsUpsert(input: {
   fixedCosts?: Record<string, number | null>;
   variableCostRate?: number;
   variableRates?: Record<string, number | null>;
+  seatCapacity?: number;
 }): Record<string, unknown> {
   const row: Record<string, unknown> = { store_id: input.storeId, month: input.month };
   if (input.salesTarget !== undefined) row.sales_target = input.salesTarget;
   if (input.fixedCosts !== undefined) row.fixed_costs = input.fixedCosts;
   if (input.variableCostRate !== undefined) row.variable_cost_rate = input.variableCostRate;
   if (input.variableRates !== undefined) row.variable_rates = input.variableRates;
+  if (input.seatCapacity !== undefined) row.seat_capacity = input.seatCapacity;
   return row;
 }
 

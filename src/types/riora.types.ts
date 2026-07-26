@@ -743,7 +743,8 @@ export interface BusinessSettings {
   /** 固定費の内訳jsonb。未設定(null)の場合、損益分岐点・利益予測はnull。 */
   fixedCosts: Record<string, unknown> | null;
   variableCostRate: number;
-  seatCapacity: Record<string, unknown> | null;
+  /** 席数(単純な整数)。未設定はnull。稼働率分析(画面⑤)の分母には営業時間設定が可能になってから使用する。 */
+  seatCapacity: number | null;
   variableRates: Record<string, unknown> | null;
 }
 

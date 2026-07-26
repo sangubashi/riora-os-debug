@@ -106,6 +106,7 @@ export default function BusinessSettingsForm() {
   const [variableCostRate, setVariableCostRate] = useState('')
   const [fixedCosts, setFixedCosts] = useState<Draft>(toDraft(null, FIXED_COST_FIELDS))
   const [variableRates, setVariableRates] = useState<Draft>(toDraft(null, VARIABLE_RATE_FIELDS))
+  const [seatCapacity, setSeatCapacity] = useState('')
 
   useEffect(() => {
     fetchSettings(DEMO_STORE_ID, month)
@@ -117,6 +118,7 @@ export default function BusinessSettingsForm() {
     setVariableCostRate(String(settings.variableCostRate ?? ''))
     setFixedCosts(toDraft(settings.fixedCosts, FIXED_COST_FIELDS))
     setVariableRates(toDraft(settings.variableRates, VARIABLE_RATE_FIELDS))
+    setSeatCapacity(settings.seatCapacity != null ? String(settings.seatCapacity) : '')
   }, [settings])
 
   async function handleSubmit(e: React.FormEvent) {
@@ -135,6 +137,7 @@ export default function BusinessSettingsForm() {
       variableCostRate: variableCostRate.trim() === '' ? undefined : Number(variableCostRate),
       fixedCosts: draftToBreakdown(fixedCosts),
       variableRates: draftToBreakdown(variableRates),
+      seatCapacity: seatCapacity.trim() === '' ? undefined : Number(seatCapacity),
     })
   }
 
@@ -157,6 +160,29 @@ export default function BusinessSettingsForm() {
         <NumberField label="今月の売上目標(円)" value={salesTarget} onChange={setSalesTarget} />
         <p style={{ fontSize: '11px', color: '#9F7E6C', marginTop: '6px' }}>
           円単位で入力してください(万円ではありません)。例: 210万円の場合は 2100000 と入力
+        </p>
+      </section>
+
+      <section style={{ background: '#fff', border: '1px solid #F5EEF0', borderRadius: '16px', padding: '16px 18px' }}>
+        <p style={{ fontSize: '13px', fontWeight: 700, color: '#5C4033', marginBottom: '12px' }}>席数</p>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#5C4033' }}>
+          席数
+          <input
+            type="number"
+            step="1"
+            min="1"
+            value={seatCapacity}
+            onChange={(e) => setSeatCapacity(e.target.value)}
+            placeholder="未入力"
+            style={{
+              padding: '8px 10px', borderRadius: '8px', border: '1px solid #F0DEE2',
+              fontSize: '13px', fontFamily: 'Inter, sans-serif', maxWidth: '160px',
+            }}
+          />
+        </label>
+        <p style={{ fontSize: '11px', color: '#9F7E6C', marginTop: '6px' }}>
+          整数で入力してください(例: 4席の場合は 4)。稼働率分析の「今月稼働率」は現在保留中で、
+          営業時間の設定機能が整い次第、この値を使って表示されます。
         </p>
       </section>
 

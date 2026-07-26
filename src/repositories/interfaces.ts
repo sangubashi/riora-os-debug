@@ -617,6 +617,12 @@ export interface BusinessSettingsUpsertInput {
   variableCostRate?: number;
   /** 変動費率の内訳jsonb(incentive_rate/square_rate等)。記録用(variableCostRateの代わりに計算式へは使われない)。 */
   variableRates?: Record<string, number | null>;
+  /**
+   * 席数(単純な整数・ADMIN_SEAT_CAPACITY_SETTING)。稼働率分析(画面⑤)の分母として
+   * 将来使用予定だが、営業時間が曜日ごとに異なるため計算式への組み込みは別途営業時間の
+   * 設定が可能になってから行う(ユーザー指示によりここでは新しい算出式は作らない)。
+   */
+  seatCapacity?: number;
 }
 
 export interface IBusinessSettingsRepo {
