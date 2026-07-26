@@ -10,11 +10,11 @@
  *
  * スタッフランキングはv2.0画面④(MD-4・売上単体表示禁止)の別契約のため本画面には含めない。
  */
-import { useEffect, Suspense } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { TrendingUp, Target, CalendarCheck, MessageCircleHeart, AlertTriangle, AlertCircle, Info, UploadCloud, Loader2, Users, Settings } from 'lucide-react'
-import { useDashboardTopStore, type TodayAction } from '@/store/useDashboardTopStore'
+import { TrendingUp, Target, CalendarCheck, CalendarDays, MessageCircleHeart, AlertTriangle, AlertCircle, Info, UploadCloud, Loader2, Users, Settings, X } from 'lucide-react'
+import { useDashboardTopStore, type TodayAction, type WeeklyReservations, type WeeklyReservationDayCount } from '@/store/useDashboardTopStore'
 import { useBusinessSettingsStore } from '@/store/useBusinessSettingsStore'
 import { useMonthStore } from '@/store/useMonthStore'
 import MonthSelector from '../MonthSelector'
@@ -31,6 +31,14 @@ const ACTION_TYPE_LABEL: Record<TodayAction['actionType'], string> = {
   send_line: 'LINE案内',
   review_staff: 'スタッフと確認',
   upsell_campaign: 'アップセル提案',
+}
+
+const DAY_LABEL_JA: Record<WeeklyReservationDayCount['dayOfWeek'], string> = {
+  mon: '月', tue: '火', wed: '水', thu: '木', fri: '金', sat: '土', sun: '日',
+}
+
+function formatJstTime(iso: string): string {
+  return new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso))
 }
 
 /**
@@ -132,6 +140,118 @@ function SalesTrendChart({ points }: { points: { snapshotDate: string; monthlySa
   )
 }
 
+/**
+ * 「今週の予約状況」詳細モーダル(曜日別予約一覧・担当スタッフ・予約時間・予約メニュー)。
+ * 予約率・稼働率・空き枠率(営業時間/シフトを分母とする計算)は表示しない。
+ */
+function WeeklyReservationsDetailModal({ data, onClose }: { data: WeeklyReservations; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 flex items-center justify-center z-[70] px-4"
+      style={{ background: 'rgba(92,64,51,0.35)' }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full rounded-[22px] p-5"
+        style={{ maxWidth: '420px', maxHeight: '80vh', overflowY: 'auto', background: '#fff' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between mb-3">
+          <p className="text-[15px] font-semibold" style={{ color: '#5C4033' }}>今週の予約状況(詳細)</p>
+          <button onClick={onClose} aria-label="閉じる" style={{ color: '#9F7E6C' }}>
+            <X size={18} />
+          </button>
+        </div>
+        <p style={{ fontSize: '11px', color: '#C8A8B0', marginBottom: '12px' }}>{data.weekStart} 〜 {data.weekEnd}</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {data.dayOfWeekCounts.map(({ dayOfWeek }) => {
+            const items = data.reservations.filter((r) => r.dayOfWeek === dayOfWeek)
+            return (
+              <div key={dayOfWeek}>
+                <p style={{ fontSize: '12px', fontWeight: 700, color: '#D98292', marginBottom: '6px' }}>
+                  {DAY_LABEL_JA[dayOfWeek]}曜日 — {items.length}件
+                </p>
+                {items.length === 0 ? (
+                  <p style={{ fontSize: '11px', color: '#C8A8B0' }}>予約はありません</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {items.map((r) => (
+                      <div
+                        key={r.id}
+                        style={{
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px',
+                          background: '#FFF8F7', border: '1px solid #F5EEF0', borderRadius: '10px', padding: '8px 10px',
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <p style={{ fontSize: '12px', fontWeight: 700, color: '#5C4033' }}>{formatJstTime(r.scheduledAt)}〜 {r.menu}</p>
+                          <p style={{ fontSize: '11px', color: '#9F7E6C' }}>担当: {r.staffName ?? '不明'}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** 「今週の予約状況」カード(実データのみ。予約率・稼働率・空き枠率は算出しない)。 */
+function WeeklyReservationsCard({ data }: { data: WeeklyReservations }) {
+  const [showDetail, setShowDetail] = useState(false)
+  const maxCount = Math.max(...data.dayOfWeekCounts.map((d) => d.count), 1)
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid #F5EEF0', borderRadius: '16px', padding: '16px 18px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+          <CalendarDays size={16} color="#D98292" />
+          <p style={{ fontSize: '12px', fontWeight: 700, color: '#5C4033' }}>今週の予約状況</p>
+        </div>
+        <button
+          onClick={() => setShowDetail(true)}
+          style={{
+            fontSize: '11px', fontWeight: 700, color: '#D98292', background: '#fff',
+            border: '1px solid #D98292', borderRadius: '999px', padding: '4px 12px', cursor: 'pointer',
+          }}
+        >
+          詳細
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        {data.dayOfWeekCounts.map(({ dayOfWeek, count }) => (
+          <div key={dayOfWeek} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: '#9F7E6C', width: '14px', flexShrink: 0 }}>{DAY_LABEL_JA[dayOfWeek]}</span>
+            <div style={{ flex: 1, background: '#FFF8F7', borderRadius: '999px', height: '10px', overflow: 'hidden' }}>
+              <div
+                style={{
+                  width: `${Math.max((count / maxCount) * 100, count > 0 ? 4 : 0)}%`,
+                  height: '100%',
+                  background: 'linear-gradient(90deg, #F56E8B, #F0487A)',
+                  borderRadius: '999px',
+                }}
+              />
+            </div>
+            <span style={{ fontSize: '11px', color: '#5C4033', width: '32px', textAlign: 'right', flexShrink: 0 }}>{count}件</span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+        <Stat label="今週予約件数" value={`${data.totalCount}件`} />
+        <Stat label="今週予測売上" value={formatYen(data.forecastSales)} />
+      </div>
+
+      {showDetail && <WeeklyReservationsDetailModal data={data} onClose={() => setShowDetail(false)} />}
+    </div>
+  )
+}
+
 function DashboardHomeContent() {
   const { data, isLoading, error, fetchTop } = useDashboardTopStore()
   const { settings: businessSettings, fetchSettings } = useBusinessSettingsStore()
@@ -176,7 +296,7 @@ function DashboardHomeContent() {
 
   if (!data) return null
 
-  const { required4, kpi4, extendedKpi, todayActions, salesTrend, csvImportStatus } = data
+  const { required4, kpi4, extendedKpi, todayActions, salesTrend, csvImportStatus, weeklyReservations } = data
 
   // PHASE MD-1: 客単価 = monthlySales ÷ visitCount（フロント側derived値。バックエンド集計は追加しない）
   const avgSpend = extendedKpi.visitCount !== null && extendedKpi.visitCount > 0
@@ -244,6 +364,8 @@ function DashboardHomeContent() {
           <Stat label="DM→予約転換率" value={formatPercent(kpi4.dmToBookingRate)} />
         </div>
       </SectionCard>
+
+      <WeeklyReservationsCard data={weeklyReservations} />
 
       <SectionCard title="来店・リピート・指名(月次)" icon={<Users size={16} color="#D98292" />}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>

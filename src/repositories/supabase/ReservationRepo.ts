@@ -8,7 +8,10 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { UUID } from '../../types/riora.types';
-import type { IReservationRepo, ReservationRow, ReservationUpsertInput } from '../interfaces';
+import type {
+  IReservationRepo, ReservationRow, ReservationUpsertInput,
+  WeeklyReservationDayCount, WeeklyReservationSummary,
+} from '../interfaces';
 import { prodLog } from '@/lib/stability';
 
 interface ReservationRowRaw {
@@ -22,6 +25,35 @@ interface ReservationRowRaw {
   status:             string;
   is_new_customer:    boolean;
   notes:              string | null;
+}
+
+const WEEK_DAY_ORDER: WeeklyReservationDayCount['dayOfWeek'][] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+
+/**
+ * asOfDate(YYYY-MM-DD)を含む週の月曜日を返す。UTC専用のDateメソッドのみを使い、
+ * サーバーのローカルタイムゾーン設定に依存しない(OccupancyRepo.visitsByDayOfWeekと
+ * 同じ「日付文字列をUTC固定で解釈する」方針を踏襲)。
+ */
+function mondayOfWeek(asOfDate: string): string {
+  const [y, m, d] = asOfDate.split('-').map(Number);
+  const anchor = new Date(Date.UTC(y, m - 1, d));
+  const dow = anchor.getUTCDay(); // 0=日,1=月,...,6=土
+  const diffToMonday = dow === 0 ? -6 : 1 - dow;
+  anchor.setUTCDate(anchor.getUTCDate() + diffToMonday);
+  return anchor.toISOString().slice(0, 10);
+}
+
+function addDays(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
+
+/** JST基準の曜日キーへ変換(OccupancyRepo.visitsByDayOfWeekと同じ変換方式)。 */
+function dayOfWeekKeyOfJstDate(jstDateStr: string): WeeklyReservationDayCount['dayOfWeek'] {
+  const jsDay = new Date(`${jstDateStr}T00:00:00Z`).getUTCDay(); // 0=日,1=月,...,6=土
+  return WEEK_DAY_ORDER[(jsDay + 6) % 7];
 }
 
 function toDbInput(input: ReservationUpsertInput) {
@@ -105,5 +137,77 @@ export class ReservationRepo implements IReservationRepo {
     if (error) {
       throw new Error(`ReservationRepo.update failed: ${error.message}`);
     }
+  }
+
+  /**
+   * 経営TOP「今週の予約状況」カード用(ADMIN_DASHBOARD_WEEKLY_RESERVATIONS)。
+   * status='cancelled'は/api/home/reservationsと同じ既存方針で除外する。
+   * 予約率・稼働率・空き枠率(営業時間/シフトを分母とする計算)は一切算出しない。
+   */
+  async weeklySummary(asOfDate: string): Promise<WeeklyReservationSummary> {
+    const weekStart = mondayOfWeek(asOfDate);
+    const weekEnd = addDays(weekStart, 6);
+
+    const { data, error } = await this.client
+      .from('reservations')
+      .select('id, staff_id, menu, price, scheduled_at, status')
+      .gte('scheduled_at', `${weekStart}T00:00:00+09:00`)
+      .lte('scheduled_at', `${weekEnd}T23:59:59+09:00`)
+      .neq('status', 'cancelled')
+      .order('scheduled_at', { ascending: true });
+
+    if (error) {
+      throw new Error(`ReservationRepo.weeklySummary failed: ${error.message}`);
+    }
+
+    const rows = (data ?? []) as unknown as {
+      id: string; staff_id: string; menu: string; price: number; scheduled_at: string; status: string;
+    }[];
+
+    // staff_idはauth.users.id(profiles.id)。brain_staff.user_idで氏名を解決する
+    // (reservations.staff_idのコメント・app/api/home/reservations/route.tsと同じ方針)。
+    const staffUserIds = Array.from(new Set(rows.map((r) => r.staff_id)));
+    let staffNameByUserId = new Map<string, string>();
+    if (staffUserIds.length > 0) {
+      const { data: staffRows, error: staffError } = await this.client
+        .from('brain_staff')
+        .select('user_id, name')
+        .in('user_id', staffUserIds);
+      if (staffError) {
+        throw new Error(`ReservationRepo.weeklySummary failed: ${staffError.message}`);
+      }
+      staffNameByUserId = new Map(
+        ((staffRows ?? []) as unknown as { user_id: string | null; name: string }[])
+          .filter((s): s is { user_id: string; name: string } => s.user_id !== null)
+          .map((s) => [s.user_id, s.name])
+      );
+    }
+
+    const counts = new Map<WeeklyReservationDayCount['dayOfWeek'], number>(WEEK_DAY_ORDER.map((d) => [d, 0]));
+    let forecastSales = 0;
+
+    const reservations = rows.map((r) => {
+      const jstDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo' }).format(new Date(r.scheduled_at));
+      const dayOfWeek = dayOfWeekKeyOfJstDate(jstDate);
+      counts.set(dayOfWeek, (counts.get(dayOfWeek) ?? 0) + 1);
+      forecastSales += r.price;
+      return {
+        id: r.id,
+        dayOfWeek,
+        scheduledAt: r.scheduled_at,
+        staffName: staffNameByUserId.get(r.staff_id) ?? null,
+        menu: r.menu,
+        status: r.status as WeeklyReservationSummary['reservations'][number]['status'],
+      };
+    });
+
+    return {
+      weekStart,
+      weekEnd,
+      dayOfWeekCounts: WEEK_DAY_ORDER.map((dayOfWeek) => ({ dayOfWeek, count: counts.get(dayOfWeek) ?? 0 })),
+      totalCount: rows.length,
+      forecastSales,
+      reservations,
+    };
   }
 }

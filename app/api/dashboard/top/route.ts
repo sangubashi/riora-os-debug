@@ -80,12 +80,13 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [snapshot, trend, settingsForMonth, todaySales, csvImportLogs] = await Promise.all([
+    const [snapshot, trend, settingsForMonth, todaySales, csvImportLogs, weeklyReservations] = await Promise.all([
       repos.dashboardRepo.latestBeforeOrAt(storeId, date),
       repos.dashboardRepo.listSinceDate(storeId, month),
       repos.businessSettingsRepo.findByStoreAndMonth(storeId, month),
       repos.visitRepo.sumSalesByStoreAndDate(storeId, todayDate),
       repos.opsLogRepo.recentByStoreAndKind(storeId, 'csv_import', 1),
+      repos.reservationRepo.weeklySummary(todayDate),
     ]);
 
     // 当月行が未存在の場合、または fixed_costs が全 null(未入力)の場合は
@@ -159,6 +160,7 @@ export async function GET(req: NextRequest) {
         forecastSales: s.forecastSales,
       })),
       csvImportStatus,
+      weeklyReservations,
     });
   } catch (e) {
     return NextResponse.json({ success: false, error: String(e) }, { status: 500 });

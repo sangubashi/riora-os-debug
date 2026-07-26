@@ -41,6 +41,30 @@ export interface CsvImportStatus {
   unresolvedStaffCount: number
 }
 
+export interface WeeklyReservationDayCount {
+  dayOfWeek: 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'
+  count: number
+}
+
+/** 経営TOP「今週の予約状況」詳細ボタン用の予約1件分。 */
+export interface WeeklyReservationDetail {
+  id: string
+  dayOfWeek: WeeklyReservationDayCount['dayOfWeek']
+  scheduledAt: string
+  staffName: string | null
+  menu: string
+  status: 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'no_show'
+}
+
+export interface WeeklyReservations {
+  weekStart: string
+  weekEnd: string
+  dayOfWeekCounts: WeeklyReservationDayCount[]
+  totalCount: number
+  forecastSales: number
+  reservations: WeeklyReservationDetail[]
+}
+
 /** DashboardAggregator(nightly)が生成する追加KPI。KPI4枠(v2.0「4枠固定」)には含まれない参考値。 */
 export interface ExtendedKpi {
   visitCount: number | null
@@ -69,6 +93,7 @@ export interface DashboardTopData {
   todayActions: TodayAction[]
   salesTrend: SalesTrendPoint[]
   csvImportStatus: CsvImportStatus | null
+  weeklyReservations: WeeklyReservations
 }
 
 interface DashboardTopState {

@@ -380,6 +380,37 @@ export interface ReservationRow {
   id: UUID;
 }
 
+export interface WeeklyReservationDayCount {
+  dayOfWeek: 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+  count: number;
+}
+
+/** 経営TOP「今週の予約状況」詳細ボタン用の予約1件分(実データのみ・仮定値は含まない)。 */
+export interface WeeklyReservationDetail {
+  id: UUID;
+  dayOfWeek: WeeklyReservationDayCount['dayOfWeek'];
+  scheduledAt: string;
+  /** brain_staff.user_id=reservations.staff_idで解決。一致するスタッフが見つからない場合はnull。 */
+  staffName: string | null;
+  menu: string;
+  status: 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'no_show';
+}
+
+export interface WeeklyReservationSummary {
+  /** 集計対象週の月曜日(YYYY-MM-DD)。 */
+  weekStart: string;
+  /** 集計対象週の日曜日(YYYY-MM-DD)。 */
+  weekEnd: string;
+  /** 月〜日の7件固定(予約が無い曜日も0件で含む)。status='cancelled'は除外。 */
+  dayOfWeekCounts: WeeklyReservationDayCount[];
+  /** dayOfWeekCountsの合計(cancelled除く)。 */
+  totalCount: number;
+  /** 今週の予約のprice合計(実データそのまま。営業時間・シフト等を分母とする計算は行わない)。 */
+  forecastSales: number;
+  /** 詳細ボタンで表示する個別予約一覧(scheduled_at昇順)。 */
+  reservations: WeeklyReservationDetail[];
+}
+
 export interface IReservationRepo {
   /**
    * 暫定複合キー(scheduled_at, brain_customer_id)で既存行を検索する
@@ -395,6 +426,11 @@ export interface IReservationRepo {
   create(input: ReservationUpsertInput): Promise<ReservationRow>;
   /** reservationsを1件更新する(再取込時の冪等更新)。 */
   update(id: UUID, input: ReservationUpsertInput): Promise<void>;
+  /**
+   * 経営TOP「今週の予約状況」カード用。asOfDateを含む週(月〜日)のreservationsを集計する。
+   * reservationsにstore_id列は存在しないため引数に含めない(単一店舗運用の既存前提を踏襲)。
+   */
+  weeklySummary(asOfDate: string): Promise<WeeklyReservationSummary>;
 }
 
 export interface ISubscriptionRepo {
