@@ -8,8 +8,8 @@
  * AI提案接続・関連記事表示・CustomerBottomSheet・ホームケア・音声メモ・
  * brain_care_knowledgeはこの画面のスコープ外(実装しない)。
  */
-import { useEffect, useRef, useState } from 'react'
-import { Loader2, Upload, Trash2, ExternalLink, Pencil } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Loader2, Upload, Trash2, ExternalLink, Pencil, Search } from 'lucide-react'
 import {
   useKnowledgeImportStore,
   type KnowledgeImportUpdateInput,
@@ -219,10 +219,26 @@ export default function KnowledgeImportScreen() {
   const [editing, setEditing] = useState<BlogArticle | null>(null)
   const [importResultMsg, setImportResultMsg] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [titleQuery, setTitleQuery] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('all')
 
   useEffect(() => {
     fetchArticles()
   }, [fetchArticles])
+
+  const categoryOptions = useMemo(
+    () => Array.from(new Set(articles.map((a) => a.category).filter((c): c is string => !!c))).sort(),
+    [articles]
+  )
+
+  const filteredArticles = useMemo(() => {
+    const q = titleQuery.trim().toLowerCase()
+    return articles.filter((a) => {
+      if (q && !a.title.toLowerCase().includes(q)) return false
+      if (categoryFilter !== 'all' && a.category !== categoryFilter) return false
+      return true
+    })
+  }, [articles, titleQuery, categoryFilter])
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -322,6 +338,38 @@ export default function KnowledgeImportScreen() {
       <div>
         <p style={{ fontSize: '13px', fontWeight: 700, color: '#5C4033', marginBottom: '8px' }}>登録済み一覧（{articles.length}件）</p>
 
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
+          <div
+            style={{
+              display: 'flex', alignItems: 'center', gap: '8px', background: '#fff',
+              border: '1px solid #F5EEF0', borderRadius: '10px', padding: '8px 10px',
+            }}
+          >
+            <Search size={14} style={{ color: '#C8A8B0', flexShrink: 0 }} />
+            <input
+              value={titleQuery}
+              onChange={(e) => setTitleQuery(e.target.value)}
+              placeholder="タイトルで検索"
+              style={{ flex: 1, border: 'none', outline: 'none', fontSize: '13px', color: '#5C4033', background: 'transparent' }}
+            />
+          </div>
+
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            style={{ alignSelf: 'flex-start', fontSize: '12px', padding: '7px 10px', borderRadius: '10px', border: '1px solid #F5EEF0', background: '#fff', color: '#5C4033' }}
+          >
+            <option value="all">カテゴリ: すべて</option>
+            {categoryOptions.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+
+          {!isLoading && !error && (
+            <p style={{ fontSize: '11px', color: '#C8A8B0' }}>{filteredArticles.length}件 / 全{articles.length}件</p>
+          )}
+        </div>
+
         {isLoading && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 0', color: '#C8A8B0' }}>
             <Loader2 size={18} className="animate-spin" style={{ marginRight: '8px' }} />
@@ -344,9 +392,15 @@ export default function KnowledgeImportScreen() {
           </div>
         )}
 
+        {!isLoading && !error && articles.length > 0 && filteredArticles.length === 0 && (
+          <div style={{ padding: '40px 0', textAlign: 'center', color: '#C8A8B0', fontSize: '13px' }}>
+            条件に一致する記事がありません
+          </div>
+        )}
+
         {!isLoading && !error && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {articles.map((article) => (
+            {filteredArticles.map((article) => (
               <ArticleRow key={article.id} article={article} onEdit={() => setEditing(article)} />
             ))}
           </div>

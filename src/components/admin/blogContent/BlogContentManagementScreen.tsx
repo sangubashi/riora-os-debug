@@ -8,10 +8,12 @@
  * 薬機法チェック・AI判定ロジックは一切実装しない(承認は管理者の手動ON/OFFのみ)。
  * 顧客表示・AI提案への接続(Phase2/Phase3)はこの画面のスコープ外(実装しない)。
  */
-import { useEffect, useState } from 'react'
-import { Loader2, Plus, Trash2, ExternalLink } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Loader2, Plus, Trash2, ExternalLink, Search } from 'lucide-react'
 import { useBlogArticleStore, type BlogArticleMutationInput } from '@/store/useBlogArticleStore'
 import type { BlogArticle } from '@/types/riora.types'
+
+type ApprovalFilter = 'all' | 'approved' | 'draft'
 
 const EMPTY_FORM: BlogArticleMutationInput = { title: '', sourceUrl: '', products: [], keywords: [] }
 
@@ -266,10 +268,28 @@ function ArticleRow({ article }: { article: BlogArticle }) {
 export default function BlogContentManagementScreen() {
   const { articles, isLoading, error, fetchArticles, createArticle } = useBlogArticleStore()
   const [modalOpen, setModalOpen] = useState(false)
+  const [titleQuery, setTitleQuery] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('all')
+  const [approvalFilter, setApprovalFilter] = useState<ApprovalFilter>('all')
 
   useEffect(() => {
     fetchArticles()
   }, [fetchArticles])
+
+  const categoryOptions = useMemo(
+    () => Array.from(new Set(articles.map((a) => a.category).filter((c): c is string => !!c))).sort(),
+    [articles]
+  )
+
+  const filteredArticles = useMemo(() => {
+    const q = titleQuery.trim().toLowerCase()
+    return articles.filter((a) => {
+      if (q && !a.title.toLowerCase().includes(q)) return false
+      if (categoryFilter !== 'all' && a.category !== categoryFilter) return false
+      if (approvalFilter !== 'all' && a.status !== approvalFilter) return false
+      return true
+    })
+  }, [articles, titleQuery, categoryFilter, approvalFilter])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '16px', maxWidth: '480px' }}>
@@ -289,6 +309,50 @@ export default function BlogContentManagementScreen() {
         <p style={{ fontSize: '12px', color: '#9F7E6C', marginTop: '4px' }}>
           記事のURLを登録するだけです（本文は取得・保存しません）。承認するまで顧客向けには使われません。
         </p>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div
+          style={{
+            display: 'flex', alignItems: 'center', gap: '8px', background: '#fff',
+            border: '1px solid #F5EEF0', borderRadius: '10px', padding: '8px 10px',
+          }}
+        >
+          <Search size={14} style={{ color: '#C8A8B0', flexShrink: 0 }} />
+          <input
+            value={titleQuery}
+            onChange={(e) => setTitleQuery(e.target.value)}
+            placeholder="タイトルで検索"
+            style={{ flex: 1, border: 'none', outline: 'none', fontSize: '13px', color: '#5C4033', background: 'transparent' }}
+          />
+        </div>
+
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            style={{ fontSize: '12px', padding: '7px 10px', borderRadius: '10px', border: '1px solid #F5EEF0', background: '#fff', color: '#5C4033' }}
+          >
+            <option value="all">カテゴリ: すべて</option>
+            {categoryOptions.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+
+          <select
+            value={approvalFilter}
+            onChange={(e) => setApprovalFilter(e.target.value as ApprovalFilter)}
+            style={{ fontSize: '12px', padding: '7px 10px', borderRadius: '10px', border: '1px solid #F5EEF0', background: '#fff', color: '#5C4033' }}
+          >
+            <option value="all">承認状態: すべて</option>
+            <option value="approved">承認済みのみ</option>
+            <option value="draft">未承認のみ</option>
+          </select>
+        </div>
+
+        {!isLoading && !error && (
+          <p style={{ fontSize: '11px', color: '#C8A8B0' }}>{filteredArticles.length}件 / 全{articles.length}件</p>
+        )}
       </div>
 
       {isLoading && (
@@ -316,7 +380,13 @@ export default function BlogContentManagementScreen() {
         </div>
       )}
 
-      {!isLoading && !error && articles.map((article) => (
+      {!isLoading && !error && articles.length > 0 && filteredArticles.length === 0 && (
+        <div style={{ padding: '40px 0', textAlign: 'center', color: '#C8A8B0', fontSize: '13px' }}>
+          条件に一致する記事がありません
+        </div>
+      )}
+
+      {!isLoading && !error && filteredArticles.map((article) => (
         <ArticleRow key={article.id} article={article} />
       ))}
 
