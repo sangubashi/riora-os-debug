@@ -90,15 +90,6 @@ function detectUrgency(tags: string[]): 'low' | 'medium' | 'high' {
   return 'low'
 }
 
-// ─── 部分文字起こしシミュレータ（Whisper 未接続時の fallback） ───────────────
-// 将来: Whisper WebSocket / Edge Function に差し替え
-
-function buildFallbackTranscript(durationSec: number): string {
-  if (durationSec <= 10) return '肌の状態について記録しました。'
-  if (durationSec <= 30) return '今日の施術とお客様の反応、次回のご提案について記録しました。'
-  return '詳細な接客内容、肌状態の観察、ホームケアのご提案、次回来店の意向について記録しました。'
-}
-
 // ─── ストリーミング処理コア ───────────────────────────────────────────────────
 
 /**
@@ -180,10 +171,10 @@ export async function runStreamPipeline(
     } catch (err) {
       if (controller.cancelled || attempt > maxRetries) {
         clearTimeout(timeoutId)
-        const fallback = buildFallbackResult(params.durationSec)
-        onError?.(err, fallback)
-        onComplete?.(fallback)
-        return fallback
+        const pending = buildPendingResult()
+        onError?.(err, pending)
+        onComplete?.(pending)
+        return pending
       }
       // retry 前に少し待つ
       await sleep(400 * attempt)
@@ -191,9 +182,9 @@ export async function runStreamPipeline(
   }
 
   clearTimeout(timeoutId)
-  const fallback = buildFallbackResult(params.durationSec)
-  onComplete?.(fallback)
-  return fallback
+  const pending = buildPendingResult()
+  onComplete?.(pending)
+  return pending
 }
 
 // ─── 実行コア ─────────────────────────────────────────────────────────────────
@@ -206,94 +197,37 @@ async function executePipeline(
   },
   controller: StreamPipelineController
 ): Promise<StreamPipelineResult> {
-  const { durationSec, whisperEndpoint } = params
-
-  let fullTranscript: string
-  let currentTags: string[] = []
+  const { whisperEndpoint } = params
 
   if (whisperEndpoint) {
     // ── 本番: Whisper streaming（将来実装） ──────────────────────────────
     // TODO: fetch streaming API → onPartialTranscript を逐次呼ぶ
-    // 現在は fallback に倒す
+    // 現在は未実装のため例外を投げ、呼び出し元(runStreamPipeline)が
+    // 「準備中」結果にフォールバックする(捏造データは絶対に返さない)。
     throw new Error('Whisper endpoint not implemented')
-
-  } else {
-    // ── Fallback: deterministic transcript → 段階的に送出 ────────────────
-    fullTranscript = buildFallbackTranscript(durationSec)
-
-    // "段階的" に見せるため、文を分割してチャンク送出
-    const chunks = splitIntoChunks(fullTranscript)
-    let accumulated = ''
-
-    for (let i = 0; i < chunks.length; i++) {
-      if (controller.cancelled) break
-
-      // 最初のチャンクは即座に（0.5秒以内の反応）
-      if (i > 0) await sleep(200)
-
-      accumulated += chunks[i]
-
-      // 部分文字起こしを通知
-      callbacks.onPartialTranscript?.({
-        text:       accumulated,
-        confidence: 0.5 + i * 0.15,   // 徐々に confidence が上がる
-        timestamp:  performance.now(),
-      })
-
-      // insight を段階生成
-      const { insight, newTags } = processTextChunk(accumulated, currentTags)
-      if (insight) {
-        currentTags = newTags
-        callbacks.onStreamingInsight?.(insight)
-      }
-    }
   }
 
   if (controller.cancelled) {
-    return buildFallbackResult(durationSec)
+    return buildPendingResult()
   }
 
-  // 最終 insight を確定
-  const normalized = normalizeTranscript(fullTranscript)
-  const { tags }   = extractInsightTags([normalized])
-  const sentiment  = detectSentiment(normalized)
-  const urgency    = detectUrgency(tags)
-
-  return {
-    transcript:  normalized,
-    summary:     buildSummary(normalized, tags),
-    tags,
-    sentiment,
-    urgency,
-    isFallback:  !params.whisperEndpoint,
-  }
+  // Whisper 未接続: 固定文言の文字起こしは生成しない。
+  // 「文字起こし準備中」として扱い、実際の内容はスタッフが「編集」から入力する。
+  return buildPendingResult()
 }
 
 // ─── ヘルパー ─────────────────────────────────────────────────────────────────
 
-function buildFallbackResult(durationSec: number): StreamPipelineResult {
-  const transcript = buildFallbackTranscript(durationSec)
-  const { tags }   = extractInsightTags([transcript])
+/** Whisper 未接続時の結果。文字起こしは行わない(嘘のデータを作らない)。 */
+function buildPendingResult(): StreamPipelineResult {
   return {
-    transcript,
-    summary:    transcript,
-    tags,
+    transcript: '',
+    summary:    '',
+    tags:       [],
     sentiment:  'neutral',
     urgency:    'low',
     isFallback: true,
   }
-}
-
-function buildSummary(transcript: string, tags: string[]): string {
-  if (tags.length === 0) return transcript.slice(0, 80)
-  const tagStr = tags.slice(0, 3).join('・')
-  return `【${tagStr}】${transcript.slice(0, 60)}`
-}
-
-function splitIntoChunks(text: string): string[] {
-  // 文節ごとに分割（。、で区切り + 残り）
-  const parts = text.split(/(?<=[。、])/)
-  return parts.length > 1 ? parts : [text.slice(0, Math.ceil(text.length / 2)), text.slice(Math.ceil(text.length / 2))]
 }
 
 function sleep(ms: number): Promise<void> {

@@ -715,7 +715,7 @@ export default function CustomerBottomSheet({
     setTagSaving(true);
 
     try {
-      const res = await fetch(`/api/customers/${c.id}/skin-tags`, {
+      const res = await authedFetch(`/api/customers/${c.id}/skin-tags`, {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ skin_tags: editingTags }),

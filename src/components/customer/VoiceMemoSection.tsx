@@ -111,6 +111,8 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
   const [transcript,         setTranscript]         = useState('')
   const [editBuffer,         setEditBuffer]         = useState('')
   const [transcriptLoading,  setTranscriptLoading]  = useState(false)
+  // Whisper未接続のため文字起こしが行われなかった場合はtrue(固定文言は表示しない)
+  const [transcriptPending,  setTranscriptPending]  = useState(false)
   const [candidates,         setCandidates]         = useState<MemoryCandidate[]>([])
   const [checkedSet,         setCheckedSet]         = useState<Set<number>>(new Set())
   const [isSaving,           setIsSaving]           = useState(false)
@@ -152,6 +154,7 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
 
     setPostPhase('confirming')
     setTranscript('')
+    setTranscriptPending(false)
     setTranscriptLoading(true)
 
     pipelineCtrlRef.current?.cancel()
@@ -165,12 +168,14 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
         onComplete: (r) => {
           if (!ctrl.cancelled) {
             setTranscript(r.transcript)
+            setTranscriptPending(r.isFallback)
             setTranscriptLoading(false)
           }
         },
         onError: (_e, fallback) => {
           if (!ctrl.cancelled) {
             setTranscript(fallback.transcript)
+            setTranscriptPending(fallback.isFallback)
             setTranscriptLoading(false)
           }
         },
@@ -196,6 +201,7 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
     setTranscript('')
     setEditBuffer('')
     setTranscriptLoading(false)
+    setTranscriptPending(false)
     setCandidates([])
     setCheckedSet(new Set())
     setIsSaving(false)
@@ -236,6 +242,7 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
   // ── ③ 編集確定 ────────────────────────────────────────────────────────────
   const handleEditDone = useCallback(() => {
     setTranscript(editBuffer)
+    setTranscriptPending(false) // スタッフが実際の内容を入力したため「準備中」表示を解除
     setPostPhase('confirming')
   }, [editBuffer])
 
@@ -551,7 +558,7 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
               {/* transcript 全文 */}
               <div style={{ background: '#F0F5FA', borderRadius: '10px', padding: '10px' }}>
                 <p style={{ fontSize: '10px', color: '#8AAAC8', letterSpacing: '0.1em', marginBottom: '4px' }}>
-                  文字起こし {transcriptLoading ? '（解析中…）' : ''}
+                  文字起こし {transcriptLoading ? '（解析中…）' : transcriptPending ? '（準備中）' : ''}
                 </p>
                 {transcriptLoading && !transcript ? (
                   <motion.p
@@ -560,6 +567,10 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
                     style={{ fontSize: '11px', color: '#8AAAC8' }}>
                     解析中…
                   </motion.p>
+                ) : transcriptPending ? (
+                  <p style={{ fontSize: '12px', color: '#8AAAC8', lineHeight: 1.7 }}>
+                    文字起こし準備中です。「編集」から内容を入力してください。
+                  </p>
                 ) : (
                   <p style={{ fontSize: '12px', color: '#4878A8', lineHeight: 1.7, wordBreak: 'break-all' }}>
                     {transcript || '（文字起こし結果なし）'}
