@@ -20,17 +20,6 @@ import { supabase, DEMO_MODE } from '@/lib/supabase'
 import type { User, Session } from '@supabase/supabase-js'
 import type { UserRole } from './useDashboardStore'
 
-// DEMO_MODE時に自動サインインするテストユーザー(本番運用時はDEMO_MODE=falseにすること。
-// このクレデンシャルは使われなくなる)。認証基盤(本ストア)に集約し、呼び出し側
-// (ClientShell等)はDEMO_MODEを直接参照しない。
-const DEMO_CREDENTIALS = {
-  email:    'admin@salon-riora.jp',
-  password: 'riora2026',
-} as const
-
-// 自動サインインの二重実行防止(ストア自体はシングルトンのためモジュールスコープで保持)。
-let demoSignInAttempted = false
-
 // ─── 型定義 ──────────────────────────────────────────────────────────────────
 
 export interface StaffInvitation {
@@ -109,26 +98,17 @@ async function fetchRole(uid: string): Promise<UserRole> {
 
 /**
  * DEMO_MODE時のテストユーザーへの自動サインインを実行する(本番=DEMO_MODE falseは
- * no-op)。demoSignInAttemptedで同時多発実行のみを防ぎ、完了後は必ずリセットする
- * (ログアウト後に再度呼ばれても自動サインインが機能するように)。
- * 成功時は最新のSessionを返す(呼び出し側でstoreへの反映を行う)。
+ * no-op)。
+ *
+ * セキュリティ対応(2026-07-26): 実在する管理者アカウントのメール・パスワードを
+ * 定数として持つ実装は、DEMO_MODEの値に関わらずクライアントJSバンドルに
+ * 平文で含まれてしまう(本番ビルドで実際に混入を確認・セキュリティ監査Critical該当)。
+ * クライアント側コードには絶対に実credentialを置けないため、本関数は常にno-opとする。
+ * 自動サインインが再度必要になった場合は、サーバー専用API経由(環境変数のみ使用)で
+ * 実装すること。
  */
 async function performDemoSignIn(): Promise<Session | null> {
-  if (!DEMO_MODE) return null
-  if (demoSignInAttempted) return null
-  demoSignInAttempted = true
-
-  try {
-    const { error } = await supabase.auth.signInWithPassword(DEMO_CREDENTIALS)
-    if (error) {
-      console.warn('[DEMO] 自動サインイン失敗:', error.message,
-        '— admin@salon-riora.jp が Supabase Auth に登録されているか確認してください')
-      return null
-    }
-    return await supabase.auth.getSession().then(({ data }) => data.session).catch(() => null)
-  } finally {
-    demoSignInAttempted = false
-  }
+  return null
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────

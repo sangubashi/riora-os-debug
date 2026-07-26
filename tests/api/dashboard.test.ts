@@ -2,9 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET } from '../../app/api/dashboard/route';
 import { getRepos } from '../../app/lib/repos';
+import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
 import type { DashboardSnapshot } from '../../src/types/riora.types';
 
 vi.mock('../../app/lib/repos', () => ({ getRepos: vi.fn() }));
+vi.mock('@/lib/auth/extractStaffFromRequest', () => ({ extractStaffFromRequest: vi.fn() }));
+
+const ADMIN_STAFF = {
+  authUserId: 'admin-auth-uid', staffBrainId: 'admin-staff-id',
+  email: 'admin@salon-riora.jp', isAdmin: true,
+};
 
 const DASHBOARD: DashboardSnapshot = {
   storeId: 'store-1',
@@ -45,7 +52,24 @@ describe('GET /api/dashboard (GetDashboard)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getRepos).mockReturnValue(mockRepos as never);
+    vi.mocked(extractStaffFromRequest).mockResolvedValue(ADMIN_STAFF as never);
     mockRepos.dashboardRepo.latestByStore.mockResolvedValue(DASHBOARD);
+  });
+
+  it('未認証の場合は401を返す', async () => {
+    vi.mocked(extractStaffFromRequest).mockResolvedValue(null);
+
+    const res = await GET(new NextRequest('http://localhost/api/dashboard?storeId=store-1'));
+
+    expect(res.status).toBe(401);
+  });
+
+  it('管理者以外(スタッフ)の場合は403を返す', async () => {
+    vi.mocked(extractStaffFromRequest).mockResolvedValue({ ...ADMIN_STAFF, isAdmin: false } as never);
+
+    const res = await GET(new NextRequest('http://localhost/api/dashboard?storeId=store-1'));
+
+    expect(res.status).toBe(403);
   });
 
   it('正常系: dashboardを返す', async () => {

@@ -124,10 +124,8 @@ describe('computeStaffAnalytics', () => {
     expect(result[0].growthRate).toBeCloseTo((12000 - 10000) / 10000);
   });
 
-  it('入力順や売上の高さに関わらず、Intl.Collator(\'ja\')の文字列順(五十音順の近似)で安定して返す', () => {
-    const collator = new Intl.Collator('ja');
-    const names = ['鈴木', '亀山', '外舘'];
-    const expectedOrder = [...names].sort((a, b) => collator.compare(a, b));
+  it('入力順や売上の高さに関わらず、固定順(鈴木→亀山→外舘→久保田)で安定して返す', () => {
+    const expectedOrder = ['鈴木', '亀山', '外舘'];
 
     const result = computeStaffAnalytics({
       asOfDate: '2026-06-23',

@@ -3,19 +3,18 @@
  *
  * 設計根拠:
  *   - docs/architecture/Riora_Management_Dashboard_Architecture_v2.0.md 画面④
- *     「3名カード(五十音順・順位/合計/平均比較なし)」「売上単体表示を型で禁止」
+ *     「3名カード(順位/合計/平均比較なし)」「売上単体表示を型で禁止」
  *   - ユーザー指示(2026-06-23): 表示は売上/指名率/リピート率/LTV/成長率の5項目のみ。
- *     ランキング禁止・順位表示禁止・売上単体比較禁止・五十音順表示。
+ *     ランキング禁止・順位表示禁止・売上単体比較禁止。
+ *   - ユーザー指示(2026-07-26): 表示順は五十音順ではなく固定順
+ *     (鈴木→亀山→外舘→久保田・久保田は最後固定。売上順・ID順は禁止)。
+ *     src/lib/staffOrder.tsのcompareStaffOrder()に順序を集約。
  *
  * brain_staff/brain_visits/brain_subscriptionsをその場で集計する
  * (DashboardAggregator/ChurnRiskEngineと同じくライブ集計・決定論ルール・LLM/AI不使用)。
- *
- * 五十音順についての制約: brain_staffにはふりがな(yomi/kana)列が存在しない
- * (旧customersスキーマのname_kanaに相当する列がBrain側に無い)。本実装は
- * Intl.Collator('ja')による氏名(漢字)の文字列比較で近似する。正確な五十音順には
- * ふりがな列の追加(別migration)が必要(残課題として明記)。
  */
 import type { Staff, Visit, Subscription } from '../../types/riora.types';
+import { compareStaffOrder } from '../staffOrder';
 
 export interface StaffAnalyticsRow {
   staffId: string;
@@ -139,6 +138,6 @@ export function computeStaffAnalytics(input: ComputeStaffAnalyticsInput): StaffA
     };
   });
 
-  const collator = new Intl.Collator('ja');
-  return rows.sort((a, b) => collator.compare(a.staffName, b.staffName));
+  // 管理者ダッシュボード各画面の表示順を固定する(鈴木→亀山→外舘→久保田・ユーザー指示2026-07-26)。
+  return rows.sort((a, b) => compareStaffOrder(a.staffName, b.staffName));
 }

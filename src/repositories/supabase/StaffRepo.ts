@@ -3,6 +3,7 @@ import type { Staff, StaffStyle, UUID } from '../../types/riora.types';
 import type { CreateStaffInput, IStaffRepo } from '../interfaces';
 import { toStaff, type BrainStaffRow } from './mappers';
 import { assertNotAdminAuthUid } from '../../lib/auth/preventAdminStaffLink';
+import { sortByFixedStaffOrder } from '../../lib/staffOrder';
 
 const STAFF_COLUMNS = 'id, store_id, name, style, is_active, name_aliases';
 
@@ -33,7 +34,8 @@ export class StaffRepo implements IStaffRepo {
     if (error) {
       throw new Error(`StaffRepo.listByStore failed: ${error.message}`);
     }
-    return ((data ?? []) as unknown as BrainStaffRow[]).map(toStaff);
+    // 管理者ダッシュボード各画面の表示順を固定する(鈴木→亀山→外舘→久保田)。
+    return sortByFixedStaffOrder(((data ?? []) as unknown as BrainStaffRow[]).map(toStaff));
   }
 
   async addNameAlias(staffId: UUID, alias: string): Promise<Staff | null> {

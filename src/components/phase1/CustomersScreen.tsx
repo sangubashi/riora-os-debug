@@ -110,7 +110,16 @@ export default function CustomersScreen() {
     return false
   })
 
+  // 検索中は「顧客名自体が一致した行」を、担当者名・タイプ・施術名だけが一致した行より
+  // 上位に表示する(例: 「鈴木」で検索した際、担当スタッフが鈴木さんというだけで
+  // マッチした他の顧客の下に、顧客名が「鈴木」の本人が埋もれてしまうのを防ぐ)。
+  const q = query.trim().toLowerCase()
   const sorted = [...filtered].sort((a, b) => {
+    if (q) {
+      const aNameMatch = a.name.toLowerCase().includes(q)
+      const bNameMatch = b.name.toLowerCase().includes(q)
+      if (aNameMatch !== bNameMatch) return aNameMatch ? -1 : 1
+    }
     if (sortKey === 'sales') return b.totalSpent - a.totalSpent
     return a.lastVisit - b.lastVisit
   })

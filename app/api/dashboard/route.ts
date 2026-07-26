@@ -7,8 +7,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getRepos } from '../../lib/repos';
 import { storeIdQuerySchema } from '../_schemas/query';
 import { toValidationErrorResponse } from '../_schemas/common';
+import { requireAdmin } from '@/lib/auth/requireAdmin';
 
 export async function GET(req: NextRequest) {
+  const gate = await requireAdmin(req);
+  if (gate instanceof NextResponse) return gate;
+
   const parsed = storeIdQuerySchema.safeParse({
     storeId: req.nextUrl.searchParams.get('storeId'),
   });

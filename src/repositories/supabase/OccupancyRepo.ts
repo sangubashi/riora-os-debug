@@ -12,6 +12,7 @@ import type {
   IOccupancyRepo, StaffOccupancyRow, DayOfWeekVisitCount,
   HourlyVisitCount, DailyOccupancyPoint,
 } from '../interfaces';
+import { sortByFixedStaffOrder } from '../../lib/staffOrder';
 
 const DAY_ORDER: DayOfWeekVisitCount['dayOfWeek'][] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
@@ -79,7 +80,10 @@ export class OccupancyRepo implements IOccupancyRepo {
       visitsByStaff.set(v.staff_id, list);
     }
 
-    return ((staffResult.data ?? []) as unknown as { id: string; name: string }[]).map((s) => {
+    // 管理者ダッシュボード各画面の表示順を固定する(鈴木→亀山→外舘→久保田)。
+    const orderedStaff = sortByFixedStaffOrder((staffResult.data ?? []) as unknown as { id: string; name: string }[]);
+
+    return orderedStaff.map((s) => {
       const allVisits = visitsByStaff.get(s.id) ?? [];
       const monthVisits = allVisits.filter((v) => v.visit_date >= curStart && v.visit_date <= asOfDate);
       const prevMonthVisits = allVisits.filter((v) => v.visit_date >= prevStart && v.visit_date <= prevEnd);
