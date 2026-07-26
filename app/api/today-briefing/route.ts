@@ -114,7 +114,8 @@ export async function GET(req: NextRequest) {
           id,
           name,
           customer_type,
-          assigned_staff_id
+          assigned_staff_id,
+          is_internal_user
         )
       `)
       .not('brain_customer_id', 'is', null)
@@ -139,8 +140,10 @@ export async function GET(req: NextRequest) {
     // 実行時の実体（単一オブジェクト or null）に合わせて any[] として扱う
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const raw = (rawData ?? []) as any[]
+    // brain_customer が null のものに加え、内部ユーザー(is_internal_user=true。
+    // スタッフ本人の試用・検証購入等)もスタッフアプリの「今日の来店」から完全に除外する。
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const valid = raw.filter((r: any) => r.brain_customer != null)
+    const valid = raw.filter((r: any) => r.brain_customer != null && !r.brain_customer.is_internal_user)
 
     // 同一顧客・同日に複数予約がある場合(リスケジュール等)はcreated_at最新の1件のみ残す。
     // 取得順が既にcreated_at降順のため、先頭1件を残すだけでよい。

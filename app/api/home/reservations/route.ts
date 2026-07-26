@@ -47,7 +47,8 @@ const RESERVATION_SELECT = `
     customer_type,
     churn_score,
     is_subscriber,
-    skin_tags
+    skin_tags,
+    is_internal_user
   )
 ` as const;
 
@@ -82,9 +83,10 @@ export async function GET(req: NextRequest) {
     const { data, error } = await query.limit(50);
     if (error) return NextResponse.json({ error: String(error) }, { status: 500 });
 
-    // brain_customer が null のものを除外
+    // brain_customer が null のものを除外。あわせて内部ユーザー(is_internal_user=true。
+    // スタッフ本人の試用・検証購入等)はスタッフアプリの「今日の来店」から完全に除外する。
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const valid = (data ?? []).filter((r: any) => r.brain_customer != null);
+    const valid = (data ?? []).filter((r: any) => r.brain_customer != null && !r.brain_customer.is_internal_user);
 
     // 同一顧客・同日に複数予約がある場合(リスケジュール等)はcreated_at最新の1件のみ残す。
     // 取得順が既にcreated_at降順のため、先頭1件を残すだけでよい。

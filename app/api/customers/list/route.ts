@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
     const [custRes, visitRes, staffRes] = await Promise.allSettled([
       supabase
         .from('brain_customers')
-        .select('id, name, customer_type, churn_score, first_visit_date, is_subscriber')
+        .select('id, name, customer_type, churn_score, first_visit_date, is_subscriber, is_internal_user')
         .eq('store_id', STORE_ID)
         .is('deleted_at', null)
         .order('name'),
@@ -59,9 +59,14 @@ export async function GET(req: NextRequest) {
         .is('deleted_at', null),
     ]);
 
-    const allCustomers = custRes.status   === 'fulfilled' ? (custRes.value.data   ?? []) : [];
+    const rawCustomers = custRes.status   === 'fulfilled' ? (custRes.value.data   ?? []) : [];
     const visits       = visitRes.status  === 'fulfilled' ? (visitRes.value.data  ?? []) : [];
     const staffList    = staffRes.status  === 'fulfilled' ? (staffRes.value.data  ?? []) : [];
+
+    // スタッフアプリ専用エンドポイントのため、内部ユーザー(is_internal_user=true。
+    // スタッフ本人の試用・検証購入等)は無条件で完全に除外する(一覧・検索・件数の
+    // 全てがこの配列から派生するため、ここ1箇所で完結する)。
+    const allCustomers = rawCustomers.filter((c: { is_internal_user?: boolean }) => !c.is_internal_user);
 
     // 担当顧客 + NULL(共有)顧客のみに絞る
     const accessibleIds = await filterAccessibleCustomerIds(

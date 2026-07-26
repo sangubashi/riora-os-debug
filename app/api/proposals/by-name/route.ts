@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
     // brain_customers を名前で検索
     const { data: matches } = await client
       .from('brain_customers')
-      .select('id, customer_type')
+      .select('id, customer_type, is_internal_user')
       .eq('store_id', STORE_ID)
       .eq('name', customerName)
       .is('deleted_at', null)
@@ -41,7 +41,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ found: false, reason: 'customer_not_found' });
     }
 
-    const bc = matches[0] as { id: string; customer_type: string | null };
+    const bc = matches[0] as { id: string; customer_type: string | null; is_internal_user?: boolean };
+
+    // スタッフアプリのAI提案対象からは内部ユーザー(is_internal_user=true。スタッフ本人の
+    // 試用・検証購入等)を完全に除外する(存在しない顧客として扱う)。
+    if (bc.is_internal_user) {
+      return NextResponse.json({ found: false, reason: 'customer_not_found' });
+    }
 
     // アクセス権確認
     const accessible = await canAccessCustomer(staff.staffBrainId, bc.id, staff.isAdmin)
