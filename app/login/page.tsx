@@ -84,8 +84,14 @@ export default function LoginPage() {
     }
 
     // ログイン成功後にセッション確認
-    const { data } = await supabase.auth.getSession()
-    const session  = data.session
+    // Safari ITP 対策: 起動時セッション確認(35行目付近)・useAuthStore.initialize()と
+    // 同じ3秒タイムアウト付きPromise.raceパターンをここにも適用する(この箇所だけ
+    // 素のgetSession()のままだったため、ハング時にloadingドットから進めなくなる不具合の修正)。
+    const sessionP = supabase.auth.getSession()
+      .then(({ data }) => data.session)
+      .catch(() => null)
+    const timeoutP = new Promise<null>(r => setTimeout(() => r(null), 3000))
+    const session  = await Promise.race([sessionP, timeoutP])
     console.log('[Login] ログイン成功 getSession:', session
       ? `uid=${session.user.id}`
       : 'null (異常)')
