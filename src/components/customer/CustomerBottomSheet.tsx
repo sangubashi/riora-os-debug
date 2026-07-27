@@ -1265,10 +1265,6 @@ export default function CustomerBottomSheet({
             <motion.div
               key="sheet"
               initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
-              drag="y" dragConstraints={{ top: 0 }} dragElastic={{ top: 0, bottom: 0.3 }}
-              onDragEnd={(_, info) => {
-                if (info.offset.y > 120 || info.velocity.y > 500) close();
-              }}
               transition={{ type: 'spring', damping: 32, stiffness: 260 }}
               className="w-full max-w-[430px] pointer-events-auto bg-white"
               style={{
@@ -1282,9 +1278,26 @@ export default function CustomerBottomSheet({
                 overflow: 'hidden',
               }}
             >
-              {/* ドラッグハンドル */}
-              <div className="flex-shrink-0 flex justify-center pt-3 pb-1.5">
-                <div className="w-12 h-[5px] rounded-full bg-[#E8D5D8]" />
+              {/* ドラッグハンドル(表示のみ・スワイプでは閉じない) + 右上Closeボタン(常時固定・44px以上のタップ領域) */}
+              <div className="flex-shrink-0 relative" style={{ minHeight: '44px' }}>
+                <div className="absolute inset-x-0 flex justify-center" style={{ top: '12px' }}>
+                  <div className="w-12 h-[5px] rounded-full bg-[#E8D5D8]" />
+                </div>
+                <button
+                  type="button"
+                  onClick={close}
+                  aria-label="閉じる"
+                  className="absolute rounded-full flex items-center justify-center"
+                  style={{
+                    top: '2px', right: '8px',
+                    width: '44px', height: '44px',
+                    background: '#F8F1F3',
+                    border: 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <X size={18} color="#9F7E6C" strokeWidth={2.5} />
+                </button>
               </div>
 
               {/* 禁忌事項 — 最重要・常時表示（スクロールで隠れない・折りたたみ不可・全ページ共通固定） */}
