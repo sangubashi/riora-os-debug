@@ -14,10 +14,11 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { TrendingUp, TrendingDown, Minus, CalendarDays, Sparkles, RefreshCw } from 'lucide-react'
+import { TrendingUp, TrendingDown, Minus, CalendarDays, Sparkles, RefreshCw, Lock } from 'lucide-react'
 import AppBottomNav from './AppBottomNav'
 import MyStatsDetailSheet from './MyStatsDetailSheet'
 import MyPageReservationsSheet from './MyPageReservationsSheet'
+import ChangePasswordSheet from './ChangePasswordSheet'
 import { useMyStatsStore, type MetricDetail } from '@/store/useMyStatsStore'
 import { useHomeStore } from '@/store/useHomeStore'
 import { useNotificationsStore } from '@/store/useNotificationsStore'
@@ -181,6 +182,7 @@ export default function MyStatsScreen() {
   const { initialized: authInitialized, session } = useAuthStore()
   const [selected, setSelected] = useState<{ title: string; unit: '件' | '%' | '円'; detail: MetricDetail | null } | null>(null)
   const [showReservationsSheet, setShowReservationsSheet] = useState(false)
+  const [showChangePassword, setShowChangePassword] = useState(false)
 
   // 今週予約サマリー(今日/明日)用に既存ストアを再利用する(新規API・新規fetchロジックは追加しない)。
   const { reservations: todayReservations, isLoading: isHomeLoading, fetchTodayReservations } = useHomeStore()
@@ -384,6 +386,28 @@ export default function MyStatsScreen() {
             </motion.button>
           </div>
         )}
+
+        {/* ── アカウント(パスワード変更・スタッフ/管理者共通で常時表示) ── */}
+        {!isLoading && (
+          <div className="mt-2">
+            <p className="text-[10px] tracking-[0.2em] font-medium mb-2 px-1" style={{ color: '#C8B0B8' }}>
+              ACCOUNT
+            </p>
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              onClick={() => setShowChangePassword(true)}
+              className="w-full flex items-center gap-3 rounded-2xl p-4"
+              style={{ background: '#FFFFFF', border: '1px solid #F5E6E8', boxShadow: '0 2px 10px rgba(245,160,181,0.08)' }}
+            >
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(217,130,146,0.10)' }}>
+                <Lock size={18} style={{ color: '#D98292' }} strokeWidth={1.8} />
+              </div>
+              <span className="text-[13px] font-medium text-left" style={{ color: '#5C4033' }}>
+                パスワード変更
+              </span>
+            </motion.button>
+          </div>
+        )}
       </div>
 
       <AppBottomNav />
@@ -401,6 +425,11 @@ export default function MyStatsScreen() {
         onClose={() => setShowReservationsSheet(false)}
         todayReservations={todayReservations}
         tomorrowNotifications={tomorrowNotifications}
+      />
+
+      <ChangePasswordSheet
+        isOpen={showChangePassword}
+        onClose={() => setShowChangePassword(false)}
       />
     </div>
   )
