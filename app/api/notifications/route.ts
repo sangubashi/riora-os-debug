@@ -229,6 +229,19 @@ export async function GET(req: NextRequest) {
       const legacyIdsByCustomer = new Map(legacyIdsEntries)
       const allLegacyIds = Array.from(new Set(Array.from(legacyIdsByCustomer.values()).flat()))
 
+      // reservations.staff_id(auth.users.id空間)→brain_staff.nameで担当スタッフ名を解決。
+      // ReservationRepo.weeklySummary()と同じ方針(reservations.staff_id=profiles.id=brain_staff.user_id)。
+      const reminderStaffUserIds = Array.from(new Set(rows.map((r) => r.staff_id).filter(Boolean)))
+      let staffNameByUserId = new Map<string, string>()
+      if (reminderStaffUserIds.length > 0) {
+        const { data: staffRows, error: staffNameError } = await supabase
+          .from('brain_staff')
+          .select('user_id, name')
+          .in('user_id', reminderStaffUserIds)
+        if (staffNameError) return NextResponse.json({ success: false, error: staffNameError.message }, { status: 500 })
+        staffNameByUserId = new Map((staffRows ?? []).map((s) => [s.user_id as string, s.name as string]))
+      }
+
       type ReminderVisitRow = { customer_id: string; visit_date: string }
       const reminderLastVisitByCustomer = new Map<string, string>()
       for (const v of (reminderVisitsRes.data ?? []) as ReminderVisitRow[]) {
@@ -285,6 +298,7 @@ export async function GET(req: NextRequest) {
           })),
           importantMemories: allMemories.filter((m) => m.importance === 'high').map((m) => m.content),
           recentMemories: allMemories.map((m) => m.content),
+          staffName: staffNameByUserId.get(r.staff_id),
         }
       })
 

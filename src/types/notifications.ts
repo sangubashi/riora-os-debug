@@ -31,6 +31,8 @@ export interface StaffNotification {
   customerName?: string
   /** 来店リマインド等、複数行の内容を持つ通知用(任意)。禁忌→重要メモ→会話メモの順。 */
   detail?:      string[]
+  /** 来店リマインドの担当スタッフ名(任意)。reservations.staff_id→brain_staff.nameで解決。 */
+  staffName?:   string
 }
 
 export interface NotificationsResponse {

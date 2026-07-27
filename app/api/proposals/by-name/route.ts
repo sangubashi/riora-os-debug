@@ -73,6 +73,7 @@ export async function GET(req: NextRequest) {
     let avoidNote: string | null = null;
     let menuSuggestion: string | null = null;
     let candidateDate: string | null = null;
+    let nextBookingSuggestion: { rangeText: string; talkExample: string } | null = null;
 
     try {
       const repos = getRepos();
@@ -90,6 +91,7 @@ export async function GET(req: NextRequest) {
         avoidNote      = proposal.explanation.staffAvoid || null;
         candidateDate  = proposal.inStore.candidateDate || null;
         menuSuggestion = proposal.inStore.mandatory?.adjustedScript ?? null;
+        nextBookingSuggestion = result.nextBookingSuggestion;
       }
     } catch {
       // ProposalOrchestrator 失敗時は advice=null のまま継続
@@ -103,6 +105,7 @@ export async function GET(req: NextRequest) {
       menuSuggestion,
       recentMenus,
       candidateDate,
+      nextBookingSuggestion,
     });
   } catch (e) {
     return NextResponse.json({ found: false, reason: String(e) }, { status: 500 });

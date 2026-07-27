@@ -32,6 +32,7 @@ export interface VisitReminderInput {
   contraindications:   VisitReminderContraindication[]
   importantMemories:   string[] // content。importance='high' かつ is_sensitive=false のみ
   recentMemories:      string[] // content。非センシティブ、created_at降順
+  staffName?:          string // reservations.staff_id→brain_staff.nameで解決した担当スタッフ名(任意)
 }
 
 function startOfDay(d: Date): Date {
@@ -61,6 +62,7 @@ export function buildVisitReminder(input: VisitReminderInput, today: Date = new 
 
   const days = daysSinceLastVisit(input.scheduledAt, input.lastVisitDate)
   const visitPhrase = days === null ? '初めてのご来店' : `${days}日ぶりのご来店`
+  const staffPhrase = input.staffName ? `／担当：${input.staffName}` : ''
 
   const detail: string[] = []
 
@@ -88,10 +90,11 @@ export function buildVisitReminder(input: VisitReminderInput, today: Date = new 
     id: `visit_reminder:${input.customerId}:${input.reservationId}`,
     kind: 'visit_reminder',
     emoji: '🔔',
-    title: `${dayLabel} ${input.customerName}様ご来店（${visitPhrase}）`,
+    title: `${dayLabel} ${input.customerName}様ご来店（${visitPhrase}${staffPhrase}）`,
     customerId: input.customerId,
     customerName: input.customerName,
     detail: detail.length > 0 ? detail : undefined,
+    staffName: input.staffName,
   }
 }
 

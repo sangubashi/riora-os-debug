@@ -41,6 +41,12 @@ function summarize(rows: VisitRow[]) {
   return { visitCount, nominationCount, repeatRate, retailSales };
 }
 
+/** 増減率(%)。先月実績が0の場合は算出不能のためnull(架空の割合を作らない)。 */
+function pctChange(diff: number, lastMonthValue: number): number | null {
+  if (lastMonthValue === 0) return null;
+  return Math.round((diff / lastMonthValue) * 1000) / 10;
+}
+
 export async function GET(req: NextRequest) {
   const staff = await extractStaffFromRequest(req);
   if (!staff) {
@@ -89,11 +95,41 @@ export async function GET(req: NextRequest) {
     const hasVisitData     = thisMonthRows.length > 0 || lastMonthRows.length > 0;
     const retailSalesDiff  = hasVisitData ? thisMonth.retailSales - lastMonth.retailSales : null;
 
+    const nominationDiff = thisMonth.nominationCount - lastMonth.nominationCount;
+    const repeatRateDiff = thisMonth.repeatRate - lastMonth.repeatRate;
+    const visitCountDiff = thisMonth.visitCount - lastMonth.visitCount;
+
     return NextResponse.json({
-      nominationDiff:  thisMonth.nominationCount - lastMonth.nominationCount,
-      repeatRateDiff:  thisMonth.repeatRate - lastMonth.repeatRate,
-      visitCountDiff:  thisMonth.visitCount - lastMonth.visitCount,
+      nominationDiff,
+      repeatRateDiff,
+      visitCountDiff,
       retailSalesDiff,
+      // タップ時の詳細モーダル用(今月・先月の実数)。既に上で計算済みの値を再利用するのみ
+      // (新しい集計ロジックは追加しない)。
+      nomination: {
+        thisMonth: thisMonth.nominationCount,
+        lastMonth: lastMonth.nominationCount,
+        diff:      nominationDiff,
+        pctChange: pctChange(nominationDiff, lastMonth.nominationCount),
+      },
+      repeatRate: {
+        thisMonth: thisMonth.repeatRate,
+        lastMonth: lastMonth.repeatRate,
+        diff:      repeatRateDiff,
+        pctChange: pctChange(repeatRateDiff, lastMonth.repeatRate),
+      },
+      visitCount: {
+        thisMonth: thisMonth.visitCount,
+        lastMonth: lastMonth.visitCount,
+        diff:      visitCountDiff,
+        pctChange: pctChange(visitCountDiff, lastMonth.visitCount),
+      },
+      retailSales: hasVisitData ? {
+        thisMonth: thisMonth.retailSales,
+        lastMonth: lastMonth.retailSales,
+        diff:      retailSalesDiff,
+        pctChange: pctChange(retailSalesDiff ?? 0, lastMonth.retailSales),
+      } : null,
     });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });

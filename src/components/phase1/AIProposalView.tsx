@@ -14,6 +14,7 @@ interface ProposalData {
   menuSuggestion?: string | null
   recentMenus?:  string[]
   candidateDate?: string | null
+  nextBookingSuggestion?: { rangeText: string; talkExample: string } | null
 }
 
 interface Props {
@@ -150,6 +151,25 @@ export default function AIProposalView({ reservation: r, onBack, onServiceLog }:
                   <p className="text-[13px] text-salon-brown leading-relaxed">{card.value}</p>
                 </motion.div>
               ))
+            )}
+
+            {/* 次回予約のおすすめ(ホームケア提案の下に常に表示) */}
+            {proposal?.nextBookingSuggestion && (
+              <motion.div
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.21 }}
+                className="rounded-[20px] border p-4"
+                style={{ background: '#F5FBF7', borderColor: '#8FC9A730', boxShadow: '0 2px 10px #8FC9A714' }}
+              >
+                <p className="text-[9px] font-bold tracking-[0.22em] mb-1.5" style={{ color: '#5DA37D' }}>
+                  次回予約のおすすめ
+                </p>
+                <p className="text-[13px] text-salon-brown leading-relaxed mb-1">{proposal.nextBookingSuggestion.rangeText}</p>
+                <p className="text-[12px] text-salon-brown-sub leading-relaxed">
+                  トーク例：「{proposal.nextBookingSuggestion.talkExample}」
+                </p>
+              </motion.div>
             )}
 
             {/* NG ワード */}

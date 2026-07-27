@@ -25,6 +25,7 @@ import type {
 import type { FinalProposalSet, EngineDegradedResult, PatternContext, Overrides, StaffAdjustment } from '../../types/riora.types';
 import { buildPatternContext } from '../../engines/pattern/PatternContextBuilder';
 import { generateHomeCareNote } from '../../engines/pattern/HomeCareGenerator';
+import { generateNextBookingSuggestion, type NextBookingSuggestion } from '../../engines/pattern/NextBookingSuggestionGenerator';
 import { JsonLogicEvaluator } from '../../engines/pattern/JsonLogicEvaluator';
 import { PatternMatcher } from '../../engines/pattern/PatternMatcher';
 import { PatternScorer } from '../../engines/pattern/PatternScorer';
@@ -67,6 +68,7 @@ export type GenerateCustomerProposalResult =
       context: PatternContext;
       voiceMemoContext: VoiceMemoContext;
       lineHistoryContext: LineHistoryContext;
+      nextBookingSuggestion: NextBookingSuggestion | null;
     }
   | { ok: false; reason: 'customer_not_found' | 'staff_not_found' | 'no_customer_type' | 'no_visit_history' };
 
@@ -190,5 +192,6 @@ export async function generateCustomerProposal(
       recentCount: lineHistory.length,
       items: lineHistory.map((i) => ({ scenarioCode: i.scenarioCode, approvalStatus: i.approvalStatus, createdAt: i.createdAt })),
     },
+    nextBookingSuggestion: generateNextBookingSuggestion(ctx),
   };
 }

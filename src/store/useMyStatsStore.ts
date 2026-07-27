@@ -1,12 +1,25 @@
 import { create } from 'zustand';
 import { authedFetch } from '@/lib/api/authedFetch';
 
+export interface MetricDetail {
+  thisMonth: number
+  lastMonth: number
+  diff:      number
+  /** 増減率(%)。先月実績が0の場合は算出不能のためnull。 */
+  pctChange: number | null
+}
+
 export interface MyStats {
   nominationDiff:  number
   repeatRateDiff:  number
   visitCountDiff:  number
   /** 先月比 店販売上(円)。今月・先月とも来店記録が無い場合はnull(「計測中」表示)。 */
   retailSalesDiff: number | null
+  /** タップ時の詳細表示用(今月・先月実数)。APIで既に計算済みの値をそのまま保持する。 */
+  nomination:  MetricDetail
+  repeatRate:  MetricDetail
+  visitCount:  MetricDetail
+  retailSales: MetricDetail | null
 }
 
 interface MyStatsState {
@@ -43,6 +56,10 @@ export const useMyStatsStore = create<MyStatsState>((set) => ({
           repeatRateDiff:  data.repeatRateDiff ?? 0,
           visitCountDiff:  data.visitCountDiff ?? 0,
           retailSalesDiff: data.retailSalesDiff ?? null,
+          nomination:  data.nomination,
+          repeatRate:  data.repeatRate,
+          visitCount:  data.visitCount,
+          retailSales: data.retailSales ?? null,
         },
       });
     } catch (e) {

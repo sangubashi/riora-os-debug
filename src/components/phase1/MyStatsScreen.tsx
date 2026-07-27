@@ -5,11 +5,12 @@
  * 他人比較・ランキングは一切行わない。表示は自分の先月比のみ。
  * (Riora OS v1.0 再設計書 準拠)
  */
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import AppBottomNav from './AppBottomNav'
-import { useMyStatsStore } from '@/store/useMyStatsStore'
+import MyStatsDetailSheet from './MyStatsDetailSheet'
+import { useMyStatsStore, type MetricDetail } from '@/store/useMyStatsStore'
 import { useAuthStore } from '@/store/useAuthStore'
 
 function formatDiff(value: number, unit: string): string {
@@ -45,6 +46,7 @@ function DiffValue({ value, text }: { value: number; text: string }) {
 export default function MyStatsScreen() {
   const { stats, isLoading, notStaffAccount, fetchStats } = useMyStatsStore()
   const { initialized: authInitialized } = useAuthStore()
+  const [selected, setSelected] = useState<{ title: string; unit: '件' | '%' | '円'; detail: MetricDetail | null } | null>(null)
 
   useEffect(() => {
     if (!authInitialized) return
@@ -52,15 +54,28 @@ export default function MyStatsScreen() {
   }, [authInitialized, fetchStats])
 
   const cards = stats ? [
-    { label: '先月比 指名',       node: <DiffValue value={stats.nominationDiff} text={formatDiff(stats.nominationDiff, '件')} /> },
-    { label: '先月比 リピート率', node: <DiffValue value={stats.repeatRateDiff} text={formatDiff(stats.repeatRateDiff, '%')} /> },
+    {
+      label: '先月比 指名',
+      node: <DiffValue value={stats.nominationDiff} text={formatDiff(stats.nominationDiff, '件')} />,
+      onTap: () => setSelected({ title: '指名', unit: '件', detail: stats.nomination }),
+    },
+    {
+      label: '先月比 リピート率',
+      node: <DiffValue value={stats.repeatRateDiff} text={formatDiff(stats.repeatRateDiff, '%')} />,
+      onTap: () => setSelected({ title: 'リピート率', unit: '%', detail: stats.repeatRate }),
+    },
     {
       label: '先月比 店販売上',
       node: stats.retailSalesDiff === null
         ? <span className="text-[14px]" style={{ color: '#C8A8B0' }}>計測中</span>
         : <DiffValue value={stats.retailSalesDiff} text={formatYenDiff(stats.retailSalesDiff)} />,
+      onTap: () => setSelected({ title: '店販売上', unit: '円', detail: stats.retailSales }),
     },
-    { label: '来店数差分',        node: <DiffValue value={stats.visitCountDiff} text={formatDiff(stats.visitCountDiff, '件')} /> },
+    {
+      label: '来店数差分',
+      node: <DiffValue value={stats.visitCountDiff} text={formatDiff(stats.visitCountDiff, '件')} />,
+      onTap: () => setSelected({ title: '来店数', unit: '件', detail: stats.visitCount }),
+    },
   ] : []
 
   return (
@@ -116,19 +131,22 @@ export default function MyStatsScreen() {
         )}
 
         {!isLoading && stats && cards.map((card, i) => (
-          <motion.div
+          <motion.button
             key={card.label}
+            type="button"
+            onClick={card.onTap}
+            whileTap={{ scale: 0.98 }}
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.05 }}
-            className="bg-white rounded-[20px] border border-[#F5E6E8] flex items-center justify-between px-5 py-4 mb-3"
+            className="w-full text-left bg-white rounded-[20px] border border-[#F5E6E8] flex items-center justify-between px-5 py-4 mb-3"
             style={{ boxShadow: '0 2px 12px rgba(245,160,181,0.08)' }}
           >
             <span className="text-[13px] font-medium" style={{ color: '#5C4033' }}>
               {card.label}
             </span>
             {card.node}
-          </motion.div>
+          </motion.button>
         ))}
 
         {!isLoading && notStaffAccount && (
@@ -149,6 +167,14 @@ export default function MyStatsScreen() {
       </div>
 
       <AppBottomNav />
+
+      <MyStatsDetailSheet
+        isOpen={selected !== null}
+        onClose={() => setSelected(null)}
+        title={selected?.title ?? ''}
+        unit={selected?.unit ?? '件'}
+        detail={selected?.detail ?? null}
+      />
     </div>
   )
 }

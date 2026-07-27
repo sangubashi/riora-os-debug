@@ -43,6 +43,7 @@ const SUCCESS_RESULT: GenerateCustomerProposalResult = {
   ok: true, proposal: PROPOSAL, context: CTX,
   voiceMemoContext: { linkStatus: 'no_match', legacyCustomerId: null, customerNotes: [], contraindications: [], latestBookingPromptSummary: null, latestHandoverSummary: null },
   lineHistoryContext: { recentCount: 0, items: [] },
+  nextBookingSuggestion: null,
 };
 
 describe('GET/POST /api/admin/proposals', () => {
