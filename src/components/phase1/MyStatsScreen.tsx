@@ -17,6 +17,7 @@ import { motion } from 'framer-motion'
 import { TrendingUp, TrendingDown, Minus, CalendarDays, Sparkles, RefreshCw } from 'lucide-react'
 import AppBottomNav from './AppBottomNav'
 import MyStatsDetailSheet from './MyStatsDetailSheet'
+import MyPageReservationsSheet from './MyPageReservationsSheet'
 import { useMyStatsStore, type MetricDetail } from '@/store/useMyStatsStore'
 import { useHomeStore } from '@/store/useHomeStore'
 import { useNotificationsStore } from '@/store/useNotificationsStore'
@@ -179,6 +180,7 @@ export default function MyStatsScreen() {
   const { stats, isLoading, error, notStaffAccount, fetchStats } = useMyStatsStore()
   const { initialized: authInitialized, session } = useAuthStore()
   const [selected, setSelected] = useState<{ title: string; unit: '件' | '%' | '円'; detail: MetricDetail | null } | null>(null)
+  const [showReservationsSheet, setShowReservationsSheet] = useState(false)
 
   // 今週予約サマリー(今日/明日)用に既存ストアを再利用する(新規API・新規fetchロジックは追加しない)。
   const { reservations: todayReservations, isLoading: isHomeLoading, fetchTodayReservations } = useHomeStore()
@@ -199,9 +201,9 @@ export default function MyStatsScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authInitialized, fetchStats])
 
-  const tomorrowReservationCount = notifications.filter(
+  const tomorrowNotifications = notifications.filter(
     (n) => n.kind === 'visit_reminder' && n.title.startsWith('明日')
-  ).length
+  )
 
   const cards = stats ? [
     {
@@ -287,7 +289,12 @@ export default function MyStatsScreen() {
         {!isLoading && stats && (
           <>
             {/* ── 今週予約サマリー(今日・明日) ── */}
-            <div className="mb-4">
+            <motion.button
+              type="button"
+              onClick={() => setShowReservationsSheet(true)}
+              whileTap={{ scale: 0.98 }}
+              className="w-full text-left mb-4"
+            >
               <div className="flex items-center gap-1.5 mb-2 px-1">
                 <CalendarDays size={13} style={{ color: '#D8A8B5' }} />
                 <span className="text-[11px] font-semibold" style={{ color: '#9E8090' }}>今週の予約</span>
@@ -300,11 +307,11 @@ export default function MyStatsScreen() {
                 />
                 <SmallStat
                   label="明日"
-                  value={isNotifLoading ? '…' : notifError ? '—' : `${tomorrowReservationCount}件`}
+                  value={isNotifLoading ? '…' : notifError ? '—' : `${tomorrowNotifications.length}件`}
                   color="#B98CC0"
                 />
               </div>
-            </div>
+            </motion.button>
 
             {/* ── 先月比カード ── */}
             {cards.map((card, i) => (
@@ -387,6 +394,13 @@ export default function MyStatsScreen() {
         title={selected?.title ?? ''}
         unit={selected?.unit ?? '件'}
         detail={selected?.detail ?? null}
+      />
+
+      <MyPageReservationsSheet
+        isOpen={showReservationsSheet}
+        onClose={() => setShowReservationsSheet(false)}
+        todayReservations={todayReservations}
+        tomorrowNotifications={tomorrowNotifications}
       />
     </div>
   )

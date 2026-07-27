@@ -171,7 +171,10 @@ export default function NotificationSheet({ isOpen, onClose, onSelectCustomer }:
                               {timeContextLabel(n.kind)}
                             </span>
                           </div>
-                          <p className={`text-[13px] font-medium ${n.detail ? '' : 'truncate'}`} style={{ color: '#5C4033' }}>
+                          {/* PHASE MYPAGE-UX-3(2026-07-27): 来店リマインドは顧客名・来店フレーズ・
+                              担当スタッフ名が1行に連結され長くなるため、truncate(1行切り詰め)を
+                              廃止し複数行に折り返して最後まで読めるようにする。 */}
+                          <p className="text-[13px] font-medium leading-snug" style={{ color: '#5C4033' }}>
                             {n.title}
                           </p>
                           {n.detail && n.detail.length > 0 && (
