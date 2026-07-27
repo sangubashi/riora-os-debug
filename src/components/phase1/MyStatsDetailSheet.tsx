@@ -5,9 +5,13 @@
  * 今月実績・先月実績・差・増減率を表示する。値はAPI(/api/me/monthly-stats)で
  * 既に計算済みのものをそのまま表示するのみで、新しい計算ロジックは持たない。
  * LineUnreadSheet.tsxの軽量BottomSheet構成を踏襲する。
+ *
+ * PHASE MYPAGE-UX-1(2026-07-27・UI改善のみ): 今月実績を大きなヒーロー数値として
+ * 最上部に配置し、先月実績を比較として下に添え、差・増減率を矢印+色のバッジに
+ * まとめて視認性を上げた(表示形式の変更のみ・数値の計算元は不変)。
  */
 import { motion, AnimatePresence } from 'framer-motion'
-import { X } from 'lucide-react'
+import { X, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import type { MetricDetail } from '@/store/useMyStatsStore'
 
 interface Props {
@@ -35,6 +39,13 @@ function formatPct(pctChange: number | null): string {
   if (pctChange === null) return '—'
   const sign = pctChange > 0 ? '+' : ''
   return `${sign}${pctChange}%`
+}
+
+/** 差の増減トーン(下降は責めない配色。DiffValueコンポーネントの既存慣習を踏襲)。 */
+function diffTone(diff: number): { color: string; bg: string; Icon: typeof TrendingUp } {
+  if (diff > 0) return { color: '#52C87A', bg: 'rgba(82,200,122,0.10)', Icon: TrendingUp }
+  if (diff < 0) return { color: '#9E8090', bg: 'rgba(158,128,144,0.10)', Icon: TrendingDown }
+  return { color: '#9E8090', bg: 'rgba(158,128,144,0.08)', Icon: Minus }
 }
 
 export default function MyStatsDetailSheet({ isOpen, onClose, title, unit, detail }: Props) {
@@ -85,28 +96,47 @@ export default function MyStatsDetailSheet({ isOpen, onClose, title, unit, detai
 
               <div className="flex-1 overflow-y-auto no-scrollbar px-5 py-4" style={{ scrollbarWidth: 'none' }}>
                 {detail === null ? (
-                  <div className="flex flex-col items-center justify-center py-10 gap-2">
+                  <div className="flex flex-col items-center justify-center py-10 gap-1.5 text-center">
                     <p className="text-[13px]" style={{ color: '#9E8090' }}>計測中です</p>
+                    <p className="text-[11px]" style={{ color: '#C8A8B0' }}>来店データが集まり次第表示されます</p>
                   </div>
                 ) : (
                   <div className="flex flex-col gap-3">
-                    {[
-                      { label: '先月実績', value: formatValue(detail.lastMonth, unit) },
-                      { label: '今月実績', value: formatValue(detail.thisMonth, unit) },
-                      { label: '差',       value: formatDiff(detail.diff, unit) },
-                      { label: '増減率',   value: formatPct(detail.pctChange) },
-                    ].map((row) => (
-                      <div
-                        key={row.label}
-                        className="flex items-center justify-between rounded-[16px] px-4 py-3"
-                        style={{ background: '#FBF6F7' }}
-                      >
-                        <span className="text-[13px] font-medium" style={{ color: '#5C4033' }}>{row.label}</span>
-                        <span className="text-[16px] font-bold tabular-nums" style={{ color: '#4A2C2A', fontFamily: 'Inter, sans-serif' }}>
-                          {row.value}
-                        </span>
-                      </div>
-                    ))}
+                    {/* 今月実績を最も目立つヒーロー数値として表示 */}
+                    <div className="text-center py-2">
+                      <p className="text-[11px] font-medium" style={{ color: '#9E8090' }}>今月実績</p>
+                      <p className="text-[34px] font-bold tabular-nums mt-1" style={{ color: '#4A2C2A', fontFamily: 'Inter, sans-serif', lineHeight: 1.1 }}>
+                        {formatValue(detail.thisMonth, unit)}
+                      </p>
+                    </div>
+
+                    {/* 先月実績は比較値として控えめに */}
+                    <div className="flex items-center justify-between rounded-[16px] px-4 py-3" style={{ background: '#FBF6F7' }}>
+                      <span className="text-[13px] font-medium" style={{ color: '#5C4033' }}>先月実績</span>
+                      <span className="text-[15px] font-bold tabular-nums" style={{ color: '#9E8090', fontFamily: 'Inter, sans-serif' }}>
+                        {formatValue(detail.lastMonth, unit)}
+                      </span>
+                    </div>
+
+                    {/* 差・増減率を矢印+色のバッジにまとめる */}
+                    {(() => {
+                      const tone = diffTone(detail.diff)
+                      const Icon = tone.Icon
+                      return (
+                        <div
+                          className="flex items-center justify-center gap-2 rounded-[16px] px-4 py-3.5"
+                          style={{ background: tone.bg }}
+                        >
+                          <Icon size={16} color={tone.color} strokeWidth={2.5} />
+                          <span className="text-[17px] font-bold tabular-nums" style={{ color: tone.color, fontFamily: 'Inter, sans-serif' }}>
+                            {formatDiff(detail.diff, unit)}
+                          </span>
+                          <span className="text-[12px] font-medium" style={{ color: tone.color, opacity: 0.85 }}>
+                            （前月比 {formatPct(detail.pctChange)}）
+                          </span>
+                        </div>
+                      )
+                    })()}
                   </div>
                 )}
               </div>
