@@ -8,10 +8,14 @@
  * 制約(ユーザー指示・2026-06-23): ランキング禁止・順位表示禁止・売上単体比較禁止・
  * 五十音順表示。本コンポーネントはAPIが返した配列順(五十音順)をそのまま描画するのみで、
  * クライアント側で並び替え・順位番号・スタッフ間の比較強調は一切行わない。
+ *
+ * PHASE ADMIN-UX-1(2026-07-27・UI調整のみ): 前月比(growthRate)を矢印+色付きバッジで
+ * カード上部に強調表示、指標をレスポンシブグリッド化、カード幅を1920/1366/タブレットで
+ * 自然に折り返すよう調整した。growthRateの計算・APIは変更していない。
  */
 import { useEffect, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Loader2, User } from 'lucide-react'
+import { Loader2, User, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import { useStaffAnalyticsStore } from '@/store/useStaffAnalyticsStore'
 import { useMonthStore } from '@/store/useMonthStore'
 import MonthSelector from '../MonthSelector'
@@ -25,32 +29,61 @@ function formatPercent(rate: number | null): string {
   return rate === null ? '—' : `${Math.round(rate * 100)}%`
 }
 
-function formatGrowth(rate: number | null): { text: string; color: string } {
-  // rate=nullは「前月データが無い」「当月データがまだ無い」のいずれか(PHASE MD-2要件4)。
-  // どちらも実際の業績悪化ではないため、赤字の−100%等ではなく中立色の「データなし」を表示する。
-  if (rate === null) return { text: 'データなし', color: '#9F7E6C' }
+/** 前月比バッジ用(矢印+色+テキスト)。rate=nullは「前月/当月データなし」で赤字扱いにしない(中立色)。 */
+function formatGrowth(rate: number | null): { text: string; color: string; bg: string; Icon: typeof TrendingUp } {
+  if (rate === null) return { text: 'データなし', color: '#9F7E6C', bg: 'rgba(159,126,108,0.08)', Icon: Minus }
   const pct = Math.round(rate * 100)
-  if (pct > 0) return { text: `+${pct}%`, color: '#3C9D5C' }
-  if (pct < 0) return { text: `${pct}%`, color: '#D14F4F' }
-  return { text: '±0%', color: '#9F7E6C' }
+  if (pct > 0) return { text: `+${pct}%`, color: '#3C9D5C', bg: 'rgba(60,157,92,0.10)', Icon: TrendingUp }
+  if (pct < 0) return { text: `${pct}%`, color: '#D14F4F', bg: 'rgba(209,79,79,0.10)', Icon: TrendingDown }
+  return { text: '±0%', color: '#9F7E6C', bg: 'rgba(159,126,108,0.08)', Icon: Minus }
 }
 
-function Metric({ label, value, color = '#5C4033' }: { label: string; value: string; color?: string }) {
+/** 指標グリッド。auto-fitで1920px〜タブレット幅まで列数が自然に変わる(PHASE ADMIN-UX-1)。 */
+function MetricGrid({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ flex: 1, minWidth: '90px', background: '#FFF8F7', borderRadius: '12px', padding: '10px 12px', border: '1px solid #F5EEF0' }}>
+    <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))' }}>
+      {children}
+    </div>
+  )
+}
+
+function Metric({ label, value, color = '#5C4033', hint }: { label: string; value: string; color?: string; hint?: string }) {
+  const isEmpty = value === '—'
+  return (
+    <div style={{ background: '#FFF8F7', borderRadius: '12px', padding: '10px 12px', border: '1px solid #F5EEF0', minHeight: '66px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
       <p style={{ fontSize: '9px', color: '#C8A8B0', marginBottom: '3px' }}>{label}</p>
-      <p style={{ fontSize: '15px', fontWeight: 700, color, fontFamily: 'Inter, sans-serif', lineHeight: 1.1 }}>{value}</p>
+      <p style={{ fontSize: '18px', fontWeight: 700, color: isEmpty ? '#C8A8B0' : color, fontFamily: 'Inter, sans-serif', lineHeight: 1.1 }}>{value}</p>
+      {isEmpty && hint && (
+        <p style={{ fontSize: '9px', color: '#C8A8B0', marginTop: '3px', lineHeight: 1.3 }}>{hint}</p>
+      )}
+    </div>
+  )
+}
+
+function GrowthBadge({ growthRate }: { growthRate: number | null }) {
+  const growth = formatGrowth(growthRate)
+  const { Icon } = growth
+  return (
+    <div
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: '4px',
+        background: growth.bg, color: growth.color,
+        borderRadius: '999px', padding: '4px 10px', fontSize: '12px', fontWeight: 700,
+      }}
+    >
+      <Icon size={13} strokeWidth={2.5} />
+      {growth.text}
+      <span style={{ fontSize: '9px', fontWeight: 500, opacity: 0.75 }}>前月比</span>
     </div>
   )
 }
 
 function StaffCard({ row, monthLabel }: { row: { staffName: string; monthlySales: number; visitCount: number; avgSpend: number | null; nominationRate: number | null; repeatRate: number | null; ltv: number | null; growthRate: number | null }; monthLabel: string }) {
-  const growth = formatGrowth(row.growthRate)
   // 当月の担当来店が1件も無いスタッフ(例: 久保田)は、指標が軒並みnullになり
   // 「—」だらけで壊れて見えるため、専用の空状態メッセージに置き換える(PHASE MD-2要件5)。
   if (row.visitCount === 0) {
     return (
-      <div style={{ background: '#fff', border: '1px solid #F5EEF0', borderRadius: '16px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <div style={{ background: '#fff', border: '1px solid #F5EEF0', borderRadius: '16px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '6px', minHeight: '168px', justifyContent: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <User size={15} color="#D98292" />
           <span style={{ fontSize: '14px', fontWeight: 700, color: '#5C4033' }}>{row.staffName} さん</span>
@@ -60,22 +93,24 @@ function StaffCard({ row, monthLabel }: { row: { staffName: string; monthlySales
     )
   }
   return (
-    <div style={{ background: '#fff', border: '1px solid #F5EEF0', borderRadius: '16px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <User size={15} color="#D98292" />
-        <span style={{ fontSize: '14px', fontWeight: 700, color: '#5C4033' }}>{row.staffName} さん</span>
+    <div style={{ background: '#fff', border: '1px solid #F5EEF0', borderRadius: '16px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px', minHeight: '168px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <User size={15} color="#D98292" />
+          <span style={{ fontSize: '14px', fontWeight: 700, color: '#5C4033' }}>{row.staffName} さん</span>
+        </div>
+        <GrowthBadge growthRate={row.growthRate} />
       </div>
 
       {/* 売上は必ず指名率・リピート率と同居して表示する(v2.0「売上単体表示を型で禁止」) */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+      <MetricGrid>
         <Metric label={`売上(${monthLabel})`} value={formatYen(row.monthlySales)} />
         <Metric label="来店人数" value={`${row.visitCount}人`} />
         <Metric label="客単価" value={row.avgSpend === null ? '—' : formatYen(row.avgSpend)} />
         <Metric label="指名率" value={formatPercent(row.nominationRate)} />
         <Metric label="リピート率" value={formatPercent(row.repeatRate)} />
-        <Metric label="LTV" value={row.ltv === null ? '—' : formatYen(Math.round(row.ltv))} />
-        <Metric label="成長率(前月比)" value={growth.text} color={growth.color} />
-      </div>
+        <Metric label="LTV" value={row.ltv === null ? '—' : formatYen(Math.round(row.ltv))} hint="データ不足のため未計測" />
+      </MetricGrid>
     </div>
   )
 }
@@ -118,7 +153,7 @@ function StaffAnalyticsContent() {
   const monthLabel = isCurrentMonth ? '今月' : `${Number(selectedMonth.slice(5, 7))}月`
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '16px', maxWidth: '480px' }}>
+    <div className="p-4 sm:p-5 lg:p-8" style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxWidth: '1000px', margin: '0 auto', width: '100%' }}>
       <div>
         <p style={{ fontSize: '10px', fontWeight: 700, color: '#C8A8B0', letterSpacing: '0.1em', marginBottom: '2px' }}>
           画面④ MD-4
@@ -156,9 +191,13 @@ function StaffAnalyticsContent() {
         </div>
       )}
 
-      {!isLoading && staffAnalytics.map((row) => (
-        <StaffCard key={row.staffId} row={row} monthLabel={monthLabel} />
-      ))}
+      {!isLoading && staffAnalytics.length > 0 && (
+        <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+          {staffAnalytics.map((row) => (
+            <StaffCard key={row.staffId} row={row} monthLabel={monthLabel} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

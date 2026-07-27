@@ -9,11 +9,16 @@
  * (気づき列挙・グラフは置かない・LINE送信などの現場操作は置かない)。
  *
  * スタッフランキングはv2.0画面④(MD-4・売上単体表示禁止)の別契約のため本画面には含めない。
+ *
+ * PHASE ADMIN-UX-1(2026-07-27・UI調整のみ): 情報の優先順位を「今日売上→今月売上→
+ * 利益見込み→損益分岐点→今週予約状況→今日の一手」の順に並べ替え、人件費率の強調・
+ * 空状態の説明文・レスポンシブグリッド化・チャート/AI一手の可読性を改善した。
+ * API・計算式・データ取得ロジックは一切変更していない(表示順序とスタイルのみ)。
  */
 import { useEffect, useState, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { TrendingUp, Target, CalendarCheck, CalendarDays, MessageCircleHeart, AlertTriangle, AlertCircle, Info, UploadCloud, Loader2, Users, Settings, X } from 'lucide-react'
+import { TrendingUp, CalendarCheck, CalendarDays, MessageCircleHeart, AlertTriangle, AlertCircle, Info, UploadCloud, Loader2, Users, Target, Settings, X, LineChart } from 'lucide-react'
 import { useDashboardTopStore, type TodayAction, type WeeklyReservations, type WeeklyReservationDayCount } from '@/store/useDashboardTopStore'
 import { useBusinessSettingsStore } from '@/store/useBusinessSettingsStore'
 import { useMonthStore } from '@/store/useMonthStore'
@@ -63,6 +68,12 @@ function formatPercent(rate: number | null): string {
   return rate === null ? '—' : `${Math.round(rate * 100)}%`
 }
 
+/** 日付ラベル(月/日)。売上推移チャートのX軸ラベル用(既存データのsnapshotDateを整形するのみ)。 */
+function formatShortDate(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00Z`)
+  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`
+}
+
 /**
  * 人件費率（PHASE MD-1）に含める fixedCosts 内訳キー。
  * ユーザー承認済みの範囲（役員報酬・外注費・固定給・社会保険料）のみを合算する。
@@ -90,9 +101,30 @@ function sumLaborCosts(fixedCosts: Record<string, unknown> | null): number | nul
   return hasValue ? total : null
 }
 
+/**
+ * 人件費率の表示色分け(PHASE ADMIN-UX-1・表示のみ)。一般的なサロン業態の目安として
+ * 35%以下=健全/35〜50%=注意/50%超=高い、の3段階で色を変えるだけで、数値自体・
+ * 計算式は変更しない(既存のlaborCostRate計算をそのまま使う)。
+ */
+function laborCostColor(rate: number | null): string {
+  if (rate === null) return '#9F7E6C'
+  if (rate <= 35) return '#3C9D5C'
+  if (rate <= 50) return '#D98F3C'
+  return '#D14F4F'
+}
+
 function formatDateTime(iso: string): string {
   const d = new Date(iso)
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+/** 今日・翌日の曜日キー(JST基準)。「今週の予約状況」の強調表示用の純粋な日付計算のみで、新しいデータ取得は行わない。 */
+function jstDayOfWeek(offsetDays: number): WeeklyReservationDayCount['dayOfWeek'] {
+  const now = new Date()
+  const jst = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }))
+  jst.setDate(jst.getDate() + offsetDays)
+  const map: WeeklyReservationDayCount['dayOfWeek'][] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
+  return map[jst.getDay()]
 }
 
 function SectionCard({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
@@ -107,11 +139,53 @@ function SectionCard({ title, icon, children }: { title: string; icon: React.Rea
   )
 }
 
-function Stat({ label, value, color = '#5C4033' }: { label: string; value: string; color?: string }) {
+/** KPI/指標の均一グリッド。auto-fitで1920px〜タブレット幅まで列数が自然に変わる(PHASE ADMIN-UX-1)。 */
+function StatGrid({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ flex: 1, minWidth: '100px', background: '#FFF8F7', borderRadius: '12px', padding: '10px 12px', border: '1px solid #F5EEF0' }}>
+    <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
+      {children}
+    </div>
+  )
+}
+
+function Stat({ label, value, color = '#5C4033', hint }: { label: string; value: string; color?: string; hint?: string }) {
+  const isEmpty = value === '—'
+  return (
+    <div style={{ background: '#FFF8F7', borderRadius: '12px', padding: '10px 12px', border: '1px solid #F5EEF0', minHeight: '68px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
       <p style={{ fontSize: '9px', color: '#C8A8B0', marginBottom: '3px' }}>{label}</p>
-      <p style={{ fontSize: '18px', fontWeight: 700, color, fontFamily: 'Inter, sans-serif', lineHeight: 1.1 }}>{value}</p>
+      <p style={{ fontSize: '18px', fontWeight: 700, color: isEmpty ? '#C8A8B0' : color, fontFamily: 'Inter, sans-serif', lineHeight: 1.1 }}>{value}</p>
+      {isEmpty && hint && (
+        <p style={{ fontSize: '9px', color: '#C8A8B0', marginTop: '3px', lineHeight: 1.3 }}>{hint}</p>
+      )}
+    </div>
+  )
+}
+
+/** 「本日の売上」ヒーロー表示(PHASE ADMIN-UX-1)。最初の30秒で目に入る最優先情報。既存kpi4.todaySalesをそのまま表示するだけ。 */
+function TodaySalesHero({ amount }: { amount: number }) {
+  return (
+    <div
+      style={{
+        background: 'linear-gradient(135deg, #FDEEF1, #FFF8F7)',
+        border: '1px solid #F5D9DF',
+        borderRadius: '18px',
+        padding: '18px 20px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '8px',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+        <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <TrendingUp size={18} color="#D98292" />
+        </div>
+        <p style={{ fontSize: '12px', fontWeight: 700, color: '#9F7E6C' }}>本日の売上</p>
+      </div>
+      <p style={{ fontSize: '30px', fontWeight: 800, color: '#5C4033', fontFamily: 'Inter, sans-serif', lineHeight: 1 }}>
+        {formatYen(amount)}
+      </p>
     </div>
   )
 }
@@ -121,21 +195,32 @@ function SalesTrendChart({ points }: { points: { snapshotDate: string; monthlySa
     return <p style={{ fontSize: '12px', color: '#C8A8B0', padding: '12px 0' }}>当月のスナップショットはまだありません</p>
   }
   const max = Math.max(...points.map((p) => Math.max(p.monthlySales, p.forecastSales)), 1)
+  const first = points[0]
+  const last = points[points.length - 1]
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', height: '80px', padding: '4px 0' }}>
-      {points.map((p) => (
-        <div
-          key={p.snapshotDate}
-          title={`${p.snapshotDate}: ${formatYen(p.monthlySales)}`}
-          style={{
-            flex: 1,
-            height: `${Math.max((p.monthlySales / max) * 100, 2)}%`,
-            background: 'linear-gradient(180deg, #F56E8B, #F0487A)',
-            borderRadius: '3px 3px 0 0',
-            minWidth: '4px',
-          }}
-        />
-      ))}
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '4px' }}>
+        <span style={{ fontSize: '10px', color: '#C8A8B0' }}>最大 {formatYen(max)}</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', height: '96px', padding: '6px 2px 4px', borderBottom: '1px solid #F5EEF0' }}>
+        {points.map((p) => (
+          <div
+            key={p.snapshotDate}
+            title={`${p.snapshotDate}: ${formatYen(p.monthlySales)}`}
+            style={{
+              flex: 1,
+              height: `${Math.max((p.monthlySales / max) * 100, 2)}%`,
+              background: 'linear-gradient(180deg, #F56E8B, #F0487A)',
+              borderRadius: '4px 4px 0 0',
+              minWidth: '4px',
+            }}
+          />
+        ))}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
+        <span style={{ fontSize: '10px', color: '#C8A8B0' }}>{formatShortDate(first.snapshotDate)}</span>
+        <span style={{ fontSize: '10px', color: '#C8A8B0' }}>{formatShortDate(last.snapshotDate)}</span>
+      </div>
     </div>
   )
 }
@@ -200,10 +285,19 @@ function WeeklyReservationsDetailModal({ data, onClose }: { data: WeeklyReservat
   )
 }
 
-/** 「今週の予約状況」カード(実データのみ。予約率・稼働率・空き枠率は算出しない)。 */
+/**
+ * 「今週の予約状況」カード(実データのみ。予約率・稼働率・空き枠率は算出しない)。
+ * PHASE ADMIN-UX-1: 今日・明日・週末の件数を上部に強調表示し、曜日別リストでも
+ * 今日/明日の行を目立たせる(新しいデータ取得は行わず、既存dayOfWeekCountsを
+ * クライアント側で日付照合するだけ)。
+ */
 function WeeklyReservationsCard({ data }: { data: WeeklyReservations }) {
   const [showDetail, setShowDetail] = useState(false)
   const maxCount = Math.max(...data.dayOfWeekCounts.map((d) => d.count), 1)
+  const todayKey = jstDayOfWeek(0)
+  const tomorrowKey = jstDayOfWeek(1)
+  const countOf = (key: WeeklyReservationDayCount['dayOfWeek']) => data.dayOfWeekCounts.find((d) => d.dayOfWeek === key)?.count ?? 0
+  const weekendCount = countOf('sat') + countOf('sun')
 
   return (
     <div style={{ background: '#fff', border: '1px solid #F5EEF0', borderRadius: '16px', padding: '16px 18px' }}>
@@ -223,26 +317,56 @@ function WeeklyReservationsCard({ data }: { data: WeeklyReservations }) {
         </button>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        {data.dayOfWeekCounts.map(({ dayOfWeek, count }) => (
-          <div key={dayOfWeek} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '11px', fontWeight: 700, color: '#9F7E6C', width: '14px', flexShrink: 0 }}>{DAY_LABEL_JA[dayOfWeek]}</span>
-            <div style={{ flex: 1, background: '#FFF8F7', borderRadius: '999px', height: '10px', overflow: 'hidden' }}>
-              <div
-                style={{
-                  width: `${Math.max((count / maxCount) * 100, count > 0 ? 4 : 0)}%`,
-                  height: '100%',
-                  background: 'linear-gradient(90deg, #F56E8B, #F0487A)',
-                  borderRadius: '999px',
-                }}
-              />
-            </div>
-            <span style={{ fontSize: '11px', color: '#5C4033', width: '32px', textAlign: 'right', flexShrink: 0 }}>{count}件</span>
-          </div>
-        ))}
+      {/* 今日/明日/週末の即時把握用サマリー(強調・装飾は増やさない) */}
+      <div className="grid gap-2 mb-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))' }}>
+        <Stat label="今日" value={`${countOf(todayKey)}件`} color="#D14F4F" />
+        <Stat label="明日" value={`${countOf(tomorrowKey)}件`} color="#D98292" />
+        <Stat label="週末(土日)" value={`${weekendCount}件`} />
       </div>
 
-      <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        {data.dayOfWeekCounts.map(({ dayOfWeek, count }) => {
+          const isToday = dayOfWeek === todayKey
+          const isTomorrow = dayOfWeek === tomorrowKey
+          const dayColor = dayOfWeek === 'sun' ? '#D14F4F' : dayOfWeek === 'sat' ? '#5A87C7' : '#9F7E6C'
+          return (
+            <div
+              key={dayOfWeek}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                background: isToday ? 'rgba(240,72,122,0.06)' : 'transparent',
+                borderRadius: '8px', padding: isToday ? '3px 6px' : '3px 6px',
+              }}
+            >
+              <span style={{ fontSize: '11px', fontWeight: 700, color: dayColor, width: '14px', flexShrink: 0 }}>{DAY_LABEL_JA[dayOfWeek]}</span>
+              {(isToday || isTomorrow) && (
+                <span
+                  style={{
+                    fontSize: '9px', fontWeight: 700, color: isToday ? '#fff' : '#D98292',
+                    background: isToday ? '#F0487A' : 'rgba(217,130,146,0.12)',
+                    borderRadius: '999px', padding: '1px 6px', flexShrink: 0,
+                  }}
+                >
+                  {isToday ? '今日' : '明日'}
+                </span>
+              )}
+              <div style={{ flex: 1, background: '#FFF8F7', borderRadius: '999px', height: '10px', overflow: 'hidden' }}>
+                <div
+                  style={{
+                    width: `${Math.max((count / maxCount) * 100, count > 0 ? 4 : 0)}%`,
+                    height: '100%',
+                    background: 'linear-gradient(90deg, #F56E8B, #F0487A)',
+                    borderRadius: '999px',
+                  }}
+                />
+              </div>
+              <span style={{ fontSize: '11px', color: '#5C4033', width: '32px', textAlign: 'right', flexShrink: 0 }}>{count}件</span>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="grid gap-2 mt-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
         <Stat label="今週予約件数" value={`${data.totalCount}件`} />
         <Stat label="今週予測売上" value={formatYen(data.forecastSales)} />
       </div>
@@ -316,33 +440,43 @@ function DashboardHomeContent() {
     : `${Number(selectedMonth.slice(5, 7))}月`
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '16px', maxWidth: '480px' }}>
+    <div className="p-4 sm:p-5 lg:p-8" style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '-4px' }}>
         <p style={{ fontSize: '11px', fontWeight: 700, color: '#C8A8B0' }}>表示月</p>
         <MonthSelector />
       </div>
-      <SectionCard title={`${monthLabel}の経営(必須4指標)`} icon={<TrendingUp size={16} color="#D98292" />}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-          <Stat label="売上" value={`${formatYen(required4.monthlySales)} / 目標 ${kpi4.salesTarget !== null ? formatYen(kpi4.salesTarget) : '未設定'}`} />
+
+      {/* ── ① 経営TOP・優先順位1: 本日の売上(ヒーロー表示・表示月に関わらず常に「今日」) ── */}
+      <TodaySalesHero amount={kpi4.todaySales} />
+
+      {/* ── 優先順位2〜4: 今月売上・利益見込み・人件費率・損益分岐点 ── */}
+      <SectionCard title={`${monthLabel}の経営(必須4指標)`} icon={<CalendarCheck size={16} color="#D98292" />}>
+        <StatGrid>
+          <Stat label={`${monthLabel}売上`} value={`${formatYen(required4.monthlySales)} / 目標 ${kpi4.salesTarget !== null ? formatYen(kpi4.salesTarget) : '未設定'}`} />
           <Stat
-            label="利益(暫定)"
+            label="利益見込み(暫定)"
             value={required4.fixedCostsConfigured ? formatYen(required4.profit ?? 0) : '設定待ち'}
             color={required4.profit !== null && required4.profit < 0 ? '#D14F4F' : '#5C4033'}
+            hint={required4.fixedCostsConfigured ? undefined : '固定費が未設定です'}
+          />
+          <Stat
+            label="人件費率"
+            value={laborCostRate === null ? '—' : `${laborCostRate.toFixed(1)}%`}
+            color={laborCostColor(laborCostRate)}
+            hint="人件費(固定費)が未設定です"
           />
           <Stat
             label="損益分岐点"
             value={required4.breakevenPoint === null ? '—' : formatYen(required4.breakevenPoint)}
+            hint="固定費が未設定です"
           />
           <Stat
             label="損益分岐まで"
             value={required4.breakevenRemaining === null ? '—' : formatYen(required4.breakevenRemaining)}
+            hint="固定費が未設定です"
           />
           <Stat label="着地予測" value={formatYen(required4.forecastSales)} />
-          <Stat
-            label="人件費率"
-            value={laborCostRate === null ? '—' : `${laborCostRate.toFixed(1)}%`}
-          />
-        </div>
+        </StatGrid>
         {!required4.fixedCostsConfigured && (
           <Link
             href="/admin/business-settings"
@@ -356,38 +490,20 @@ function DashboardHomeContent() {
         )}
       </SectionCard>
 
-      <SectionCard title="KPI(これだけ・異常値で色)" icon={<Target size={16} color="#D98292" />}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-          <Stat label="本日売上" value={formatYen(kpi4.todaySales)} />
-          <Stat label="目標進捗" value={formatPercent(kpi4.targetProgress)} />
-          <Stat label="次回予約率" value={formatPercent(kpi4.rebookingRate)} />
-          <Stat label="DM→予約転換率" value={formatPercent(kpi4.dmToBookingRate)} />
-        </div>
-      </SectionCard>
-
+      {/* ── 優先順位5: 今週予約状況 ── */}
       <WeeklyReservationsCard data={weeklyReservations} />
 
-      <SectionCard title="来店・リピート・指名(月次)" icon={<Users size={16} color="#D98292" />}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-          <Stat label="来店人数" value={extendedKpi.visitCount !== null ? `${extendedKpi.visitCount}人` : '—'} />
-          <Stat label="客単価" value={avgSpend === null ? '—' : formatYenFull(avgSpend)} />
-          <Stat label="リピート率(30日)" value={formatPercent(extendedKpi.repeat30)} />
-          <Stat label="リピート率(60日)" value={formatPercent(extendedKpi.repeat60)} />
-          <Stat label="リピート率(90日)" value={formatPercent(extendedKpi.repeat90)} />
-          <Stat label="指名率" value={formatPercent(extendedKpi.nominationRate)} />
-        </div>
-      </SectionCard>
-
+      {/* ── 優先順位6: 今日の一手 ── */}
       <SectionCard title="今日の一手(AI・一行指示)" icon={<MessageCircleHeart size={16} color="#D98292" />}>
         {todayActions.length === 0 ? (
           <p style={{ fontSize: '12px', color: '#C8A8B0' }}>本日の指示はありません</p>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
             {todayActions.map((action, i) => {
               const { color, bg, Icon, label } = SEVERITY_STYLE[action.severity]
               return (
-                <div key={i} style={{ borderRadius: '12px', padding: '10px 12px', background: bg, border: `1px solid ${color}33` }}>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                <div key={i} style={{ borderRadius: '12px', padding: '10px 12px', background: bg, border: `1px solid ${color}33`, minHeight: '112px', display: 'flex' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', width: '100%' }}>
                     <Icon size={14} color={color} style={{ marginTop: '2px', flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px', flexWrap: 'wrap' }}>
@@ -395,7 +511,15 @@ function DashboardHomeContent() {
                         <span style={{ fontSize: '9px', color, opacity: 0.8 }}>{label}</span>
                         <span style={{ fontSize: '9px', color: '#9F7E6C' }}>対象{action.targetCount}件</span>
                       </div>
-                      <p style={{ fontSize: '12px', color: '#5C4033', lineHeight: 1.5 }}>{action.message}</p>
+                      <p
+                        style={{
+                          fontSize: '12px', color: '#5C4033', lineHeight: 1.5,
+                          display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden', textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {action.message}
+                      </p>
                       <span
                         style={{
                           display: 'inline-block', marginTop: '5px', fontSize: '10px', fontWeight: 700,
@@ -413,11 +537,31 @@ function DashboardHomeContent() {
         )}
       </SectionCard>
 
+      {/* ── 参考指標(補足・優先順位は下げるが情報は削らない) ── */}
+      <SectionCard title="目標・予約指標(参考)" icon={<Target size={16} color="#D98292" />}>
+        <StatGrid>
+          <Stat label="目標進捗" value={formatPercent(kpi4.targetProgress)} hint="売上目標が未設定です" />
+          <Stat label="次回予約率" value={formatPercent(kpi4.rebookingRate)} hint="集計データがまだありません" />
+          <Stat label="DM→予約転換率" value={formatPercent(kpi4.dmToBookingRate)} hint="集計データがまだありません" />
+        </StatGrid>
+      </SectionCard>
+
+      <SectionCard title="来店・リピート・指名(月次)" icon={<Users size={16} color="#D98292" />}>
+        <StatGrid>
+          <Stat label="来店人数" value={extendedKpi.visitCount !== null ? `${extendedKpi.visitCount}人` : '—'} hint="集計データがまだありません" />
+          <Stat label="客単価" value={avgSpend === null ? '—' : formatYenFull(avgSpend)} hint="来店データがありません" />
+          <Stat label="リピート率(30日)" value={formatPercent(extendedKpi.repeat30)} hint="データ不足のため未計測" />
+          <Stat label="リピート率(60日)" value={formatPercent(extendedKpi.repeat60)} hint="データ不足のため未計測" />
+          <Stat label="リピート率(90日)" value={formatPercent(extendedKpi.repeat90)} hint="データ不足のため未計測" />
+          <Stat label="指名率" value={formatPercent(extendedKpi.nominationRate)} hint="来店データがありません" />
+        </StatGrid>
+      </SectionCard>
+
       <SectionCard title="CSV取込状況" icon={<UploadCloud size={16} color="#D98292" />}>
         {csvImportStatus === null ? (
           <p style={{ fontSize: '12px', color: '#C8A8B0' }}>取込履歴はまだありません</p>
         ) : (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+          <StatGrid>
             <Stat label="最終取込" value={formatDateTime(csvImportStatus.lastImportedAt)} />
             <Stat label="新規/更新" value={`${csvImportStatus.newCustomers}/${csvImportStatus.updatedCustomers}`} />
             <Stat label="来店取込" value={`${csvImportStatus.visitsImported}件`} />
@@ -426,11 +570,11 @@ function DashboardHomeContent() {
               value={`${csvImportStatus.unresolvedStaffCount}件`}
               color={csvImportStatus.unresolvedStaffCount > 0 ? '#D14F4F' : '#5C4033'}
             />
-          </div>
+          </StatGrid>
         )}
       </SectionCard>
 
-      <SectionCard title="売上推移(選択月・日次)" icon={<CalendarCheck size={16} color="#D98292" />}>
+      <SectionCard title="売上推移(選択月・日次)" icon={<LineChart size={16} color="#D98292" />}>
         <SalesTrendChart points={salesTrend} />
       </SectionCard>
     </div>
