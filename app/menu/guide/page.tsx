@@ -1,13 +1,13 @@
 'use client'
 /**
- * /menu/guide — Riora AI アシスタント 使い方ガイド
+ * /menu/guide — Riora OS スタッフ向け利用ガイド
  *
  * 強調事項: AI 提案は提案であり命令ではない。最終判断はスタッフ。
  */
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronLeft, ChevronDown, ChevronUp, BookOpen, Mic, Brain, Calendar, Star, Shield, HelpCircle, Smartphone, Compass, Lock } from 'lucide-react'
+import { ChevronLeft, ChevronDown, ChevronUp, BookOpen, Mic, Brain, Bell, MessageCircle, Star, Shield, Compass, Smartphone, HelpCircle } from 'lucide-react'
 
 interface Section {
   id:      number
@@ -20,259 +20,200 @@ interface Section {
 const sections: Section[] = [
   {
     id:    1,
-    icon:  Compass,
-    title: '1日の利用フロー',
-    color: '#6BA88C',
+    icon:  Bell,
+    title: '今日の予約・通知',
+    color: '#F5A0B5',
     content: (
       <div className="space-y-3 text-[13px]" style={{ color: '#4A2C2A', lineHeight: '1.7' }}>
-        <p>スタッフの1日の流れに沿って、アプリの使い方をご案内します。</p>
-        <div className="space-y-2.5">
-          {[
-            { n: '①', t: '出勤',       d: 'まず【今日】タブを開き、本日の予約・AIブリーフィング・注意事項を確認します。' },
-            { n: '②', t: '来店前',     d: 'お客様がいらっしゃる前に、顧客ページで前回の施術内容や禁忌事項を確認します。' },
-            { n: '③', t: '接客中',     d: '気づいたことがあれば、音声メモで記録できます。あとでAIが自動で要点をまとめます。' },
-            { n: '④', t: '施術後',     d: 'AIが次回のご提案を用意します。あくまで参考情報のため、最終判断はスタッフが行ってください。' },
-            { n: '⑤', t: '退店後',     d: '音声メモを保存すると、AIが要約して顧客履歴に自動で反映されます。' },
-            { n: '⑥', t: '次回来店',   d: '次にご来店いただいた際は、前回までの履歴がすぐに確認できます。' },
-            { n: '⑦', t: '振り返り',   d: '【メモ】タブでは、これまで記録した内容をいつでも振り返ることができます。' },
-            { n: '⑧', t: 'マイページ', d: '退勤前に【マイページ】で、ご自身の実績を確認できます。' },
-          ].map(step => (
-            <div key={step.t} className="flex gap-2.5 items-start">
-              <span
-                className="text-[11px] font-bold w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
-                style={{ background: '#6BA88C', color: '#fff' }}
-              >
-                {step.n}
-              </span>
-              <div>
-                <p className="font-semibold">{step.t}</p>
-                <p style={{ color: '#6B4C4C' }}>{step.d}</p>
-              </div>
-            </div>
-          ))}
-        </div>
+        <ul className="space-y-2 pl-1">
+          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span><strong>予約の一元管理</strong>：今日・今週の予約スケジュールがひと目でわかります。</span></li>
+          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span><strong>事前アラート</strong>：来店前に「このお客様の注意点」が通知されます。</span></li>
+          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span><strong>記念日リマインダー</strong>：誕生日など、お祝い対象のお客様を事前にお知らせします。</span></li>
+        </ul>
       </div>
     ),
   },
   {
     id:    2,
-    icon:  Brain,
-    title: 'AI 提案は「参考情報」です',
-    color: '#D98292',
+    icon:  BookOpen,
+    title: '顧客情報（Customer Bottom Sheet）',
+    color: '#78A8D8',
     content: (
       <div className="space-y-3 text-[13px]" style={{ color: '#4A2C2A', lineHeight: '1.7' }}>
-        <p>
-          Riora の AI は来店履歴・顧客の好み・過去の記録をもとに接客のヒントを提案します。
-        </p>
+        <p>お客様の名前をタップするだけで、以下の詳細データがすぐにポップアップで確認できます。</p>
+        <ul className="space-y-2 pl-1">
+          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span>基本情報 / 来店履歴</span></li>
+          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span>過去の会話メモ</span></li>
+          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span>前回の提案内容</span></li>
+        </ul>
         <div
           className="rounded-2xl p-3"
           style={{ background: 'rgba(217,130,146,0.08)', border: '1px solid rgba(217,130,146,0.2)' }}
         >
-          <p className="font-semibold mb-1" style={{ color: '#D98292' }}>重要</p>
-          <p>
-            AI の提案はあくまで参考情報です。施術内容や接客方針の<strong>最終判断はスタッフが行ってください</strong>。
-            「AI がそう言ったから」という理由だけで施術を変更しないでください。
-          </p>
+          <p className="font-semibold mb-1" style={{ color: '#D98292' }}>禁忌事項・重要フラグ</p>
+          <p>トラブル防止のため、<strong>必ず最初にご確認ください</strong>。</p>
         </div>
-        <p>
-          お客様の体調・当日の状態・ご要望を直接確認した上で、スタッフの専門的判断を最優先してください。
-        </p>
       </div>
     ),
   },
   {
     id:    3,
-    icon:  Calendar,
-    title: '予約管理の使い方',
-    color: '#78A8D8',
+    icon:  Brain,
+    title: 'AI提案サポート',
+    color: '#D98292',
     content: (
       <div className="space-y-3 text-[13px]" style={{ color: '#4A2C2A', lineHeight: '1.7' }}>
-        <p>予約一覧画面では本日の来店予定を確認できます。</p>
         <ul className="space-y-2 pl-1">
-          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span>予約カードをタップすると AI 接客提案が表示されます</span></li>
-          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span>提案内容は来店前のブリーフィングとしてご活用ください</span></li>
-          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span>来店済みの予約は自動的に「完了」マークが付きます</span></li>
+          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span><strong>パーソナライズ提案</strong>：お客様一人ひとりに合ったホームケアや次回の施術プランを自動で算出して表示します。</span></li>
+          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span><strong>関連ブログ連携</strong>：お客様の悩みに合わせたブログ記事がすぐに見つかります。</span></li>
+          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span><strong>来店サイクル予測</strong>：「次回はいつ頃のご来店がベストか」の目安を提案します。</span></li>
         </ul>
-        <p className="text-[11px]" style={{ color: '#9E8090' }}>
-          ※ 予約データは外部予約システムと連携しています。変更は元のシステム上で行ってください。
-        </p>
+        <div
+          className="rounded-2xl p-3"
+          style={{ background: 'rgba(217,130,146,0.08)', border: '1px solid rgba(217,130,146,0.2)' }}
+        >
+          <p className="font-semibold mb-1" style={{ color: '#D98292' }}>AI提案は「アシスト」</p>
+          <p>AIの提案はあくまで参考情報です。<strong>最終判断はスタッフの皆様が行ってください</strong>。</p>
+        </div>
       </div>
     ),
   },
   {
     id:    4,
-    icon:  Star,
-    title: 'VIP 顧客管理',
-    color: '#D4A96A',
+    icon:  Mic,
+    title: '音声メモ',
+    color: '#52C87A',
     content: (
       <div className="space-y-3 text-[13px]" style={{ color: '#4A2C2A', lineHeight: '1.7' }}>
-        <p>VIP 管理では担当顧客の情報を閲覧できます。</p>
-        <ul className="space-y-2 pl-1">
-          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span>自分が担当する顧客と「店舗共有顧客」が表示されます</span></li>
-          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span>他のスタッフの専任顧客は表示されません（プライバシー保護）</span></li>
-          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span>チャーンリスクが高い顧客には警告インジケーターが表示されます</span></li>
-        </ul>
-        <div
-          className="rounded-2xl p-3"
-          style={{ background: 'rgba(212,169,106,0.08)', border: '1px solid rgba(212,169,106,0.2)' }}
-        >
-          <p className="font-semibold text-[12px] mb-1" style={{ color: '#D4A96A' }}>担当割り当て</p>
-          <p>担当顧客の変更が必要な場合は、管理者にご連絡ください。</p>
-        </div>
+        <p>接客が終わったら、スマホに向かって話すだけで自動でメモが残ります。</p>
+        <p>AIが音声を正確に文字起こしするため、カルテ入力の手間が大幅に削減されます。</p>
       </div>
     ),
   },
   {
     id:    5,
-    icon:  Mic,
-    title: 'Voice Memo（音声メモ）',
-    color: '#52C87A',
+    icon:  MessageCircle,
+    title: 'LINEメッセージ作成',
+    color: '#34A070',
     content: (
       <div className="space-y-3 text-[13px]" style={{ color: '#4A2C2A', lineHeight: '1.7' }}>
-        <p>施術中に気づいたことを音声で記録し、AI が自動で要点を抽出します。</p>
-        <div className="space-y-2">
-          <div className="flex gap-2 items-start">
-            <span className="text-[11px] font-bold w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: '#52C87A', color: '#fff' }}>1</span>
-            <p>マイクボタンを押して録音開始</p>
-          </div>
-          <div className="flex gap-2 items-start">
-            <span className="text-[11px] font-bold w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: '#52C87A', color: '#fff' }}>2</span>
-            <p>停止後、音声と文字起こしを確認</p>
-          </div>
-          <div className="flex gap-2 items-start">
-            <span className="text-[11px] font-bold w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: '#52C87A', color: '#fff' }}>3</span>
-            <p>保存したい項目にチェックを入れて保存</p>
-          </div>
-          <div className="flex gap-2 items-start">
-            <span className="text-[11px] font-bold w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: '#52C87A', color: '#fff' }}>4</span>
-            <p>5秒以内なら「元に戻す」で取り消し可能</p>
-          </div>
-        </div>
-        <p className="text-[11px]" style={{ color: '#9E8090' }}>
-          ※ チェックしなかった項目は保存されません。個人情報に注意して録音してください。
-        </p>
+        <p>ホームケアの案内や、心のこもったお礼メッセージをAIが自動で下書きします。</p>
+        <p>内容を確認してコピーするだけで、スムーズにLINE送信が可能です。</p>
       </div>
     ),
   },
   {
     id:    6,
-    icon:  BookOpen,
-    title: '覚えておくこと（Customer Memory）',
-    color: '#A078D4',
+    icon:  Star,
+    title: 'My Page（マイページ）',
+    color: '#D4A96A',
     content: (
       <div className="space-y-3 text-[13px]" style={{ color: '#4A2C2A', lineHeight: '1.7' }}>
-        <p>顧客カルテの「覚えておくこと」欄に大切な情報を記録できます。</p>
-        <ul className="space-y-2 pl-1">
-          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span>家族・仕事・趣味・健康・ライフイベントの5カテゴリ</span></li>
-          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span>「センシティブ」フラグを立てると別カードで管理されます</span></li>
-          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span>次回来店時のブリーフィングに自動で表示されます</span></li>
-        </ul>
-        <div
-          className="rounded-2xl p-3"
-          style={{ background: 'rgba(160,120,212,0.08)', border: '1px solid rgba(160,120,212,0.2)' }}
-        >
-          <p className="font-semibold text-[12px] mb-1" style={{ color: '#A078D4' }}>AI への渡し禁止</p>
-          <p>
-            Customer Memory の内容は LINE 提案・接客 AI（ProposalOrchestrator）には渡されません。
-            スタッフが直接活用するための情報です。
-          </p>
-        </div>
+        <p>自分の「指名数」「リピート率」「店販実績」を先月と比較してグラフや数字で確認できます。</p>
+        <p>日々の頑張りがリアルタイムで可視化されます。</p>
       </div>
     ),
   },
   {
     id:    7,
-    icon:  Shield,
-    title: 'セキュリティと権限',
-    color: '#E88C5A',
+    icon:  Compass,
+    title: 'シーン別・使い方の流儀',
+    color: '#6BA88C',
     content: (
       <div className="space-y-3 text-[13px]" style={{ color: '#4A2C2A', lineHeight: '1.7' }}>
-        <p>スタッフごとにアクセスできる顧客情報が制限されています。</p>
-        <ul className="space-y-2 pl-1">
-          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span><strong>担当顧客</strong>: 常時閲覧・編集可能</span></li>
-          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span><strong>当日予約顧客</strong>: 当日のみ閲覧可能</span></li>
-          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span><strong>共有顧客</strong>（担当未設定）: 全スタッフ閲覧可能</span></li>
-          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span>他スタッフ専任顧客のデータは見えません</span></li>
-        </ul>
-        <p className="text-[11px]" style={{ color: '#9E8090' }}>
-          ログアウト後は顧客情報へのアクセスが遮断されます。共有端末では必ずログアウトしてください。
-        </p>
+        {[
+          { t: '来店前',   d: '通知と顧客情報をチェックし、禁忌・重要フラグや前回までの会話内容を頭に入れておきます。' },
+          { t: '接客中',   d: '必要に応じてAI提案を参考にし、お客様に最適なホームケアや次回周期をご案内します。' },
+          { t: '接客後',   d: 'すぐに音声メモを残し、次回の提案内容を確定させます。' },
+          { t: 'スキマ時間', d: '「My Page」で自分の実績数値をチェックし、モチベーションアップや目標管理に活かします。' },
+        ].map(step => (
+          <div key={step.t} className="rounded-2xl p-3" style={{ background: 'rgba(107,168,140,0.08)', border: '1px solid rgba(107,168,140,0.2)' }}>
+            <p className="font-semibold mb-1" style={{ color: '#6BA88C' }}>【{step.t}】</p>
+            <p>{step.d}</p>
+          </div>
+        ))}
       </div>
     ),
   },
   {
     id:    8,
-    icon:  Lock,
-    title: '安心してご利用いただくために',
-    color: '#6B8FB0',
+    icon:  Shield,
+    title: 'ご利用上の大切な注意点',
+    color: '#E88C5A',
     content: (
       <div className="space-y-3 text-[13px]" style={{ color: '#4A2C2A', lineHeight: '1.7' }}>
-        <p>安心してご利用いただくために、以下の点をお約束します。</p>
-        <ul className="space-y-2 pl-1">
-          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span>接客に必要な情報以外の、不要な個人情報を収集することはありません</span></li>
-          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span>クレジットカード番号などの決済情報は、アプリ内に保存されません</span></li>
-          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span>お客様の情報はアクセス権限に応じて保護されています</span></li>
-          <li className="flex gap-2"><span style={{ color: '#D98292' }}>•</span><span>音声メモは接客品質向上を目的としたものであり、それ以外の目的では使用されません</span></li>
-        </ul>
+        <div className="rounded-2xl p-3" style={{ background: 'rgba(232,140,90,0.08)', border: '1px solid rgba(232,140,90,0.2)' }}>
+          <p className="font-semibold mb-1" style={{ color: '#E88C5A' }}>禁忌・重要フラグの徹底</p>
+          <p>トラブル防止のため、アレルギーや施術上の注意事項（フラグ）は必ず事前に目を通してください。</p>
+        </div>
+        <div className="rounded-2xl p-3" style={{ background: 'rgba(232,140,90,0.08)', border: '1px solid rgba(232,140,90,0.2)' }}>
+          <p className="font-semibold mb-1" style={{ color: '#E88C5A' }}>AI提案は「アシスト」</p>
+          <p>AIの提案はあくまで参考情報です。お客様の表情やその日のコンディションを見ながら、最終的な判断はスタッフの皆様が行ってください。</p>
+        </div>
+        <div className="rounded-2xl p-3" style={{ background: 'rgba(232,140,90,0.08)', border: '1px solid rgba(232,140,90,0.2)' }}>
+          <p className="font-semibold mb-1" style={{ color: '#E88C5A' }}>情報管理の厳守</p>
+          <p>お客様の個人情報やアプリ内のデータを外部に持ち出したり、SNS等へ掲載したりしないよう徹底をお願いします。</p>
+        </div>
       </div>
     ),
   },
   {
     id:    9,
-    icon:  HelpCircle,
-    title: 'よくある質問',
-    color: '#9E8090',
+    icon:  Smartphone,
+    title: 'ホーム画面への追加方法',
+    color: '#F5A0B5',
     content: (
-      <div className="space-y-4 text-[13px]" style={{ color: '#4A2C2A', lineHeight: '1.7' }}>
-        <div>
-          <p className="font-semibold mb-1">Q. AI の提案が実際の顧客の状況と違う</p>
-          <p style={{ color: '#6B4C4C' }}>
-            A. AI は過去データをもとに生成しています。お客様の当日の状況を直接確認し、
-            スタッフの判断を優先してください。フィードバックは管理者にご連絡ください。
-          </p>
+      <div className="space-y-3 text-[13px]" style={{ color: '#4A2C2A', lineHeight: '1.7' }}>
+        <div
+          className="rounded-2xl p-3"
+          style={{ background: 'rgba(245,160,181,0.08)', border: '1px solid rgba(245,160,181,0.2)' }}
+        >
+          <p className="font-semibold text-[12px] mb-1.5" style={{ color: '#D98292' }}>iPhone</p>
+          <ol className="space-y-1 pl-1">
+            <li>1. SafariでRiora OSを開く</li>
+            <li>2. 共有ボタンを押す</li>
+            <li>3. 「ホーム画面に追加」を選択</li>
+            <li>4. 「追加」を押して完了</li>
+          </ol>
         </div>
-        <div>
-          <p className="font-semibold mb-1">Q. 音声メモが文字起こしされない</p>
-          <p style={{ color: '#6B4C4C' }}>
-            A. 現在、文字起こし機能はベータ版です。うまく認識されない場合はテキスト入力で
-            直接修正してから保存してください。
-          </p>
-        </div>
-        <div>
-          <p className="font-semibold mb-1">Q. データが更新されない</p>
-          <p style={{ color: '#6B4C4C' }}>
-            A. 画面を下にスワイプして更新するか、一度ログアウトして再ログインしてください。
-          </p>
+        <div
+          className="rounded-2xl p-3"
+          style={{ background: 'rgba(120,168,216,0.08)', border: '1px solid rgba(120,168,216,0.2)' }}
+        >
+          <p className="font-semibold text-[12px] mb-1.5" style={{ color: '#78A8D8' }}>Android</p>
+          <ol className="space-y-1 pl-1">
+            <li>1. ChromeでRiora OSを開く</li>
+            <li>2. メニュー（︙）を押す</li>
+            <li>3. 「ホーム画面に追加」を選択</li>
+            <li>4. 「追加」を押して完了</li>
+          </ol>
         </div>
       </div>
     ),
   },
   {
     id:    10,
-    icon:  Smartphone,
-    title: 'ホーム画面に追加する方法',
-    color: '#F5A0B5',
+    icon:  HelpCircle,
+    title: 'FAQ',
+    color: '#9E8090',
     content: (
-      <div className="space-y-3 text-[13px]" style={{ color: '#4A2C2A', lineHeight: '1.7' }}>
-        <p>ホーム画面に追加すると、アイコンからすぐにRiora OSを開けます。</p>
-        <div
-          className="rounded-2xl p-3"
-          style={{ background: 'rgba(245,160,181,0.08)', border: '1px solid rgba(245,160,181,0.2)' }}
-        >
-          <p className="font-semibold text-[12px] mb-1" style={{ color: '#D98292' }}>iPhone(Safari)の場合</p>
-          <p>共有ボタン(□に↑)をタップ →「ホーム画面に追加」を選択 →「追加」をタップ</p>
+      <div className="space-y-4 text-[13px]" style={{ color: '#4A2C2A', lineHeight: '1.7' }}>
+        <div>
+          <p className="font-semibold mb-1">Q. ログインできません</p>
+          <p style={{ color: '#6B4C4C' }}>A. メールアドレス・パスワードを確認してください。</p>
         </div>
-        <div
-          className="rounded-2xl p-3"
-          style={{ background: 'rgba(120,168,216,0.08)', border: '1px solid rgba(120,168,216,0.2)' }}
-        >
-          <p className="font-semibold text-[12px] mb-1" style={{ color: '#78A8D8' }}>Android(Chrome)の場合</p>
-          <p>右上のメニュー(︙)をタップ →「アプリをインストール」を選択</p>
+        <div>
+          <p className="font-semibold mb-1">Q. パスワードを忘れました</p>
+          <p style={{ color: '#6B4C4C' }}>A. 設定 → パスワード変更、または管理者へお問い合わせください。</p>
         </div>
-        <p className="text-[11px]" style={{ color: '#9E8090' }}>
-          ※ LINEやInstagramなどアプリ内のブラウザで開いている場合は追加できません。
-          「Safariで開く」または「ブラウザで開く」を選んでからお試しください。
-        </p>
+        <div>
+          <p className="font-semibold mb-1">Q. 音声メモが保存されません</p>
+          <p style={{ color: '#6B4C4C' }}>A. マイク権限が有効になっているか確認してください。</p>
+        </div>
+        <div>
+          <p className="font-semibold mb-1">Q. AI提案は必ず使わないといけませんか？</p>
+          <p style={{ color: '#6B4C4C' }}>A. AIは接客を補助するための機能です。最終判断はスタッフが行ってください。</p>
+        </div>
       </div>
     ),
   },
@@ -338,6 +279,29 @@ export default function GuidePage() {
         }}
       >
         <div className="px-4 pt-4 space-y-3">
+          {/* イントロ（常時表示・折りたたみ不可） */}
+          <div
+            className="rounded-2xl p-4"
+            style={{
+              background: 'rgba(255,255,255,0.85)',
+              border: '1px solid #F5E6E8',
+              boxShadow: '0 2px 10px rgba(245,160,181,0.08)',
+            }}
+          >
+            <p className="text-[13px] font-semibold mb-1.5" style={{ color: '#4A2C2A' }}>
+              🌟 Riora OS（リオラ オーエス）とは？
+            </p>
+            <p className="text-[13px]" style={{ color: '#4A2C2A', lineHeight: '1.7' }}>
+              スタッフの皆様の日々の接客を強力にサポートする専用アプリです。
+              「お客様の情報をすぐに確認できる」「次に何を提案すればいいかが一目でわかる」
+              「うっかりミスや忘れ物を防いでくれる」— そんな、接客に集中するためのパートナーツールです。
+            </p>
+          </div>
+
+          <p className="text-[11px] font-semibold tracking-[0.1em] px-1" style={{ color: '#C8A8B0' }}>
+            📱 毎日使う6つの主要機能
+          </p>
+
           {sections.map((sec, i) => {
             const isOpen = open.has(sec.id)
             return (
