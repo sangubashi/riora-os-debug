@@ -1,13 +1,69 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Search, Calendar } from 'lucide-react'
+import { Search, Calendar, MessageSquareText, X, Clock } from 'lucide-react'
 import Image from 'next/image'
 import AppBottomNav from './AppBottomNav'
 import { useCustomerStore, type CustomerRow, type CustomerType } from '@/store/useCustomerStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import CustomerBottomSheet from '@/components/customer/CustomerBottomSheet'
+import { authedFetch } from '@/lib/api/authedFetch'
 import type { Customer, Reservation } from '@/types'
+
+// ─── 会話履歴検索（PHASE NOTES-SEARCH-1） ───────────────────────────────────────
+
+type NoteSearchKind = 'conversation' | 'chart' | 'voice' | 'ai_summary'
+
+interface NoteSearchResult {
+  customerId:   string
+  customerName: string
+  kind:         NoteSearchKind
+  matchedText:  string
+  occurredAt:   string
+}
+
+const NOTE_SEARCH_KIND_LABEL: Record<NoteSearchKind, string> = {
+  conversation: '会話メモ',
+  chart:        'カルテメモ',
+  voice:        '音声メモ',
+  ai_summary:   'AI要約',
+}
+
+const RECENT_SEARCHES_KEY = 'riora_conversation_search_history'
+const RECENT_SEARCHES_MAX = 5
+
+function loadRecentSearches(): string[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(RECENT_SEARCHES_KEY)
+    const parsed = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string').slice(0, RECENT_SEARCHES_MAX) : []
+  } catch { return [] }
+}
+
+function pushRecentSearch(query: string): string[] {
+  const trimmed = query.trim()
+  if (!trimmed || typeof window === 'undefined') return loadRecentSearches()
+  const next = [trimmed, ...loadRecentSearches().filter(v => v !== trimmed)].slice(0, RECENT_SEARCHES_MAX)
+  try { window.localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(next)) } catch { /* localStorageが使えない環境は無視 */ }
+  return next
+}
+
+/** 検索文字だけを黄色でハイライトする(PHASE NOTES-SEARCH-1・要件④)。 */
+function HighlightedText({ text, query }: { text: string; query: string }) {
+  if (!query.trim()) return <>{text}</>
+  const escaped = query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const parts = text.split(new RegExp(`(${escaped})`, 'gi'))
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.toLowerCase() === query.trim().toLowerCase()
+          ? <mark key={i} style={{ background: '#FFE066', color: '#4A2C2A', borderRadius: '3px', padding: '0 1px' }}>{part}</mark>
+          : <span key={i}>{part}</span>
+      )}
+    </>
+  )
+}
 
 // ─── 定数 ────────────────────────────────────────────────────────────────────
 
@@ -88,6 +144,47 @@ export default function CustomersScreen() {
   const [scope,            setScope]           = useState<OwnerScope>('mine')
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerRow | null>(null)
 
+  // ── 会話履歴検索（PHASE NOTES-SEARCH-1） ────────────────────────────────────
+  const [noteQuery,         setNoteQuery]         = useState('')
+  const [noteQueryFocused,  setNoteQueryFocused]  = useState(false)
+  const [noteResults,       setNoteResults]       = useState<NoteSearchResult[]>([])
+  const [noteSearchLoading, setNoteSearchLoading] = useState(false);
+  const [recentSearches,    setRecentSearches]    = useState<string[]>([]);
+
+  useEffect(() => {
+    setRecentSearches(loadRecentSearches())
+  }, [])
+
+  // 入力と同時検索（要件①）。300ms debounceでAPI呼び出しを間引く。
+  useEffect(() => {
+    const trimmed = noteQuery.trim()
+    if (trimmed.length < 2) {
+      setNoteResults([])
+      return
+    }
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      setNoteSearchLoading(true)
+      try {
+        const res = await authedFetch(`/api/customers/search-notes?q=${encodeURIComponent(trimmed)}`)
+        if (res.ok) {
+          const json = await res.json() as { success: boolean; results: NoteSearchResult[] }
+          if (!cancelled && json.success) setNoteResults(json.results)
+        }
+      } finally {
+        if (!cancelled) setNoteSearchLoading(false)
+      }
+    }, 300)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [noteQuery])
+
+  const handleNoteResultTap = (result: NoteSearchResult) => {
+    pushRecentSearch(noteQuery)
+    setRecentSearches(loadRecentSearches())
+    const target = customers.find(c => c.id === result.customerId)
+    if (target) setSelectedCustomer(target)
+  }
+
   useEffect(() => {
     if (!authInitialized) return
     // service role API 経由のため session 不問で取得
@@ -155,6 +252,46 @@ export default function CustomersScreen() {
         <p className="text-[13px] mt-0.5" style={{ color: '#9E8090' }}>
           {isLoading ? '読み込み中…' : `${scope === 'mine' ? '私のお客様' : '全顧客'} ${scoped.length}名`}
         </p>
+
+        {/* 会話履歴検索（PHASE NOTES-SEARCH-1・要件①）: 会話メモ・音声メモ・AI要約・
+            カルテメモを横断検索する。下の名前検索とは別の検索(検索対象が異なる)。 */}
+        <div
+          className="flex items-center gap-2 mt-3 rounded-[14px] px-3.5 py-2.5"
+          style={{ background: '#FFF8F7', border: '1px solid #F5D9DF' }}
+        >
+          <MessageSquareText size={15} style={{ color: '#D98292', flexShrink: 0 }} />
+          <input
+            value={noteQuery}
+            onChange={e => setNoteQuery(e.target.value)}
+            onFocus={() => setNoteQueryFocused(true)}
+            onBlur={() => setTimeout(() => setNoteQueryFocused(false), 150)}
+            placeholder="会話メモ・音声メモ・AI要約を検索…"
+            className="flex-1 bg-transparent outline-none"
+            style={{ fontSize: 16, color: '#4A2C2A' }}
+          />
+          {noteQuery && (
+            <button onClick={() => setNoteQuery('')} className="flex-shrink-0" aria-label="クリア">
+              <X size={14} style={{ color: '#C8A8B0' }} />
+            </button>
+          )}
+        </div>
+
+        {/* 最近の検索（要件⑤・localStorageのみ・入力欄フォーカス時かつ未入力時のみ表示） */}
+        {noteQueryFocused && !noteQuery.trim() && recentSearches.length > 0 && (
+          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+            <Clock size={11} style={{ color: '#C8A8B0', flexShrink: 0 }} />
+            {recentSearches.map(term => (
+              <button
+                key={term}
+                onMouseDown={() => setNoteQuery(term)}
+                className="text-[11px] px-2.5 py-1 rounded-full"
+                style={{ background: '#FFFFFF', border: '1px solid #F0E8E8', color: '#9E8090' }}
+              >
+                {term}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* 担当軸タブ: 私のお客様(デフォルト) / 全顧客 */}
         <div className="flex gap-2 mt-3">
@@ -229,6 +366,54 @@ export default function CustomersScreen() {
           paddingBottom: 'calc(68px + max(12px, env(safe-area-inset-bottom)))',
         }}
       >
+        {/* 会話履歴検索結果（PHASE NOTES-SEARCH-1・要件③④）: 2文字以上入力中は
+            通常の顧客一覧の代わりにこちらを表示する。 */}
+        {noteQuery.trim().length >= 2 ? (
+          <>
+            {noteSearchLoading && (
+              <div className="flex flex-col gap-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="bg-white rounded-[20px] border border-[#F5E6E8] h-[74px] animate-pulse" style={{ opacity: 1 - i * 0.15 }} />
+                ))}
+              </div>
+            )}
+            {!noteSearchLoading && noteResults.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-16 gap-3">
+                <Image src="/assets/rio-kuma.png" alt="" width={56} height={56} className="object-contain opacity-40" />
+                <p className="text-[13px]" style={{ color: '#9E8090' }}>会話メモ・音声メモが見つかりません</p>
+              </div>
+            )}
+            {!noteSearchLoading && noteResults.map((r, i) => (
+              <motion.div
+                key={`${r.customerId}-${r.kind}-${r.occurredAt}-${i}`}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.03 }}
+                whileTap={{ scale: 0.97 }}
+                onClick={() => handleNoteResultTap(r)}
+                className="bg-white rounded-[20px] border border-[#F5E6E8] p-4 mb-3"
+                style={{ boxShadow: '0 2px 12px rgba(245,160,181,0.08)', cursor: 'pointer' }}
+              >
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <span className="text-[14px] font-semibold truncate" style={{ color: '#4A2C2A' }}>{r.customerName} 様</span>
+                  <span
+                    className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0"
+                    style={{ background: '#FFF0F5', color: '#D98292' }}
+                  >
+                    {NOTE_SEARCH_KIND_LABEL[r.kind]}
+                  </span>
+                </div>
+                <p className="text-[13px] leading-relaxed mb-1.5" style={{ color: '#5C4033' }}>
+                  <HighlightedText text={r.matchedText} query={noteQuery} />
+                </p>
+                <p className="text-[11px]" style={{ color: '#C8A8B0' }}>
+                  {new Date(r.occurredAt).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' })}
+                </p>
+              </motion.div>
+            ))}
+          </>
+        ) : (
+          <>
         {/* スケルトン */}
         {isLoading && (
           <div className="flex flex-col gap-3">
@@ -318,6 +503,8 @@ export default function CustomersScreen() {
               </p>
             )}
           </div>
+        )}
+          </>
         )}
       </div>
 
