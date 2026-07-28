@@ -4,7 +4,7 @@
  */
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { ChevronLeft, Home, Users, Mic, User, Settings, Brain, Bell } from 'lucide-react'
+import { ChevronLeft, Home, Users, Mic, User, Settings, Brain, Bell, MessageCircle } from 'lucide-react'
 
 interface Feature {
   title: string
@@ -42,6 +42,21 @@ const CATEGORIES: Category[] = [
       { title: '7日後フォローメッセージ生成',  desc: 'ホームケア商品の購入から約1週間で「使い心地確認」のタイミングを通知でお知らせします。お客様の状態に合わせてAIにメッセージ下書きを作らせられるので、忘れずに、かつ負担なくフォローできます' },
       { title: 'お礼メッセージ生成',          desc: 'ご来店・ご購入の直後にも、AIがお客様の肌の状態や施術内容をふまえたお礼メッセージの下書きを作成します。感謝の気持ちを、毎回言葉に迷わず伝えられます' },
       { title: 'ワンタップコピーでLINE送信',   desc: '生成した文面は内容を確認・編集した上でワンタップでコピーできます。LINEアプリに貼り付けるだけで送信完了。アプリから自動送信されることはないため、安心して使えます' },
+      { title: '会話メモ検索', desc: '過去の会話・カルテ・音声メモ・AI要約を横断検索できます。お客様との過去の会話をすぐに探せます' },
+    ],
+  },
+  {
+    icon:  MessageCircle,
+    title: 'LINE',
+    color: '#34A070',
+    features: [
+      { title: 'ホームケアLINEメッセージ生成', desc: '購入商品ごとに、AIがお客様専用のメッセージを自動生成します' },
+      { title: '購入当日の使い方カード生成',   desc: '使用頻度・タイミング・注意点をカードで確認でき、専用メッセージもすぐ作れます' },
+      { title: '7日後フォローメッセージ生成',  desc: '購入から約1週間後の「使い心地確認」タイミングを通知し、AIがメッセージ下書きを作成します' },
+      { title: 'お礼メッセージ生成',          desc: 'ご来店・ご購入直後に、AIがお礼メッセージの下書きを作成します' },
+      { title: 'LINE送信履歴',               desc: 'いつ・どんな種類のメッセージを送ったか、顧客ごとに確認できます' },
+      { title: '送信済み表示',                desc: '「本日送信済み」「7日以内送信済み」をひと目で確認できます' },
+      { title: '重複送信アラート',             desc: '同じ種類のメッセージを短時間で重ねて送ろうとすると警告表示されます' },
     ],
   },
   {

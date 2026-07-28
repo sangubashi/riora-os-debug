@@ -221,7 +221,7 @@ const sections: Section[] = [
 
 export default function GuidePage() {
   const router  = useRouter()
-  const [open, setOpen] = useState<Set<number>>(new Set([1]))
+  const [open, setOpen] = useState<Set<number>>(new Set(sections.map(sec => sec.id)))
 
   function toggle(id: number) {
     setOpen(prev => {
