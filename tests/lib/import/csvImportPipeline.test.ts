@@ -242,6 +242,7 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
       }),
       recentByCustomer: async () => [],
       attachFeedback: async () => ({ attached: false, reason: 'not_found' as const }),
+      listWithStaffFeedback: async () => [],
     },
     outcomeRepo: {
       recent: async () => [],

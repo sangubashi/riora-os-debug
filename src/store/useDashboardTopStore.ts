@@ -17,6 +17,8 @@ export interface Required4 {
   breakevenRemaining: number | null
   forecastSales: number
   fixedCostsConfigured: boolean
+  /** APIは既に返しているが型定義に未反映だったフィールド(route.ts:137参照)。API変更ではなく型の是正。 */
+  fixedCostTotal: number | null
 }
 
 export interface Kpi4 {

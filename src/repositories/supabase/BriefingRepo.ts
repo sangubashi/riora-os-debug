@@ -1,9 +1,34 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { BriefingEntry, UUID } from '../../types/riora.types';
-import type { AttachFireLogFeedbackInput, AttachFireLogFeedbackResult, IBriefingRepo } from '../interfaces';
+import type { BriefingEntry, ProposalKind, UUID } from '../../types/riora.types';
+import type {
+  AttachFireLogFeedbackInput,
+  AttachFireLogFeedbackResult,
+  FireLogFeedbackRow,
+  IBriefingRepo,
+} from '../interfaces';
 import { toBriefingEntry, type BrainFireLogRow } from './mappers';
 
+/**
+ * decision_record(jsonb)にPhase 1-Ba以降、素通しで追加保存されてきたフィールドの
+ * 読み取り用型。BriefingEntry.decisionRecordの公称型(DecisionRecord)には含まれない
+ * ため、ここでのみ緩く型付けして読み出す(recordProposalOutcome.tsと同じ方式)。
+ */
+interface FireLogDecisionRecordShape {
+  patternId?: string | null;
+  stepNo?: number | null;
+  proposalKind?: string | null;
+  staffFeedback?: { value?: string; staffId?: string; at?: string } | null;
+}
+
 const FIRE_LOG_COLUMNS = 'id, customer_id, visit_id, decision_record, explanation, created_at';
+
+/**
+ * listWithStaffFeedback()の既定取得上限(AI提案学習Phase2.5)。Supabase/PostgRESTの
+ * 暗黙のdefault max_rows(通常1000)に依存せず、明示的な上限を持たせるための値。
+ * 呼び出し側がAPIで期間('30d'/'90d')を絞ればこの上限に達する可能性は低いが、
+ * 'all'選択時の安全弁として機能する。
+ */
+const FIRE_LOG_FEEDBACK_DEFAULT_LIMIT = 5000;
 
 export class BriefingRepo implements IBriefingRepo {
   constructor(private readonly client: SupabaseClient) {}
@@ -121,5 +146,50 @@ export class BriefingRepo implements IBriefingRepo {
     }
     if (!updated || updated.length === 0) return { attached: false, reason: 'already_has_feedback' };
     return { attached: true };
+  }
+
+  async listWithStaffFeedback(storeId: UUID, options?: { sinceIso?: string | null; limit?: number }): Promise<FireLogFeedbackRow[]> {
+    // Phase2.5: created_at降順+limitを必ず指定する(store_idにインデックスが無いため
+    // スキャン量そのものは変わらないが、返却件数の上限を明示することでアプリ側の
+    // メモリ/レスポンスサイズを保護し、Supabase/PostgRESTの暗黙のdefault max_rowsに
+    // 依存しない挙動にする)。
+    const limit = options?.limit ?? FIRE_LOG_FEEDBACK_DEFAULT_LIMIT;
+    let query = this.client
+      .from('brain_pattern_fire_log')
+      .select('id, decision_record, created_at')
+      .eq('store_id', storeId)
+      .not('decision_record->staffFeedback', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (options?.sinceIso) {
+      query = query.gte('created_at', options.sinceIso);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(`BriefingRepo.listWithStaffFeedback failed: ${error.message}`);
+    }
+
+    const rows: FireLogFeedbackRow[] = [];
+    for (const row of (data ?? []) as { id: string; decision_record: Record<string, unknown>; created_at: string }[]) {
+      const dr = row.decision_record as unknown as FireLogDecisionRecordShape;
+      const fb = dr.staffFeedback;
+      if (!dr.patternId || dr.stepNo == null || !dr.proposalKind || !fb?.value || !fb.staffId) continue;
+      if (fb.value !== 'good' && fb.value !== 'bad') continue;
+
+      rows.push({
+        fireLogId: row.id,
+        patternId: dr.patternId,
+        stepNo: dr.stepNo,
+        proposalKind: dr.proposalKind as ProposalKind,
+        feedback: fb.value,
+        staffId: fb.staffId,
+        feedbackAt: fb.at ?? row.created_at,
+        createdAt: row.created_at,
+      });
+    }
+    return rows;
   }
 }

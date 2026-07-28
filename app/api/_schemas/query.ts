@@ -54,3 +54,13 @@ export const occupancyQuerySchema = z.object({
   storeId: idSchema,
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD').optional(),
 });
+
+/**
+ * GetProposalFeedbackAnalytics(GET /api/admin/proposal-feedback-analytics?storeId=...&range=...)
+ * のクエリ検証スキーマ(AI提案学習Phase2.5)。rangeは省略時'30d'
+ * (brain_pattern_fire_log全件取得を避けるため、デフォルトを最も軽い期間にする)。
+ */
+export const proposalFeedbackAnalyticsQuerySchema = z.object({
+  storeId: idSchema,
+  range: z.enum(['30d', '90d', 'all']).default('30d'),
+});

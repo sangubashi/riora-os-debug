@@ -676,6 +676,29 @@ export interface IBriefingRepo {
    * 場合、または既にstaffFeedbackが付与済みの場合は書き込まない(冪等・二重投稿防止)。
    */
   attachFeedback(fireLogId: UUID, input: AttachFireLogFeedbackInput): Promise<AttachFireLogFeedbackResult>;
+  /**
+   * brain_pattern_fire_log.decision_recordにstaffFeedbackが付与済みの行をstore単位で
+   * 取得し、集計しやすい構造化データとして返す(AI提案学習Phase2: 管理者向け
+   * AI提案分析画面)。decision_recordを読むだけで、書込・DB構造変更は行わない。
+   *
+   * Phase2.5(取得件数最適化): 全件取得による負荷増を避けるため、
+   * options.sinceIso指定時はcreated_at >= sinceIsoのみ、created_at降順+
+   * options.limit(既定FIRE_LOG_FEEDBACK_DEFAULT_LIMIT)件までに制限する。
+   * options省略時は従来通り期間無制限(呼び出し側で明示的に'all'を選んだ場合)。
+   */
+  listWithStaffFeedback(storeId: UUID, options?: { sinceIso?: string | null; limit?: number }): Promise<FireLogFeedbackRow[]>;
+}
+
+/** brain_pattern_fire_log.decision_record(jsonb)から読み取ったstaffFeedback付き1件分(AI提案学習Phase2)。 */
+export interface FireLogFeedbackRow {
+  fireLogId: UUID;
+  patternId: string;
+  stepNo: number;
+  proposalKind: ProposalKind;
+  feedback: 'good' | 'bad';
+  staffId: UUID;
+  feedbackAt: string;
+  createdAt: string;
 }
 
 export interface IRevisionRepo {

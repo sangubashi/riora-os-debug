@@ -18,12 +18,13 @@
 import { useEffect, useState, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { TrendingUp, CalendarCheck, CalendarDays, MessageCircleHeart, AlertTriangle, AlertCircle, Info, UploadCloud, Loader2, Users, Target, Settings, X, LineChart } from 'lucide-react'
+import { TrendingUp, CalendarCheck, CalendarDays, MessageCircleHeart, AlertTriangle, AlertCircle, Info, UploadCloud, Loader2, Users, Target, Settings, X, LineChart, ShieldAlert, Sparkles, ListChecks } from 'lucide-react'
 import { useDashboardTopStore, type TodayAction, type WeeklyReservations, type WeeklyReservationDayCount } from '@/store/useDashboardTopStore'
 import { useBusinessSettingsStore } from '@/store/useBusinessSettingsStore'
 import { useMonthStore } from '@/store/useMonthStore'
 import MonthSelector from '../MonthSelector'
 import { DEMO_STORE_ID } from '@/lib/constants'
+import { computeRiskAlerts, computeGoodNews, computeWeeklyFocus, type RiskAlert, type GoodNewsItem, type WeeklyFocusItem } from '@/lib/dashboard/computeDashboardHighlights'
 
 const SEVERITY_STYLE: Record<TodayAction['severity'], { color: string; bg: string; Icon: typeof AlertTriangle; label: string }> = {
   critical: { color: '#D14F4F', bg: 'rgba(209,79,79,0.08)', Icon: AlertCircle, label: '優先度: 高' },
@@ -90,15 +91,26 @@ const LABOR_COST_KEYS = [
   'social_insurance_actual',
 ] as const
 
-function sumLaborCosts(fixedCosts: Record<string, unknown> | null): number | null {
+/**
+ * 広告費として扱うfixedCostsキー(PHASE ADMIN-COMPLETE-1)。BusinessSettingsForm.tsxの
+ * FIXED_COST_FIELDSのうち広告費に相当するもの(ad_hotpepper)のみ。API変更・計算式変更は
+ * 行わず、既存business_settings.fixedCostsをフロント側で読み替えるだけ(人件費内訳と同じ方式)。
+ */
+const AD_COST_KEYS = ['ad_hotpepper'] as const
+
+function sumCostKeys(fixedCosts: Record<string, unknown> | null, keys: readonly string[]): number | null {
   if (!fixedCosts) return null
   let total = 0
   let hasValue = false
-  for (const key of LABOR_COST_KEYS) {
+  for (const key of keys) {
     const v = fixedCosts[key]
     if (typeof v === 'number' && Number.isFinite(v)) { total += v; hasValue = true }
   }
   return hasValue ? total : null
+}
+
+function sumLaborCosts(fixedCosts: Record<string, unknown> | null): number | null {
+  return sumCostKeys(fixedCosts, LABOR_COST_KEYS)
 }
 
 /**
@@ -127,12 +139,13 @@ function jstDayOfWeek(offsetDays: number): WeeklyReservationDayCount['dayOfWeek'
   return map[jst.getDay()]
 }
 
+/** PHASE ADMIN-COMPLETE-1: 余白を広く・角丸を大きく・影を柔らかくして「毎日見る画面」としての読みやすさを上げる(データ・ロジックは変更しない、見た目のみ)。 */
 function SectionCard({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid #F5EEF0', borderRadius: '16px', padding: '16px 18px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '12px' }}>
+    <div style={{ background: '#fff', border: '1px solid #F5EEF0', borderRadius: '20px', padding: '20px 22px', boxShadow: '0 1px 3px rgba(92,64,51,0.04)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
         {icon}
-        <p style={{ fontSize: '12px', fontWeight: 700, color: '#5C4033' }}>{title}</p>
+        <p style={{ fontSize: '13px', fontWeight: 700, color: '#5C4033', letterSpacing: '0.01em' }}>{title}</p>
       </div>
       {children}
     </div>
@@ -161,6 +174,22 @@ function Stat({ label, value, color = '#5C4033', hint }: { label: string; value:
   )
 }
 
+/**
+ * 利益見込みカード内の費用内訳ミニ表示(PHASE ADMIN-COMPLETE-1)。
+ * 固定費・人件費・広告費の合計を小さく併記するだけ(新しい計算式・新しいAPIは追加しない。
+ * 既存business_settings.fixedCostsをフロント側で読み替えた値をそのまま表示する)。
+ */
+function CostBreakdownMini({ fixedCostTotal, laborCostTotal, adCostTotal }: { fixedCostTotal: number | null; laborCostTotal: number | null; adCostTotal: number | null }) {
+  if (fixedCostTotal === null && laborCostTotal === null && adCostTotal === null) return null
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '6px', paddingTop: '6px', borderTop: '1px solid #F5EEF0' }}>
+      <span style={{ fontSize: '10px', color: '#9F7E6C' }}>固定費 <strong style={{ color: '#5C4033' }}>{fixedCostTotal === null ? '—' : formatYen(fixedCostTotal)}</strong></span>
+      <span style={{ fontSize: '10px', color: '#9F7E6C' }}>人件費 <strong style={{ color: '#5C4033' }}>{laborCostTotal === null ? '—' : formatYen(laborCostTotal)}</strong></span>
+      <span style={{ fontSize: '10px', color: '#9F7E6C' }}>広告費 <strong style={{ color: '#5C4033' }}>{adCostTotal === null ? '—' : formatYen(adCostTotal)}</strong></span>
+    </div>
+  )
+}
+
 /** 「本日の売上」ヒーロー表示(PHASE ADMIN-UX-1)。最初の30秒で目に入る最優先情報。既存kpi4.todaySalesをそのまま表示するだけ。 */
 function TodaySalesHero({ amount }: { amount: number }) {
   return (
@@ -168,8 +197,9 @@ function TodaySalesHero({ amount }: { amount: number }) {
       style={{
         background: 'linear-gradient(135deg, #FDEEF1, #FFF8F7)',
         border: '1px solid #F5D9DF',
-        borderRadius: '18px',
-        padding: '18px 20px',
+        borderRadius: '22px',
+        padding: '22px 24px',
+        boxShadow: '0 1px 3px rgba(92,64,51,0.04)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -300,11 +330,11 @@ function WeeklyReservationsCard({ data }: { data: WeeklyReservations }) {
   const weekendCount = countOf('sat') + countOf('sun')
 
   return (
-    <div style={{ background: '#fff', border: '1px solid #F5EEF0', borderRadius: '16px', padding: '16px 18px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+    <div style={{ background: '#fff', border: '1px solid #F5EEF0', borderRadius: '20px', padding: '20px 22px', boxShadow: '0 1px 3px rgba(92,64,51,0.04)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <CalendarDays size={16} color="#D98292" />
-          <p style={{ fontSize: '12px', fontWeight: 700, color: '#5C4033' }}>今週の予約状況</p>
+          <p style={{ fontSize: '13px', fontWeight: 700, color: '#5C4033' }}>今週の予約状況</p>
         </div>
         <button
           onClick={() => setShowDetail(true)}
@@ -376,6 +406,71 @@ function WeeklyReservationsCard({ data }: { data: WeeklyReservations }) {
   )
 }
 
+/**
+ * 「今月危険アラート」カード(PHASE ADMIN-COMPLETE-1)。computeRiskAlerts()の出力を
+ * critical/warningの重要度で色分けして並べるだけ(新しい判定ロジックはここに書かない)。
+ */
+function RiskAlertsCard({ alerts }: { alerts: RiskAlert[] }) {
+  return (
+    <SectionCard title="今月危険アラート" icon={<ShieldAlert size={16} color="#D14F4F" />}>
+      {alerts.length === 0 ? (
+        <p style={{ fontSize: '12px', color: '#C8A8B0' }}>現在、危険アラートはありません</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {alerts.map((a, i) => {
+            const color = a.severity === 'critical' ? '#D14F4F' : '#D98292'
+            return (
+              <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', padding: '10px 12px', borderRadius: '12px', background: `${color}0F`, border: `1px solid ${color}33` }}>
+                <AlertTriangle size={14} color={color} style={{ marginTop: '2px', flexShrink: 0 }} />
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ fontSize: '12px', fontWeight: 700, color }}>{a.title}</p>
+                  <p style={{ fontSize: '12px', color: '#5C4033', marginTop: '2px', lineHeight: 1.5 }}>{a.message}</p>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </SectionCard>
+  )
+}
+
+/** 「今月良かったこと」カード(PHASE ADMIN-COMPLETE-1)。computeGoodNews()の出力を箇条書きするだけ。 */
+function GoodNewsCard({ items }: { items: GoodNewsItem[] }) {
+  return (
+    <SectionCard title="今月良かったこと" icon={<Sparkles size={16} color="#D98F3C" />}>
+      {items.length === 0 ? (
+        <p style={{ fontSize: '12px', color: '#C8A8B0' }}>データが揃うと表示されます</p>
+      ) : (
+        <ul style={{ display: 'flex', flexDirection: 'column', gap: '6px', margin: 0, padding: 0, listStyle: 'none' }}>
+          {items.map((item, i) => (
+            <li key={i} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '12px', color: '#5C4033', lineHeight: 1.6 }}>
+              <span style={{ color: '#D98F3C', fontWeight: 700, flexShrink: 0 }}>・</span>
+              {item.message}
+            </li>
+          ))}
+        </ul>
+      )}
+    </SectionCard>
+  )
+}
+
+/** 「今週やること」カード(PHASE ADMIN-COMPLETE-1)。computeWeeklyFocus()の出力を箇条書きするだけ。 */
+function WeeklyFocusCard({ items }: { items: WeeklyFocusItem[] }) {
+  return (
+    <SectionCard title="今週やること" icon={<ListChecks size={16} color="#7C9CC4" />}>
+      <ul style={{ display: 'flex', flexDirection: 'column', gap: '6px', margin: 0, padding: 0, listStyle: 'none' }}>
+        {items.map((item, i) => (
+          <li key={i} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', fontSize: '12px', color: '#5C4033', lineHeight: 1.6 }}>
+            <span style={{ color: '#7C9CC4', fontWeight: 700, flexShrink: 0 }}>・</span>
+            {item.message}
+          </li>
+        ))}
+      </ul>
+    </SectionCard>
+  )
+}
+
 function DashboardHomeContent() {
   const { data, isLoading, error, fetchTop } = useDashboardTopStore()
   const { settings: businessSettings, fetchSettings } = useBusinessSettingsStore()
@@ -433,14 +528,36 @@ function DashboardHomeContent() {
     ? (laborCostTotal / required4.monthlySales) * 100
     : null
 
+  // PHASE ADMIN-COMPLETE-1: 利益見込みカードの内訳(広告費・その他固定費)。
+  // 計算式・APIは変更せず、既存fixedCostsをフロント側で読み替えるだけ(人件費と同方式)。
+  const adCostTotal = sumCostKeys(businessSettings?.fixedCosts ?? null, AD_COST_KEYS)
+
   const currentYM = new Date().toISOString().slice(0, 7)
   const isCurrentMonth = selectedMonth === currentYM
   const monthLabel = isCurrentMonth
     ? '今月'
     : `${Number(selectedMonth.slice(5, 7))}月`
 
+  // PHASE ADMIN-COMPLETE-1: 危険アラート/良かったこと/今週やること。
+  // 既存API応答(required4/kpi4/extendedKpi/todayActions/salesTrend)だけを入力にする
+  // 純粋関数(computeDashboardHighlights.ts)の出力をそのまま表示する。
+  const highlightsInput = {
+    monthlySales: required4.monthlySales,
+    salesTarget: kpi4.salesTarget,
+    targetProgress: kpi4.targetProgress,
+    laborCostRate,
+    nominationRate: extendedKpi.nominationRate,
+    todayActions,
+    salesTrend,
+    asOfDate: data.date,
+    month: data.month,
+  }
+  const riskAlerts = computeRiskAlerts(highlightsInput)
+  const goodNews = computeGoodNews(highlightsInput)
+  const weeklyFocus = computeWeeklyFocus(highlightsInput)
+
   return (
-    <div className="p-4 sm:p-5 lg:p-8" style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
+    <div className="p-5 sm:p-6 lg:p-10" style={{ display: 'flex', flexDirection: 'column', gap: '22px', maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '-4px' }}>
         <p style={{ fontSize: '11px', fontWeight: 700, color: '#C8A8B0' }}>表示月</p>
         <MonthSelector />
@@ -448,6 +565,13 @@ function DashboardHomeContent() {
 
       {/* ── ① 経営TOP・優先順位1: 本日の売上(ヒーロー表示・表示月に関わらず常に「今日」) ── */}
       <TodaySalesHero amount={kpi4.todaySales} />
+
+      {/* ── PHASE ADMIN-COMPLETE-1: 危険アラート/良かったこと/今週やること(オーナーが毎日見る前提で上位に配置) ── */}
+      <div className="grid gap-3.5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
+        <RiskAlertsCard alerts={riskAlerts} />
+        <GoodNewsCard items={goodNews} />
+        <WeeklyFocusCard items={weeklyFocus} />
+      </div>
 
       {/* ── 優先順位2〜4: 今月売上・利益見込み・人件費率・損益分岐点 ── */}
       <SectionCard title={`${monthLabel}の経営(必須4指標)`} icon={<CalendarCheck size={16} color="#D98292" />}>
@@ -477,6 +601,7 @@ function DashboardHomeContent() {
           />
           <Stat label="着地予測" value={formatYen(required4.forecastSales)} />
         </StatGrid>
+        <CostBreakdownMini fixedCostTotal={required4.fixedCostTotal} laborCostTotal={laborCostTotal} adCostTotal={adCostTotal} />
         {!required4.fixedCostsConfigured && (
           <Link
             href="/admin/business-settings"

@@ -12,14 +12,21 @@
  * PHASE ADMIN-UX-1(2026-07-27・UI調整のみ): 前月比(growthRate)を矢印+色付きバッジで
  * カード上部に強調表示、指標をレスポンシブグリッド化、カード幅を1920/1366/タブレットで
  * 自然に折り返すよう調整した。growthRateの計算・APIは変更していない。
+ *
+ * PHASE ADMIN-COMPLETE-1(管理者分析完成度向上・API変更禁止): computeStaffHighlight()の
+ * 出力(「良かった点」「次への一歩」)をカード下部に追記。APIが既に返している値だけを
+ * 入力にする純粋関数の結果を表示するのみで、新しいAPI呼び出し・DB集計は行わない。
+ * 制約(2026-06-23ユーザー指示)を維持: 他スタッフとの比較・ランキングは行わない
+ * (computeStaffHighlight()自体がそのスタッフ1人の値しか参照しない設計)。
  */
 import { useEffect, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Loader2, User, TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { Loader2, User, TrendingUp, TrendingDown, Minus, Sparkles, ListChecks } from 'lucide-react'
 import { useStaffAnalyticsStore } from '@/store/useStaffAnalyticsStore'
 import { useMonthStore } from '@/store/useMonthStore'
 import MonthSelector from '../MonthSelector'
 import { DEMO_STORE_ID } from '@/lib/constants'
+import { computeStaffHighlight } from '@/lib/staffAnalytics/computeStaffHighlights'
 
 function formatYen(n: number): string {
   return `¥${n.toLocaleString('ja-JP')}`
@@ -92,6 +99,14 @@ function StaffCard({ row, monthLabel }: { row: { staffName: string; monthlySales
       </div>
     )
   }
+  const highlight = computeStaffHighlight({
+    nominationRate: row.nominationRate,
+    repeatRate: row.repeatRate,
+    growthRate: row.growthRate,
+    avgSpend: row.avgSpend,
+    visitCount: row.visitCount,
+  })
+
   return (
     <div style={{ background: '#fff', border: '1px solid #F5EEF0', borderRadius: '16px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px', minHeight: '168px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
@@ -111,6 +126,17 @@ function StaffCard({ row, monthLabel }: { row: { staffName: string; monthlySales
         <Metric label="リピート率" value={formatPercent(row.repeatRate)} />
         <Metric label="LTV" value={row.ltv === null ? '—' : formatYen(Math.round(row.ltv))} hint="データ不足のため未計測" />
       </MetricGrid>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingTop: '8px', borderTop: '1px solid #F5EEF0' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+          <Sparkles size={12} color="#D98F3C" style={{ marginTop: '2px', flexShrink: 0 }} />
+          <p style={{ fontSize: '11px', color: '#5C4033', lineHeight: 1.5 }}>{highlight.goodNote}</p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+          <ListChecks size={12} color="#7C9CC4" style={{ marginTop: '2px', flexShrink: 0 }} />
+          <p style={{ fontSize: '11px', color: '#5C4033', lineHeight: 1.5 }}>{highlight.improvementNote}</p>
+        </div>
+      </div>
     </div>
   )
 }

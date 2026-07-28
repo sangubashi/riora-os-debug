@@ -12,7 +12,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { TrendingUp, AlertTriangle, Users, UserCog, UserCheck, BarChart3, UploadCloud, Settings, Menu, X, MessageCircle, LayoutGrid, GitMerge, BookOpen, FileText, LogOut } from 'lucide-react'
+import { TrendingUp, AlertTriangle, Users, UserCog, UserCheck, BarChart3, UploadCloud, Settings, Menu, X, MessageCircle, LayoutGrid, GitMerge, BookOpen, FileText, LogOut, Sparkles } from 'lucide-react'
 import { LogoutConfirmModal, useLogoutFlow } from '@/components/common/LogoutConfirmModal'
 
 const NAV_ITEMS = [
@@ -23,6 +23,7 @@ const NAV_ITEMS = [
   { href: '/admin/line',              label: 'LINE',          icon: MessageCircle },
   { href: '/admin/staff-analytics',   label: 'スタッフ分析',   icon: UserCog },
   { href: '/admin/staff-management',  label: 'スタッフ管理',   icon: UserCheck },
+  { href: '/admin/proposal-feedback', label: 'AI提案分析',     icon: Sparkles },
   { href: '/admin/occupancy',         label: '稼働率分析',     icon: BarChart3 },
   { href: '/admin/csv-import',        label: 'CSV Import',    icon: UploadCloud },
   { href: '/admin/menu-master',       label: 'メニュー管理',   icon: LayoutGrid },
