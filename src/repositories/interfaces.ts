@@ -99,6 +99,17 @@ export interface IOutcomeRepo {
   create(input: CreateProposalOutcomeInput): Promise<{ id: UUID }>;
 }
 
+/** brain_pattern_fire_log.decision_recordへ追記するstaffFeedbackの入力(AI提案学習Phase1: 👍👎)。 */
+export interface AttachFireLogFeedbackInput {
+  storeId: UUID;
+  staffId: UUID;
+  feedback: 'good' | 'bad';
+}
+
+export type AttachFireLogFeedbackResult =
+  | { attached: true }
+  | { attached: false; reason: 'not_found' | 'store_mismatch' | 'already_has_feedback' };
+
 // ================================================================
 // Repository & RPC Layer v1.0: Customer / Visit / Scenario / LineQueue /
 // BrainEvent
@@ -657,6 +668,14 @@ export interface IBriefingRepo {
    * brain_customersへの追加クエリは行わない)。
    */
   recentByCustomer(customerId: UUID, n: number): Promise<BriefingEntry[]>;
+  /**
+   * brain_pattern_fire_log.decision_recordへstaffFeedback(good/bad)をjsonbとして追記する
+   * (AI提案学習Phase1: 👍👎)。新規テーブル/新規カラムは追加せず、既存のdecision_record
+   * (jsonb)にPhase 1-Baと同じ「素通し追加保存」方式で{value, staffId, at}を追記するのみ。
+   * brain_proposal_outcomes(客観データ)には一切触れない。fire_logのstore_idが一致しない
+   * 場合、または既にstaffFeedbackが付与済みの場合は書き込まない(冪等・二重投稿防止)。
+   */
+  attachFeedback(fireLogId: UUID, input: AttachFireLogFeedbackInput): Promise<AttachFireLogFeedbackResult>;
 }
 
 export interface IRevisionRepo {

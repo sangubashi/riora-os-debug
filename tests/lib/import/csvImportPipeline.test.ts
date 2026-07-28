@@ -241,6 +241,7 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
         explanation: input.explanation, createdAt: new Date().toISOString(),
       }),
       recentByCustomer: async () => [],
+      attachFeedback: async () => ({ attached: false, reason: 'not_found' as const }),
     },
     outcomeRepo: {
       recent: async () => [],

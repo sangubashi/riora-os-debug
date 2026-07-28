@@ -28,8 +28,11 @@
  *     (reservationsテーブル、予約CSV取込専用の非同期データソースとは連携しない。
  *     Phase 1-C調査で「データソースが非同期」と指摘された制約はそのまま残る既知の限界)。
  *     amountは金額概念が無いため0固定。
- *   - pack: 判定材料が不十分なため、Phase 1-Bcと同じ安全側固定値(false/false/0)の
- *     まま据え置く(今回未着手)。
+ *   - pack(Phase 1学習基盤): 呼び出し元(csvImportPipeline.ts)がCSV取込時点のagg.menuName/
+ *     serviceNames/retailNamesのいずれかに"パック"という文字列を含むかを hasPackKeyword
+ *     として渡し、これで判定する(subscription(Phase 1-Db)と同じキーワード一致方式。
+ *     構造化列が存在しないため表記ゆれは拾えない既知の制約も同様)。amountは同じ理由で
+ *     暫定的に0固定。
  *
  * 呼び出し元(csvImportPipeline.ts)がvisitRepo.reconcile()/createSequenced()成功
  * 直後に呼ぶ前提のため、Visit型が公開していないcreated_atの代わりに「今」を
@@ -77,6 +80,13 @@ export interface RecordProposalOutcomeInput {
    * homecare/upsell等の判定には使用しない。
    */
   hasSubscriptionKeyword?: boolean;
+  /**
+   * Phase 1学習基盤: pack判定用。CSV取込時点のagg.menuName/serviceNames/
+   * retailNamesのいずれかに"パック"という文字列が含まれるかを呼び出し元が渡す
+   * (brain_visitsにパック成約有無を表す列が無いため、Visit型からは導出できない)。
+   * homecare/upsell/subscription等の判定には使用しない。
+   */
+  hasPackKeyword?: boolean;
 }
 
 export type RecordProposalOutcomeResult =
@@ -87,7 +97,7 @@ export async function recordProposalOutcome(
   input: RecordProposalOutcomeInput,
   repos: RecordProposalOutcomeRepos
 ): Promise<RecordProposalOutcomeResult> {
-  const { visit, storeId, hasOptionPurchase, hasSubscriptionKeyword } = input;
+  const { visit, storeId, hasOptionPurchase, hasSubscriptionKeyword, hasPackKeyword } = input;
   const referenceTime = Date.now();
 
   const recent = await repos.briefingRepo.recentByCustomer(visit.customerId, RECENT_FIRE_LOG_LOOKBACK);
@@ -121,6 +131,7 @@ export async function recordProposalOutcome(
   const isUpsell = proposalKind === 'upsell';
   const isSubscription = proposalKind === 'subscription';
   const isRebooking = proposalKind === 'rebooking';
+  const isPack = proposalKind === 'pack';
 
   let wasExecuted = false;
   let wasAccepted = false;
@@ -152,8 +163,14 @@ export async function recordProposalOutcome(
     wasExecuted = visit.nextBookingMade;
     wasAccepted = visit.nextBookingMade;
     amount = 0;
+  } else if (isPack) {
+    // Phase 1学習基盤: この来店の会計明細(menuName/serviceNames/retailNames)に
+    // "パック"という文字列が含まれるか(呼び出し元からhasPackKeywordとして受け取る)
+    // で判定する。amountは金額を個別集計する手段が無いため暫定的に0固定とする。
+    wasExecuted = hasPackKeyword === true;
+    wasAccepted = hasPackKeyword === true;
+    amount = 0;
   }
-  // packは今回未着手のため false/false/0 のまま(初期値)。
 
   const created = await repos.outcomeRepo.create({
     storeId,

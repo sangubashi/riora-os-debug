@@ -56,15 +56,28 @@ export interface ProposalResultView {
   lineHistoryContext: LineHistoryContextView
 }
 
+export interface SubmitProposalFeedbackInput {
+  storeId: string
+  staffId: string
+  fireLogId: string
+  feedback: 'good' | 'bad'
+}
+
 interface ProposalState {
   result: ProposalResultView | null
   isLoading: boolean
   isSaving: boolean
   error: string | null
   saveSuccess: boolean
+  /** 「提案を記録する」成功時に返るbrain_pattern_fire_log.id(👍👎送信に必要)。 */
+  savedFireLogId: string | null
+  /** AI提案学習Phase1: 👍👎フィードバックの送信状態。 */
+  feedbackStatus: 'idle' | 'sending' | 'sent' | 'error'
+  feedbackChoice: 'good' | 'bad' | null
 
   generate: (storeId: string, customerId: string, staffId: string) => Promise<void>
   save: (storeId: string, customerId: string, staffId: string) => Promise<void>
+  sendFeedback: (input: SubmitProposalFeedbackInput) => Promise<void>
   reset: () => void
 }
 
@@ -74,8 +87,11 @@ export const useProposalStore = create<ProposalState>((set) => ({
   isSaving: false,
   error: null,
   saveSuccess: false,
+  savedFireLogId: null,
+  feedbackStatus: 'idle',
+  feedbackChoice: null,
 
-  reset: () => set({ result: null, error: null, saveSuccess: false }),
+  reset: () => set({ result: null, error: null, saveSuccess: false, savedFireLogId: null, feedbackStatus: 'idle', feedbackChoice: null }),
 
   generate: async (storeId, customerId, staffId) => {
     set({ isLoading: true, error: null, saveSuccess: false })
@@ -94,7 +110,7 @@ export const useProposalStore = create<ProposalState>((set) => ({
   },
 
   save: async (storeId, customerId, staffId) => {
-    set({ isSaving: true, error: null })
+    set({ isSaving: true, error: null, feedbackStatus: 'idle', feedbackChoice: null })
     try {
       const res = await authedFetch('/api/admin/proposals', {
         method: 'POST',
@@ -106,9 +122,28 @@ export const useProposalStore = create<ProposalState>((set) => ({
         set({ error: body.error ?? 'proposal_save_failed', isSaving: false })
         return
       }
-      set({ isSaving: false, saveSuccess: true })
+      set({ isSaving: false, saveSuccess: true, savedFireLogId: body.saved?.id ?? null })
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'proposal_save_failed', isSaving: false })
+    }
+  },
+
+  sendFeedback: async (input) => {
+    set({ feedbackStatus: 'sending', feedbackChoice: input.feedback })
+    try {
+      const res = await authedFetch('/api/admin/proposals/feedback', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      })
+      const body = await res.json()
+      if (!res.ok || !body.success) {
+        set({ feedbackStatus: 'error' })
+        return
+      }
+      set({ feedbackStatus: 'sent' })
+    } catch {
+      set({ feedbackStatus: 'error' })
     }
   },
 }))

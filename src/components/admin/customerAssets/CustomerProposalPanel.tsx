@@ -9,7 +9,7 @@
  * LINE履歴・次回来店候補日を実データのまま表示する(固定文言・モックデータ禁止)。
  */
 import { useEffect, useState } from 'react'
-import { Loader2, Sparkles, AlertTriangle, CheckCircle2, MessageSquareWarning } from 'lucide-react'
+import { Loader2, Sparkles, AlertTriangle, CheckCircle2, MessageSquareWarning, ThumbsUp, ThumbsDown } from 'lucide-react'
 import { useProposalStore } from '@/store/useProposalStore'
 import { authedFetch } from '@/lib/api/authedFetch'
 
@@ -25,7 +25,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 export default function CustomerProposalPanel({ storeId, customerId, customerName }: { storeId: string; customerId: string; customerName: string }) {
-  const { result, isLoading, isSaving, error, saveSuccess, generate, save, reset } = useProposalStore()
+  const { result, isLoading, isSaving, error, saveSuccess, savedFireLogId, feedbackStatus, feedbackChoice, generate, save, sendFeedback, reset } = useProposalStore()
   const [staffOptions, setStaffOptions] = useState<StaffOption[]>([])
   const [staffId, setStaffId] = useState('')
 
@@ -51,6 +51,11 @@ export default function CustomerProposalPanel({ storeId, customerId, customerNam
   const handleSave = () => {
     if (!staffId) return
     save(storeId, customerId, staffId)
+  }
+
+  const handleFeedback = (feedback: 'good' | 'bad') => {
+    if (!staffId || !savedFireLogId) return
+    sendFeedback({ storeId, staffId, fireLogId: savedFireLogId, feedback })
   }
 
   const degraded = result && 'degraded' in result.proposal
@@ -180,6 +185,44 @@ export default function CustomerProposalPanel({ storeId, customerId, customerNam
             {isSaving ? '保存中...' : '提案を記録する'}
           </button>
           {saveSuccess && <span style={{ marginLeft: '8px', fontSize: '11px', color: '#34D399' }}>保存しました</span>}
+
+          {saveSuccess && savedFireLogId && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+              <p style={{ fontSize: '11px', color: '#9F7E6C' }}>この提案はどうでしたか?</p>
+              <button
+                onClick={() => handleFeedback('good')}
+                disabled={feedbackStatus === 'sending' || feedbackStatus === 'sent'}
+                aria-label="良かった"
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: '30px', height: '30px', borderRadius: '50%',
+                  border: `1px solid ${feedbackChoice === 'good' && feedbackStatus === 'sent' ? '#34D399' : '#F0DEE2'}`,
+                  background: feedbackChoice === 'good' && feedbackStatus === 'sent' ? '#E6F9F2' : '#fff',
+                  cursor: feedbackStatus === 'sending' || feedbackStatus === 'sent' ? 'default' : 'pointer',
+                  opacity: feedbackStatus === 'sent' && feedbackChoice !== 'good' ? 0.4 : 1,
+                }}
+              >
+                <ThumbsUp size={13} color={feedbackChoice === 'good' && feedbackStatus === 'sent' ? '#34D399' : '#9F7E6C'} />
+              </button>
+              <button
+                onClick={() => handleFeedback('bad')}
+                disabled={feedbackStatus === 'sending' || feedbackStatus === 'sent'}
+                aria-label="合わなかった"
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: '30px', height: '30px', borderRadius: '50%',
+                  border: `1px solid ${feedbackChoice === 'bad' && feedbackStatus === 'sent' ? '#D14F4F' : '#F0DEE2'}`,
+                  background: feedbackChoice === 'bad' && feedbackStatus === 'sent' ? '#FBEAEA' : '#fff',
+                  cursor: feedbackStatus === 'sending' || feedbackStatus === 'sent' ? 'default' : 'pointer',
+                  opacity: feedbackStatus === 'sent' && feedbackChoice !== 'bad' ? 0.4 : 1,
+                }}
+              >
+                <ThumbsDown size={13} color={feedbackChoice === 'bad' && feedbackStatus === 'sent' ? '#D14F4F' : '#9F7E6C'} />
+              </button>
+              {feedbackStatus === 'sent' && <span style={{ fontSize: '11px', color: '#9F7E6C' }}>ありがとうございます</span>}
+              {feedbackStatus === 'error' && <span style={{ fontSize: '11px', color: '#D14F4F' }}>送信に失敗しました</span>}
+            </div>
+          )}
         </>
       )}
     </div>

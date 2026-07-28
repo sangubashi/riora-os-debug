@@ -87,6 +87,19 @@ function hasSubscriptionKeyword(agg: SalonBoardCheckoutAggregate): boolean {
   return false
 }
 
+/**
+ * Phase 1学習基盤: pack実行結果判定用のキーワード検出(recordProposalOutcome.tsの
+ * hasPackKeywordに渡す)。hasSubscriptionKeywordと同じ方式(CSV会計明細の生テキストへの
+ * 単純な部分一致)。表記ゆれは拾えない既知の制約も同様。
+ */
+function hasPackKeyword(agg: SalonBoardCheckoutAggregate): boolean {
+  const KEYWORD = 'パック'
+  if (agg.menuName.includes(KEYWORD)) return true
+  if (agg.serviceNames.some((name) => name.includes(KEYWORD))) return true
+  if (agg.retailNames.some((name) => name.includes(KEYWORD))) return true
+  return false
+}
+
 interface ParsedAndAggregated {
   aggregates:     SalonBoardCheckoutAggregate[]
   skipped:        SkipItem[]
@@ -613,6 +626,7 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
             storeId: input.storeId, visit: reconciledVisit,
             hasOptionPurchase: agg.optionNames.length > 0,
             hasSubscriptionKeyword: hasSubscriptionKeyword(agg),
+            hasPackKeyword: hasPackKeyword(agg),
           },
           repos
         )
@@ -649,6 +663,7 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
             storeId: input.storeId, visit: createdVisit,
             hasOptionPurchase: agg.optionNames.length > 0,
             hasSubscriptionKeyword: hasSubscriptionKeyword(agg),
+            hasPackKeyword: hasPackKeyword(agg),
           },
           repos
         )

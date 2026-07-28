@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { BriefingEntry, UUID } from '../../types/riora.types';
-import type { IBriefingRepo } from '../interfaces';
+import type { AttachFireLogFeedbackInput, AttachFireLogFeedbackResult, IBriefingRepo } from '../interfaces';
 import { toBriefingEntry, type BrainFireLogRow } from './mappers';
 
 const FIRE_LOG_COLUMNS = 'id, customer_id, visit_id, decision_record, explanation, created_at';
@@ -82,5 +82,44 @@ export class BriefingRepo implements IBriefingRepo {
       throw new Error(`BriefingRepo.recentByCustomer failed: ${error.message}`);
     }
     return ((data ?? []) as unknown as BrainFireLogRow[]).map((row) => toBriefingEntry(row, ''));
+  }
+
+  async attachFeedback(fireLogId: UUID, input: AttachFireLogFeedbackInput): Promise<AttachFireLogFeedbackResult> {
+    const { data: existing, error: selectError } = await this.client
+      .from('brain_pattern_fire_log')
+      .select('id, store_id, decision_record')
+      .eq('id', fireLogId)
+      .maybeSingle();
+
+    if (selectError) {
+      throw new Error(`BriefingRepo.attachFeedback failed: ${selectError.message}`);
+    }
+    if (!existing) return { attached: false, reason: 'not_found' };
+
+    const row = existing as { store_id: string; decision_record: Record<string, unknown> | null };
+    if (row.store_id !== input.storeId) return { attached: false, reason: 'store_mismatch' };
+
+    const decisionRecord = row.decision_record ?? {};
+    if (decisionRecord.staffFeedback) return { attached: false, reason: 'already_has_feedback' };
+
+    const nextDecisionRecord = {
+      ...decisionRecord,
+      staffFeedback: { value: input.feedback, staffId: input.staffId, at: new Date().toISOString() },
+    };
+
+    // decision_record->staffFeedback IS NULLを条件に含めることで、SELECTとUPDATEの間の
+    // 競合(二重タップ等)を防ぐ(UNIQUE制約を持つ新規テーブルを追加しない代わりの防御)。
+    const { data: updated, error: updateError } = await this.client
+      .from('brain_pattern_fire_log')
+      .update({ decision_record: nextDecisionRecord })
+      .eq('id', fireLogId)
+      .is('decision_record->staffFeedback', null)
+      .select('id');
+
+    if (updateError) {
+      throw new Error(`BriefingRepo.attachFeedback failed: ${updateError.message}`);
+    }
+    if (!updated || updated.length === 0) return { attached: false, reason: 'already_has_feedback' };
+    return { attached: true };
   }
 }
