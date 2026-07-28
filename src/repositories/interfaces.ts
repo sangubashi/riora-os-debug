@@ -540,6 +540,13 @@ export interface IOpsLogRepo {
   insert(log: Omit<OpsLog, 'id' | 'createdAt'>): Promise<OpsLog>;
   /** brain_ops_logsをstore_id+kindでcreated_at降順に直近n件取得する(CSV Import履歴画面用)。 */
   recentByStoreAndKind(storeId: UUID, kind: string, n: number): Promise<OpsLog[]>;
+  /**
+   * brain_ops_logsをstore_id+kind前方一致でcreated_at降順に直近n件取得する
+   * (LINE送信履歴PHASE LINE-LOG-1・kind='line_send:homecare'等をまとめて
+   * 'line_send:'前方一致で横断取得する用途)。汎用運用ログの想定通り、
+   * kindの粒度をprefixで束ねて読む他ユースケースにも再利用できる。
+   */
+  recentByStoreAndKindPrefix(storeId: UUID, kindPrefix: string, n: number): Promise<OpsLog[]>;
 }
 
 export interface IScenarioRepo {

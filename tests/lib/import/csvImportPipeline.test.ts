@@ -229,6 +229,8 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
       },
       recentByStoreAndKind: async (storeId, kind, n) =>
         state.opsLogs.filter(l => l.storeId === storeId && l.kind === kind).slice(0, n),
+      recentByStoreAndKindPrefix: async (storeId, kindPrefix, n) =>
+        state.opsLogs.filter(l => l.storeId === storeId && l.kind.startsWith(kindPrefix)).slice(0, n),
     },
     // Phase 1-Bc: csvImportPipeline.tsがvisit確定直後にrecordProposalOutcome()を呼ぶが、
     // このテストでは事前にfire_logを積んでいないため常に候補0件(no_eligible_fire_log)で

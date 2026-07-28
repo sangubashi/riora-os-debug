@@ -35,4 +35,19 @@ export class OpsLogRepo implements IOpsLogRepo {
     }
     return ((data ?? []) as unknown as BrainOpsLogRow[]).map(toOpsLog);
   }
+
+  async recentByStoreAndKindPrefix(storeId: UUID, kindPrefix: string, n: number): Promise<OpsLog[]> {
+    const { data, error } = await this.client
+      .from('brain_ops_logs')
+      .select(OPS_LOG_COLUMNS)
+      .eq('store_id', storeId)
+      .like('kind', `${kindPrefix}%`)
+      .order('created_at', { ascending: false })
+      .limit(n);
+
+    if (error) {
+      throw new Error(`OpsLogRepo.recentByStoreAndKindPrefix failed: ${error.message}`);
+    }
+    return ((data ?? []) as unknown as BrainOpsLogRow[]).map(toOpsLog);
+  }
 }

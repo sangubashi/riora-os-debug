@@ -142,7 +142,7 @@ const ACTION_BUTTONS: Array<{ action: ActionType; emoji: string; label: string }
   { action: 'product_purchased',   emoji: '✅', label: '商品を購入した' },
 ];
 
-type SectionKey = 'homecare' | 'line' | 'voice';
+type SectionKey = 'homecare' | 'line' | 'voice' | 'lineSendLog';
 
 /** 来店履歴1件（Phase UX-1・/api/customers/[id]/visit-history のレスポンス型） */
 interface VisitHistoryEntry {
@@ -158,6 +158,37 @@ interface HomecareProductEntry {
   productName:     string;
   purchaseCount:   number;
   lastPurchasedAt: string;
+}
+
+/**
+ * LINE送信履歴1件（PHASE LINE-LOG-1・/api/customers/[id]/line-send-log のレスポンス型）。
+ * 「送信」はLINE Messaging APIの実送信ではなく、コピー操作を送信とみなした近似ログ
+ * (アプリからLINEを直接送信しない設計のため)。
+ */
+interface LineSendLogEntry {
+  kind:       'homecare' | 'usage_card' | 'thanks' | 'follow';
+  title:      string;
+  occurredAt: string;
+}
+
+const LINE_SEND_KIND_LABEL: Record<LineSendLogEntry['kind'], string> = {
+  homecare:   'ホームケア',
+  usage_card: '使い方カード',
+  thanks:     'お礼',
+  follow:     'フォロー',
+};
+
+/**
+ * 直近の送信済みラベル(本日/7日以内)。無ければnull(PHASE LINE-LOG-1)。
+ * title指定時は同じ商品名(使い方カード等)のログのみに絞る。
+ */
+function sentStatusLabel(logs: LineSendLogEntry[], kind: LineSendLogEntry['kind'], title?: string): string | null {
+  const latest = logs.find(l => l.kind === kind && (title === undefined || l.title === title));
+  if (!latest) return null;
+  const diffDays = (Date.now() - new Date(latest.occurredAt).getTime()) / 86_400_000;
+  if (diffDays < 1) return '本日送信済み';
+  if (diffDays < 7) return '7日以内送信済み';
+  return null;
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -325,6 +356,10 @@ export default function CustomerBottomSheet({
   const [aiHomecareMessages, setAiHomecareMessages] = useState<Record<string, string>>({});
   const [aiGeneratingProduct, setAiGeneratingProduct] = useState<string | null>(null);
 
+  // ── LINE送信履歴（PHASE LINE-LOG-1・コピー操作を送信とみなして記録） ─────────────
+  const [lineSendLogs,        setLineSendLogs]        = useState<LineSendLogEntry[]>([]);
+  const [lineSendLogsLoading, setLineSendLogsLoading] = useState(false);
+
   // ── Priority / Timeline refresh ─────────────────────────────────────────────
   const [insightRefreshKey,  setInsightRefreshKey]  = useState(0);
   const [notesRefreshKey,    setNotesRefreshKey]    = useState(0);
@@ -382,6 +417,7 @@ export default function CustomerBottomSheet({
     setLineMessageDraft('');
     setLineMessageCopied(false);
     setLineMessageReasons([]);
+    setLineSendLogs([]);
     setAllDone(false);
     setServiceReplay(null);
     resetActiveSession();
@@ -479,6 +515,20 @@ export default function CustomerBottomSheet({
         }
       } finally {
         setHomecareProductsLoading(false);
+      }
+    })();
+
+    // LINE送信履歴（PHASE LINE-LOG-1・コピー操作を送信とみなして記録した履歴を取得）
+    void (async () => {
+      setLineSendLogsLoading(true);
+      try {
+        const res = await authedFetch(`/api/customers/${c.id}/line-send-log`);
+        if (res.ok) {
+          const json = await res.json() as { success: boolean; logs: LineSendLogEntry[] };
+          if (json.success) setLineSendLogs(json.logs);
+        }
+      } finally {
+        setLineSendLogsLoading(false);
       }
     })();
 
@@ -648,6 +698,7 @@ export default function CustomerBottomSheet({
     setLineMessageDraft('');
     setLineMessageCopied(false);
     setLineMessageReasons([]);
+    setLineSendLogs([]);
     setAllDone(false);
     setServiceReplay(null);
     resetActiveSession();
@@ -796,16 +847,46 @@ export default function CustomerBottomSheet({
     toast.success('メモを保存しました 🌸', { duration: 2000 });
   }, [memo, c, currentStaffId, memoSaving]);
 
+  // ─── LINE送信履歴（PHASE LINE-LOG-1） ────────────────────────────────────────
+  // このアプリはLINEを直接送信しないため、「コピー」操作を送信とみなして記録する。
+  // 短時間の重複送信防止(③)は警告表示のみで、コピー自体はブロックしない
+  // (最終判断はスタッフが行う、という既存のAI提案等と同じ方針)。
+  const DUPLICATE_WARNING_HOURS = 2;
+  const warnIfRecentlySent = useCallback((kind: LineSendLogEntry['kind']) => {
+    const thresholdMs = DUPLICATE_WARNING_HOURS * 60 * 60 * 1000;
+    const recent = lineSendLogs.find(
+      l => l.kind === kind && Date.now() - new Date(l.occurredAt).getTime() < thresholdMs
+    );
+    if (recent) toast.warning(`${LINE_SEND_KIND_LABEL[kind]}メッセージは最近送信済みです`, { duration: 2500 });
+  }, [lineSendLogs]);
+
+  const recordLineSend = useCallback(async (kind: LineSendLogEntry['kind'], title: string) => {
+    if (!c) return;
+    try {
+      const res = await authedFetch(`/api/customers/${c.id}/line-send-log`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ kind, title }),
+      });
+      if (res.ok) {
+        const json = await res.json() as { success: boolean; log?: LineSendLogEntry };
+        if (json.success && json.log) setLineSendLogs(prev => [json.log!, ...prev]);
+      }
+    } catch { /* 履歴記録に失敗してもコピー操作自体は既に完了しているため無視する */ }
+  }, [c]);
+
   // ─── LINE コピー ────────────────────────────────────────────────────────────
   const copyLineDraft = useCallback(async () => {
     if (!homecarePlan?.lineDraft) return;
+    warnIfRecentlySent('homecare');
     try {
       await navigator.clipboard.writeText(homecarePlan.lineDraft);
       setLineCopied(true);
       toast.success('コピーしました', { duration: 1500 });
       setTimeout(() => setLineCopied(false), 2500);
+      void recordLineSend('homecare', 'ホームケアプランのご案内');
     } catch { toast.error('コピーに失敗しました'); }
-  }, [homecarePlan]);
+  }, [homecarePlan, warnIfRecentlySent, recordLineSend]);
 
   // ─── ホームケア使い方カード（PHASE HC-4） ───────────────────────────────────
   const toggleUsageCard = useCallback((productName: string) => {
@@ -817,13 +898,15 @@ export default function CustomerBottomSheet({
   }, []);
 
   const copyUsageMessage = useCallback(async (productName: string, message: string) => {
+    warnIfRecentlySent('usage_card');
     try {
       await navigator.clipboard.writeText(message);
       setCopiedUsageProduct(productName);
       toast.success('メッセージをコピーしました', { duration: 1500 });
       setTimeout(() => setCopiedUsageProduct(null), 2500);
+      void recordLineSend('usage_card', productName);
     } catch { toast.error('コピーに失敗しました'); }
-  }, []);
+  }, [warnIfRecentlySent, recordLineSend]);
 
   // ─── ホームケアAIメッセージ生成（PHASE HC-6・失敗時は辞書メッセージへフォールバック） ──
   const generateAiHomecareMessage = useCallback(async (
@@ -893,15 +976,20 @@ export default function CustomerBottomSheet({
     }
   }, [c, lineMessageGenerating, skinTags, visitHistory, homecareProducts, recentNotes]);
 
-  const copyLineMessageDraft = useCallback(async () => {
+  // kind: 'thanks'(お礼) | 'follow'(フォロー)。生成される文面自体は1種類の汎用AI下書き
+  // (PHASE2-C-4)のままで、どちらの用途で使ったかをスタッフに選んでもらい記録するだけ
+  // (PHASE LINE-LOG-1・専用の生成ロジックを新設するわけではない)。
+  const copyLineMessageDraft = useCallback(async (kind: 'thanks' | 'follow') => {
     if (!lineMessageDraft) return;
+    warnIfRecentlySent(kind);
     try {
       await navigator.clipboard.writeText(lineMessageDraft);
       setLineMessageCopied(true);
       toast.success('コピーしました', { duration: 1500 });
       setTimeout(() => setLineMessageCopied(false), 2500);
+      void recordLineSend(kind, `${LINE_SEND_KIND_LABEL[kind]}メッセージ`);
     } catch { toast.error('コピーに失敗しました'); }
-  }, [lineMessageDraft]);
+  }, [lineMessageDraft, warnIfRecentlySent, recordLineSend]);
 
   // ─── Adaptive Priority ────────────────────────────────────────────────────
   const sectionPriority = useSectionPriority(c ?? null, servicePhase, timePressure);
@@ -1220,6 +1308,12 @@ export default function CustomerBottomSheet({
         </button>
         {open && (
           <div className="px-4 pb-3.5">
+            {/* 送信済み表示（PHASE LINE-LOG-1・コピー操作を送信とみなした近似） */}
+            {sentStatusLabel(lineSendLogs, 'homecare') && (
+              <span className="inline-block text-[9px] font-semibold text-[#34A070] bg-white rounded-full px-2 py-0.5 border border-[#D0F0E0] mb-1.5">
+                {sentStatusLabel(lineSendLogs, 'homecare')}
+              </span>
+            )}
             <div className="bg-white rounded-2xl p-3 border border-[#C0E8D0] mb-2.5">
               <p className="text-sm text-[#3C5C45] leading-[1.8] whitespace-pre-wrap font-['Noto_Sans_JP']">
                 {homecarePlan.lineDraft}
@@ -1234,6 +1328,44 @@ export default function CustomerBottomSheet({
                 : <><Copy size={14} strokeWidth={2} /> テキストをコピー</>
               }
             </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  /** LINE送信履歴アコーディオン（PHASE LINE-LOG-1）。
+   *  「送信」はLINE Messaging APIの実送信ではなく、コピー操作を送信とみなした近似ログ。
+   *  種類・タイトルのみ表示（本文は表示しない）。 */
+  const LineSendLogAccordion = () => {
+    const open = openSections.has('lineSendLog');
+    if (lineSendLogs.length === 0 && !lineSendLogsLoading) return null;
+    return (
+      <div className="bg-[#F8F1F3] rounded-[22px] overflow-hidden">
+        <button onClick={() => toggleSection('lineSendLog')}
+          className="w-full flex items-center justify-between px-4 py-3.5 bg-transparent border-none cursor-pointer">
+          <p className="text-[11px] tracking-[0.18em] text-[#C8A58C] font-semibold">📨 LINE送信履歴</p>
+          <span className="text-sm text-[#C8A58C] transition-transform duration-200 inline-block"
+            style={{ transform: open ? 'rotate(180deg)' : 'none' }}>▾</span>
+        </button>
+        {open && (
+          <div className="px-4 pb-3.5 flex flex-col gap-1.5">
+            {lineSendLogsLoading && <p className="text-xs text-[#C8A8B0]">読み込み中…</p>}
+            {!lineSendLogsLoading && lineSendLogs.length === 0 && (
+              <p className="text-xs text-[#C8A8B0]">送信履歴はまだありません</p>
+            )}
+            {lineSendLogs.slice(0, 10).map((log, i) => (
+              <div key={`${log.occurredAt}-${i}`} className="flex items-center justify-between bg-white rounded-xl px-3 py-2 gap-2">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-[#5C4033] truncate">{log.title}</p>
+                  <p className="text-[10px] text-[#C8A58C]">{LINE_SEND_KIND_LABEL[log.kind]}</p>
+                </div>
+                <p className="text-[10px] text-[#9F7E6C] flex-shrink-0 whitespace-nowrap">
+                  {new Date(log.occurredAt).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })}{' '}
+                  {new Date(log.occurredAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
+                </p>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -1697,6 +1829,14 @@ export default function CustomerBottomSheet({
                                       <span className="flex-shrink-0 text-[11px] text-[#C8A8B0] whitespace-nowrap">使い方情報未登録</span>
                                     )}
                                   </div>
+                                  {/* 送信済み表示（PHASE LINE-LOG-1・コピー操作を送信とみなした近似） */}
+                                  {sentStatusLabel(lineSendLogs, 'usage_card', p.productName) && (
+                                    <div className="px-3.5 pb-2 -mt-1">
+                                      <span className="inline-block text-[9px] font-semibold text-[#8060A8] bg-[#F5F0FA] rounded-full px-2 py-0.5">
+                                        {sentStatusLabel(lineSendLogs, 'usage_card', p.productName)}
+                                      </span>
+                                    </div>
+                                  )}
                                   {guide && open && (
                                     <div className="px-3.5 pb-3.5 flex flex-col gap-2.5">
                                       <div>
@@ -1780,7 +1920,7 @@ export default function CustomerBottomSheet({
                           仕様: 生成→編集→コピーのみ。送信ボタン・Webhook送信・LINE Messaging API
                           呼び出しは一切実装しない。送信はスタッフ本人がLINEアプリから手動で行う。 */}
                       <div className="bg-[#F0FAF5] rounded-[22px] p-4 border border-[#D0F0E0]">
-                        <div className="flex items-center justify-between mb-2.5">
+                        <div className="flex items-center justify-between mb-1.5">
                           <p className="text-[11px] tracking-[0.18em] text-[#34A070] font-semibold">
                             ✨ LINEメッセージ生成（AI下書き）
                           </p>
@@ -1792,6 +1932,21 @@ export default function CustomerBottomSheet({
                             {lineMessageGenerating ? '生成中…' : lineMessageDraft ? '再生成' : '生成する'}
                           </button>
                         </div>
+                        {/* 送信済み表示（PHASE LINE-LOG-1・コピー操作を送信とみなした近似） */}
+                        {(sentStatusLabel(lineSendLogs, 'thanks') || sentStatusLabel(lineSendLogs, 'follow')) && (
+                          <div className="flex gap-1.5 mb-1.5">
+                            {sentStatusLabel(lineSendLogs, 'thanks') && (
+                              <span className="text-[9px] font-semibold text-[#34A070] bg-white rounded-full px-2 py-0.5 border border-[#D0F0E0]">
+                                お礼: {sentStatusLabel(lineSendLogs, 'thanks')}
+                              </span>
+                            )}
+                            {sentStatusLabel(lineSendLogs, 'follow') && (
+                              <span className="text-[9px] font-semibold text-[#34A070] bg-white rounded-full px-2 py-0.5 border border-[#D0F0E0]">
+                                フォロー: {sentStatusLabel(lineSendLogs, 'follow')}
+                              </span>
+                            )}
+                          </div>
+                        )}
                         {lineMessageDraft ? (
                           <>
                             <textarea
@@ -1801,15 +1956,26 @@ export default function CustomerBottomSheet({
                               className="w-full bg-white rounded-2xl p-3 border border-[#C0E8D0] text-sm text-[#3C5C45] leading-[1.8] mb-2.5 resize-none"
                               placeholder="生成された文面がここに表示されます。自由に編集できます。"
                             />
-                            <button onClick={copyLineMessageDraft}
-                              className={`w-full py-2.5 rounded-full text-sm font-bold text-white flex items-center justify-center gap-1.5 transition-colors border-none cursor-pointer ${
-                                lineMessageCopied ? 'bg-[#34D399]' : 'bg-[#2ECC8A]'
-                              }`}>
-                              {lineMessageCopied
-                                ? <><Check size={14} strokeWidth={2.5} /> コピーしました</>
-                                : <><Copy size={14} strokeWidth={2} /> コピー</>
-                              }
-                            </button>
+                            <div className="flex gap-2">
+                              <button onClick={() => copyLineMessageDraft('thanks')}
+                                className={`flex-1 py-2.5 rounded-full text-sm font-bold text-white flex items-center justify-center gap-1.5 transition-colors border-none cursor-pointer ${
+                                  lineMessageCopied ? 'bg-[#34D399]' : 'bg-[#2ECC8A]'
+                                }`}>
+                                {lineMessageCopied
+                                  ? <><Check size={14} strokeWidth={2.5} /> コピー済</>
+                                  : <><Copy size={14} strokeWidth={2} /> お礼としてコピー</>
+                                }
+                              </button>
+                              <button onClick={() => copyLineMessageDraft('follow')}
+                                className={`flex-1 py-2.5 rounded-full text-sm font-bold text-white flex items-center justify-center gap-1.5 transition-colors border-none cursor-pointer ${
+                                  lineMessageCopied ? 'bg-[#34D399]' : 'bg-[#2ECC8A]'
+                                }`}>
+                                {lineMessageCopied
+                                  ? <><Check size={14} strokeWidth={2.5} /> コピー済</>
+                                  : <><Copy size={14} strokeWidth={2} /> フォローとしてコピー</>
+                                }
+                              </button>
+                            </div>
                             <p className="text-[10px] text-[#7C9C88] mt-2 leading-relaxed">
                               送信はこのアプリからは行いません。コピーした文面をLINEアプリに貼り付けて、ご自身で送信してください。
                             </p>
@@ -1835,6 +2001,9 @@ export default function CustomerBottomSheet({
                           </p>
                         )}
                       </div>
+
+                      {/* LINE送信履歴（PHASE LINE-LOG-1） */}
+                      <LineSendLogAccordion />
 
                       {/* 実施済み記録 */}
                       <ActionButtonGroup />
