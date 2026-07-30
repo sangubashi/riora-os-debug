@@ -5,6 +5,15 @@
  * 他人比較・ランキングは一切行わない。表示は自分の実績のみ。
  * (Riora OS v1.0 再設計書 準拠)
  *
+ * PHASE MYPAGE-LASTMONTH-SUMMARY(2026-07-30): 最上部に「先月の実績」カード(売上/来店人数/
+ * 客単価/指名率/リピート率/LTV、数字のみ・AIコメント無し)を追加。「先週のよかったところ」は
+ * 固定指標(指名/リピート率/店販のみ)から、売上・客単価も含めた5指標のうち先週比で最も
+ * 改善した1つだけを表示する方式に変更し、AIコメントを改善指標に応じて変える方式にした
+ * (staff別トーンから指標別トーンへ変更)。外舘の画面は既存方針どおり売上・客単価・店販を
+ * 引き続き候補から除外。LTVは管理者ダッシュボード(StaffAnalyticsEngine.ltvOfCustomer)と
+ * 同じ算出式(顧客の全履歴売上+継続中サブスク月額×6)を、既存のbrain_visits/
+ * brain_subscriptionsから計算(新規テーブル・新規APIエンドポイントは追加していない)。
+ *
  * PHASE MYPAGE-METRIC-LABELS(2026-07-30): 主役カードの数値に「リピート率」、指名カードの
  * 数値に「指名率」/「今月のご指名」ラベルを明示(数値のみだと何の指標か分からないため)。
  * 見出し・補足文言・トーン分岐ロジックは変更していない。
@@ -107,67 +116,68 @@ function getNominationContent(staffId: string | null): NominationContent {
   return { mode: 'count', lines: [] }
 }
 
-// ─── 先週のよかったところ(PHASE MYPAGE-WEEKLY-PRAISE) ─────────────────────────
+// ─── 先週のよかったところ(PHASE MYPAGE-LASTMONTH-SUMMARY) ─────────────────────
 
-type WeeklyPraiseMetricKey = 'nomination' | 'repeatRate' | 'retail'
+type WeeklyPraiseMetricKey = 'sales' | 'avgSpend' | 'nomination' | 'repeatRate' | 'retail'
 
 interface WeeklyPraiseCandidate {
   key:   WeeklyPraiseMetricKey
   label: string
   diff:  number
-  unit:  string
+  unit:  'yen' | 'count' | 'percent'
 }
 
-/** 先週比プラスの候補指標。外舘の画面には売上・客単価・店販を一切出さない既存方針を
- *  踏襲し、店販は候補から除外する。 */
+/** 先週比プラスの候補指標(売上・客単価・指名件数・リピート率・店販件数の5種)。
+ *  外舘の画面には売上・客単価・店販を一切出さない既存方針を踏襲し、この3つを候補から
+ *  除外する(ユーザー承認済み)。avgSpendDiffは今週・先週いずれかの来店が0件だとnullに
+ *  なるため、その場合は候補に含めない(架空の客単価改善を作らない)。 */
 function getWeeklyPraiseCandidates(staffId: string | null, weekly: WeeklyDiff): WeeklyPraiseCandidate[] {
   const candidates: WeeklyPraiseCandidate[] = [
-    { key: 'nomination', label: '指名',       diff: weekly.nominationDiff, unit: '件' },
-    { key: 'repeatRate', label: 'リピート率', diff: weekly.repeatRateDiff, unit: '%' },
+    { key: 'nomination', label: 'ご指名',     diff: weekly.nominationDiff, unit: 'count' },
+    { key: 'repeatRate', label: 'リピート率', diff: weekly.repeatRateDiff, unit: 'percent' },
   ]
   if (staffId !== SOTODATE_STAFF_ID) {
-    candidates.push({ key: 'retail', label: '店販', diff: weekly.retailCountDiff, unit: '件' })
+    candidates.push({ key: 'sales', label: '売上', diff: weekly.salesDiff, unit: 'yen' })
+    if (weekly.avgSpendDiff !== null) {
+      candidates.push({ key: 'avgSpend', label: '客単価', diff: weekly.avgSpendDiff, unit: 'yen' })
+    }
+    candidates.push({ key: 'retail', label: '店販', diff: weekly.retailCountDiff, unit: 'count' })
   }
   return candidates
 }
 
+function formatPraiseValue(diff: number, unit: WeeklyPraiseCandidate['unit']): string {
+  if (unit === 'yen')     return `+¥${diff.toLocaleString('ja-JP')}`
+  if (unit === 'percent') return `+${diff}%`
+  return `+${diff}件`
+}
+
+/** 改善指標に応じたAIコメント(staffトーンではなく指標トーンで変える・ユーザー指示)。 */
+const METRIC_COMMENTS: Record<WeeklyPraiseMetricKey, string[]> = {
+  sales:      ['売上が伸びています。', '今の接客がお客様に届いています。'],
+  avgSpend:   ['より質の高いご提案がお客様に届いています。'],
+  nomination: ['あなたを選んでくださるお客様が増えています。'],
+  repeatRate: ['あなたの技術がしっかり届いている証拠です。'],
+  retail:     ['ホームケア提案がお客様に届いています。'],
+}
+
 const NO_PLUS_COMMENT = {
-  sotodate: '今週も、お客様との信頼を大切に過ごしていきましょう。',
-  kameyama: '今週も、丁寧な技術でお客様と向き合っていきましょう。',
+  sotodate: '今週も安心感のある接客がお客様に届いています。',
+  kameyama: '今週も丁寧な技術でお客様と向き合っていきましょう。',
   default:  '今週も丁寧な接客を積み重ねていきましょう。',
 } as const
 
-/** プラスが1つ以上あるときの承認+一手のアドバイス(最も伸びた指標を軸に選ぶ)。 */
-function getPlusComment(staffId: string | null, topKey: WeeklyPraiseMetricKey, topLabel: string): string {
-  if (staffId === SOTODATE_STAFF_ID) {
-    if (topKey === 'nomination') {
-      return '信頼されているから、あなたの一言がしっかり届いています。そっと一言、次回のご案内を添えてみましょう。'
-    }
-    return '信頼が、戻りという形で続いています。そっと一言添えるだけで十分届きます。'
-  }
-  if (staffId === KAMEYAMA_STAFF_ID) {
-    if (topKey === 'nomination') {
-      return '技術で戻ってきてくださる流れが続いています。次回の一言がご指名への橋になります。'
-    }
-    if (topKey === 'repeatRate') {
-      return 'あなたの技術がしっかり届いている証拠です。次回のご来店を一言添えてみましょう。'
-    }
-    return `先週より${topLabel}が伸びています。`
-  }
-  return `先週より${topLabel}が伸びています。`
-}
-
 interface WeeklyPraise {
-  metrics: { label: string; text: string }[]
-  comment: string
+  metric:   { label: string; text: string } | null
+  comments: string[]
 }
 
 /**
  * 「先週のよかったところ」の表示内容を組み立てる。
- * プラスの指標だけを候補にし(マイナス・0は候補から除外)、1件以上あれば数字+承認文、
- * 0件ならば数字を出さずstaff別の前向きな一文のみを返す(嘘の0%・架空のプラスは
+ * プラスの指標だけを候補にし(マイナス・0は候補から除外)、最も改善した1つだけを表示する。
+ * 該当が無ければ数字を出さずstaff別の前向きな一文のみを返す(嘘の0%・架空のプラスは
  * 一切作らない。diffは常にthisWeek-lastWeekの実測値のため、データ不足時は自然にdiff=0
- * となり0件分岐に落ちる)。
+ * となり「該当なし」分岐に落ちる)。
  */
 function buildWeeklyPraise(staffId: string | null, weekly: WeeklyDiff): WeeklyPraise {
   const positives = getWeeklyPraiseCandidates(staffId, weekly)
@@ -176,14 +186,19 @@ function buildWeeklyPraise(staffId: string | null, weekly: WeeklyDiff): WeeklyPr
 
   if (positives.length === 0) {
     const key = staffId === SOTODATE_STAFF_ID ? 'sotodate' : staffId === KAMEYAMA_STAFF_ID ? 'kameyama' : 'default'
-    return { metrics: [], comment: NO_PLUS_COMMENT[key] }
+    return { metric: null, comments: [NO_PLUS_COMMENT[key]] }
   }
 
   const top = positives[0]
   return {
-    metrics: positives.map((p) => ({ label: p.label, text: `+${p.diff}${p.unit}` })),
-    comment: getPlusComment(staffId, top.key, top.label),
+    metric:   { label: top.label, text: formatPraiseValue(top.diff, top.unit) },
+    comments: METRIC_COMMENTS[top.key],
   }
+}
+
+/** ¥表記(絶対値・マイナス表示なし)。「先月の実績」カード用。 */
+function formatYen(value: number): string {
+  return `¥${Math.round(value).toLocaleString('ja-JP')}`
 }
 
 /**
@@ -413,6 +428,36 @@ export default function MyStatsScreen() {
 
         {!isLoading && stats && (
           <>
+            {/* ── 0. 先月の実績(数字のみ・AIコメント無し) ── */}
+            <div
+              className="rounded-[20px] bg-white border border-[#F5E6E8] px-5 py-4 mb-4"
+              style={{ boxShadow: '0 2px 12px rgba(245,160,181,0.08)' }}
+            >
+              <p className="text-[11px] font-semibold mb-2.5" style={{ color: '#9E8090' }}>先月の実績</p>
+              <div className="flex gap-2.5 mb-2.5">
+                <SmallStat label="売上" value={formatYen(stats.lastMonthSummary.sales)} />
+                <SmallStat label="来店人数" value={`${stats.lastMonthSummary.visitCount}人`} />
+                <SmallStat
+                  label="客単価"
+                  value={stats.lastMonthSummary.avgSpend !== null ? formatYen(stats.lastMonthSummary.avgSpend) : '—'}
+                />
+              </div>
+              <div className="flex gap-2.5">
+                <SmallStat
+                  label="指名率"
+                  value={stats.lastMonthSummary.nominationRate !== null ? `${stats.lastMonthSummary.nominationRate}%` : '—'}
+                />
+                <SmallStat
+                  label="リピート率"
+                  value={stats.lastMonthSummary.repeatRate !== null ? `${stats.lastMonthSummary.repeatRate}%` : '—'}
+                />
+                <SmallStat
+                  label="LTV"
+                  value={stats.lastMonthSummary.ltv !== null ? formatYen(stats.lastMonthSummary.ltv) : '—'}
+                />
+              </div>
+            </div>
+
             {/* ── 1. 今週予約サマリー(今日・明日) ── */}
             <motion.button
               type="button"
@@ -493,34 +538,37 @@ export default function MyStatsScreen() {
               >
                 <p className="text-[11px] font-semibold mb-3" style={{ color: '#9E8090' }}>先週のよかったところ</p>
 
-                {weeklyPraise.metrics.length > 0 && (
-                  <div className="flex flex-col gap-2 mb-3">
-                    {weeklyPraise.metrics.map((m) => (
-                      <div key={m.label} className="flex items-center gap-2">
-                        <div
-                          className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0"
-                          style={{ background: 'rgba(82,200,122,0.14)' }}
-                        >
-                          <Check size={11} strokeWidth={3} style={{ color: '#52C87A' }} />
-                        </div>
-                        <span className="text-[13px]" style={{ color: '#5C4033' }}>
-                          {m.label} <span className="font-bold tabular-nums" style={{ fontFamily: 'Inter, sans-serif' }}>{m.text}</span>
-                        </span>
-                      </div>
-                    ))}
+                {weeklyPraise.metric && (
+                  <div className="flex items-center gap-2 mb-3">
+                    <div
+                      className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0"
+                      style={{ background: 'rgba(82,200,122,0.14)' }}
+                    >
+                      <Check size={11} strokeWidth={3} style={{ color: '#52C87A' }} />
+                    </div>
+                    <span className="text-[13px]" style={{ color: '#5C4033' }}>
+                      {weeklyPraise.metric.label} <span className="font-bold tabular-nums" style={{ fontFamily: 'Inter, sans-serif' }}>{weeklyPraise.metric.text}</span>
+                    </span>
                   </div>
                 )}
 
-                <p
-                  className="text-[12.5px] leading-relaxed"
+                <div
                   style={
-                    weeklyPraise.metrics.length > 0
-                      ? { color: '#5C4033', borderTop: '1px solid #F5E6E8', paddingTop: '12px' }
-                      : { color: '#5C4033' }
+                    weeklyPraise.metric
+                      ? { borderTop: '1px solid #F5E6E8', paddingTop: '12px' }
+                      : undefined
                   }
                 >
-                  {weeklyPraise.comment}
-                </p>
+                  {weeklyPraise.comments.map((line, i) => (
+                    <p
+                      key={line}
+                      className="text-[12.5px] leading-relaxed"
+                      style={{ color: '#5C4033', marginTop: i > 0 ? '4px' : undefined }}
+                    >
+                      {line}
+                    </p>
+                  ))}
+                </div>
               </div>
             )}
 

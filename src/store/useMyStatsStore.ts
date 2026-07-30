@@ -16,6 +16,26 @@ export interface WeeklyDiff {
   /** 店販売上(円)ではなく「店販ありの来店件数」の差分。 */
   retailCountDiff: number
   repeatRateDiff:  number
+  /** 施術+店販の合計売上差分(円)。 */
+  salesDiff:       number
+  /** 客単価(売上÷来店件数)差分(円)。今週・先週いずれかの来店が0件ならnull。 */
+  avgSpendDiff:    number | null
+}
+
+/** 「先月の実績」カード用(PHASE MYPAGE-LASTMONTH-SUMMARY)。数字のみ表示、AIコメントは無し。 */
+export interface LastMonthSummary {
+  /** 施術+店販の合計売上(円)。 */
+  sales:          number
+  /** ユニーク来店人数(行数ではない)。 */
+  visitCount:     number
+  /** sales÷visitCount。visitCount=0ならnull。 */
+  avgSpend:       number | null
+  /** 指名率(%)。先月の来店が0件ならnull。 */
+  nominationRate: number | null
+  /** リピート率(%)。先月の来店が0件ならnull。 */
+  repeatRate:     number | null
+  /** このスタッフが先月担当した顧客のLTV平均値(全履歴売上+継続中サブスク月額×6)。対象顧客0人ならnull。 */
+  ltv:            number | null
 }
 
 export interface MyStats {
@@ -33,6 +53,8 @@ export interface MyStats {
   retailSales: MetricDetail | null
   /** 今週 vs 先週(月曜始まりJST)の差分。「先週のよかったところ」用(PHASE MYPAGE-WEEKLY-PRAISE)。 */
   weekly: WeeklyDiff
+  /** 「先月の実績」カード用(PHASE MYPAGE-LASTMONTH-SUMMARY)。 */
+  lastMonthSummary: LastMonthSummary
 }
 
 interface MyStatsState {
@@ -78,6 +100,16 @@ export const useMyStatsStore = create<MyStatsState>((set) => ({
             nominationDiff:  data.weekly?.nominationDiff ?? 0,
             retailCountDiff: data.weekly?.retailCountDiff ?? 0,
             repeatRateDiff:  data.weekly?.repeatRateDiff ?? 0,
+            salesDiff:       data.weekly?.salesDiff ?? 0,
+            avgSpendDiff:    data.weekly?.avgSpendDiff ?? null,
+          },
+          lastMonthSummary: {
+            sales:          data.lastMonthSummary?.sales ?? 0,
+            visitCount:     data.lastMonthSummary?.visitCount ?? 0,
+            avgSpend:       data.lastMonthSummary?.avgSpend ?? null,
+            nominationRate: data.lastMonthSummary?.nominationRate ?? null,
+            repeatRate:     data.lastMonthSummary?.repeatRate ?? null,
+            ltv:            data.lastMonthSummary?.ltv ?? null,
           },
         },
       });

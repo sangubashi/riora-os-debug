@@ -18,7 +18,16 @@
  *   weekly             今週 vs 先週(月曜始まりJST)の差分（PHASE MYPAGE-WEEKLY-PRAISE）。
  *                      「先週のよかったところ」用。nominationDiff/repeatRateDiffは月次と
  *                      同じ定義の週次版。retailCountDiffは店販売上(円)ではなく
- *                      「店販ありの来店件数」の差分。
+ *                      「店販ありの来店件数」の差分。salesDiffは施術+店販の合計売上差分。
+ *                      avgSpendDiffは客単価(売上÷来店件数)差分(いずれか一方の来店が
+ *                      0件ならnull)。
+ *   lastMonthSummary   「先月の実績」カード(PHASE MYPAGE-LASTMONTH-SUMMARY)用。
+ *                      sales(施術+店販の合計売上)・visitCount(ユニーク来店人数、行数では
+ *                      ない)・avgSpend(sales÷visitCount)・nominationRate(%)・
+ *                      repeatRate(%)・ltv(このスタッフが先月担当した顧客のLTV平均値。
+ *                      LTV = 顧客の全履歴売上合計 + 継続中サブスクの月額×6。管理者
+ *                      ダッシュボードのStaffAnalyticsEngine.ltvOfCustomer()と同じ算出式)。
+ *                      先月の来店が0件の場合はvisitCount=0、他は全てnull。
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '../../../lib/repos';
@@ -55,14 +64,17 @@ function summarizeWeekly(rows: VisitRow[]) {
   const visitCount      = rows.length;
   const repeatCount     = rows.filter(r => (r.visit_count_at ?? 0) > 1).length;
   const repeatRate      = visitCount > 0 ? Math.round((repeatCount / visitCount) * 100) : 0;
-  return { nominationCount, retailCount, repeatRate };
+  const totalSales      = rows.reduce((sum, r) => sum + (r.treatment_amount ?? 0) + (r.retail_amount ?? 0), 0);
+  return { nominationCount, retailCount, repeatRate, visitCount, totalSales };
 }
 
 interface VisitRow {
-  visit_date:     string;
-  is_nomination:  boolean | null;
-  visit_count_at: number | null;
-  retail_amount:  number | null;
+  visit_date:       string;
+  is_nomination:    boolean | null;
+  visit_count_at:   number | null;
+  retail_amount:    number | null;
+  treatment_amount: number | null;
+  customer_id:      string | null;
 }
 
 function summarize(rows: VisitRow[]) {
@@ -70,8 +82,9 @@ function summarize(rows: VisitRow[]) {
   const nominationCount = rows.filter(r => r.is_nomination).length;
   const repeatCount     = rows.filter(r => (r.visit_count_at ?? 0) > 1).length;
   const repeatRate      = visitCount > 0 ? Math.round((repeatCount / visitCount) * 100) : 0;
-  const retailSales      = rows.reduce((sum, r) => sum + (r.retail_amount ?? 0), 0);
-  return { visitCount, nominationCount, repeatRate, retailSales };
+  const retailSales     = rows.reduce((sum, r) => sum + (r.retail_amount ?? 0), 0);
+  const totalSales      = rows.reduce((sum, r) => sum + (r.treatment_amount ?? 0) + (r.retail_amount ?? 0), 0);
+  return { visitCount, nominationCount, repeatRate, retailSales, totalSales };
 }
 
 /** 増減率(%)。先月実績が0の場合は算出不能のためnull(架空の割合を作らない)。 */
@@ -108,7 +121,7 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await supabase
       .from('brain_visits')
-      .select('visit_date, is_nomination, visit_count_at, retail_amount')
+      .select('visit_date, is_nomination, visit_count_at, retail_amount, treatment_amount, customer_id')
       .eq('store_id', STORE_ID)
       .eq('staff_id', staff.staffBrainId)
       .gte('visit_date', lastMonthStart)
@@ -147,6 +160,65 @@ export async function GET(req: NextRequest) {
     const thisWeek = summarizeWeekly(thisWeekRows);
     const lastWeek = summarizeWeekly(lastWeekRows);
 
+    const thisWeekAvgSpend = thisWeek.visitCount > 0 ? thisWeek.totalSales / thisWeek.visitCount : null;
+    const lastWeekAvgSpend = lastWeek.visitCount > 0 ? lastWeek.totalSales / lastWeek.visitCount : null;
+    const avgSpendDiff = (thisWeekAvgSpend !== null && lastWeekAvgSpend !== null)
+      ? Math.round(thisWeekAvgSpend - lastWeekAvgSpend)
+      : null;
+
+    // ── 「先月の実績」カード(PHASE MYPAGE-LASTMONTH-SUMMARY) ──────────────
+    // 来店人数はユニーク顧客数(行数ではない。StaffAnalyticsEngineのSA-2と同じ定義)。
+    const lastMonthCustomerIds = Array.from(new Set(
+      lastMonthRows.map(r => r.customer_id).filter((id): id is string => !!id)
+    ));
+    const lastMonthVisitorCount = lastMonthCustomerIds.length;
+    const lastMonthAvgSpend = lastMonthVisitorCount > 0
+      ? Math.round(lastMonth.totalSales / lastMonthVisitorCount)
+      : null;
+    const lastMonthNominationRate = lastMonthRows.length > 0
+      ? Math.round((lastMonth.nominationCount / lastMonthRows.length) * 100)
+      : null;
+
+    // LTV = 顧客の全履歴(全スタッフ・全期間)売上合計 + 継続中サブスクの月額×6。
+    // 管理者ダッシュボード(StaffAnalyticsEngine.ltvOfCustomer)と同じ算出式を、
+    // このスタッフが先月担当した顧客に対してのみ計算する(新規テーブルは使わず
+    // 既存のbrain_visits/brain_subscriptionsを再利用)。
+    let lastMonthLtv: number | null = null;
+    if (lastMonthCustomerIds.length > 0) {
+      const [allHistoryRes, subsRes] = await Promise.all([
+        supabase
+          .from('brain_visits')
+          .select('customer_id, treatment_amount, retail_amount')
+          .in('customer_id', lastMonthCustomerIds)
+          .is('deleted_at', null),
+        supabase
+          .from('brain_subscriptions')
+          .select('customer_id, monthly_price')
+          .in('customer_id', lastMonthCustomerIds)
+          .is('cancelled_at', null),
+      ]);
+      if (allHistoryRes.error) throw allHistoryRes.error;
+      if (subsRes.error) throw subsRes.error;
+
+      const salesByCustomer = new Map<string, number>();
+      for (const r of (allHistoryRes.data ?? []) as { customer_id: string; treatment_amount: number | null; retail_amount: number | null }[]) {
+        const prev = salesByCustomer.get(r.customer_id) ?? 0;
+        salesByCustomer.set(r.customer_id, prev + (r.treatment_amount ?? 0) + (r.retail_amount ?? 0));
+      }
+      const mrrByCustomer = new Map<string, number>();
+      for (const s of (subsRes.data ?? []) as { customer_id: string; monthly_price: number }[]) {
+        const prev = mrrByCustomer.get(s.customer_id) ?? 0;
+        mrrByCustomer.set(s.customer_id, prev + s.monthly_price);
+      }
+
+      const ltvSum = lastMonthCustomerIds.reduce((sum, cid) => {
+        const totalSales = salesByCustomer.get(cid) ?? 0;
+        const mrr = mrrByCustomer.get(cid) ?? 0;
+        return sum + totalSales + mrr * 6;
+      }, 0);
+      lastMonthLtv = Math.round(ltvSum / lastMonthCustomerIds.length);
+    }
+
     return NextResponse.json({
       staffId: staff.staffBrainId,
       nominationDiff,
@@ -184,6 +256,16 @@ export async function GET(req: NextRequest) {
         nominationDiff:  thisWeek.nominationCount - lastWeek.nominationCount,
         retailCountDiff: thisWeek.retailCount     - lastWeek.retailCount,
         repeatRateDiff:  thisWeek.repeatRate       - lastWeek.repeatRate,
+        salesDiff:       thisWeek.totalSales       - lastWeek.totalSales,
+        avgSpendDiff,
+      },
+      lastMonthSummary: {
+        sales:          lastMonth.totalSales,
+        visitCount:     lastMonthVisitorCount,
+        avgSpend:       lastMonthAvgSpend,
+        nominationRate: lastMonthNominationRate,
+        repeatRate:     lastMonthRows.length > 0 ? lastMonth.repeatRate : null,
+        ltv:            lastMonthLtv,
       },
     });
   } catch (e) {
