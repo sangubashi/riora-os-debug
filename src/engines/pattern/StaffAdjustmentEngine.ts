@@ -14,9 +14,9 @@
 //
 // constraints(mandatoryMax/subscriptionStyle)はStaffAdjustment型に対応する
 // データ列が無く、正典が「亀山=mandatoryMax 1(他=1。将来可変)」「外舘=サブスク
-// 資料お渡し型固定」と"固定"値として明記しているため、本実装ではスタッフ名に
-// 紐づく構造的定数として扱う(document_handoverはStaffStyleに含まれない値の
-// ためStaffAdjustment.scriptStyleでは表現不可)。
+// 資料お渡し型固定」と"固定"値として明記しているため、本実装ではstaff.id(brain_staff.id、
+// AUTH-1: 氏名文字列は表記揺れ・変更で壊れるため使用しない)に紐づく構造的定数として扱う
+// (document_handoverはStaffStyleに含まれない値のためStaffAdjustment.scriptStyleでは表現不可)。
 // ================================================================
 
 import type {
@@ -34,8 +34,11 @@ import type { StyleAffinityTable } from '../../types/brain.types';
 /** 全staffのmandatoryMax現在値(Code Architecture v1.0 §7「亀山=1(他=1。将来可変)」)。 */
 const MANDATORY_MAX = 1;
 
-/** サブスク資料お渡し型固定の対象スタッフ(Proposal Generator v2.0 §3「外舘=サブスク資料お渡し型固定」)。 */
-const DOCUMENT_HANDOVER_STAFF_NAME = '外舘';
+/**
+ * サブスク資料お渡し型固定の対象スタッフ(Proposal Generator v2.0 §3「外舘=サブスク資料お渡し型固定」)。
+ * brain_staff.id(外舘)。AUTH-1: 氏名文字列ではなくstaff_idで判定する。
+ */
+const DOCUMENT_HANDOVER_STAFF_ID = '978ba4be-7b83-48ff-8914-d12ad6e82754';
 const SUBSCRIPTION_STYLE_CONSTRAINT = 'document_handover' as const;
 
 const PROPOSAL_KINDS: readonly ProposalKind[] = ['homecare', 'rebooking', 'subscription', 'upsell', 'pack', 'none'];
@@ -86,7 +89,7 @@ export class StaffAdjustmentEngine {
       timingOffsets,
       constraints: {
         mandatoryMax: MANDATORY_MAX,
-        subscriptionStyle: staff.name === DOCUMENT_HANDOVER_STAFF_NAME ? SUBSCRIPTION_STYLE_CONSTRAINT : undefined,
+        subscriptionStyle: staff.id === DOCUMENT_HANDOVER_STAFF_ID ? SUBSCRIPTION_STYLE_CONSTRAINT : undefined,
       },
     };
   }

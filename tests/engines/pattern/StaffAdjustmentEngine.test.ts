@@ -220,9 +220,9 @@ describe('StaffAdjustmentEngine', () => {
       expect(off.constraints.subscriptionStyle).toBeUndefined();
     });
 
-    it('外舘(名前"外舘")はsubscriptionStyle="document_handover"が設定される', () => {
+    it('外舘(id="978ba4be-7b83-48ff-8914-d12ad6e82754")はsubscriptionStyle="document_handover"が設定される', () => {
       const engine = new StaffAdjustmentEngine();
-      const staff = buildStaff({ id: 'staff-sotodate', name: '外舘', style: 'empathy' });
+      const staff = buildStaff({ id: '978ba4be-7b83-48ff-8914-d12ad6e82754', name: '外舘', style: 'empathy' });
 
       const off = engine.resolveAffinity(staff, [], buildPriors());
 
@@ -247,7 +247,7 @@ describe('StaffAdjustmentEngine', () => {
 
     it('外舘がsubscription提案を出すときconstraintsAppliedに"document_handover"が含まれる', () => {
       const engine = new StaffAdjustmentEngine();
-      const staff = buildStaff({ id: 'staff-sotodate', name: '外舘', style: 'empathy' });
+      const staff = buildStaff({ id: '978ba4be-7b83-48ff-8914-d12ad6e82754', name: '外舘', style: 'empathy' });
       const off = engine.resolveAffinity(staff, [], buildPriors());
       const proposal = buildScored({ proposalKind: 'subscription' });
 
@@ -260,7 +260,7 @@ describe('StaffAdjustmentEngine', () => {
 
     it('外舘でもsubscription以外の提案にはdocument_handoverは付与されない', () => {
       const engine = new StaffAdjustmentEngine();
-      const staff = buildStaff({ id: 'staff-sotodate', name: '外舘', style: 'empathy' });
+      const staff = buildStaff({ id: '978ba4be-7b83-48ff-8914-d12ad6e82754', name: '外舘', style: 'empathy' });
       const off = engine.resolveAffinity(staff, [], buildPriors());
       const proposal = buildScored({ proposalKind: 'homecare' });
 

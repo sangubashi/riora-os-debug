@@ -21,13 +21,6 @@ export type CustomerType =
   | '信頼構築型'
   | 'VIP型';
 
-export interface StaffProfile {
-  id: string;
-  name: string;
-  firstName: string;
-  role: UserRole;
-}
-
 export interface KpiMetric {
   label: string;
   value: string;
@@ -149,10 +142,6 @@ export interface TreatmentRecord {
 }
 
 
-export interface StaffDashboard {
-  customers: CustomerProfile[];
-  rioraDailyMsg: string;
-}
 // ─── ホームケア伴走 ──────────────────────────────────────────────────────────
 
 export const SKIN_TAG_LABELS: Record<string, string> = {

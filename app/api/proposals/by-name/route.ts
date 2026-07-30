@@ -12,12 +12,18 @@ import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
 import { canAccessCustomer } from '@/lib/auth/canAccessCustomer';
 
 const STORE_ID    = '00000000-0000-0000-0000-000000000001';
-const DEFAULT_STAFF = '00000000-0000-0000-0000-000000000101'; // 鈴木(管理者フォールバック)
 
 export async function GET(req: NextRequest) {
   const staff = await extractStaffFromRequest(req)
   if (!staff) {
     return NextResponse.json({ found: false, reason: 'unauthorized' }, { status: 401 })
+  }
+
+  // AUTH-1: 固定UUIDでの人格代替はしない。管理者はbrain_staff行(staffBrainId)を
+  // 持たないため、本エンドポイント(スタッフ本人のAI提案生成)は利用不可として扱う
+  // (/api/me/monthly-statsのadmin_not_supportedと同じ方針)。
+  if (staff.isAdmin || !staff.staffBrainId) {
+    return NextResponse.json({ found: false, reason: 'staff_required' }, { status: 400 })
   }
 
   const customerName = req.nextUrl.searchParams.get('customerName');
@@ -77,11 +83,9 @@ export async function GET(req: NextRequest) {
 
     try {
       const repos = getRepos();
-      // 管理者は DEFAULT_STAFF、スタッフは自身の ID でプロポーザルを生成
-      // (非adminはextractStaffFromRequest側でstaffBrainId必須のため、ここではnon-null)
-      const staffIdForProposal = staff.isAdmin ? DEFAULT_STAFF : staff.staffBrainId!
+      // AUTH-1: 上のガードで管理者/staffBrainId無しは弾いているため、ここでは常に本人のID。
       const result = await generateCustomerProposal(
-        { storeId: STORE_ID, customerId: bc.id, staffId: staffIdForProposal, legacyClient: client },
+        { storeId: STORE_ID, customerId: bc.id, staffId: staff.staffBrainId, legacyClient: client },
         repos
       );
 

@@ -2,12 +2,15 @@
  * useDashboardStore  –  Salon Riora OS ダッシュボード統合ストア
  *
  * 役割:
- *  ① Auth / Session 管理
  *  ② ナビゲーション状態
  *  ③ 通知バッジ
  *  ④ 今日の予約リスト（Phase1 ホーム画面）
  *  ⑤ LINE未返信サマリー
  *  ⑥ ダッシュボード集計値（本日売上・件数）
+ *
+ * AUTH-1: ログイン中staff_idの管理はuseStaffStore(session.user.id起点)に一本化した。
+ * 本ストアが独自に保持していたcurrentStaffId/currentStaffName/userRole/isAuthenticated
+ * (重複state・どこからも更新されず常にnullのデッドコードだった)は撤去済み。
  */
 import { create } from 'zustand'
 import { persist, type StorageValue } from 'zustand/middleware'
@@ -77,12 +80,6 @@ export interface LineUnreadItem {
 // ─── State / Actions 型 ──────────────────────────────────────────────────────
 
 interface DashboardState {
-  // ① Auth
-  currentStaffId:   string | null
-  currentStaffName: string | null
-  userRole:         UserRole
-  isAuthenticated:  boolean
-
   // ② Navigation
   activeScreen: AppScreen
   prevScreen:   AppScreen | null
@@ -110,10 +107,6 @@ interface DashboardState {
   lastSyncedAt: string | null
 
   // ── Actions ──────────────────────────────────────────────────────────
-  // Auth
-  setCurrentStaff: (id: string, name: string, role: UserRole) => void
-  clearSession:    () => void
-
   // Navigation
   navigateTo: (screen: AppScreen) => void
 
@@ -166,11 +159,6 @@ export const useDashboardStore = create<DashboardState>()(
   persist(
     (set, get) => ({
       // ── Initial state ──────────────────────────────────────────────────────
-      currentStaffId:   null,
-      currentStaffName: null,
-      userRole:         null,
-      isAuthenticated:  false,
-
       activeScreen: 'splash',
       prevScreen:   null,
 
@@ -190,13 +178,6 @@ export const useDashboardStore = create<DashboardState>()(
 
       isOnline:     true,
       lastSyncedAt: null,
-
-      // ── Auth ───────────────────────────────────────────────────────────────
-      setCurrentStaff: (id, name, role) =>
-        set({ currentStaffId: id, currentStaffName: name, userRole: role, isAuthenticated: true }),
-
-      clearSession: () =>
-        set({ currentStaffId: null, currentStaffName: null, userRole: null, isAuthenticated: false }),
 
       // ── Navigation ─────────────────────────────────────────────────────────
       navigateTo: (screen) =>
@@ -226,7 +207,7 @@ export const useDashboardStore = create<DashboardState>()(
         set({ todayReservations: list, todayReservationCount: list.length }),
 
       fetchTodayReservations: async (staffId) => {
-        const sid = staffId ?? get().currentStaffId
+        const sid = staffId
         set({ reservationsLoading: true })
         try {
           const todayStart = new Date(); todayStart.setHours(0,0,0,0)
@@ -327,7 +308,7 @@ export const useDashboardStore = create<DashboardState>()(
 
       // ── Dashboard Summary ───────────────────────────────────────────────────
       fetchDashboardSummary: async (staffId) => {
-        const sid = staffId ?? get().currentStaffId
+        const sid = staffId
         try {
           const today = new Date().toISOString().split('T')[0]
           const { data } = await supabase
@@ -356,12 +337,7 @@ export const useDashboardStore = create<DashboardState>()(
     }),
     {
       name: 'riora-dashboard',
-      partialize: (s) => ({
-        currentStaffId:   s.currentStaffId,
-        currentStaffName: s.currentStaffName,
-        userRole:         s.userRole,
-        isAuthenticated:  s.isAuthenticated,
-      }),
+      partialize: () => ({}),
       // Safari ITP: localStorage が使えない場合でも止まらない安全ストレージ
       storage: createSafariSafeStorage(),
     }
