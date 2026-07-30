@@ -37,8 +37,14 @@ const MANDATORY_MAX = 1;
 /**
  * サブスク資料お渡し型固定の対象スタッフ(Proposal Generator v2.0 §3「外舘=サブスク資料お渡し型固定」)。
  * brain_staff.id(外舘)。AUTH-1: 氏名文字列ではなくstaff_idで判定する。
+ *
+ * PHASE MYPAGE-STAFFID-FIX(2026-07-30): 旧値'978ba4be-7b83-48ff-8914-d12ad6e82754'は
+ * brain_staff.idではなく別のID空間(profiles.id/auth.users.id)を指すドキュメントの値を
+ * 誤って参照していたバグ。本番の/api/me/monthly-statsを外舘の実アカウントで実測し、
+ * brain_staff.idが固定シード値(supabase/migrations/20260618_staff_roles_setup.sql)の
+ * '00000000-0000-0000-0000-000000000103'であることを検証済み。
  */
-const DOCUMENT_HANDOVER_STAFF_ID = '978ba4be-7b83-48ff-8914-d12ad6e82754';
+const DOCUMENT_HANDOVER_STAFF_ID = '00000000-0000-0000-0000-000000000103';
 const SUBSCRIPTION_STYLE_CONSTRAINT = 'document_handover' as const;
 
 const PROPOSAL_KINDS: readonly ProposalKind[] = ['homecare', 'rebooking', 'subscription', 'upsell', 'pack', 'none'];
