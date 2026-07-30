@@ -5,6 +5,10 @@
  * 他人比較・ランキングは一切行わない。表示は自分の実績のみ。
  * (Riora OS v1.0 再設計書 準拠)
  *
+ * PHASE MYPAGE-METRIC-LABELS(2026-07-30): 主役カードの数値に「リピート率」、指名カードの
+ * 数値に「指名率」/「今月のご指名」ラベルを明示(数値のみだと何の指標か分からないため)。
+ * 見出し・補足文言・トーン分岐ロジックは変更していない。
+ *
  * PHASE MYPAGE-WEEKLY-PRAISE(2026-07-30): 「先週のよかったところ」を追加。
  * 先週比でプラスになった指標(指名/リピート率/店販。外舘は店販を候補から除外)のみを
  * 数字表示し、プラスが無ければ数字を出さず前向きな一文のみ表示する(マイナス・
@@ -442,6 +446,7 @@ export default function MyStatsScreen() {
               <p className="text-[11px] font-semibold mb-1" style={{ color: '#9E8090' }}>{hero.heading}</p>
               {hasMonthlyVisitData ? (
                 <p className="text-[20px] font-bold tabular-nums" style={{ color: '#5C4033', fontFamily: 'Inter, sans-serif' }}>
+                  <span className="text-[13px] font-semibold" style={{ color: '#9E8090' }}>リピート率 </span>
                   {stats.repeatRate.thisMonth}%
                 </p>
               ) : (
@@ -455,7 +460,9 @@ export default function MyStatsScreen() {
               className="rounded-[20px] bg-white border border-[#F5E6E8] px-5 py-4 mb-4"
               style={{ boxShadow: '0 2px 12px rgba(245,160,181,0.08)' }}
             >
-              <p className="text-[11px] font-semibold mb-1" style={{ color: '#9E8090' }}>指名</p>
+              <p className="text-[11px] font-semibold mb-1" style={{ color: '#9E8090' }}>
+                {nominationContent.mode === 'rate' ? '指名率' : '今月のご指名'}
+              </p>
               {nominationContent.mode === 'rate' ? (
                 stats.nomination.rate !== null && stats.nomination.rate !== undefined ? (
                   <p className="text-[20px] font-bold tabular-nums" style={{ color: '#5C4033', fontFamily: 'Inter, sans-serif' }}>
