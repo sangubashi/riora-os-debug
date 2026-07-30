@@ -2,65 +2,188 @@
 /**
  * MyStatsScreen — 「わたし」タブ（v1最小版）
  *
- * 他人比較・ランキングは一切行わない。表示は自分の先月比のみ。
+ * 他人比較・ランキングは一切行わない。表示は自分の実績のみ。
  * (Riora OS v1.0 再設計書 準拠)
  *
- * PHASE MYPAGE-UX-1(2026-07-27・UI改善のみ): 今週予約サマリー(今日/明日)・
- * AIコメント(今月の強み/改善ポイント)を追加、カードの高さ統一、空状態メッセージ改善。
- * 追加データはすべて既存API/既存ストアの再利用のみ(useHomeStore=GET /api/home/reservations、
- * useNotificationsStore=GET /api/notifications)で、新規API・新規分析ロジックは一切追加していない。
+ * PHASE MYPAGE-WEEKLY-PRAISE(2026-07-30): 「先週のよかったところ」を追加。
+ * 先週比でプラスになった指標(指名/リピート率/店販。外舘は店販を候補から除外)のみを
+ * 数字表示し、プラスが無ければ数字を出さず前向きな一文のみ表示する(マイナス・
+ * 下落率は一切出さない)。トーンはstaff_id別(氏名文字列では判定しない)。
+ * 週次データは既存の/api/me/monthly-statsに`weekly`フィールドを追加して取得
+ * (新規APIは追加していない)。外舘の主役カード補足文を「店で一番多いです」表現に
+ * 更新(本人の自信づけのため意図的に採用。他スタッフ画面には出さない・ユーザー指示)。
+ *
+ * PHASE MYPAGE-STAFF-VARIANT(2026-07-30): 主役カード(リピート率・絶対値)・
+ * 指名カードをstaff_id別に出し分け(氏名文字列では一切判定しない。
+ * /api/me/monthly-statsが返すbrain_staff.id(stats.staffId)のみで判定)。
+ * 「明日の担当」に禁忌・重要メモを追加表示、「そろそろの方」はホームケア補充通知
+ * (kind='homecare_replenish')に差し替え。来店数差分カードは表示しない。
+ * UIデザイン(色・spacing・border-radius・カードサイズ・shadow・レイアウト・
+ * タイポグラフィ)は既存のまま変更していない。API/DB/migrationの追加は無く、
+ * 既存の/api/me/monthly-stats(staffId・nomination.rateフィールドを追加のみ)・
+ * useNotificationsStoreを再利用している。
+ *
+ * PHASE STAFF-MYPAGE-PERSONALIZATION(2026-07-30・前フェーズ): 「先月比カード」を
+ * 撤去し週次チェックリストを試験導入したが、本フェーズの主役/指名カードに置き換えた。
+ *
+ * PHASE MYPAGE-UX-1(2026-07-27・UI改善のみ): 今週予約サマリー(今日/明日)を追加。
  * 「今週残り(明後日以降)」はスタッフ本人に絞って取得できる既存データソースが無いため、
  * ユーザー承認のうえ今回は対象外(今日・明日のみ)としている。
  */
 import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { TrendingUp, TrendingDown, Minus, CalendarDays, Sparkles, RefreshCw, Lock } from 'lucide-react'
+import { CalendarDays, Sparkles, RefreshCw, Lock, Clock, Check } from 'lucide-react'
 import AppBottomNav from './AppBottomNav'
-import MyStatsDetailSheet from './MyStatsDetailSheet'
-import MyPageReservationsSheet from './MyPageReservationsSheet'
+import MyPageReservationsSheet, { extractVisitPhrase } from './MyPageReservationsSheet'
 import ChangePasswordSheet from './ChangePasswordSheet'
-import { useMyStatsStore, type MetricDetail } from '@/store/useMyStatsStore'
+import { useMyStatsStore, type WeeklyDiff } from '@/store/useMyStatsStore'
 import { useHomeStore } from '@/store/useHomeStore'
 import { useNotificationsStore } from '@/store/useNotificationsStore'
 import { useAuthStore } from '@/store/useAuthStore'
 
-function formatDiff(value: number, unit: string): string {
-  const isZero = value === 0
-  const isUp   = value > 0
-  const sign   = isZero ? '' : isUp ? '+' : ''
-  return `${sign}${value}${unit}`
-}
+// ─── スタッフ別出し分け(PHASE MYPAGE-STAFF-VARIANT) ───────────────────────────
+//
+// AUTH-1原則: 氏名文字列では一切分岐しない。brain_staff.id(stats.staffId)のみで判定する。
+// このIDは複数の監査ドキュメント(docs/STAFF_MANAGEMENT_PHASE2_1_AUDIT_1.md等)で
+// 確認済みの実運用ID。ここに列挙されていないstaff_id(鈴木含む)は既存の共通表示のまま
+// (特別な出し分けはしない)。
+const SOTODATE_STAFF_ID = '978ba4be-7b83-48ff-8914-d12ad6e82754' // 外舘
+const KAMEYAMA_STAFF_ID = '0688b0ec-668c-4c5d-a30e-a6e817f6d399' // 亀山
 
-function formatYenDiff(value: number): string {
-  const isZero = value === 0
-  const isUp   = value > 0
-  const sign   = isZero ? '' : isUp ? '+' : '-'
-  return `${sign}¥${Math.abs(value).toLocaleString('ja-JP')}`
-}
-
-function DiffValue({ value, text }: { value: number; text: string }) {
-  const isZero = value === 0
-  const isUp   = value > 0
-  // 下降は責めない表示にする(赤ではなく既存の控えめグレー#9E8090を流用)。
-  const color  = isUp ? '#52C87A' : '#9E8090'
-  const Icon   = isZero ? Minus : isUp ? TrendingUp : TrendingDown
-  return (
-    <div className="flex items-center gap-1" style={{ color }}>
-      <Icon size={14} strokeWidth={2.5} />
-      <span className="text-[20px] font-bold tabular-nums" style={{ fontFamily: 'Inter, sans-serif' }}>
-        {text}
-      </span>
-    </div>
-  )
+interface HeroContent {
+  heading: string
+  subtext: string
 }
 
 /**
- * My Page AIコメント(PHASE MYPAGE-UX-2・2026-07-27)。
+ * 主役カード(リピート率・絶対値)の見出し・補足文。
+ * 外舘の補足文「店で一番多いです」は本人の自信づけのため意図的に採用した承認表現
+ * (ユーザー指示)。他スタッフの数値と並べて比較表示するものではなく、この文言は
+ * 外舘本人の画面にのみ出す。
+ */
+function getHeroContent(staffId: string | null): HeroContent {
+  if (staffId === SOTODATE_STAFF_ID) {
+    return { heading: 'あなたは信頼されています', subtext: 'また戻ってきてくださるお客様が、店で一番多いです' }
+  }
+  if (staffId === KAMEYAMA_STAFF_ID) {
+    return { heading: 'あなたの技術は、届いています', subtext: '一度担当したお客様が、また戻ってきてくださっています' }
+  }
+  return { heading: 'リピート率', subtext: '今月のリピート率です' }
+}
+
+interface NominationContent {
+  /** 'rate'=指名率(%・絶対値)、'count'=指名件数(実数のみ・下落率は出さない)。 */
+  mode: 'rate' | 'count'
+  lines: string[]
+}
+
+/** 指名カードの表示モード・補足文。 */
+function getNominationContent(staffId: string | null): NominationContent {
+  if (staffId === SOTODATE_STAFF_ID) {
+    return {
+      mode: 'rate',
+      lines: [
+        '信頼されているから、あなたの一言はお客様に届きます',
+        '次回のご案内やホームケアも、そっとお伝えしてみましょう',
+      ],
+    }
+  }
+  if (staffId === KAMEYAMA_STAFF_ID) {
+    return {
+      mode: 'count',
+      lines: [
+        '戻ってきてくださる方が多いあなたなら、次回のご来店を一言お伝えするだけで、ご指名にも自然と繋がっていきます。',
+      ],
+    }
+  }
+  return { mode: 'count', lines: [] }
+}
+
+// ─── 先週のよかったところ(PHASE MYPAGE-WEEKLY-PRAISE) ─────────────────────────
+
+type WeeklyPraiseMetricKey = 'nomination' | 'repeatRate' | 'retail'
+
+interface WeeklyPraiseCandidate {
+  key:   WeeklyPraiseMetricKey
+  label: string
+  diff:  number
+  unit:  string
+}
+
+/** 先週比プラスの候補指標。外舘の画面には売上・客単価・店販を一切出さない既存方針を
+ *  踏襲し、店販は候補から除外する。 */
+function getWeeklyPraiseCandidates(staffId: string | null, weekly: WeeklyDiff): WeeklyPraiseCandidate[] {
+  const candidates: WeeklyPraiseCandidate[] = [
+    { key: 'nomination', label: '指名',       diff: weekly.nominationDiff, unit: '件' },
+    { key: 'repeatRate', label: 'リピート率', diff: weekly.repeatRateDiff, unit: '%' },
+  ]
+  if (staffId !== SOTODATE_STAFF_ID) {
+    candidates.push({ key: 'retail', label: '店販', diff: weekly.retailCountDiff, unit: '件' })
+  }
+  return candidates
+}
+
+const NO_PLUS_COMMENT = {
+  sotodate: '今週も、お客様との信頼を大切に過ごしていきましょう。',
+  kameyama: '今週も、丁寧な技術でお客様と向き合っていきましょう。',
+  default:  '今週も丁寧な接客を積み重ねていきましょう。',
+} as const
+
+/** プラスが1つ以上あるときの承認+一手のアドバイス(最も伸びた指標を軸に選ぶ)。 */
+function getPlusComment(staffId: string | null, topKey: WeeklyPraiseMetricKey, topLabel: string): string {
+  if (staffId === SOTODATE_STAFF_ID) {
+    if (topKey === 'nomination') {
+      return '信頼されているから、あなたの一言がしっかり届いています。そっと一言、次回のご案内を添えてみましょう。'
+    }
+    return '信頼が、戻りという形で続いています。そっと一言添えるだけで十分届きます。'
+  }
+  if (staffId === KAMEYAMA_STAFF_ID) {
+    if (topKey === 'nomination') {
+      return '技術で戻ってきてくださる流れが続いています。次回の一言がご指名への橋になります。'
+    }
+    if (topKey === 'repeatRate') {
+      return 'あなたの技術がしっかり届いている証拠です。次回のご来店を一言添えてみましょう。'
+    }
+    return `先週より${topLabel}が伸びています。`
+  }
+  return `先週より${topLabel}が伸びています。`
+}
+
+interface WeeklyPraise {
+  metrics: { label: string; text: string }[]
+  comment: string
+}
+
+/**
+ * 「先週のよかったところ」の表示内容を組み立てる。
+ * プラスの指標だけを候補にし(マイナス・0は候補から除外)、1件以上あれば数字+承認文、
+ * 0件ならば数字を出さずstaff別の前向きな一文のみを返す(嘘の0%・架空のプラスは
+ * 一切作らない。diffは常にthisWeek-lastWeekの実測値のため、データ不足時は自然にdiff=0
+ * となり0件分岐に落ちる)。
+ */
+function buildWeeklyPraise(staffId: string | null, weekly: WeeklyDiff): WeeklyPraise {
+  const positives = getWeeklyPraiseCandidates(staffId, weekly)
+    .filter((c) => c.diff > 0)
+    .sort((a, b) => b.diff - a.diff)
+
+  if (positives.length === 0) {
+    const key = staffId === SOTODATE_STAFF_ID ? 'sotodate' : staffId === KAMEYAMA_STAFF_ID ? 'kameyama' : 'default'
+    return { metrics: [], comment: NO_PLUS_COMMENT[key] }
+  }
+
+  const top = positives[0]
+  return {
+    metrics: positives.map((p) => ({ label: p.label, text: `+${p.diff}${p.unit}` })),
+    comment: getPlusComment(staffId, top.key, top.label),
+  }
+}
+
+/**
+ * My Page「今月のひとこと」(PHASE MYPAGE-UX-2・2026-07-27)。
  *
  * 目的は「スタッフを評価する」ではなく「スタッフを応援する」こと(ユーザー指示)。
  * 特定の指標のdiff値には一切連動させず、固定テンプレート(良い点20種・応援20種)から
- * 毎回ランダムに選ぶだけの表示ロジック。LLM不使用、新しい集計・スコアリングは行わない
- * (数値は他の先月比カードに事実として既に表示されているため、ここでは繰り返さない)。
+ * 毎回ランダムに選ぶだけの表示ロジック。LLM不使用、新しい集計・スコアリングは行わない。
  *
  * NG表現(ユーザー指示): 「あと◯件」「あと◯%」「目標まで」「達成まで」「ノルマ」
  * 「頑張って」「もっと」「不足しています」「悪いです」等、数字で追い込む表現・評価的な
@@ -180,11 +303,11 @@ function SmallStat({ label, value, color = '#5C4033' }: { label: string; value: 
 export default function MyStatsScreen() {
   const { stats, isLoading, error, notStaffAccount, fetchStats } = useMyStatsStore()
   const { initialized: authInitialized, session } = useAuthStore()
-  const [selected, setSelected] = useState<{ title: string; unit: '件' | '%' | '円'; detail: MetricDetail | null } | null>(null)
   const [showReservationsSheet, setShowReservationsSheet] = useState(false)
   const [showChangePassword, setShowChangePassword] = useState(false)
 
-  // 今週予約サマリー(今日/明日)用に既存ストアを再利用する(新規API・新規fetchロジックは追加しない)。
+  // 今週予約サマリー(今日/明日)・「明日の担当」・「そろそろの方」用に既存ストアを
+  // 再利用する(新規API・新規fetchロジックは追加しない)。
   const { reservations: todayReservations, isLoading: isHomeLoading, fetchTodayReservations } = useHomeStore()
   const { notifications, isLoading: isNotifLoading, error: notifError, fetchNotifications } = useNotificationsStore()
 
@@ -207,30 +330,22 @@ export default function MyStatsScreen() {
     (n) => n.kind === 'visit_reminder' && n.title.startsWith('明日')
   )
 
-  const cards = stats ? [
-    {
-      label: '先月比 指名',
-      node: <DiffValue value={stats.nominationDiff} text={formatDiff(stats.nominationDiff, '件')} />,
-      onTap: () => setSelected({ title: '指名', unit: '件', detail: stats.nomination }),
-    },
-    {
-      label: '先月比 リピート率',
-      node: <DiffValue value={stats.repeatRateDiff} text={formatDiff(stats.repeatRateDiff, '%')} />,
-      onTap: () => setSelected({ title: 'リピート率', unit: '%', detail: stats.repeatRate }),
-    },
-    {
-      label: '先月比 店販売上',
-      node: stats.retailSalesDiff === null
-        ? <span className="text-[13px]" style={{ color: '#C8A8B0' }}>来店データがまだありません</span>
-        : <DiffValue value={stats.retailSalesDiff} text={formatYenDiff(stats.retailSalesDiff)} />,
-      onTap: () => setSelected({ title: '店販売上', unit: '円', detail: stats.retailSales }),
-    },
-    {
-      label: '来店数差分',
-      node: <DiffValue value={stats.visitCountDiff} text={formatDiff(stats.visitCountDiff, '件')} />,
-      onTap: () => setSelected({ title: '来店数', unit: '件', detail: stats.visitCount }),
-    },
-  ] : []
+  // ホームケア補充の頃(kind='homecare_replenish')。既存の通知検出ロジックをそのまま
+  // 再利用するのみで、新しい判定ロジックは追加しない。
+  const replenishNotifications = notifications.filter((n) => n.kind === 'homecare_replenish')
+
+  const staffId = stats?.staffId ?? null
+  const hero              = useMemo(() => getHeroContent(staffId),        [staffId])
+  const nominationContent = useMemo(() => getNominationContent(staffId),  [staffId])
+  const weeklyPraise       = useMemo(
+    () => (stats ? buildWeeklyPraise(staffId, stats.weekly) : null),
+    [staffId, stats]
+  )
+
+  // 今月の来店記録が無い場合、リピート率・指名率は算出根拠が無いため「データがまだ
+  // ありません」を表示する(0%という嘘の数字を出さない)。指名件数(count モード)は
+  // 0件自体が事実のため、この判定の対象外。
+  const hasMonthlyVisitData = !!stats && stats.visitCount.thisMonth > 0
 
   // stats参照が変わる(=再取得された)たびに選び直す。同一セッション中の再描画では
   // 選び直さない(毎回チラつかないよう安定させる)。
@@ -265,7 +380,7 @@ export default function MyStatsScreen() {
         </p>
         <h1 className="text-[24px] font-light leading-tight" style={{ color: '#4A2C2A', fontFamily: 'Playfair Display, serif' }}>My Page</h1>
         <p className="text-[13px] mt-0.5" style={{ color: '#9E8090' }}>
-          先月と比べたご自身の実績です
+          今週のご自身の実績とお客様情報です
         </p>
       </div>
 
@@ -290,7 +405,7 @@ export default function MyStatsScreen() {
 
         {!isLoading && stats && (
           <>
-            {/* ── 今週予約サマリー(今日・明日) ── */}
+            {/* ── 1. 今週予約サマリー(今日・明日) ── */}
             <motion.button
               type="button"
               onClick={() => setShowReservationsSheet(true)}
@@ -315,33 +430,171 @@ export default function MyStatsScreen() {
               </div>
             </motion.button>
 
-            {/* ── 先月比カード ── */}
-            {cards.map((card, i) => (
-              <motion.button
-                key={card.label}
-                type="button"
-                onClick={card.onTap}
-                whileTap={{ scale: 0.98 }}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.05 }}
-                className="w-full text-left bg-white rounded-[20px] border border-[#F5E6E8] flex items-center justify-between px-5 py-4 mb-3"
-                style={{ boxShadow: '0 2px 12px rgba(245,160,181,0.08)', minHeight: '68px' }}
-              >
-                <span className="text-[13px] font-medium" style={{ color: '#5C4033' }}>
-                  {card.label}
-                </span>
-                {card.node}
-              </motion.button>
-            ))}
+            {/* ── 2. 主役カード(リピート率・絶対値・スタッフ別) ── */}
+            <div
+              className="rounded-[20px] bg-white border border-[#F5E6E8] px-5 py-4 mb-4"
+              style={{ boxShadow: '0 2px 12px rgba(245,160,181,0.08)' }}
+            >
+              <p className="text-[11px] font-semibold mb-1" style={{ color: '#9E8090' }}>{hero.heading}</p>
+              {hasMonthlyVisitData ? (
+                <p className="text-[20px] font-bold tabular-nums" style={{ color: '#5C4033', fontFamily: 'Inter, sans-serif' }}>
+                  {stats.repeatRate.thisMonth}%
+                </p>
+              ) : (
+                <p className="text-[13px]" style={{ color: '#C8A8B0' }}>今月のデータはまだありません</p>
+              )}
+              <p className="text-[12px] mt-1.5 leading-relaxed" style={{ color: '#9E8090' }}>{hero.subtext}</p>
+            </div>
 
-            {/* ── AIコメント(応援メッセージ) ── */}
+            {/* ── 3. 指名カード(スタッフ別) ── */}
+            <div
+              className="rounded-[20px] bg-white border border-[#F5E6E8] px-5 py-4 mb-4"
+              style={{ boxShadow: '0 2px 12px rgba(245,160,181,0.08)' }}
+            >
+              <p className="text-[11px] font-semibold mb-1" style={{ color: '#9E8090' }}>指名</p>
+              {nominationContent.mode === 'rate' ? (
+                stats.nomination.rate !== null && stats.nomination.rate !== undefined ? (
+                  <p className="text-[20px] font-bold tabular-nums" style={{ color: '#5C4033', fontFamily: 'Inter, sans-serif' }}>
+                    {stats.nomination.rate}%
+                  </p>
+                ) : (
+                  <p className="text-[13px]" style={{ color: '#C8A8B0' }}>今月のデータはまだありません</p>
+                )
+              ) : (
+                <p className="text-[20px] font-bold tabular-nums" style={{ color: '#5C4033', fontFamily: 'Inter, sans-serif' }}>
+                  {stats.nomination.thisMonth}件
+                </p>
+              )}
+              {nominationContent.lines.length > 0 && (
+                <div className="mt-2 pt-3" style={{ borderTop: '1px solid #F5E6E8' }}>
+                  {nominationContent.lines.map((line) => (
+                    <p key={line} className="text-[12.5px] leading-relaxed" style={{ color: '#5C4033' }}>{line}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ── 先週のよかったところ ── */}
+            {weeklyPraise && (
+              <div
+                className="rounded-[20px] bg-white border border-[#F5E6E8] px-5 py-4 mb-4"
+                style={{ boxShadow: '0 2px 12px rgba(245,160,181,0.08)' }}
+              >
+                <p className="text-[11px] font-semibold mb-3" style={{ color: '#9E8090' }}>先週のよかったところ</p>
+
+                {weeklyPraise.metrics.length > 0 && (
+                  <div className="flex flex-col gap-2 mb-3">
+                    {weeklyPraise.metrics.map((m) => (
+                      <div key={m.label} className="flex items-center gap-2">
+                        <div
+                          className="w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0"
+                          style={{ background: 'rgba(82,200,122,0.14)' }}
+                        >
+                          <Check size={11} strokeWidth={3} style={{ color: '#52C87A' }} />
+                        </div>
+                        <span className="text-[13px]" style={{ color: '#5C4033' }}>
+                          {m.label} <span className="font-bold tabular-nums" style={{ fontFamily: 'Inter, sans-serif' }}>{m.text}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <p
+                  className="text-[12.5px] leading-relaxed"
+                  style={
+                    weeklyPraise.metrics.length > 0
+                      ? { color: '#5C4033', borderTop: '1px solid #F5E6E8', paddingTop: '12px' }
+                      : { color: '#5C4033' }
+                  }
+                >
+                  {weeklyPraise.comment}
+                </p>
+              </div>
+            )}
+
+            {/* ── 4. 明日の担当のお客様(禁忌・重要メモ付き) ── */}
+            <div className="mb-4">
+              <div className="flex items-center gap-1.5 mb-2 px-1">
+                <CalendarDays size={13} style={{ color: '#B98CC0' }} />
+                <span className="text-[11px] font-semibold" style={{ color: '#9E8090' }}>明日の担当</span>
+              </div>
+              {isNotifLoading ? (
+                <div className="bg-white rounded-[16px] border border-[#F5E6E8] h-[56px] animate-pulse" />
+              ) : tomorrowNotifications.length === 0 ? (
+                <div className="bg-white rounded-[16px] border border-[#F5E6E8] px-4 py-3.5">
+                  <p className="text-[12.5px]" style={{ color: '#C8A8B0' }}>明日のご予約はありません</p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {tomorrowNotifications.map((n) => {
+                    const phrase = extractVisitPhrase(n.title)
+                    return (
+                      <div
+                        key={n.id}
+                        className="bg-white rounded-[16px] border border-[#F5E6E8] px-4 py-3"
+                        style={{ boxShadow: '0 2px 10px rgba(245,160,181,0.06)' }}
+                      >
+                        <p className="text-[13px] font-semibold" style={{ color: '#5C4033' }}>
+                          {n.customerName ?? '—'} 様
+                        </p>
+                        {phrase && (
+                          <p className="text-[11px] mt-0.5 leading-snug" style={{ color: '#9E8090' }}>{phrase}</p>
+                        )}
+                        {n.detail && n.detail.length > 0 && (
+                          <div className="mt-1.5 pt-1.5" style={{ borderTop: '1px solid #F5E6E8' }}>
+                            {n.detail.map((d) => (
+                              <p key={d} className="text-[11px] leading-snug mt-0.5" style={{ color: '#9E8090' }}>{d}</p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* ── 5. そろそろの方(ホームケア補充) ── */}
+            <div className="mb-4">
+              <div className="flex items-center gap-1.5 mb-2 px-1">
+                <Clock size={13} style={{ color: '#D8A8B5' }} />
+                <span className="text-[11px] font-semibold" style={{ color: '#9E8090' }}>そろそろの方</span>
+              </div>
+              {isNotifLoading ? (
+                <div className="bg-white rounded-[16px] border border-[#F5E6E8] h-[56px] animate-pulse" />
+              ) : replenishNotifications.length === 0 ? (
+                <div className="bg-white rounded-[16px] border border-[#F5E6E8] px-4 py-3.5">
+                  <p className="text-[12.5px]" style={{ color: '#C8A8B0' }}>現在、対象のお客様はいません</p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {replenishNotifications.map((n) => {
+                    const detailText = n.customerName ? n.title.replace(`${n.customerName}様 `, '') : n.title
+                    return (
+                      <div
+                        key={n.id}
+                        className="bg-white rounded-[16px] border border-[#F5E6E8] px-4 py-3"
+                        style={{ boxShadow: '0 2px 10px rgba(245,160,181,0.06)' }}
+                      >
+                        <p className="text-[13px] font-semibold" style={{ color: '#5C4033' }}>
+                          {n.customerName ?? '—'} 様
+                        </p>
+                        <p className="text-[11px] mt-0.5 leading-snug" style={{ color: '#9E8090' }}>{detailText}</p>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* ── 6. 今月のひとこと(応援メッセージ・任意) ── */}
             {aiComments && (
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2 }}
-                className="rounded-[20px] p-4 mt-1"
+                className="rounded-[20px] p-4 mt-1 mb-4"
                 style={{ background: 'linear-gradient(160deg, #FFF3F6, #FBF6FF)', border: '1px solid #F0DCE4' }}
               >
                 <div className="flex items-center gap-1.5 mb-2.5">
@@ -411,14 +664,6 @@ export default function MyStatsScreen() {
       </div>
 
       <AppBottomNav />
-
-      <MyStatsDetailSheet
-        isOpen={selected !== null}
-        onClose={() => setSelected(null)}
-        title={selected?.title ?? ''}
-        unit={selected?.unit ?? '件'}
-        detail={selected?.detail ?? null}
-      />
 
       <MyPageReservationsSheet
         isOpen={showReservationsSheet}

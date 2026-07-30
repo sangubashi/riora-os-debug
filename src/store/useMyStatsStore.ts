@@ -7,9 +7,20 @@ export interface MetricDetail {
   diff:      number
   /** 増減率(%)。先月実績が0の場合は算出不能のためnull。 */
   pctChange: number | null
+  /** 今月の絶対値としての率(%)。指名率など一部の指標のみ使用。今月の来店記録が0件ならnull。 */
+  rate?: number | null
+}
+
+export interface WeeklyDiff {
+  nominationDiff:  number
+  /** 店販売上(円)ではなく「店販ありの来店件数」の差分。 */
+  retailCountDiff: number
+  repeatRateDiff:  number
 }
 
 export interface MyStats {
+  /** brain_staff.id。My Pageのスタッフ別出し分けは氏名文字列ではなく必ずこのIDで判定する。 */
+  staffId: string | null
   nominationDiff:  number
   repeatRateDiff:  number
   visitCountDiff:  number
@@ -20,6 +31,8 @@ export interface MyStats {
   repeatRate:  MetricDetail
   visitCount:  MetricDetail
   retailSales: MetricDetail | null
+  /** 今週 vs 先週(月曜始まりJST)の差分。「先週のよかったところ」用(PHASE MYPAGE-WEEKLY-PRAISE)。 */
+  weekly: WeeklyDiff
 }
 
 interface MyStatsState {
@@ -52,6 +65,7 @@ export const useMyStatsStore = create<MyStatsState>((set) => ({
       const data = await res.json();
       set({
         stats: {
+          staffId:         data.staffId ?? null,
           nominationDiff:  data.nominationDiff ?? 0,
           repeatRateDiff:  data.repeatRateDiff ?? 0,
           visitCountDiff:  data.visitCountDiff ?? 0,
@@ -60,6 +74,11 @@ export const useMyStatsStore = create<MyStatsState>((set) => ({
           repeatRate:  data.repeatRate,
           visitCount:  data.visitCount,
           retailSales: data.retailSales ?? null,
+          weekly: {
+            nominationDiff:  data.weekly?.nominationDiff ?? 0,
+            retailCountDiff: data.weekly?.retailCountDiff ?? 0,
+            repeatRateDiff:  data.weekly?.repeatRateDiff ?? 0,
+          },
         },
       });
     } catch (e) {

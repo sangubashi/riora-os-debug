@@ -6,11 +6,19 @@
  * ランキング・順位は一切含まない（Riora OS v1.0 再設計書 準拠）。
  *
  * 返却フィールド:
+ *   staffId            brain_staff.id（PHASE MYPAGE-STAFF-VARIANT: My Page側の
+ *                      スタッフ別出し分けは氏名文字列ではなく必ずこのIDで判定する）
  *   nominationDiff     今月の指名来店数 − 先月の指名来店数
  *   repeatRateDiff     今月のリピート率(%) − 先月のリピート率(%)
  *   visitCountDiff     今月の来店数 − 先月の来店数
  *   retailSalesDiff    今月の店販売上(brain_visits.retail_amount合計) − 先月の店販売上
  *                      (今月・先月とも来店記録が1件も無い場合はnull。「計測中」表示に使う)
+ *   nomination.rate    今月の指名率(%) = 今月の指名来店数 / 今月の来店数。
+ *                      今月の来店記録が0件の場合はnull(架空の割合を作らない)。
+ *   weekly             今週 vs 先週(月曜始まりJST)の差分（PHASE MYPAGE-WEEKLY-PRAISE）。
+ *                      「先週のよかったところ」用。nominationDiff/repeatRateDiffは月次と
+ *                      同じ定義の週次版。retailCountDiffは店販売上(円)ではなく
+ *                      「店販ありの来店件数」の差分。
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '../../../lib/repos';
@@ -23,6 +31,31 @@ function monthStart(offsetMonths: number): string {
   d.setDate(1);
   d.setMonth(d.getMonth() + offsetMonths);
   return d.toISOString().split('T')[0];
+}
+
+/** 今週(月曜)開始日をJST基準で返す。offsetWeeks=-1で先週の月曜。 */
+function weekStart(offsetWeeks: number): string {
+  const now = new Date();
+  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const dow = jst.getUTCDay(); // 0=日,1=月...6=土
+  const daysSinceMonday = (dow + 6) % 7;
+  jst.setUTCDate(jst.getUTCDate() - daysSinceMonday + offsetWeeks * 7);
+  return jst.toISOString().split('T')[0];
+}
+
+function addDaysStr(dateStr: string, days: number): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().split('T')[0];
+}
+
+function summarizeWeekly(rows: VisitRow[]) {
+  const nominationCount = rows.filter(r => r.is_nomination).length;
+  const retailCount     = rows.filter(r => (r.retail_amount ?? 0) > 0).length;
+  const visitCount      = rows.length;
+  const repeatCount     = rows.filter(r => (r.visit_count_at ?? 0) > 1).length;
+  const repeatRate      = visitCount > 0 ? Math.round((repeatCount / visitCount) * 100) : 0;
+  return { nominationCount, retailCount, repeatRate };
 }
 
 interface VisitRow {
@@ -99,7 +132,23 @@ export async function GET(req: NextRequest) {
     const repeatRateDiff = thisMonth.repeatRate - lastMonth.repeatRate;
     const visitCountDiff = thisMonth.visitCount - lastMonth.visitCount;
 
+    // 今月の指名率(%)。今月の来店記録が0件なら算出不能のためnull(架空の割合を作らない)。
+    const nominationRate = thisMonth.visitCount > 0
+      ? Math.round((thisMonth.nominationCount / thisMonth.visitCount) * 100)
+      : null;
+
+    // ── 週次(今週 vs 先週、月曜始まりJST) ──────────────────────────────
+    const thisWeekStart = weekStart(0);
+    const lastWeekStart = weekStart(-1);
+    const lastWeekEnd   = addDaysStr(thisWeekStart, -1);
+
+    const thisWeekRows = rows.filter(r => r.visit_date >= thisWeekStart);
+    const lastWeekRows = rows.filter(r => r.visit_date >= lastWeekStart && r.visit_date <= lastWeekEnd);
+    const thisWeek = summarizeWeekly(thisWeekRows);
+    const lastWeek = summarizeWeekly(lastWeekRows);
+
     return NextResponse.json({
+      staffId: staff.staffBrainId,
       nominationDiff,
       repeatRateDiff,
       visitCountDiff,
@@ -111,6 +160,7 @@ export async function GET(req: NextRequest) {
         lastMonth: lastMonth.nominationCount,
         diff:      nominationDiff,
         pctChange: pctChange(nominationDiff, lastMonth.nominationCount),
+        rate:      nominationRate,
       },
       repeatRate: {
         thisMonth: thisMonth.repeatRate,
@@ -130,6 +180,11 @@ export async function GET(req: NextRequest) {
         diff:      retailSalesDiff,
         pctChange: pctChange(retailSalesDiff ?? 0, lastMonth.retailSales),
       } : null,
+      weekly: {
+        nominationDiff:  thisWeek.nominationCount - lastWeek.nominationCount,
+        retailCountDiff: thisWeek.retailCount     - lastWeek.retailCount,
+        repeatRateDiff:  thisWeek.repeatRate       - lastWeek.repeatRate,
+      },
     });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });

@@ -46,7 +46,7 @@ function daysSinceLastVisit(scheduledAt: string, lastVisitDate: string | null | 
 /** 明日の通知titleから、顧客名以外の付随情報(来店フレーズ)だけを取り出す。時刻・メニューは
  *  この文字列自体に含まれていないため取得できない(既存文字列の該当部分を抜き出すのみで、
  *  新しい解析ロジックの追加ではない)。 */
-function extractVisitPhrase(title: string): string | null {
+export function extractVisitPhrase(title: string): string | null {
   const m = title.match(/（(.+)）/)
   if (!m) return null
   return m[1].replace(/／担当：.+$/, '')
