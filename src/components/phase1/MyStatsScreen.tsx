@@ -44,11 +44,15 @@ import { useAuthStore } from '@/store/useAuthStore'
 // ─── スタッフ別出し分け(PHASE MYPAGE-STAFF-VARIANT) ───────────────────────────
 //
 // AUTH-1原則: 氏名文字列では一切分岐しない。brain_staff.id(stats.staffId)のみで判定する。
-// このIDは複数の監査ドキュメント(docs/STAFF_MANAGEMENT_PHASE2_1_AUDIT_1.md等)で
-// 確認済みの実運用ID。ここに列挙されていないstaff_id(鈴木含む)は既存の共通表示のまま
-// (特別な出し分けはしない)。
-const SOTODATE_STAFF_ID = '978ba4be-7b83-48ff-8914-d12ad6e82754' // 外舘
-const KAMEYAMA_STAFF_ID = '0688b0ec-668c-4c5d-a30e-a6e817f6d399' // 亀山
+//
+// PHASE MYPAGE-STAFFID-FIX(2026-07-30): 本番の/api/me/monthly-statsを実アカウントで
+// 実測し、brain_staff.idを検証済み(978ba4be.../0688b0ec...は別のID空間(おそらく
+// profiles.id/auth.users.id)を指すドキュメントの値を誤って参照していたバグ)。
+// brain_staff(supabase/migrations/20260618_staff_roles_setup.sqlの一回限りシード)は
+// 固定の00000000-...-01xx形式で作成されており、実測値と一致することを確認済み:
+//   鈴木=...-0101(未使用・分岐対象外) 亀山=...-0102 外舘=...-0103
+const SOTODATE_STAFF_ID = '00000000-0000-0000-0000-000000000103' // 外舘
+const KAMEYAMA_STAFF_ID = '00000000-0000-0000-0000-000000000102' // 亀山
 
 interface HeroContent {
   heading: string
