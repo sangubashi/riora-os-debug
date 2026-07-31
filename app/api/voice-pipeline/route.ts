@@ -19,6 +19,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { extractInsightTags } from '@/lib/voiceInsight/extractInsightTags'
+import { extractVoiceMemoCategories } from '@/lib/voiceInsight/extractVoiceMemoCategories'
 import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest'
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -311,7 +312,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid_body' }, { status: 400 })
   }
 
-  const { voiceNoteId, storagePath, customerId, staffId, durationSec, reservationId } = body
+  const { voiceNoteId, storagePath, customerId, staffId, reservationId } = body
   if (!voiceNoteId || !storagePath || !customerId || !staffId) {
     return NextResponse.json({ error: 'missing_fields' }, { status: 400 })
   }
@@ -339,33 +340,29 @@ export async function POST(req: NextRequest) {
     console.log(`[pipeline] 音声ダウンロード完了 size=${audioBuffer.byteLength} type=${mimeType}`)
 
     // ── 3. Whisper 文字起こし ──
-    let transcript = ''
-    if (OPENAI_KEY) {
-      try {
-        transcript = await transcribeWithWhisper(audioBuffer, mimeType)
-        console.log(`[pipeline] Whisper transcript (${transcript.length}文字): ${transcript.slice(0, 60)}…`)
-      } catch (whisperErr) {
-        // 無効音声フォーマット・短すぎる音声等は空文字で続行（Claudeが空分析を返す）
-        console.warn('[pipeline] Whisper 失敗 → 空transcript で続行:', (whisperErr as Error).message)
-        transcript = ''
-      }
-    } else {
-      // OPENAI_KEY 未設定時のフォールバック（録音秒数ベースのモック）
-      console.warn('[pipeline] OPENAI_API_KEY 未設定 → mock transcript 使用')
-      transcript = durationSec <= 15
-        ? 'お肌の乾燥が気になるとのことでした。'
-        : durationSec <= 45
-          ? '娘さんの誕生日イベントに向けてケアしたいとのことでした。仕事が残業続きで乾燥とエイジングが気になると話していました。'
-          : '今日のお客様は家族旅行の予定があり、お子さんの入学式に向けてお肌をきれいにしたいとのことでした。職場では残業が多くて疲れている様子で、睡眠不足による肌荒れが悩みとのこと。次回は美白ケアを試してみたいとのことでした。'
+    // PHASE VOICE-MEMO-COMPLETE: 「失敗時はリトライ可能」(ユーザー指示)にするため、
+    // Whisper未設定・API失敗のいずれも架空テキストで穴埋めせず、そのままthrowして
+    // 下のcatchでanalysis_status='failed'にする(スタッフが「再試行」できる状態にする)。
+    // 以前は録音秒数ベースの固定文言(架空の接客内容)を保存していたため撤去。
+    if (!OPENAI_KEY) {
+      throw new Error('OPENAI_API_KEY が未設定のため文字起こしできません')
     }
+    const transcript = await transcribeWithWhisper(audioBuffer, mimeType)
+    console.log(`[pipeline] Whisper transcript (${transcript.length}文字): ${transcript.slice(0, 60)}…`)
 
     // ── 4. Claude 4 カテゴリ同時解析 ──
     const analysis = await analyzeWithClaude(transcript)
     console.log(`[pipeline] Claude解析完了 cn=${analysis.customerNotes.length} ci=${analysis.contraindications.length}`)
 
     // ── 4.5. insight_tags 抽出（決定論的キーワードマッチング・AI不使用） ──
-    const { tags: insightTags } = extractInsightTags([transcript])
-    console.log(`[pipeline] insight_tags抽出完了: ${insightTags.length}件 [${insightTags.join(', ')}]`)
+    const { tags: signalTags } = extractInsightTags([transcript])
+    // PHASE VOICE-MEMO-COMPLETE: 音声メモ7分類(施術内容/悩み/禁忌/ホームケア/会話メモ/
+    // 重要事項/次回来店で確認すること)もルールベースで抽出し、既存タグより先頭に置く
+    // (VoiceNotesList.tsxは先頭3件のみバッジ表示するため、分類タグを優先表示させる)。
+    // 新規テーブル・新規カラムは追加せず、既存のinsight_tags(text[])にマージするのみ。
+    const { tags: categoryTags } = extractVoiceMemoCategories(transcript)
+    const insightTags = [...categoryTags, ...signalTags]
+    console.log(`[pipeline] insight_tags抽出完了: category=${categoryTags.length}件 signal=${signalTags.length}件 [${insightTags.join(', ')}]`)
 
     // ── 5. voice_notes 更新（completed）──
     const { error: vnErr } = await sb.from('voice_notes').update({

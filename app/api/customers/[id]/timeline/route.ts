@@ -23,6 +23,15 @@ import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest'
 import { canAccessCustomer } from '@/lib/auth/canAccessCustomer'
 import type { MemoryType } from '@/types/customerMemory'
 import { MEMORY_TYPE_EMOJI, MEMORY_TYPE_LABELS } from '@/types/customerMemory'
+import { INSIGHT_TAG_LABELS, type InsightTag } from '@/types'
+
+// PHASE VOICE-MEMO-COMPLETE: 音声メモ7分類のタグキーのみ(肌悩み/購入傾向等の
+// 既存insight_tagsは対象外)。タイムラインの「分類タグ」表示用。
+const VOICE_MEMO_CATEGORY_TAGS = new Set<string>([
+  'category_treatment', 'category_concern', 'category_contraindication',
+  'category_homecare', 'category_conversation', 'category_important',
+  'category_next_visit_check',
+])
 
 const STORE_ID = '00000000-0000-0000-0000-000000000001'
 
@@ -114,7 +123,7 @@ export async function GET(
 
     supabase
       .from('voice_notes')
-      .select('id, created_at, summary')
+      .select('id, created_at, summary, insight_tags')
       .eq('customer_id', customerId)
       .eq('analysis_status', 'completed')
       .order('created_at', { ascending: false })
@@ -212,13 +221,24 @@ export async function GET(
   }
 
   // 2. voice_notes → TimelineEntry
+  // PHASE VOICE-MEMO-COMPLETE: 既存のcontentフィールド(summary)へ分類タグの
+  // ラベルを追記するだけ(データ内容の強化のみ・CustomerAITimelineTab.tsxの
+  // JSX構造/デザインは変更しない)。
   const voiceNotes = voiceRes.status === 'fulfilled' ? (voiceRes.value.data ?? []) : []
   for (const n of voiceNotes) {
+    const summary = (n.summary as string | null) ?? null
+    const tags = (n.insight_tags as InsightTag[] | null) ?? []
+    const categoryLabels = tags
+      .filter(t => VOICE_MEMO_CATEGORY_TAGS.has(t))
+      .map(t => INSIGHT_TAG_LABELS[t] ?? t)
+    const content = categoryLabels.length > 0
+      ? `${summary ?? ''}${summary ? '　' : ''}（分類: ${categoryLabels.join('・')}）`
+      : summary
     entries.push({
       id: `voice-${n.id}`,
       type: 'voice',
       title: '音声メモ',
-      content: (n.summary as string | null) ?? null,
+      content,
       occurred_at: n.created_at as string,
     })
   }

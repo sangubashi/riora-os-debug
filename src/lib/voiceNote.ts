@@ -179,14 +179,16 @@ export async function uploadVoiceNote(params: UploadVoiceNoteParams): Promise<Up
 
 // ─── サーバーサイド AI パイプライン呼び出し ──────────────────────────────────
 
-async function callPipelineApi(params: {
+interface PipelineApiParams {
   voiceNoteId:   string
   storagePath:   string
   durationSec:   number
   customerId:    string
   staffId:       string
   reservationId: string | null
-}): Promise<void> {
+}
+
+async function callPipelineApi(params: PipelineApiParams): Promise<void> {
   try {
     const { data: { session } } = await supabase.auth.getSession()
     const token = session?.access_token
@@ -214,6 +216,40 @@ async function callPipelineApi(params: {
   } catch (e) {
     prodLog('error', '[voiceNote] callPipelineApi failed:', e)
   }
+}
+
+// ─── 解析リトライ（PHASE VOICE-MEMO-COMPLETE） ───────────────────────────────
+//
+// analysis_status='failed'（Whisper未設定・API失敗等）になった音声メモを、
+// スタッフの操作で再解析させる。新規テーブル・新規APIは追加せず、保存時と
+// 同じ /api/voice-pipeline を、既に保存済みのstorage_path等で呼び直すだけ。
+// fire-and-forgetにせず完了を待ち、呼び出し元がリスト再読み込みできるようにする。
+
+export interface RetryVoiceNoteParams {
+  voiceNoteId:   string
+  storagePath:   string
+  durationSec:   number | null
+  customerId:    string
+  staffId:       string
+  reservationId: string | null
+}
+
+export async function retryVoiceNoteAnalysis(params: RetryVoiceNoteParams): Promise<{ error: string | null }> {
+  const { voiceNoteId, storagePath, durationSec, customerId, staffId, reservationId } = params
+
+  // 楽観的に processing へ戻す（一覧が即座に「解析中」バッジへ切り替わる）
+  await supabase.from('voice_notes').update({ analysis_status: 'processing' }).eq('id', voiceNoteId)
+
+  await callPipelineApi({
+    voiceNoteId,
+    storagePath,
+    durationSec: durationSec ?? 0,
+    customerId,
+    staffId,
+    reservationId,
+  })
+
+  return { error: null }
 }
 
 // ─── 署名付きURL取得（再生用） ────────────────────────────────────────────────
@@ -289,6 +325,41 @@ export async function fetchVoiceNotes(customerId: string, limit = 5): Promise<Vo
     ...row,
     displayAt: formatAt(row.created_at),
   }))
+}
+
+// ─── 顧客詳細内・音声メモ全文検索（PHASE VOICE-MEMO-COMPLETE） ───────────────
+//
+// この顧客のvoice_notesをtranscript/summaryでilike検索する。新規テーブル・
+// 新規APIエンドポイントは追加せず、fetchVoiceNotes()と同じ直接クエリ方式
+// （既存の /api/customers/search-notes と同じilike方式を、この顧客1名分に
+// 絞って再利用するのみ）。全文検索インデックス(GIN/tsvector)は追加しない
+// （migration禁止のため、小規模な1顧客分の検索には不要と判断）。
+
+export async function searchVoiceNotes(customerId: string, query: string, limit = 30): Promise<VoiceNoteRow[]> {
+  if (DEMO_MODE && !VOICE_NOTES_LIVE) return []
+  const q = query.trim()
+  if (q.length === 0) return []
+
+  const SELECT = 'id, customer_id, staff_id, reservation_id, storage_path, transcript, summary, insight_tags, duration_sec, analysis_status, created_at'
+
+  const [transcriptRes, summaryRes] = await Promise.all([
+    supabase.from('voice_notes').select(SELECT)
+      .eq('customer_id', customerId).ilike('transcript', `%${q}%`)
+      .order('created_at', { ascending: false }).limit(limit),
+    supabase.from('voice_notes').select(SELECT)
+      .eq('customer_id', customerId).ilike('summary', `%${q}%`)
+      .order('created_at', { ascending: false }).limit(limit),
+  ])
+
+  const byId = new Map<string, VoiceNote>()
+  for (const row of [...(transcriptRes.data ?? []), ...(summaryRes.data ?? [])] as VoiceNote[]) {
+    byId.set(row.id, row)
+  }
+
+  return Array.from(byId.values())
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .slice(0, limit)
+    .map(row => ({ ...row, displayAt: formatAt(row.created_at) }))
 }
 
 // ─── ヘルパー ─────────────────────────────────────────────────────────────────

@@ -355,6 +355,14 @@ export const INSIGHT_TAG_LABELS: Record<string, string> = {
   buy_compare:       '比較検討派',
   buy_loyal:         'リピート購入派',
   buy_trial:         'お試し好み',
+  // 音声メモ7分類（PHASE VOICE-MEMO-COMPLETE・extractVoiceMemoCategories.ts）
+  category_treatment:        '施術内容',
+  category_concern:          '悩み',
+  category_contraindication: '禁忌',
+  category_homecare:         'ホームケア',
+  category_conversation:     '会話メモ',
+  category_important:        '重要事項',
+  category_next_visit_check: '次回来店で確認すること',
 }
 
 export type InsightTag = keyof typeof INSIGHT_TAG_LABELS

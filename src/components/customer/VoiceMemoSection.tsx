@@ -26,6 +26,8 @@ import {
   fetchVoiceNotes,
   deleteVoiceNote,
   getVoiceNoteUrl,
+  retryVoiceNoteAnalysis,
+  searchVoiceNotes,
   type VoiceNoteRow,
 } from '@/lib/voiceNote'
 import {
@@ -122,6 +124,12 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
   const [notesLoading, setNotesLoading] = useState(false)
   const [playingId,    setPlayingId]    = useState<string | null>(null)
   const [deletingId,   setDeletingId]   = useState<string | null>(null)
+  const [retryingId,   setRetryingId]   = useState<string | null>(null)
+
+  // ── 音声メモ全文検索（PHASE VOICE-MEMO-COMPLETE） ──
+  const [searchQuery,   setSearchQuery]   = useState('')
+  const [searchResults, setSearchResults] = useState<VoiceNoteRow[] | null>(null)
+  const [searching,     setSearching]     = useState(false)
 
   const pipelineCtrlRef = useRef<StreamPipelineController | null>(null)
   const audioRef        = useRef<HTMLAudioElement | null>(null)
@@ -140,6 +148,19 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
   }, [customerId])
 
   useEffect(() => { loadNotes() }, [loadNotes])
+
+  // ── 音声メモ全文検索（PHASE VOICE-MEMO-COMPLETE・debounce付き） ──────────────
+  useEffect(() => {
+    const q = searchQuery.trim()
+    if (q.length === 0) { setSearchResults(null); setSearching(false); return }
+    setSearching(true)
+    const timer = setTimeout(async () => {
+      const rows = await searchVoiceNotes(customerId, q)
+      setSearchResults(rows)
+      setSearching(false)
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [searchQuery, customerId])
 
   useEffect(() => {
     return () => {
@@ -418,6 +439,23 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
     toast.success('音声メモを削除しました', { duration: 1500 })
     await loadNotes()
   }, [deletingId, playingId, loadNotes])
+
+  // ── 解析リトライ（PHASE VOICE-MEMO-COMPLETE） ────────────────────────────
+  const handleRetry = useCallback(async (note: VoiceNoteRow) => {
+    if (retryingId || !staffId) return
+    setRetryingId(note.id)
+    await retryVoiceNoteAnalysis({
+      voiceNoteId:   note.id,
+      storagePath:   note.storage_path,
+      durationSec:   note.duration_sec,
+      customerId,
+      staffId,
+      reservationId: note.reservation_id,
+    })
+    setRetryingId(null)
+    toast.success('再解析を開始しました', { duration: 2000 })
+    await loadNotes()
+  }, [retryingId, staffId, customerId, loadNotes])
 
   // ── ヘルパー ──────────────────────────────────────────────────────────────
   const fmtSec = (s: number) => {
@@ -698,14 +736,30 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
         </AnimatePresence>
       </div>
 
-      {/* ── 過去メモ一覧 ── */}
+      {/* ── 音声メモ全文検索（PHASE VOICE-MEMO-COMPLETE） ── */}
+      <input
+        type="text"
+        value={searchQuery}
+        onChange={e => setSearchQuery(e.target.value)}
+        placeholder="音声メモを検索（文字起こし・要約）"
+        style={{
+          width: '100%', fontSize: '12px', color: '#4878A8',
+          padding: '9px 10px', borderRadius: '10px', marginBottom: '8px',
+          border: '1.5px solid rgba(72,120,168,0.35)',
+          background: '#FAFCFF', outline: 'none', boxSizing: 'border-box',
+        }}
+      />
+
+      {/* ── 過去メモ一覧（検索中は検索結果、それ以外は直近10件） ── */}
       <VoiceNotesList
-        notes={pastNotes}
-        loading={notesLoading}
+        notes={searchQuery.trim().length > 0 ? (searchResults ?? []) : pastNotes}
+        loading={searchQuery.trim().length > 0 ? searching : notesLoading}
         playingId={playingId}
         deletingId={deletingId}
         onPlay={handlePlay}
         onDelete={handleDeleteNote}
+        onRetry={handleRetry}
+        retryingId={retryingId}
       />
     </div>
   )

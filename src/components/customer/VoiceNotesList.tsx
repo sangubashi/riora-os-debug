@@ -17,6 +17,9 @@ interface VoiceNotesListProps {
   deletingId:  string | null
   onPlay:      (note: VoiceNoteRow) => void
   onDelete:    (note: VoiceNoteRow) => void
+  /** 解析失敗(analysis_status='failed')メモの再試行(PHASE VOICE-MEMO-COMPLETE)。 */
+  onRetry?:      (note: VoiceNoteRow) => void
+  retryingId?:   string | null
 }
 
 // ─── 解析ステータスバッジ ─────────────────────────────────────────────────────
@@ -54,7 +57,7 @@ function StatusBadge({ status }: { status: VoiceNoteAnalysisStatus }) {
 // ─── コンポーネント ───────────────────────────────────────────────────────────
 
 export default function VoiceNotesList({
-  notes, loading, playingId, deletingId, onPlay, onDelete,
+  notes, loading, playingId, deletingId, onPlay, onDelete, onRetry, retryingId,
 }: VoiceNotesListProps) {
   // transcript の展開状態（1件ずつ開閉）
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -100,6 +103,13 @@ export default function VoiceNotesList({
                     {note.displayAt}
                   </p>
                   <StatusBadge status={status} />
+                  {status === 'failed' && onRetry && (
+                    <button onClick={() => onRetry(note)}
+                      disabled={retryingId === note.id}
+                      style={{ fontSize: '9px', fontWeight: 700, padding: '2px 7px', borderRadius: '999px', background: 'none', border: '1px solid #C0392B44', color: '#C0392B', cursor: retryingId === note.id ? 'default' : 'pointer', opacity: retryingId === note.id ? 0.5 : 1, flexShrink: 0 }}>
+                      {retryingId === note.id ? '再試行中…' : '再試行'}
+                    </button>
+                  )}
                 </div>
                 {note.duration_sec !== null && (
                   <p style={{ fontSize: '10px', color: '#A0BCD8' }}>
