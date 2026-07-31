@@ -49,7 +49,7 @@ import { CalendarDays, Sparkles, RefreshCw, Lock, Clock, Check } from 'lucide-re
 import AppBottomNav from './AppBottomNav'
 import MyPageReservationsSheet, { extractVisitPhrase } from './MyPageReservationsSheet'
 import ChangePasswordSheet from './ChangePasswordSheet'
-import { useMyStatsStore, type WeeklyDiff } from '@/store/useMyStatsStore'
+import { useMyStatsStore, type WeeklyDiff, type MyStats } from '@/store/useMyStatsStore'
 import { useHomeStore } from '@/store/useHomeStore'
 import { useNotificationsStore } from '@/store/useNotificationsStore'
 import { useAuthStore } from '@/store/useAuthStore'
@@ -73,17 +73,17 @@ interface HeroContent {
 }
 
 /**
- * 主役カード(リピート率・絶対値)の見出し・補足文。
- * 外舘の補足文「店で一番多いです」は本人の自信づけのため意図的に採用した承認表現
- * (ユーザー指示)。他スタッフの数値と並べて比較表示するものではなく、この文言は
- * 外舘本人の画面にのみ出す。
+ * 主役カード(リピート率・絶対値)の見出し・補足文(PHASE MYPAGE-DEMO-CLEANUP)。
+ * 従来はstaffId別の固定文言だったが、実データ(今月−先月のリピート率diff)に置き換えた。
+ * 改善(diff>0)が無ければ中立文言のみ表示し、架空の改善は作らない。
  */
-function getHeroContent(staffId: string | null): HeroContent {
-  if (staffId === SOTODATE_STAFF_ID) {
-    return { heading: 'あなたは信頼されています', subtext: 'また戻ってきてくださるお客様が、店で一番多いです' }
-  }
-  if (staffId === KAMEYAMA_STAFF_ID) {
-    return { heading: 'あなたの技術は、届いています', subtext: '一度担当したお客様が、また戻ってきてくださっています' }
+function getHeroContent(stats: MyStats | null): HeroContent {
+  const diff = stats?.repeatRate.diff ?? 0
+  if (diff > 0) {
+    return {
+      heading: 'また戻ってきてくださるお客様が増えています',
+      subtext: `先月よりリピート率が${diff}ポイント伸びています`,
+    }
   }
   return { heading: 'リピート率', subtext: '今月のリピート率です' }
 }
@@ -201,114 +201,54 @@ function formatYen(value: number): string {
   return `¥${Math.round(value).toLocaleString('ja-JP')}`
 }
 
+type MonthlyCommentMetricKey = 'sales' | 'avgSpend' | 'nomination' | 'repeatRate' | 'retail'
+
+interface MonthlyCommentCandidate {
+  key:  MonthlyCommentMetricKey
+  diff: number
+}
+
 /**
- * My Page「今月のひとこと」(PHASE MYPAGE-UX-2・2026-07-27)。
+ * My Page「今月のひとこと」(PHASE MYPAGE-DEMO-CLEANUP)。
  *
- * 目的は「スタッフを評価する」ではなく「スタッフを応援する」こと(ユーザー指示)。
- * 特定の指標のdiff値には一切連動させず、固定テンプレート(良い点20種・応援20種)から
- * 毎回ランダムに選ぶだけの表示ロジック。LLM不使用、新しい集計・スコアリングは行わない。
- *
- * NG表現(ユーザー指示): 「あと◯件」「あと◯%」「目標まで」「達成まで」「ノルマ」
- * 「頑張って」「もっと」「不足しています」「悪いです」等、数字で追い込む表現・評価的な
- * 表現は全テンプレートに含めていない。
- *
- * 表示ルール: 良い点コメントは毎回必ず1つ表示。応援コメントは約20%の確率でのみ
- * 追加表示し、応援コメント単独では絶対に表示しない(必ず良い点とセット)。
+ * 従来はdiff値と無関係な固定テンプレートからのランダム抽選だったが廃止し、今月−先月の
+ * 実データ(diff)のうちプラスで最も伸びた1指標を選び、その指標に対応する1文を返す方式に
+ * 変更した。「先週のよかったところ」(週次diff)とは判定期間が異なる別ロジックとして
+ * 両立させる(ユーザー承認済み)。プラスが無ければ、架空の改善を作らず中立の1文を返す。
+ * 外舘の画面は既存方針どおり売上・客単価・店販を候補から除外する。
  */
-const STRENGTH_COMMENTS: readonly string[] = [
-  '丁寧な対応が習慣になってきています。',
-  'お客様に安心感を与える接客ができています。',
-  '落ち着いた雰囲気で接客できていますね。',
-  '信頼感のある接客ができています。',
-  'お客様との信頼関係が育っています。',
-  '良い流れがしっかり定着してきています。',
-  '今月も安定した接客が続いています。',
-  '無理のない自然な接客が続いています。',
-  '一人ひとりに寄り添った接客ができています。',
-  '日々の積み重ねが形になっています。',
-  '丁寧な言葉づかいがお客様に伝わっています。',
-  'お客様が話しやすい雰囲気を作れています。',
-  '落ち着いた対応が安心感につながっています。',
-  '一貫した接客スタイルができあがってきています。',
-  'お客様目線を大切にした接客ができています。',
-  '穏やかな空気感で接客できています。',
-  '細やかな気配りが行き届いています。',
-  'お客様との会話を大切にできています。',
-  '丁寧なカウンセリングが続いています。',
-  'じっくりと向き合う接客ができています。',
-] as const
-
-const CHEER_COMMENTS: readonly string[] = [
-  '次回もホームケアの話題を少しだけ触れてみましょう。',
-  '会話の流れの中で自然にご提案してみましょう。',
-  '無理のない範囲で続けていきましょう。',
-  'お客様の反応を見ながら提案を重ねてみましょう。',
-  '焦らず、お客様のペースを大切にしていきましょう。',
-  '今の良い流れをそのまま続けていきましょう。',
-  '次回もいつも通りの丁寧な接客を心がけましょう。',
-  'お客様のペースに合わせて、ゆっくり進めていきましょう。',
-  '次のご来店でも、自然な会話を楽しんでみましょう。',
-  '小さな気づきを大切に、次回につなげていきましょう。',
-  '今の雰囲気を大事に、次回も接客してみましょう。',
-  '次回は少しだけ会話の幅を広げてみましょう。',
-  'お客様の様子を見ながら、無理なく提案してみましょう。',
-  '次のご来店も、いつものペースで大丈夫です。',
-  'ゆったりとした気持ちで次回も接客してみましょう。',
-  '次回も、お客様に寄り添う気持ちを大切にしましょう。',
-  '今のスタイルを大切に、次回も続けていきましょう。',
-  '次のご来店では、少し会話を増やしてみましょう。',
-  'お客様との時間を大切に、次回も過ごしてみましょう。',
-  '焦らず、次回も一つひとつ丁寧に進めていきましょう。',
-] as const
-
-/** 応援コメントを追加表示する確率(約20%・ユーザー指示)。 */
-const CHEER_SHOW_RATE = 0.2
-
-// 直前に表示した文章と同じものを連続表示しないための記憶(ブラウザのlocalStorageのみ・
-// DB保存なし)。40種類あれば「前回と違うものを選ぶだけ」で十分というユーザー指示のため、
-// 2回前以前の履歴は持たない(直前の1件のみ除外する)。
-const LAST_STRENGTH_KEY = 'riora_mypage_last_strength_comment'
-const LAST_CHEER_KEY    = 'riora_mypage_last_cheer_comment'
-
-function readLastShown(key: string): string | null {
-  try {
-    return window.localStorage.getItem(key)
-  } catch {
-    // プライベートブラウズ等でlocalStorageが使えない場合は、連続回避なしの通常ランダムに
-    // フォールバックする(機能停止させない)。
-    return null
+function getMonthlyCommentCandidates(staffId: string | null, stats: MyStats): MonthlyCommentCandidate[] {
+  const candidates: MonthlyCommentCandidate[] = [
+    { key: 'nomination', diff: stats.nominationDiff },
+    { key: 'repeatRate', diff: stats.repeatRateDiff },
+  ]
+  if (staffId !== SOTODATE_STAFF_ID) {
+    candidates.push({ key: 'sales', diff: stats.salesDiff })
+    if (stats.avgSpendDiff !== null) {
+      candidates.push({ key: 'avgSpend', diff: stats.avgSpendDiff })
+    }
+    if (stats.retailSalesDiff !== null) {
+      candidates.push({ key: 'retail', diff: stats.retailSalesDiff })
+    }
   }
+  return candidates
 }
 
-function writeLastShown(key: string, value: string): void {
-  try {
-    window.localStorage.setItem(key, value)
-  } catch {
-    // 保存できなくても表示自体は続行する。
-  }
+const MONTHLY_COMMENT_TEXT: Record<MonthlyCommentMetricKey, string> = {
+  sales:      '今月は売上が伸びています。',
+  avgSpend:   '今月は客単価が上がっています。',
+  nomination: '今月はご指名が増えています。',
+  repeatRate: '今月は戻ってきてくださるお客様が増えています。',
+  retail:     '今月はホームケア提案がお客様に届いています。',
 }
 
-function pickRandom<T>(arr: readonly T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)]
-}
+const MONTHLY_NO_PLUS_COMMENT = '今月も一人ひとり丁寧に向き合えています。'
 
-/** 直前に表示した1件を候補から除いてランダムに選ぶ(それ以外は完全ランダムのまま)。 */
-function pickRandomExcludingLast(arr: readonly string[], lastShown: string | null): string {
-  const candidates = lastShown === null ? arr : arr.filter((text) => text !== lastShown)
-  return pickRandom(candidates.length > 0 ? candidates : arr)
-}
-
-function buildAiComments(): { strength: string; cheer: string | null } {
-  const strength = pickRandomExcludingLast(STRENGTH_COMMENTS, readLastShown(LAST_STRENGTH_KEY))
-  writeLastShown(LAST_STRENGTH_KEY, strength)
-
-  let cheer: string | null = null
-  if (Math.random() < CHEER_SHOW_RATE) {
-    cheer = pickRandomExcludingLast(CHEER_COMMENTS, readLastShown(LAST_CHEER_KEY))
-    writeLastShown(LAST_CHEER_KEY, cheer)
-  }
-
-  return { strength, cheer }
+function buildMonthlyComment(staffId: string | null, stats: MyStats): string {
+  const top = getMonthlyCommentCandidates(staffId, stats)
+    .filter((c) => c.diff > 0)
+    .sort((a, b) => b.diff - a.diff)[0]
+  return top ? MONTHLY_COMMENT_TEXT[top.key] : MONTHLY_NO_PLUS_COMMENT
 }
 
 function SmallStat({ label, value, color = '#5C4033' }: { label: string; value: string; color?: string }) {
@@ -358,7 +298,7 @@ export default function MyStatsScreen() {
   const replenishNotifications = notifications.filter((n) => n.kind === 'homecare_replenish')
 
   const staffId = stats?.staffId ?? null
-  const hero              = useMemo(() => getHeroContent(staffId),        [staffId])
+  const hero              = useMemo(() => getHeroContent(stats),          [stats])
   const nominationContent = useMemo(() => getNominationContent(staffId),  [staffId])
   const weeklyPraise       = useMemo(
     () => (stats ? buildWeeklyPraise(staffId, stats.weekly) : null),
@@ -370,9 +310,10 @@ export default function MyStatsScreen() {
   // 0件自体が事実のため、この判定の対象外。
   const hasMonthlyVisitData = !!stats && stats.visitCount.thisMonth > 0
 
-  // stats参照が変わる(=再取得された)たびに選び直す。同一セッション中の再描画では
-  // 選び直さない(毎回チラつかないよう安定させる)。
-  const aiComments = useMemo(() => (stats ? buildAiComments() : null), [stats])
+  const monthlyComment = useMemo(
+    () => (stats ? buildMonthlyComment(staffId, stats) : null),
+    [staffId, stats]
+  )
 
   return (
     <div
@@ -647,8 +588,8 @@ export default function MyStatsScreen() {
               )}
             </div>
 
-            {/* ── 6. 今月のひとこと(応援メッセージ・任意) ── */}
-            {aiComments && (
+            {/* ── 6. 今月のひとこと(実データ駆動) ── */}
+            {monthlyComment && (
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -661,11 +602,7 @@ export default function MyStatsScreen() {
                   <span className="text-[12px] font-bold" style={{ color: '#5C4033' }}>今月のひとこと</span>
                 </div>
 
-                <p className="text-[13px] leading-relaxed" style={{ color: '#5C4033' }}>{aiComments.strength}</p>
-
-                {aiComments.cheer && (
-                  <p className="text-[12.5px] leading-relaxed mt-2" style={{ color: '#9F7E6C' }}>{aiComments.cheer}</p>
-                )}
+                <p className="text-[13px] leading-relaxed" style={{ color: '#5C4033' }}>{monthlyComment}</p>
               </motion.div>
             )}
           </>

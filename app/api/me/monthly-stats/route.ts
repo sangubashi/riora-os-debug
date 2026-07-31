@@ -13,6 +13,10 @@
  *   visitCountDiff     今月の来店数 − 先月の来店数
  *   retailSalesDiff    今月の店販売上(brain_visits.retail_amount合計) − 先月の店販売上
  *                      (今月・先月とも来店記録が1件も無い場合はnull。「計測中」表示に使う)
+ *   salesDiff          今月の合計売上(施術+店販) − 先月の合計売上(PHASE MYPAGE-DEMO-CLEANUP)。
+ *                      「今月のひとこと」の実データ判定用。
+ *   avgSpendDiff       客単価(合計売上÷来店件数)の今月−先月差分。いずれかの月の来店が
+ *                      0件ならnull(架空の客単価改善を作らない)。「今月のひとこと」用。
  *   nomination.rate    今月の指名率(%) = 今月の指名来店数 / 今月の来店数。
  *                      今月の来店記録が0件の場合はnull(架空の割合を作らない)。
  *   weekly             今週 vs 先週(月曜始まりJST)の差分（PHASE MYPAGE-WEEKLY-PRAISE）。
@@ -144,6 +148,15 @@ export async function GET(req: NextRequest) {
     const nominationDiff = thisMonth.nominationCount - lastMonth.nominationCount;
     const repeatRateDiff = thisMonth.repeatRate - lastMonth.repeatRate;
     const visitCountDiff = thisMonth.visitCount - lastMonth.visitCount;
+    const salesDiff       = thisMonth.totalSales - lastMonth.totalSales;
+
+    // 客単価(合計売上÷来店件数、行数ベース)の今月−先月差分。weeklyのavgSpendDiffと
+    // 同じ定義(行数ベース)で揃える(PHASE MYPAGE-DEMO-CLEANUP、「今月のひとこと」用)。
+    const thisMonthAvgSpendRaw = thisMonth.visitCount > 0 ? thisMonth.totalSales / thisMonth.visitCount : null;
+    const lastMonthAvgSpendRaw = lastMonth.visitCount > 0 ? lastMonth.totalSales / lastMonth.visitCount : null;
+    const monthlyAvgSpendDiff = (thisMonthAvgSpendRaw !== null && lastMonthAvgSpendRaw !== null)
+      ? Math.round(thisMonthAvgSpendRaw - lastMonthAvgSpendRaw)
+      : null;
 
     // 今月の指名率(%)。今月の来店記録が0件なら算出不能のためnull(架空の割合を作らない)。
     const nominationRate = thisMonth.visitCount > 0
@@ -225,6 +238,8 @@ export async function GET(req: NextRequest) {
       repeatRateDiff,
       visitCountDiff,
       retailSalesDiff,
+      salesDiff,
+      avgSpendDiff: monthlyAvgSpendDiff,
       // タップ時の詳細モーダル用(今月・先月の実数)。既に上で計算済みの値を再利用するのみ
       // (新しい集計ロジックは追加しない)。
       nomination: {

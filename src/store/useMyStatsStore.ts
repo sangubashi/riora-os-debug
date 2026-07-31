@@ -46,6 +46,10 @@ export interface MyStats {
   visitCountDiff:  number
   /** 先月比 店販売上(円)。今月・先月とも来店記録が無い場合はnull(「計測中」表示)。 */
   retailSalesDiff: number | null
+  /** 先月比 合計売上(円、施術+店販)。「今月のひとこと」用(PHASE MYPAGE-DEMO-CLEANUP)。 */
+  salesDiff: number
+  /** 先月比 客単価(円)。いずれかの月の来店が0件ならnull。「今月のひとこと」用。 */
+  avgSpendDiff: number | null
   /** タップ時の詳細表示用(今月・先月実数)。APIで既に計算済みの値をそのまま保持する。 */
   nomination:  MetricDetail
   repeatRate:  MetricDetail
@@ -92,6 +96,8 @@ export const useMyStatsStore = create<MyStatsState>((set) => ({
           repeatRateDiff:  data.repeatRateDiff ?? 0,
           visitCountDiff:  data.visitCountDiff ?? 0,
           retailSalesDiff: data.retailSalesDiff ?? null,
+          salesDiff:       data.salesDiff ?? 0,
+          avgSpendDiff:    data.avgSpendDiff ?? null,
           nomination:  data.nomination,
           repeatRate:  data.repeatRate,
           visitCount:  data.visitCount,
