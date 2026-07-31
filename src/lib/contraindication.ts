@@ -371,6 +371,28 @@ export async function saveContraindications(
   return saved
 }
 
+// ─── 削除（PHASE CONTRAINDICATION-DELETE-1） ─────────────────────────────────
+//
+// 元になった音声メモ等を削除しても contraindications 行は連動削除されない
+// （source_note_idで緩く紐付いているだけの別テーブルのため）。テストデータ等を
+// 手動で消せるように、CustomerMemoryTab.handleDelete()と同じ「即削除+toast」の
+// パターンで単純なDELETEのみ提供する（確認ダイアログ無し・既存踏襲）。
+
+export async function deleteContraindication(id: string): Promise<{ error: string | null }> {
+  if (DEMO_MODE && !VOICE_NOTES_LIVE) return { error: null }
+
+  const { error } = await supabase
+    .from('contraindications')
+    .delete()
+    .eq('id', id)
+
+  if (error) {
+    prodLog('error', '[contraindication] delete failed', error.message)
+    return { error: error.message }
+  }
+  return { error: null }
+}
+
 // ─── 生成 + 保存 ワンショット ─────────────────────────────────────────────────
 
 export async function generateAndSaveContraindications(

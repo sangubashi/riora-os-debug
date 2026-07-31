@@ -9,6 +9,7 @@
 
 import { memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Trash2 } from 'lucide-react'
 import type { Contraindication, ContraindicationSeverity } from '@/types'
 import {
   CONTRAINDICATION_SEVERITY_ORDER,
@@ -23,6 +24,8 @@ interface ContraindicationSectionProps {
   loading:    boolean
   collapsed?: boolean
   onToggle?:  () => void
+  /** テストデータ等を削除できるようにする(PHASE CONTRAINDICATION-DELETE-1)。 */
+  onDelete?:  (item: Contraindication) => void
 }
 
 // ─── severity バッジ ──────────────────────────────────────────────────────────
@@ -48,7 +51,7 @@ function SeverityBadge({ severity }: { severity: ContraindicationSeverity }) {
 
 // ─── 1件の禁忌行 ──────────────────────────────────────────────────────────────
 
-function ContraindicationRow({ item }: { item: Contraindication }) {
+function ContraindicationRow({ item, onDelete }: { item: Contraindication; onDelete?: (item: Contraindication) => void }) {
   const col = CONTRAINDICATION_SEVERITY_COLOR[item.severity]
   return (
     <div style={{
@@ -59,9 +62,18 @@ function ContraindicationRow({ item }: { item: Contraindication }) {
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
         <SeverityBadge severity={item.severity} />
-        <p style={{ fontSize: '13px', fontWeight: 700, color: col.text, margin: 0 }}>
+        <p style={{ fontSize: '13px', fontWeight: 700, color: col.text, margin: 0, flex: 1 }}>
           {item.title}
         </p>
+        {onDelete && (
+          <button
+            onClick={() => onDelete(item)}
+            aria-label="削除"
+            style={{ background: 'none', border: 'none', padding: '2px', cursor: 'pointer', flexShrink: 0, display: 'flex' }}
+          >
+            <Trash2 size={13} color={col.text} style={{ opacity: 0.55 }} />
+          </button>
+        )}
       </div>
       {item.description && (
         <p style={{ fontSize: '11px', color: '#5C4070', lineHeight: 1.6, margin: '0 0 4px 0' }}>
@@ -87,6 +99,7 @@ const ContraindicationSectionInner = memo(function ContraindicationSection({
   loading,
   collapsed = false,
   onToggle,
+  onDelete,
 }: ContraindicationSectionProps) {
 
   // severity 順でソート
@@ -209,7 +222,7 @@ const ContraindicationSectionInner = memo(function ContraindicationSection({
               gap:           '7px',
             }}>
               {sorted.map(item => (
-                <ContraindicationRow key={item.id} item={item} />
+                <ContraindicationRow key={item.id} item={item} onDelete={onDelete} />
               ))}
             </div>
           </motion.div>

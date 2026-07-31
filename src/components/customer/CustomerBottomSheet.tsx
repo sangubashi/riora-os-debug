@@ -76,6 +76,7 @@ import {
 import {
   fetchContraindications,
   generateAndSaveContraindications,
+  deleteContraindication,
   type Contraindication,
 } from '@/lib/contraindication';
 
@@ -761,6 +762,15 @@ export default function CustomerBottomSheet({
     release();
   }, [c, r, currentStaffId, savingAction, doneActions, loadRecentActions, showHint]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ─── 禁忌事項の削除（PHASE CONTRAINDICATION-DELETE-1） ───────────────────────
+  // CustomerMemoryTab.handleDelete()と同じ「即削除+toast」パターン(確認ダイアログ無し)。
+  const handleDeleteContraindication = useCallback(async (item: Contraindication) => {
+    const { error } = await deleteContraindication(item.id);
+    if (error) { toast.error('削除に失敗しました'); return; }
+    toast.success('削除しました', { duration: 1500 });
+    setContraindications(prev => prev.filter(ci => ci.id !== item.id));
+  }, []);
+
   // ─── 肌タグ保存 ────────────────────────────────────────────────────────────
   const saveSkinTags = useCallback(async () => {
     if (!c || tagSaving) return;
@@ -1440,6 +1450,7 @@ export default function CustomerBottomSheet({
                     <ContraindicationSection
                       items={contraindications}
                       loading={contraindicationsLoading}
+                      onDelete={handleDeleteContraindication}
                     />
                   </ErrorBoundary>
                 </div>
