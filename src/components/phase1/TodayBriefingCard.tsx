@@ -23,7 +23,9 @@ import type { TodayBriefingCaution } from '@/types/todayBriefing'
 // 全顧客共通のアバター（リオくま）。顧客ごとの写真切替は行わない。
 const AVATAR_SRC = '/assets/rio-kuma.png'
 
-const C = {
+// PHASE STAFF-NOTIFICATION-AI: TodayBriefingSummaryCard(同じ今日タブ最上部に並ぶ
+// カード)からこのパレットをそのまま再利用するため export する(値・使い先は変更なし)。
+export const C = {
   bg:    '#F8F1F3',
   card:  '#FFFFFF',
   soft:  '#F5E6E8',

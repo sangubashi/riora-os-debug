@@ -36,10 +36,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '../../lib/repos'
 import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest'
 import { resolveLegacyCustomerIds } from '@/lib/resolveLegacyCustomerIds'
+import { detectNotificationsForCustomer, type NotificationCustomerInput } from '@/lib/notifications/detectNotifications'
+import { normalizeProductName } from '../customers/[id]/homecare-products/route'
 import type {
   TodayBriefingResponse,
   TodayBriefingCaution,
   TodayBriefingUpcoming,
+  TodayBriefingSummary,
 } from '@/types/todayBriefing'
 
 const BRAIN_TYPE_MAP: Record<string, string> = {
@@ -81,6 +84,11 @@ function blankToNull(v: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null
 }
 
+const EMPTY_SUMMARY: TodayBriefingSummary = {
+  visitCount: 0, firstVisitCount: 0, contraindicationCount: 0,
+  homecareCount: 0, birthdayCount: 0, importantMemoCount: 0,
+}
+
 const EMPTY_RESPONSE: TodayBriefingResponse = {
   next: null,
   cautions: [],
@@ -89,6 +97,7 @@ const EMPTY_RESPONSE: TodayBriefingResponse = {
     recentChange: null, nextFocus: [],
   },
   upcoming: [],
+  summary: EMPTY_SUMMARY,
 }
 
 export async function GET(req: NextRequest) {
@@ -106,10 +115,12 @@ export async function GET(req: NextRequest) {
       .select(`
         id,
         brain_customer_id,
+        customer_id,
         staff_id,
         scheduled_at,
         menu,
         notes,
+        is_new_customer,
         brain_customer:brain_customers!brain_customer_id (
           id,
           name,
@@ -179,11 +190,22 @@ export async function GET(req: NextRequest) {
     // contraindications / voice_notes / handover_notes は legacy customers.id 基準のため変換
     const legacyCustomerIds = await resolveLegacyCustomerIds(supabase, customerId)
 
+    // ── 「今日のブリーフィング」サマリー用: 今日の予約全員分のlegacy候補ID
+    // (PHASE STAFF-NOTIFICATION-AI)。resolveLegacyCustomerIds()をN回呼ばず、
+    // 予約行自身が持つcustomer_id(legacy)をbrain_customer_idと合わせて候補にする
+    // (resolveLegacyCustomerIds.tsの「②reservations.customer_id経由のブリッジ」と
+    // 同じ考え方を、既に取得済みの予約行から追加クエリなしで導出するだけ)。
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allTodayLegacyIds = Array.from(new Set(
+      reservations.flatMap((r: any) => [r.brain_customer_id, r.customer_id].filter(Boolean))
+    )) as string[]
+
     const [
       visitsRes, staffRes, contraRes, voiceRes, memoryRes, focusRes, bookingPromptRes, handoverRes,
+      todayContraRes, todayMemoriesRes,
     ] = await Promise.allSettled([
       supabase.from('brain_visits')
-        .select('customer_id, visit_date, menu_id')
+        .select('customer_id, visit_date, menu_id, retail_category')
         .in('customer_id', allCustomerIds)
         .order('visit_date', { ascending: false }),
       nextReservation.brain_customer.assigned_staff_id
@@ -195,6 +217,13 @@ export async function GET(req: NextRequest) {
       supabase.from('timeline_summary_cache').select('focus, recent_change, next_focus').eq('customer_id', customerId).maybeSingle(),
       supabase.from('booking_prompts').select('summary').eq('reservation_id', nextReservation.id).maybeSingle(),
       supabase.from('handover_notes').select('summary').in('customer_id', legacyCustomerIds).order('created_at', { ascending: false }).limit(1),
+      // ── ここから「今日のブリーフィング」サマリー専用(今日の予約全員が対象) ──
+      allTodayLegacyIds.length > 0
+        ? supabase.from('contraindications').select('customer_id').in('customer_id', allTodayLegacyIds)
+        : Promise.resolve({ data: [] }),
+      supabase.from('customer_memories')
+        .select('customer_id, memory_type, trigger_date, content, importance, is_sensitive')
+        .in('customer_id', allCustomerIds),
     ])
 
     // ── 来店回数・前回施術 ──────────────────────────────────────────────
@@ -268,6 +297,88 @@ export async function GET(req: NextRequest) {
       })
     }
 
+    // ── 「今日のブリーフィング」サマリー(PHASE STAFF-NOTIFICATION-AI) ────────
+    // ルールベースのみ・LLM不使用。今日の予約全員分について、既存の検出関数
+    // detectNotificationsForCustomer()(誕生日・ホームケア3タッチの判定式は
+    // アプリ内通知v1と完全に同一)を、来店ブラックアウト(nearbyVisitDates)を
+    // 意図的に空にして呼び出す。当ブラックアウトは「もうすぐ来店するから
+    // 遠隔通知は控える」ための抑制であり、まさに今日来店する本人向けの
+    // 対面ブリーフィングには適用しない(該当日に来店する本人にホームケアの
+    // 話題を振れない、という逆効果を避けるため)。
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const todayContraRows: any[] = todayContraRes.status === 'fulfilled' ? (todayContraRes.value.data ?? []) : []
+    const todayContraLegacyIds = new Set(todayContraRows.map((r: { customer_id: string }) => r.customer_id))
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const todayMemoryRows: any[] = todayMemoriesRes.status === 'fulfilled' ? (todayMemoriesRes.value.data ?? []) : []
+    const todayMemoriesByCustomer = new Map<string, typeof todayMemoryRows>()
+    for (const m of todayMemoryRows) {
+      const list = todayMemoriesByCustomer.get(m.customer_id) ?? []
+      list.push(m)
+      todayMemoriesByCustomer.set(m.customer_id, list)
+    }
+
+    const todayProductCountsByCustomer = new Map<string, Map<string, { count: number; lastPurchasedAt: string }>>()
+    for (const v of allVisits) {
+      if (!v.retail_category) continue
+      const names = String(v.retail_category).split('/').map((n: string) => normalizeProductName(n)).filter(Boolean)
+      const map = todayProductCountsByCustomer.get(v.customer_id) ?? new Map()
+      for (const name of names) {
+        const ex = map.get(name)
+        if (ex) {
+          ex.count += 1
+          if (v.visit_date > ex.lastPurchasedAt) ex.lastPurchasedAt = v.visit_date
+        } else {
+          map.set(name, { count: 1, lastPurchasedAt: v.visit_date })
+        }
+      }
+      todayProductCountsByCustomer.set(v.customer_id, map)
+    }
+
+    let firstVisitCount = 0
+    let contraindicationCount = 0
+    let homecareCount = 0
+    let birthdayCount = 0
+    let importantMemoCount = 0
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const r of reservations as any[]) {
+      if (r.is_new_customer) firstVisitCount += 1
+
+      const legacyCandidates = [r.brain_customer_id, r.customer_id].filter(Boolean)
+      if (legacyCandidates.some((id: string) => todayContraLegacyIds.has(id))) contraindicationCount += 1
+
+      const bcId = r.brain_customer.id as string
+      const bcMemories = todayMemoriesByCustomer.get(bcId) ?? []
+      if (bcMemories.some((m) => m.importance === 'high' && !m.is_sensitive)) importantMemoCount += 1
+
+      const input: NotificationCustomerInput = {
+        id: bcId,
+        name: r.brain_customer.name,
+        weddingDate: null,
+        firstVisitDate: null,
+        lastVisitDate: null,
+        memories: bcMemories.map((m) => ({
+          memoryType: m.memory_type, triggerDate: m.trigger_date, content: m.content,
+        })),
+        retailProductCounts: todayProductCountsByCustomer.get(bcId) ?? new Map(),
+        skinPrimaryDeltas: [],
+        nearbyVisitDates: [],
+      }
+      const detected = detectNotificationsForCustomer(input)
+      if (detected.some((n) => n.kind === 'birthday')) birthdayCount += 1
+      if (detected.some((n) => n.kind.startsWith('homecare_'))) homecareCount += 1
+    }
+
+    const summary: TodayBriefingSummary = {
+      visitCount: reservations.length,
+      firstVisitCount,
+      contraindicationCount,
+      homecareCount,
+      birthdayCount,
+      importantMemoCount,
+    }
+
     const response: TodayBriefingResponse = {
       next: {
         reservationId: nextReservation.id,
@@ -299,6 +410,7 @@ export async function GET(req: NextRequest) {
         visitCount:    (visitsByCustomer[r.brain_customer.id] ?? []).length,
         scheduledAt:   r.scheduled_at,
       })),
+      summary,
     }
 
     return NextResponse.json(response)
