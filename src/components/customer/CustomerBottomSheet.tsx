@@ -167,7 +167,7 @@ interface HomecareProductEntry {
  * (アプリからLINEを直接送信しない設計のため)。
  */
 interface LineSendLogEntry {
-  kind:       'homecare' | 'usage_card' | 'thanks' | 'follow';
+  kind:       'homecare' | 'usage_card' | 'thanks' | 'follow' | 'reminder';
   title:      string;
   occurredAt: string;
 }
@@ -177,6 +177,7 @@ const LINE_SEND_KIND_LABEL: Record<LineSendLogEntry['kind'], string> = {
   usage_card: '使い方カード',
   thanks:     'お礼',
   follow:     'フォロー',
+  reminder:   'リマインド',
 };
 
 /**
@@ -349,6 +350,9 @@ export default function CustomerBottomSheet({
   const [lineMessageCopied,     setLineMessageCopied]     = useState(false);
   // 生成理由（PHASE2-C追加確認）。タグ名・カテゴリ名のみ。記事タイトル・summaryは含めない。
   const [lineMessageReasons,    setLineMessageReasons]    = useState<MatchReason[]>([]);
+  // PHASE LINE-AI-1: 直近に生成した種別（来店お礼/ホームケア提案/来店リマインド）。
+  // コピー時の送信ログkindに使う。
+  const [lineMessageType,       setLineMessageType]       = useState<'thanks' | 'homecare' | 'reminder' | null>(null);
 
   // ── ホームケア使い方カード（PHASE HC-4） ────────────────────────────────────────
   const [expandedUsageCards, setExpandedUsageCards] = useState<Set<string>>(new Set());
@@ -419,6 +423,7 @@ export default function CustomerBottomSheet({
     setLineMessageDraft('');
     setLineMessageCopied(false);
     setLineMessageReasons([]);
+    setLineMessageType(null);
     setLineSendLogs([]);
     setAllDone(false);
     setServiceReplay(null);
@@ -700,6 +705,7 @@ export default function CustomerBottomSheet({
     setLineMessageDraft('');
     setLineMessageCopied(false);
     setLineMessageReasons([]);
+    setLineMessageType(null);
     setLineSendLogs([]);
     setAllDone(false);
     setServiceReplay(null);
@@ -949,8 +955,13 @@ export default function CustomerBottomSheet({
     }
   }, [c, aiGeneratingProduct]);
 
-  // ─── LINEメッセージ生成（PHASE2-C-4・生成/編集/コピーのみ。送信APIは呼ばない） ──────
-  const generateLineMessage = useCallback(async () => {
+  // ─── LINEメッセージ生成（PHASE2-C-4・PHASE LINE-AI-1でtype対応拡張・生成/編集/コピーのみ。
+  //     送信APIは呼ばない）──────
+  // type: 'thanks'(来店お礼) | 'homecare'(ホームケア提案) | 'reminder'(来店リマインド)。
+  // customer_memories本文・AI Timelineのsummary/recentChange/nextFocusは一切送らない
+  // （ユーザー指示・2026-07-31確定。音声メモ由来の文脈はinsightTags(ルールベース抽出済み
+  // タグ)のみを使う）。
+  const generateLineMessage = useCallback(async (type: 'thanks' | 'homecare' | 'reminder') => {
     if (!c || lineMessageGenerating) return;
     setLineMessageGenerating(true);
     try {
@@ -958,6 +969,7 @@ export default function CustomerBottomSheet({
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
+          type,
           customerName: c.name,
           skinTags:     skinTags.map(t => SKIN_TAG_LABELS[t]).filter(Boolean),
           recentVisits: visitHistory.slice(0, 3).map(v => ({ menuName: v.menuName, visitDate: v.visitDate })),
@@ -965,6 +977,12 @@ export default function CustomerBottomSheet({
             productName: p.productName, lastPurchasedAt: p.lastPurchasedAt,
           })),
           recentNoteSummaries: recentNotes.slice(0, 3).map(n => n.note).filter(Boolean),
+          insightTags:            insightTags,
+          visitCount:             c.visits ?? c.visit_count,
+          lastVisitDate:          c.last_visit ?? null,
+          recommendedCycleDays:   c.recommended_cycle_days ?? null,
+          churnRisk:              c.churn_risk ?? null,
+          contraindicationTitles: contraindications.map(ci => ci.title),
         }),
       });
       const json = res.ok
@@ -974,6 +992,7 @@ export default function CustomerBottomSheet({
         setLineMessageDraft(json.message);
         setLineMessageReasons(json.reasons ?? []);
         setLineMessageCopied(false);
+        setLineMessageType(type);
         toast.success('LINE文面を生成しました', { duration: 1500 });
       } else {
         setLineMessageReasons([]);
@@ -985,13 +1004,12 @@ export default function CustomerBottomSheet({
     } finally {
       setLineMessageGenerating(false);
     }
-  }, [c, lineMessageGenerating, skinTags, visitHistory, homecareProducts, recentNotes]);
+  }, [c, lineMessageGenerating, skinTags, visitHistory, homecareProducts, recentNotes, insightTags, contraindications]);
 
-  // kind: 'thanks'(お礼) | 'follow'(フォロー)。生成される文面自体は1種類の汎用AI下書き
-  // (PHASE2-C-4)のままで、どちらの用途で使ったかをスタッフに選んでもらい記録するだけ
-  // (PHASE LINE-LOG-1・専用の生成ロジックを新設するわけではない)。
-  const copyLineMessageDraft = useCallback(async (kind: 'thanks' | 'follow') => {
-    if (!lineMessageDraft) return;
+  // コピー操作を送信とみなして記録する(PHASE LINE-LOG-1)。kindは直近に生成した種別。
+  const copyLineMessageDraft = useCallback(async () => {
+    if (!lineMessageDraft || !lineMessageType) return;
+    const kind = lineMessageType;
     warnIfRecentlySent(kind);
     try {
       await navigator.clipboard.writeText(lineMessageDraft);
@@ -1000,7 +1018,7 @@ export default function CustomerBottomSheet({
       setTimeout(() => setLineMessageCopied(false), 2500);
       void recordLineSend(kind, `${LINE_SEND_KIND_LABEL[kind]}メッセージ`);
     } catch { toast.error('コピーに失敗しました'); }
-  }, [lineMessageDraft, warnIfRecentlySent, recordLineSend]);
+  }, [lineMessageDraft, lineMessageType, warnIfRecentlySent, recordLineSend]);
 
   // ─── Adaptive Priority ────────────────────────────────────────────────────
   const sectionPriority = useSectionPriority(c ?? null, servicePhase, timePressure);
@@ -1928,35 +1946,43 @@ export default function CustomerBottomSheet({
                       {/* LINE下書き */}
                       {visible('lineDraft') && <LineDraftAccordion />}
 
-                      {/* LINEメッセージ生成（PHASE2-C-4）
+                      {/* LINEメッセージ生成（PHASE2-C-4・PHASE LINE-AI-1で3種類へ拡張）
                           仕様: 生成→編集→コピーのみ。送信ボタン・Webhook送信・LINE Messaging API
                           呼び出しは一切実装しない。送信はスタッフ本人がLINEアプリから手動で行う。 */}
                       <div className="bg-[#F0FAF5] rounded-[22px] p-4 border border-[#D0F0E0]">
-                        <div className="flex items-center justify-between mb-1.5">
-                          <p className="text-[11px] tracking-[0.18em] text-[#34A070] font-semibold">
-                            ✨ LINEメッセージ生成（AI下書き）
-                          </p>
-                          <button
-                            onClick={generateLineMessage}
-                            disabled={lineMessageGenerating}
-                            className="text-[11px] font-semibold text-[#34A070] bg-white border border-[#C0E8D0] rounded-full px-3 py-1 cursor-pointer whitespace-nowrap disabled:opacity-60"
-                          >
-                            {lineMessageGenerating ? '生成中…' : lineMessageDraft ? '再生成' : '生成する'}
-                          </button>
+                        <p className="text-[11px] tracking-[0.18em] text-[#34A070] font-semibold mb-2">
+                          ✨ LINEメッセージ生成（AI下書き）
+                        </p>
+                        <div className="flex gap-1.5 mb-2">
+                          {([
+                            { type: 'thanks',   label: '来店お礼' },
+                            { type: 'homecare', label: 'ホームケア提案' },
+                            { type: 'reminder', label: '来店リマインド' },
+                          ] as const).map(({ type, label }) => (
+                            <button
+                              key={type}
+                              onClick={() => generateLineMessage(type)}
+                              disabled={lineMessageGenerating}
+                              className={`flex-1 text-[11px] font-semibold rounded-full px-2 py-1.5 cursor-pointer whitespace-nowrap disabled:opacity-60 border ${
+                                lineMessageType === type
+                                  ? 'bg-[#34A070] text-white border-[#34A070]'
+                                  : 'bg-white text-[#34A070] border-[#C0E8D0]'
+                              }`}
+                            >
+                              {lineMessageGenerating && lineMessageType === type ? '生成中…' : label}
+                            </button>
+                          ))}
                         </div>
                         {/* 送信済み表示（PHASE LINE-LOG-1・コピー操作を送信とみなした近似） */}
-                        {(sentStatusLabel(lineSendLogs, 'thanks') || sentStatusLabel(lineSendLogs, 'follow')) && (
-                          <div className="flex gap-1.5 mb-1.5">
-                            {sentStatusLabel(lineSendLogs, 'thanks') && (
-                              <span className="text-[9px] font-semibold text-[#34A070] bg-white rounded-full px-2 py-0.5 border border-[#D0F0E0]">
-                                お礼: {sentStatusLabel(lineSendLogs, 'thanks')}
-                              </span>
-                            )}
-                            {sentStatusLabel(lineSendLogs, 'follow') && (
-                              <span className="text-[9px] font-semibold text-[#34A070] bg-white rounded-full px-2 py-0.5 border border-[#D0F0E0]">
-                                フォロー: {sentStatusLabel(lineSendLogs, 'follow')}
-                              </span>
-                            )}
+                        {(sentStatusLabel(lineSendLogs, 'thanks') || sentStatusLabel(lineSendLogs, 'homecare') || sentStatusLabel(lineSendLogs, 'reminder')) && (
+                          <div className="flex gap-1.5 mb-1.5 flex-wrap">
+                            {(['thanks', 'homecare', 'reminder'] as const).map(kind => (
+                              sentStatusLabel(lineSendLogs, kind) && (
+                                <span key={kind} className="text-[9px] font-semibold text-[#34A070] bg-white rounded-full px-2 py-0.5 border border-[#D0F0E0]">
+                                  {LINE_SEND_KIND_LABEL[kind]}: {sentStatusLabel(lineSendLogs, kind)}
+                                </span>
+                              )
+                            ))}
                           </div>
                         )}
                         {lineMessageDraft ? (
@@ -1968,26 +1994,15 @@ export default function CustomerBottomSheet({
                               className="w-full bg-white rounded-2xl p-3 border border-[#C0E8D0] text-sm text-[#3C5C45] leading-[1.8] mb-2.5 resize-none"
                               placeholder="生成された文面がここに表示されます。自由に編集できます。"
                             />
-                            <div className="flex gap-2">
-                              <button onClick={() => copyLineMessageDraft('thanks')}
-                                className={`flex-1 py-2.5 rounded-full text-sm font-bold text-white flex items-center justify-center gap-1.5 transition-colors border-none cursor-pointer ${
-                                  lineMessageCopied ? 'bg-[#34D399]' : 'bg-[#2ECC8A]'
-                                }`}>
-                                {lineMessageCopied
-                                  ? <><Check size={14} strokeWidth={2.5} /> コピー済</>
-                                  : <><Copy size={14} strokeWidth={2} /> お礼としてコピー</>
-                                }
-                              </button>
-                              <button onClick={() => copyLineMessageDraft('follow')}
-                                className={`flex-1 py-2.5 rounded-full text-sm font-bold text-white flex items-center justify-center gap-1.5 transition-colors border-none cursor-pointer ${
-                                  lineMessageCopied ? 'bg-[#34D399]' : 'bg-[#2ECC8A]'
-                                }`}>
-                                {lineMessageCopied
-                                  ? <><Check size={14} strokeWidth={2.5} /> コピー済</>
-                                  : <><Copy size={14} strokeWidth={2} /> フォローとしてコピー</>
-                                }
-                              </button>
-                            </div>
+                            <button onClick={() => copyLineMessageDraft()}
+                              className={`w-full py-2.5 rounded-full text-sm font-bold text-white flex items-center justify-center gap-1.5 transition-colors border-none cursor-pointer ${
+                                lineMessageCopied ? 'bg-[#34D399]' : 'bg-[#2ECC8A]'
+                              }`}>
+                              {lineMessageCopied
+                                ? <><Check size={14} strokeWidth={2.5} /> コピー済</>
+                                : <><Copy size={14} strokeWidth={2} /> {lineMessageType ? LINE_SEND_KIND_LABEL[lineMessageType] : ''}としてコピー</>
+                              }
+                            </button>
                             <p className="text-[10px] text-[#7C9C88] mt-2 leading-relaxed">
                               送信はこのアプリからは行いません。コピーした文面をLINEアプリに貼り付けて、ご自身で送信してください。
                             </p>
@@ -2008,8 +2023,8 @@ export default function CustomerBottomSheet({
                           </>
                         ) : (
                           <p className="text-xs text-[#7C9C88] py-1">
-                            「生成する」を押すと、肌の悩み・来店履歴・ホームケア状況などから
-                            AIがLINEメッセージの下書きを作成します。
+                            上のボタンを押すと、来店お礼・ホームケア提案・来店リマインドの
+                            いずれかでAIがLINEメッセージの下書きを作成します。
                           </p>
                         )}
                       </div>

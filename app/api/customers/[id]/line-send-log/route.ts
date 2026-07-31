@@ -24,7 +24,8 @@ import { getRepos } from '../../../../lib/repos'
 import { DEMO_STORE_ID } from '@/lib/constants'
 
 const KIND_PREFIX = 'line_send:'
-const VALID_KINDS = ['homecare', 'usage_card', 'thanks', 'follow'] as const
+// PHASE LINE-AI-1: 'reminder'(来店リマインドAI)を追加。既存4種はそのまま。
+const VALID_KINDS = ['homecare', 'usage_card', 'thanks', 'follow', 'reminder'] as const
 type LineSendKind = (typeof VALID_KINDS)[number]
 
 interface LineSendLogEntry {
