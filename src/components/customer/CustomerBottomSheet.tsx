@@ -227,6 +227,7 @@ export default function CustomerBottomSheet({
   // useStaffStore の activeSession とは完全に独立
   const {
     activeSession,
+    isRecording:         isVoiceRecording,
     setServicePhase:    storeSetServicePhase,
     setTimePressure:    storeSetTimePressure,
     resetActiveSession: resetActiveSession,
@@ -2010,11 +2011,17 @@ export default function CustomerBottomSheet({
 
                       {/* 音声メモ */}
                       <div className="bg-[#F0F5FA] rounded-[22px] overflow-hidden flex-shrink-0">
-                        <button onClick={() => toggleSection('voice')}
+                        {/* PHASE VOICE-UI-STOP-1: 録音中はこの見出しタップで折りたたませない
+                            (折りたたむとVoiceMemoSectionがアンマウントされ、録音中の内容が
+                            保存されないまま消えてしまうため。現場で「押しても停止しないように
+                            見える」報告の一因と考えられる誤操作経路を塞ぐ。録音処理自体は無変更)。 */}
+                        <button onClick={() => { if (!isVoiceRecording) toggleSection('voice'); }}
                           className="w-full flex items-center justify-between px-4 py-3.5 bg-transparent border-none cursor-pointer">
-                          <p className="text-[11px] tracking-[0.18em] text-[#4878A8] font-semibold">🎙️ 音声メモ</p>
+                          <p className="text-[11px] tracking-[0.18em] text-[#4878A8] font-semibold">
+                            🎙️ 音声メモ{isVoiceRecording ? '（録音中）' : ''}
+                          </p>
                           <span className="text-sm text-[#4878A8] transition-transform duration-200 inline-block"
-                            style={{ transform: openSections.has('voice') ? 'rotate(180deg)' : 'none' }}>▾</span>
+                            style={{ transform: openSections.has('voice') ? 'rotate(180deg)' : 'none', opacity: isVoiceRecording ? 0.35 : 1 }}>▾</span>
                         </button>
                         {console.log('VOICE_MEMO_RENDER', {
                           openSections_has_voice: openSections.has('voice'),

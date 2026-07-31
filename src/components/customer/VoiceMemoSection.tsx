@@ -118,6 +118,11 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
   const [candidates,         setCandidates]         = useState<MemoryCandidate[]>([])
   const [checkedSet,         setCheckedSet]         = useState<Set<number>>(new Set())
   const [isSaving,           setIsSaving]           = useState(false)
+  // PHASE VOICE-UI-STOP-1: 停止ボタンを押した瞬間に即座に見た目を変える(UI専用の
+  // 一時状態)。MediaRecorder.stop()はonstopイベントが発火するまで非同期のため、
+  // タップ直後に何も反応が無いように見える現象(スタッフ利用テストで報告)への対策。
+  // 録音処理・保存処理そのものは一切変更していない。
+  const [stopping,           setStopping]           = useState(false)
 
   // ── 過去メモ ──
   const [pastNotes,    setPastNotes]    = useState<VoiceNoteRow[]>([])
@@ -168,6 +173,12 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
       pipelineCtrlRef.current?.cancel()
     }
   }, [])
+
+  // PHASE VOICE-UI-STOP-1: 録音中でなくなったら常に「停止処理中…」表示を解除する
+  // (stopボタン経由・30秒自動停止・エラーのいずれの終了経路でも確実に解除される)。
+  useEffect(() => {
+    if (status !== 'recording') setStopping(false)
+  }, [status])
 
   // ── 録音停止 → 確認フェーズ + transcript 取得 ────────────────────────────
   useEffect(() => {
@@ -226,6 +237,7 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
     setCandidates([])
     setCheckedSet(new Set())
     setIsSaving(false)
+    setStopping(false)
     onRecordingStateChange?.(false)
   }, [reset, onRecordingStateChange])
 
@@ -244,6 +256,8 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
 
   // ── 停止 ─────────────────────────────────────────────────────────────────
   const handleStop = useCallback(() => {
+    // タップした瞬間に見た目を変える(MediaRecorder.stop()のonstopは非同期のため)。
+    setStopping(true)
     stop()
     // postPhase は status==='stopped' を受けて useEffect が 'confirming' へ遷移
   }, [stop])
@@ -549,23 +563,29 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
                 </div>
               </motion.div>
 
-              {/* キャンセル + 停止 ボタン行 */}
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button onClick={handleCancel}
-                  style={{ ...pill('#FFF5F6', '#C05060', '#F5C0C8'), flex: 1 }}>
-                  キャンセル
-                </button>
-                <motion.button whileTap={{ scale: 0.97 }}
-                  onClick={handleStop} onTouchStart={handleStop}
-                  style={{
-                    ...pill('#E84050', '#fff'),
-                    flex: 2, display: 'flex', alignItems: 'center',
-                    justifyContent: 'center', gap: '8px',
-                    touchAction: 'none', WebkitTapHighlightColor: 'transparent',
-                  }}>
-                  <span style={{ fontSize: '16px' }}>⏹</span> 停止
-                </motion.button>
-              </div>
+              {/* PHASE VOICE-UI-STOP-1: 停止操作を単独の大型ボタン(主役)にし、
+                  キャンセルは目立たせない補助リンクとして下に分離する
+                  (現場で「停止ボタンが分かりにくい」という報告への対応。
+                  録音処理・保存処理自体のロジックは一切変更していない)。 */}
+              <motion.button whileTap={{ scale: 0.96 }}
+                onClick={handleStop} onTouchStart={handleStop}
+                disabled={stopping}
+                style={{
+                  width: '100%', border: 'none', borderRadius: '999px',
+                  padding: '16px', fontSize: '16px', fontWeight: 700,
+                  background: stopping ? '#C05060' : '#E84050', color: '#fff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                  touchAction: 'none', WebkitTapHighlightColor: 'transparent',
+                  boxShadow: '0 4px 14px rgba(232,64,80,0.35)',
+                  cursor: stopping ? 'default' : 'pointer',
+                }}>
+                <span style={{ fontSize: '20px' }}>⏹</span>
+                {stopping ? '停止しています…' : '停止して保存へ進む'}
+              </motion.button>
+              <button onClick={handleCancel}
+                style={{ width: '100%', background: 'none', border: 'none', padding: '4px', fontSize: '12px', color: '#A0879A', cursor: 'pointer' }}>
+                録音をキャンセル
+              </button>
             </motion.div>
           )}
 
