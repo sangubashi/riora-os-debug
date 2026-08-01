@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 import { GET } from '../../app/api/admin/staff-analytics/route';
 import { getRepos } from '../../app/lib/repos';
 import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
-import type { Staff, Visit, Subscription } from '../../src/types/riora.types';
+import type { Staff, Visit } from '../../src/types/riora.types';
 
 vi.mock('../../app/lib/repos', () => ({ getRepos: vi.fn() }));
 vi.mock('@/lib/auth/extractStaffFromRequest', () => ({ extractStaffFromRequest: vi.fn() }));
@@ -29,7 +29,6 @@ function visit(id: string, staffId: string, customerId: string, visitDate: strin
 const mockRepos = {
   staffRepo: { listByStore: vi.fn() },
   visitRepo: { listByStore: vi.fn() },
-  subscriptionRepo: { listByStore: vi.fn() },
 };
 
 function buildUrl(qs: string) {
@@ -43,7 +42,6 @@ describe('GET /api/admin/staff-analytics (画面④スタッフ分析)', () => {
     vi.mocked(extractStaffFromRequest).mockResolvedValue(ADMIN_STAFF as never);
     mockRepos.staffRepo.listByStore.mockResolvedValue([staff('s1', '鈴木'), staff('s2', '亀山')]);
     mockRepos.visitRepo.listByStore.mockResolvedValue([visit('v1', 's1', 'c1', '2026-06-01')]);
-    mockRepos.subscriptionRepo.listByStore.mockResolvedValue([] as Subscription[]);
   });
 
   it('storeId未指定の場合は400(validation_error)を返す', async () => {
@@ -54,7 +52,7 @@ describe('GET /api/admin/staff-analytics (画面④スタッフ分析)', () => {
     expect(body.error).toBe('validation_error');
   });
 
-  it('スタッフごとの売上/指名率/リピート率/LTV/成長率を返す(順位フィールドを含まない)', async () => {
+  it('スタッフごとの売上/店販売上/指名率/リピート率/客単価/成長率を返す(順位フィールドを含まない)', async () => {
     const res = await GET(buildUrl('?storeId=store-1&date=2026-06-23'));
     const body = await res.json();
 
@@ -63,10 +61,24 @@ describe('GET /api/admin/staff-analytics (画面④スタッフ分析)', () => {
     body.staffAnalytics.forEach((row: Record<string, unknown>) => {
       expect(row).not.toHaveProperty('rank');
       expect(row).not.toHaveProperty('ranking');
+      expect(row).not.toHaveProperty('ltv');
       expect(Object.keys(row).sort()).toEqual(
-        ['staffId', 'staffName', 'monthlySales', 'nominationRate', 'repeatRate', 'ltv', 'growthRate'].sort()
+        ['staffId', 'staffName', 'monthlySales', 'retailSales', 'visitCount', 'avgSpend', 'nominationRate', 'repeatRate', 'growthRate'].sort()
       );
     });
+  });
+
+  it('全スタッフ合算のtotalを返す(順位フィールド・LTVを含まない)', async () => {
+    const res = await GET(buildUrl('?storeId=store-1&date=2026-06-23'));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.total).toBeDefined();
+    expect(body.total).not.toHaveProperty('rank');
+    expect(body.total).not.toHaveProperty('ltv');
+    expect(Object.keys(body.total).sort()).toEqual(
+      ['monthlySales', 'retailSales', 'visitCount', 'avgSpend', 'nominationRate', 'repeatRate', 'growthRate'].sort()
+    );
   });
 
   it('売上が無いスタッフを含んでも0件にせず全スタッフを五十音順(近似)で返す', async () => {

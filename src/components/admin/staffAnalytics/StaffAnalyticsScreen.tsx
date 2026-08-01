@@ -18,10 +18,15 @@
  * 入力にする純粋関数の結果を表示するのみで、新しいAPI呼び出し・DB集計は行わない。
  * 制約(2026-06-23ユーザー指示)を維持: 他スタッフとの比較・ランキングは行わない
  * (computeStaffHighlight()自体がそのスタッフ1人の値しか参照しない設計)。
+ *
+ * PHASE STAFFANALYTICS-TOTAL(2026-08-01・ユーザー指示): 表示項目を売上/店販売上/指名率/
+ * リピート率/客単価の5項目へ統一(来店人数・LTVは撤去)。「合計」カードを最上部に追加し、
+ * 以降に既存どおり各スタッフカード(五十音順)を並べる。合計カードのデザインは
+ * StaffCardと完全に同一(新しいデザインは作っていない)。ランキング・順位は今回も追加していない。
  */
 import { useEffect, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Loader2, User, TrendingUp, TrendingDown, Minus, Sparkles, ListChecks } from 'lucide-react'
+import { Loader2, User, Users, TrendingUp, TrendingDown, Minus, Sparkles, ListChecks } from 'lucide-react'
 import { useStaffAnalyticsStore } from '@/store/useStaffAnalyticsStore'
 import { useMonthStore } from '@/store/useMonthStore'
 import MonthSelector from '../MonthSelector'
@@ -85,7 +90,31 @@ function GrowthBadge({ growthRate }: { growthRate: number | null }) {
   )
 }
 
-function StaffCard({ row, monthLabel }: { row: { staffName: string; monthlySales: number; visitCount: number; avgSpend: number | null; nominationRate: number | null; repeatRate: number | null; ltv: number | null; growthRate: number | null }; monthLabel: string }) {
+interface AnalyticsMetrics {
+  monthlySales: number
+  retailSales: number
+  visitCount: number
+  avgSpend: number | null
+  nominationRate: number | null
+  repeatRate: number | null
+  growthRate: number | null
+}
+
+/** 表示5項目(売上/店販売上/指名率/リピート率/客単価。PHASE STAFFANALYTICS-TOTAL)。
+ *  個別スタッフカード・合計カードで共通利用する(デザイン統一のため)。 */
+function AnalyticsMetricGrid({ data, monthLabel }: { data: AnalyticsMetrics; monthLabel: string }) {
+  return (
+    <MetricGrid>
+      <Metric label={`売上(${monthLabel})`} value={formatYen(data.monthlySales)} />
+      <Metric label={`店販売上(${monthLabel})`} value={formatYen(data.retailSales)} />
+      <Metric label="指名率" value={formatPercent(data.nominationRate)} />
+      <Metric label="リピート率" value={formatPercent(data.repeatRate)} />
+      <Metric label="客単価" value={data.avgSpend === null ? '—' : formatYen(data.avgSpend)} />
+    </MetricGrid>
+  )
+}
+
+function StaffCard({ row, monthLabel }: { row: { staffName: string } & AnalyticsMetrics; monthLabel: string }) {
   // 当月の担当来店が1件も無いスタッフ(例: 久保田)は、指標が軒並みnullになり
   // 「—」だらけで壊れて見えるため、専用の空状態メッセージに置き換える(PHASE MD-2要件5)。
   if (row.visitCount === 0) {
@@ -118,14 +147,7 @@ function StaffCard({ row, monthLabel }: { row: { staffName: string; monthlySales
       </div>
 
       {/* 売上は必ず指名率・リピート率と同居して表示する(v2.0「売上単体表示を型で禁止」) */}
-      <MetricGrid>
-        <Metric label={`売上(${monthLabel})`} value={formatYen(row.monthlySales)} />
-        <Metric label="来店人数" value={`${row.visitCount}人`} />
-        <Metric label="客単価" value={row.avgSpend === null ? '—' : formatYen(row.avgSpend)} />
-        <Metric label="指名率" value={formatPercent(row.nominationRate)} />
-        <Metric label="リピート率" value={formatPercent(row.repeatRate)} />
-        <Metric label="LTV" value={row.ltv === null ? '—' : formatYen(Math.round(row.ltv))} hint="データ不足のため未計測" />
-      </MetricGrid>
+      <AnalyticsMetricGrid data={row} monthLabel={monthLabel} />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingTop: '8px', borderTop: '1px solid #F5EEF0' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
@@ -141,8 +163,42 @@ function StaffCard({ row, monthLabel }: { row: { staffName: string; monthlySales
   )
 }
 
+/**
+ * 合計カード(全スタッフ合算・PHASE STAFFANALYTICS-TOTAL)。
+ * デザインはStaffCardと完全に統一(同じ背景・border・radius・グリッド)する。
+ * 「良かった点/次への一歩」は特定個人へのコーチング文言のため、合計行には表示しない
+ * (デザイン自体は変えず、個人向けセクションを持たないだけ)。
+ */
+function TotalCard({ total, monthLabel }: { total: AnalyticsMetrics; monthLabel: string }) {
+  if (total.visitCount === 0) {
+    return (
+      <div style={{ background: '#fff', border: '1px solid #F5EEF0', borderRadius: '16px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '6px', minHeight: '168px', justifyContent: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Users size={15} color="#D98292" />
+          <span style={{ fontSize: '14px', fontWeight: 700, color: '#5C4033' }}>合計</span>
+        </div>
+        <p style={{ fontSize: '12px', color: '#C8A8B0' }}>今月の来店データがありません</p>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid #F5EEF0', borderRadius: '16px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px', minHeight: '168px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Users size={15} color="#D98292" />
+          <span style={{ fontSize: '14px', fontWeight: 700, color: '#5C4033' }}>合計（全スタッフ）</span>
+        </div>
+        <GrowthBadge growthRate={total.growthRate} />
+      </div>
+
+      <AnalyticsMetricGrid data={total} monthLabel={monthLabel} />
+    </div>
+  )
+}
+
 function StaffAnalyticsContent() {
-  const { staffAnalytics, isLoading, error, autoSelectedLatestMonth, fetchStaffAnalytics } = useStaffAnalyticsStore()
+  const { staffAnalytics, total, isLoading, error, autoSelectedLatestMonth, fetchStaffAnalytics } = useStaffAnalyticsStore()
   const { selectedMonth, setSelectedMonth } = useMonthStore()
   const searchParams = useSearchParams()
   // 直近にfetch済みの月を覚えておき、自動判定直後の二重fetchを防ぐ(PHASE MD-2)。
@@ -217,6 +273,12 @@ function StaffAnalyticsContent() {
         </div>
       )}
 
+      {/* ① 合計(全スタッフ合算)を一番上に表示する */}
+      {!isLoading && total && (
+        <TotalCard total={total} monthLabel={monthLabel} />
+      )}
+
+      {/* ② 各スタッフ(五十音順) */}
       {!isLoading && staffAnalytics.length > 0 && (
         <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
           {staffAnalytics.map((row) => (

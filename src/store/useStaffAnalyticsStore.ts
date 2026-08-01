@@ -8,6 +8,9 @@
  * brain_visitsの最新データ月を自動選択して返す(要件1)。その結果(resolvedMonth/
  * autoSelectedLatestMonth)を保持し、画面側が「最新データ月を表示しています」の
  * 通知(要件3)とselectedMonthの同期に使う。
+ *
+ * PHASE STAFFANALYTICS-TOTAL(2026-08-01): APIレスポンスの`total`(全スタッフ合算)を
+ * 保持するtotalを追加。LTVはAPIレスポンスから削除されたためStaffAnalyticsRowからも削除した。
  */
 import { create } from 'zustand'
 import { authedFetch } from '@/lib/api/authedFetch'
@@ -16,16 +19,27 @@ export interface StaffAnalyticsRow {
   staffId: string
   staffName: string
   monthlySales: number
+  retailSales: number
   visitCount: number
   avgSpend: number | null
   nominationRate: number | null
   repeatRate: number | null
-  ltv: number | null
+  growthRate: number | null
+}
+
+export interface StaffAnalyticsTotal {
+  monthlySales: number
+  retailSales: number
+  visitCount: number
+  avgSpend: number | null
+  nominationRate: number | null
+  repeatRate: number | null
   growthRate: number | null
 }
 
 interface StaffAnalyticsState {
   staffAnalytics: StaffAnalyticsRow[]
+  total: StaffAnalyticsTotal | null
   isLoading: boolean
   error: string | null
   /** 直近のレスポンスが実際に集計した年月(YYYY-MM)。monthを省略した場合はAPIが自動判定した月。 */
@@ -37,6 +51,7 @@ interface StaffAnalyticsState {
 
 export const useStaffAnalyticsStore = create<StaffAnalyticsState>((set) => ({
   staffAnalytics: [],
+  total: null,
   isLoading: false,
   error: null,
   resolvedMonth: null,
@@ -58,6 +73,7 @@ export const useStaffAnalyticsStore = create<StaffAnalyticsState>((set) => ({
 
       set({
         staffAnalytics: body.staffAnalytics,
+        total: body.total ?? null,
         resolvedMonth: typeof body.date === 'string' ? body.date.slice(0, 7) : null,
         autoSelectedLatestMonth: Boolean(body.autoSelectedLatestMonth),
         isLoading: false,

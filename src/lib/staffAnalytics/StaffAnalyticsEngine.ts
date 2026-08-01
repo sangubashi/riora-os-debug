@@ -9,11 +9,20 @@
  *   - ユーザー指示(2026-07-26): 表示順は五十音順ではなく固定順
  *     (鈴木→亀山→外舘→久保田・久保田は最後固定。売上順・ID順は禁止)。
  *     src/lib/staffOrder.tsのcompareStaffOrder()に順序を集約。
+ *   - ユーザー指示(2026-08-01・PHASE STAFFANALYTICS-TOTAL): 表示項目を
+ *     売上/店販売上/指名率/リピート率/客単価の5項目へ統一(来店人数・LTVは削除)。
+ *     LTVはこのスタッフ分析専用の算出だった(担当顧客のLTV平均・MD-3のCustomerAssetEngineとは
+ *     別実装)ため、削除しても他画面(MD-3顧客資産・My Page)には影響しない。
+ *     LTV算出専用だったsubscriptions(継続中サブスクMRR)もこの画面では不要になったため、
+ *     入力から削除する(brain_subscriptionsの集計自体はMD-3側でCustomerAssetEngineが継続担当)。
+ *     「合計」行を新設。個別スタッフ行と同じ集計関数を「担当スタッフで絞り込まない全visits」に
+ *     適用するだけで、氏名判定・新規テーブル・新規APIを使わずに全スタッフ合算値を算出する
+ *     (指名率・リピート率・客単価は単純平均ではなく、全件ベースの正しい加重値になる)。
  *
- * brain_staff/brain_visits/brain_subscriptionsをその場で集計する
+ * brain_staff/brain_visitsをその場で集計する
  * (DashboardAggregator/ChurnRiskEngineと同じくライブ集計・決定論ルール・LLM/AI不使用)。
  */
-import type { Staff, Visit, Subscription } from '../../types/riora.types';
+import type { Staff, Visit } from '../../types/riora.types';
 import { compareStaffOrder } from '../staffOrder';
 
 export interface StaffAnalyticsRow {
@@ -21,6 +30,8 @@ export interface StaffAnalyticsRow {
   staffName: string;
   /** 当月(月初〜asOfDate)の売上(このスタッフが担当した来店のtreatment+retail合計)。 */
   monthlySales: number;
+  /** 当月(月初〜asOfDate)の店販売上(このスタッフが担当した来店のretail_amount合計)。 */
+  retailSales: number;
   /** 当月(月初〜asOfDate)にこのスタッフが担当した来店のユニーク顧客数(件数ではなく人数。経営TOPの来店人数と同じ定義。SA-2)。 */
   visitCount: number;
   /** 客単価 = monthlySales ÷ visitCount。visitCount=0の場合はnull(SA-2)。 */
@@ -29,8 +40,6 @@ export interface StaffAnalyticsRow {
   nominationRate: number | null;
   /** 全履歴のうちこのスタッフが担当した来店のリピート率(visit_count_at>1の割合)。担当来店0件はnull。 */
   repeatRate: number | null;
-  /** このスタッフが担当した(来店履行歴を持つ)顧客のLTV平均値(MD-3と同じ算出式)。担当顧客0件はnull。 */
-  ltv: number | null;
   /** 前月比成長率((当月MTD売上−前月売上)÷前月売上)。前月売上0または前月データ無しはnull。 */
   growthRate: number | null;
 }
@@ -40,7 +49,6 @@ export interface ComputeStaffAnalyticsInput {
   asOfDate: string;
   staff: Staff[];
   visits: Visit[];
-  subscriptions: Subscription[];
 }
 
 function monthRange(date: string): { start: string; end: string } {
@@ -67,77 +75,79 @@ function sumSales(visits: Visit[]): number {
   return visits.reduce((sum, v) => sum + v.treatmentAmount + v.retailAmount, 0);
 }
 
+function sumRetailSales(visits: Visit[]): number {
+  return visits.reduce((sum, v) => sum + v.retailAmount, 0);
+}
+
+/**
+ * 担当来店の集合(handledVisits)から5指標(売上/店販売上/指名率/リピート率/客単価)+成長率を
+ * 算出する共通ロジック。個別スタッフ行・合計行のどちらも、絞り込む対象のvisitsが違うだけで
+ * 同じ関数を通す(PHASE STAFFANALYTICS-TOTAL)。これにより指名率・リピート率・客単価の
+ * 合計値は単純平均ではなく全件ベースの正しい加重値になる。
+ */
+function computeMetrics(handledVisits: Visit[], curStart: string, asOfDate: string, prevStart: string, prevEnd: string) {
+  const monthVisits = handledVisits.filter((v) => v.visitDate >= curStart && v.visitDate <= asOfDate);
+  const visitCount = new Set(monthVisits.map((v) => v.customerId)).size;
+
+  const monthlySales = sumSales(monthVisits);
+  const retailSales = sumRetailSales(monthVisits);
+  const avgSpend = visitCount > 0 ? Math.round(monthlySales / visitCount) : null;
+  const previousMonthSales = sumSales(handledVisits.filter((v) => v.visitDate >= prevStart && v.visitDate <= prevEnd));
+  // 当月の来店が1件も無い場合は「前月比−100%(業績急落)」ではなく「比較データなし」を
+  // 意味するため、あえてnullを返す(PHASE MD-2要件4: 当月未蓄積と実悪化の混同防止)。
+  const growthRate = previousMonthSales > 0 && monthVisits.length > 0
+    ? (monthlySales - previousMonthSales) / previousMonthSales
+    : null;
+
+  const nominationRate = handledVisits.length > 0
+    ? handledVisits.filter((v) => v.isNomination).length / handledVisits.length
+    : null;
+  const repeatRate = handledVisits.length > 0
+    ? handledVisits.filter((v) => v.visitCountAt > 1).length / handledVisits.length
+    : null;
+
+  return { monthlySales, retailSales, visitCount, avgSpend, nominationRate, repeatRate, growthRate };
+}
+
 /** DB/Supabaseに依存しない純粋関数。五十音順(近似)で返す。ランキング・順位は一切持たない。 */
 export function computeStaffAnalytics(input: ComputeStaffAnalyticsInput): StaffAnalyticsRow[] {
-  const { asOfDate, staff, visits, subscriptions } = input;
+  const { asOfDate, staff, visits } = input;
 
   const { start: curStart } = monthRange(asOfDate);
   const { start: prevStart, end: prevEnd } = previousMonthRange(asOfDate);
 
-  // 継続中(未解約)サブスクのMRR合計(顧客単位)。MD-3のCustomerAssetEngineと同じ方針。
-  const activeMonthlyPriceByCustomer = new Map<string, number>();
-  for (const s of subscriptions) {
-    if (s.cancelledAt !== null) continue;
-    activeMonthlyPriceByCustomer.set(
-      s.customerId,
-      (activeMonthlyPriceByCustomer.get(s.customerId) ?? 0) + s.monthlyPrice
-    );
-  }
-
-  // 顧客ごとの全履歴(LTV算出に使う・スタッフを問わず顧客の全来店)。
-  const allVisitsByCustomer = new Map<string, Visit[]>();
-  for (const v of visits) {
-    const list = allVisitsByCustomer.get(v.customerId) ?? [];
-    list.push(v);
-    allVisitsByCustomer.set(v.customerId, list);
-  }
-  function ltvOfCustomer(customerId: string): number {
-    const customerVisits = allVisitsByCustomer.get(customerId) ?? [];
-    const totalSales = sumSales(customerVisits);
-    const mrr = activeMonthlyPriceByCustomer.get(customerId) ?? 0;
-    return totalSales + mrr * 6;
-  }
-
   const rows: StaffAnalyticsRow[] = staff.map((s) => {
     const handledVisits = visits.filter((v) => v.staffId === s.id);
-
-    const monthVisits = handledVisits.filter((v) => v.visitDate >= curStart && v.visitDate <= asOfDate);
-    const visitCount = new Set(monthVisits.map((v) => v.customerId)).size;
-
-    const monthlySales = sumSales(monthVisits);
-    const avgSpend = visitCount > 0 ? Math.round(monthlySales / visitCount) : null;
-    const previousMonthSales = sumSales(handledVisits.filter((v) => v.visitDate >= prevStart && v.visitDate <= prevEnd));
-    // 当月の来店が1件も無い場合は「前月比−100%(業績急落)」ではなく「比較データなし」を
-    // 意味するため、あえてnullを返す(PHASE MD-2要件4: 当月未蓄積と実悪化の混同防止)。
-    const growthRate = previousMonthSales > 0 && monthVisits.length > 0
-      ? (monthlySales - previousMonthSales) / previousMonthSales
-      : null;
-
-    const nominationRate = handledVisits.length > 0
-      ? handledVisits.filter((v) => v.isNomination).length / handledVisits.length
-      : null;
-    const repeatRate = handledVisits.length > 0
-      ? handledVisits.filter((v) => v.visitCountAt > 1).length / handledVisits.length
-      : null;
-
-    const customerIds = new Set(handledVisits.map((v) => v.customerId));
-    const ltv = customerIds.size > 0
-      ? Array.from(customerIds).reduce((sum, cid) => sum + ltvOfCustomer(cid), 0) / customerIds.size
-      : null;
+    const metrics = computeMetrics(handledVisits, curStart, asOfDate, prevStart, prevEnd);
 
     return {
       staffId: s.id,
       staffName: s.name,
-      monthlySales,
-      visitCount,
-      avgSpend,
-      nominationRate,
-      repeatRate,
-      ltv,
-      growthRate,
+      ...metrics,
     };
   });
 
   // 管理者ダッシュボード各画面の表示順を固定する(鈴木→亀山→外舘→久保田・ユーザー指示2026-07-26)。
   return rows.sort((a, b) => compareStaffOrder(a.staffName, b.staffName));
+}
+
+export interface StaffAnalyticsTotal {
+  monthlySales: number;
+  retailSales: number;
+  visitCount: number;
+  avgSpend: number | null;
+  nominationRate: number | null;
+  repeatRate: number | null;
+  growthRate: number | null;
+}
+
+/**
+ * 全スタッフ合算(合計行)。担当スタッフで絞り込まずvisits全件をcomputeMetrics()に通すだけで、
+ * staff_idにも氏名にも依存せず正しい加重値を算出する(PHASE STAFFANALYTICS-TOTAL)。
+ */
+export function computeStaffAnalyticsTotal(input: ComputeStaffAnalyticsInput): StaffAnalyticsTotal {
+  const { asOfDate, visits } = input;
+  const { start: curStart } = monthRange(asOfDate);
+  const { start: prevStart, end: prevEnd } = previousMonthRange(asOfDate);
+  return computeMetrics(visits, curStart, asOfDate, prevStart, prevEnd);
 }

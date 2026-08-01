@@ -1,19 +1,23 @@
 /**
  * GET /api/admin/staff-analytics?storeId=...&date=... (画面④スタッフ分析・MD-4)
  *
- * brain_staff/brain_visits/brain_subscriptionsをその場で集計し、スタッフごとの
- * 売上/指名率/リピート率/LTV/成長率を返す
+ * brain_staff/brain_visitsをその場で集計し、スタッフごとの
+ * 売上/店販売上/指名率/リピート率/客単価/成長率を返す
  * (StaffAnalyticsEngine.computeStaffAnalytics・決定論ルール・LLM不使用)。
  *
  * 設計契約(v2.0画面④・ユーザー指示2026-06-23): ランキング禁止・順位フィールド禁止・
  * 売上単体比較禁止(必ず指名率/リピート率等とセットで返す)・五十音順(近似)で返す。
  * 閲覧専用API(GETのみ)。
+ *
+ * PHASE STAFFANALYTICS-TOTAL(2026-08-01): レスポンスに`total`(全スタッフ合算)を追加。
+ * LTVは削除・subscriptions(LTV算出専用だった)の取得もこの画面では不要になったため削除した。
+ * 新規APIは追加せず、既存のこのエンドポイントのレスポンスを拡張するのみ。
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getRepos } from '../../../lib/repos';
 import { staffAnalyticsQuerySchema } from '../../_schemas/query';
 import { toValidationErrorResponse } from '../../_schemas/common';
-import { computeStaffAnalytics } from '@/lib/staffAnalytics/StaffAnalyticsEngine';
+import { computeStaffAnalytics, computeStaffAnalyticsTotal } from '@/lib/staffAnalytics/StaffAnalyticsEngine';
 import { requireAdmin } from '@/lib/auth/requireAdmin';
 
 function todayIso(): string {
@@ -70,10 +74,9 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [staff, visits, subscriptions] = await Promise.all([
+    const [staff, visits] = await Promise.all([
       repos.staffRepo.listByStore(storeId),
       repos.visitRepo.listByStore(storeId),
-      repos.subscriptionRepo.listByStore(storeId),
     ]);
 
     // month/dateの明示指定があればそれを最優先する(URLパラム優先・要件2)。
@@ -82,9 +85,10 @@ export async function GET(req: NextRequest) {
       ? { date: explicitDate, autoSelectedLatestMonth: false }
       : resolveDefaultAsOfDate(visits);
 
-    const staffAnalytics = computeStaffAnalytics({ asOfDate: date, staff, visits, subscriptions });
+    const staffAnalytics = computeStaffAnalytics({ asOfDate: date, staff, visits });
+    const total = computeStaffAnalyticsTotal({ asOfDate: date, staff, visits });
 
-    return NextResponse.json({ success: true, storeId, date, autoSelectedLatestMonth, staffAnalytics });
+    return NextResponse.json({ success: true, storeId, date, autoSelectedLatestMonth, staffAnalytics, total });
   } catch (e) {
     return NextResponse.json({ success: false, error: String(e) }, { status: 500 });
   }
