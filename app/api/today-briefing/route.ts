@@ -22,6 +22,11 @@
  *                既存のfocusRes取得クエリにSELECT列を追加しただけで新規クエリなし。
  *                生成済みキャッシュのみ参照・新規LLM呼び出しはしない）
  *   今回意識すること timeline_summary_cache.next_focus（同上。最大3件）
+ *   今日のブリーフィングサマリー（PHASE STAFF-NOTIFICATION-AI・STAFF-NOTIFICATION-AI-2）:
+ *                summary配下の各カウント。本日の予約者分は reservations×brain_visits×
+ *                contraindications×customer_memories から、まだ予約が入っていない
+ *                担当顧客(brain_customers.assigned_staff_id)分は brain_customers×
+ *                brain_visits から、それぞれルールベース(LLM不使用)で算出する。
  *
  * ID空間の注意（2026-07-03 監査で確定、2026-07-19 TODAY_BRIEFING_CUSTOMER_MAPPING_AUDIT_V1
  * により解決方式を修正）:
@@ -34,9 +39,10 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '../../lib/repos'
-import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest'
+import { extractStaffFromRequest, type RequestingStaff } from '@/lib/auth/extractStaffFromRequest'
 import { resolveLegacyCustomerIds } from '@/lib/resolveLegacyCustomerIds'
 import { detectNotificationsForCustomer, type NotificationCustomerInput } from '@/lib/notifications/detectNotifications'
+import { countOverdueCustomers, type RosterCustomerInput, type DailyOverdueCounts } from '@/lib/todayBriefing/detectOverdueCustomers'
 import { normalizeProductName } from '../customers/[id]/homecare-products/route'
 import type {
   TodayBriefingResponse,
@@ -87,6 +93,7 @@ function blankToNull(v: unknown): string | null {
 const EMPTY_SUMMARY: TodayBriefingSummary = {
   visitCount: 0, firstVisitCount: 0, contraindicationCount: 0,
   homecareCount: 0, birthdayCount: 0, importantMemoCount: 0,
+  recommendedRevisitCount: 0, staleVisitCount: 0, retailReplenishCount: 0,
 }
 
 const EMPTY_RESPONSE: TodayBriefingResponse = {
@@ -98,6 +105,59 @@ const EMPTY_RESPONSE: TodayBriefingResponse = {
   },
   upcoming: [],
   summary: EMPTY_SUMMARY,
+}
+
+/**
+ * 担当顧客ロスターから「まだ予約が入っていないが対応が必要な人」を集計する
+ * (再来推奨日超過・来店45日以上・店販60日以上・PHASE STAFF-NOTIFICATION-AI-2)。
+ * 今日の予約の有無と無関係なデータのため、reservations.length===0の早期return
+ * より前に呼び出せるよう独立した関数に切り出している(/api/notificationsの
+ * 担当ロスター取得と同じ方針: is_internal_user除外・deleted_at除外・非管理者は
+ * assigned_staff_idで絞る)。
+ */
+async function computeOverdueCounts(
+  supabase: ReturnType<typeof getServiceClient>,
+  staff: RequestingStaff,
+  /** 本日すでに予約が入っている顧客のbrain_customers.id。重複通知防止のため除外する。 */
+  todayCustomerIds: string[]
+): Promise<DailyOverdueCounts> {
+  let rosterQuery = supabase
+    .from('brain_customers')
+    .select('id, recommended_cycle_days')
+    .eq('is_internal_user', false)
+    .is('deleted_at', null)
+  if (!staff.isAdmin) {
+    rosterQuery = staff.staffBrainId
+      ? rosterQuery.eq('assigned_staff_id', staff.staffBrainId)
+      : rosterQuery.eq('id', '00000000-0000-0000-0000-000000000000') // 0件を保証するダミー条件
+  }
+
+  const { data: rosterRows } = await rosterQuery
+  const overdueRosterRows = (rosterRows ?? []).filter((r) => !todayCustomerIds.includes(r.id))
+  const overdueRosterIds = overdueRosterRows.map((r) => r.id)
+
+  const rosterVisitsRes = overdueRosterIds.length > 0
+    ? await supabase.from('brain_visits')
+        .select('customer_id, visit_date, retail_category')
+        .in('customer_id', overdueRosterIds)
+        .order('visit_date', { ascending: true })
+    : { data: [] as { customer_id: string; visit_date: string; retail_category: string | null }[] }
+
+  const lastVisitByRosterCustomer = new Map<string, string>()
+  const lastRetailPurchaseByRosterCustomer = new Map<string, string>()
+  for (const v of (rosterVisitsRes.data ?? [])) {
+    lastVisitByRosterCustomer.set(v.customer_id, v.visit_date) // 昇順取得のため最後の代入が最新
+    if (v.retail_category) lastRetailPurchaseByRosterCustomer.set(v.customer_id, v.visit_date)
+  }
+
+  return countOverdueCustomers(
+    overdueRosterRows.map((r): RosterCustomerInput => ({
+      id: r.id,
+      lastVisitDate: lastVisitByRosterCustomer.get(r.id) ?? null,
+      lastRetailPurchaseDate: lastRetailPurchaseByRosterCustomer.get(r.id) ?? null,
+      recommendedCycleDays: r.recommended_cycle_days ?? null,
+    }))
+  )
 }
 
 export async function GET(req: NextRequest) {
@@ -173,8 +233,19 @@ export async function GET(req: NextRequest) {
       (a: any, b: any) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
     )
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allCustomerIds = reservations.map((r: any) => r.brain_customer.id as string)
+
+    // 再来推奨/来店45日/店販60日は今日の予約の有無と無関係な担当顧客ロスター起点の
+    // データのため、reservations.length===0 の早期returnより前に計算する
+    // (PHASE STAFF-NOTIFICATION-AI-2)。
+    const overdueCounts = await computeOverdueCounts(supabase, staff, allCustomerIds)
+
     if (reservations.length === 0) {
-      return NextResponse.json<TodayBriefingResponse>(EMPTY_RESPONSE)
+      return NextResponse.json<TodayBriefingResponse>({
+        ...EMPTY_RESPONSE,
+        summary: { ...EMPTY_SUMMARY, ...overdueCounts },
+      })
     }
 
     const now = Date.now()
@@ -184,8 +255,6 @@ export async function GET(req: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const upcomingRows = reservations.filter((r: any) => r.id !== nextReservation.id)
     const customerId = nextReservation.brain_customer.id as string
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const allCustomerIds = reservations.map((r: any) => r.brain_customer.id as string)
 
     // contraindications / voice_notes / handover_notes は legacy customers.id 基準のため変換
     const legacyCustomerIds = await resolveLegacyCustomerIds(supabase, customerId)
@@ -377,6 +446,9 @@ export async function GET(req: NextRequest) {
       homecareCount,
       birthdayCount,
       importantMemoCount,
+      recommendedRevisitCount: overdueCounts.recommendedRevisitCount,
+      staleVisitCount: overdueCounts.staleVisitCount,
+      retailReplenishCount: overdueCounts.retailReplenishCount,
     }
 
     const response: TodayBriefingResponse = {

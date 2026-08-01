@@ -45,6 +45,12 @@ export interface TodayBriefingUpcoming {
  * 今日タブ最上部「今日のブリーフィング」カード用の日次サマリー(PHASE STAFF-NOTIFICATION-AI)。
  * ルールベースのみ・LLM不使用。既存データ(予約・初回来店フラグ・禁忌・重要メモ・
  * ホームケア提案タイミング・誕生日)から都度計算する。
+ *
+ * PHASE STAFF-NOTIFICATION-AI-2(2026-08-01): 本日の予約者だけでなく、担当顧客全体
+ * (brain_customers.assigned_staff_id)から「まだ予約が入っていないが対応が必要な人」を
+ * 検出する3項目を追加(recommendedRevisitCount/staleVisitCount/retailReplenishCount)。
+ * 本日すでに予約が入っている顧客は「すでに来店予定がある」ため対象から除外する
+ * (重複通知防止)。
  */
 export interface TodayBriefingSummary {
   /** 本日の来店人数(予約件数)。 */
@@ -59,6 +65,14 @@ export interface TodayBriefingSummary {
   birthdayCount: number
   /** 重要な申し送り(customer_memories.importance='high')があるお客様の人数。 */
   importantMemoCount: number
+  /** 再来推奨日(brain_customers.recommended_cycle_days)を過ぎた担当顧客の人数(本日予約者を除く)。 */
+  recommendedRevisitCount: number
+  /** 前回来店(brain_visits.visit_date)から45日以上経過した担当顧客の人数(本日予約者を除く)。
+   *  recommended_cycle_daysが設定されている顧客はrecommendedRevisitCount側のみに計上し、
+   *  こちらには含めない(同じ顧客について2種類の通知を重複して出さないため)。 */
+  staleVisitCount: number
+  /** 店販商品の最終購入(brain_visits.retail_category)から60日以上経過した担当顧客の人数(本日予約者を除く)。 */
+  retailReplenishCount: number
 }
 
 export interface TodayBriefingResponse {
