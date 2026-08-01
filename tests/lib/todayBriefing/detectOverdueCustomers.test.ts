@@ -96,10 +96,16 @@ describe('countOverdueCustomers', () => {
     expect(result.recommendedRevisitCount).toBe(1);
     expect(result.staleVisitCount).toBe(1);
     expect(result.retailReplenishCount).toBe(0);
+    expect(result.recommendedRevisitIds).toEqual(['c1']);
+    expect(result.staleVisitIds).toEqual(['c2']);
+    expect(result.retailReplenishIds).toEqual([]);
   });
 
-  it('該当者が居ない場合は全項目0', () => {
+  it('該当者が居ない場合は全項目0・id一覧も空配列', () => {
     const result = countOverdueCustomers([customer({ lastVisitDate: '2026-07-30' })], TODAY);
-    expect(result).toEqual({ recommendedRevisitCount: 0, staleVisitCount: 0, retailReplenishCount: 0 });
+    expect(result).toEqual({
+      recommendedRevisitCount: 0, staleVisitCount: 0, retailReplenishCount: 0,
+      recommendedRevisitIds: [], staleVisitIds: [], retailReplenishIds: [],
+    });
   });
 });

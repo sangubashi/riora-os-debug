@@ -75,10 +75,34 @@ export interface TodayBriefingSummary {
   retailReplenishCount: number
 }
 
+/** 通知1件が指す顧客(タップ→Customer Bottom Sheet遷移用・PHASE STAFF-NOTIFICATION-TAP-1)。 */
+export interface TodayBriefingNotificationTarget {
+  id:   string
+  name: string
+}
+
+/**
+ * summaryの各カウントに対応する対象顧客一覧(PHASE STAFF-NOTIFICATION-TAP-1)。
+ * キー名はTodayBriefingSummaryの各Countフィールドと1:1対応(Count接尾辞を除いたもの)。
+ * 各配列の長さは対応するsummary側のCountと必ず一致する。
+ */
+export interface TodayBriefingNotificationTargets {
+  firstVisit:          TodayBriefingNotificationTarget[]
+  contraindication:    TodayBriefingNotificationTarget[]
+  homecare:             TodayBriefingNotificationTarget[]
+  birthday:            TodayBriefingNotificationTarget[]
+  importantMemo:       TodayBriefingNotificationTarget[]
+  recommendedRevisit:  TodayBriefingNotificationTarget[]
+  staleVisit:          TodayBriefingNotificationTarget[]
+  retailReplenish:     TodayBriefingNotificationTarget[]
+}
+
 export interface TodayBriefingResponse {
   next:     TodayBriefingNextCustomer | null
   cautions: TodayBriefingCaution[]
   detail:   TodayBriefingDetail
   upcoming: TodayBriefingUpcoming[]
   summary:  TodayBriefingSummary
+  /** PHASE STAFF-NOTIFICATION-TAP-1: 通知タップ→Customer Bottom Sheet遷移用の対象顧客一覧。 */
+  notificationTargets: TodayBriefingNotificationTargets
 }

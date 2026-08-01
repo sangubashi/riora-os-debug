@@ -22,6 +22,7 @@ import { useHomeStore }       from '@/store/useHomeStore'
 import { useKpiSqlStore }     from '@/store/useKpiSqlStore'
 import { useAuthStore }       from '@/store/useAuthStore'
 import { useLineUnreadStore } from '@/store/useLineUnreadStore'
+import { useCustomerStore, type CustomerRow } from '@/store/useCustomerStore'
 
 // types
 import type { ReservationWithBrainCustomer } from '@/types/database'
@@ -107,6 +108,48 @@ function toReservation(r: Phase1Reservation): BSReservation {
     churn_risk:            r.churnRisk,
     days_since_last_visit: r.daysSinceLastVisit,
     customer_type:         r.customerType,
+  }
+}
+
+// ─── CustomerRow(useCustomerStore) → CustomerBottomSheet 用マッパー ─────────────
+// PHASE STAFF-NOTIFICATION-TAP-1: 今日タブの通知(再来推奨/来店45日/店販60日等)は
+// 本日の予約が無い担当顧客も対象になるため、Phase1ReservationベースのtoCustomer/
+// toReservationでは解決できない。CustomersScreen.tsxと同じ変換(CustomerRow→Customer/
+// Reservation。実予約が無いためReservation.idはnullの合成値)をこの画面用にも用意する。
+function toCustomerFromRow(c: CustomerRow): BSCustomer {
+  return {
+    id:                    c.id,
+    name:                  c.name,
+    visits:                c.visitCount,
+    visit_count:           c.visitCount,
+    total_sales:           c.totalSpent,
+    avg_price:             c.visitCount > 0 ? Math.round(c.totalSpent / c.visitCount) : 0,
+    last_visit:            c.lastVisitDate ?? new Date(Date.now() - c.lastVisit * 86400000).toISOString().slice(0, 10),
+    customer_type:         c.type,
+    skinConcernType:       c.skinConcernType,
+    vip_rank:              c.isVip ? 4 : 1,
+    churn_risk:            c.churnRisk,
+    line_response_rate:    c.lineResponseRate,
+    next_visit_prediction: '',
+    skin_tags:             [],
+    recommended_cycle_days: undefined,
+  }
+}
+
+function toReservationFromRow(c: CustomerRow): BSReservation {
+  return {
+    id:                    null, // 本日の予約を持たない顧客のため合成値
+    customer_id:           null,
+    customer_hash_id:      null,
+    staff_id:              c.assignedStaffId ?? '',
+    menu:                  c.treatments[0] ?? '施術履歴未設定',
+    scheduled_at:          new Date().toISOString(),
+    status:                'confirmed',
+    customer_name:         c.name,
+    is_vip:                c.isVip,
+    churn_risk:            c.churnRisk,
+    days_since_last_visit: c.lastVisit,
+    customer_type:         c.type,
   }
 }
 
@@ -200,11 +243,25 @@ export default function Phase1Screen() {
     if (match) handleCardTap(match)
   }
 
-  // 通知タップ → 対象顧客が本日の予約に含まれていれば既存の顧客詳細フローへ合流させる
-  // (通知APIは予約情報を返さないため、詳細表示は「本日の予約がある顧客」の範囲に限る)
-  function handleSelectCustomerFromNotification(customerId: string) {
+  // 通知タップ → 対象顧客が本日の予約に含まれていれば既存の顧客詳細フローへ合流させる。
+  // PHASE STAFF-NOTIFICATION-TAP-1: Today Briefingの再来推奨/来店45日/店販60日等は
+  // 本日の予約が無い担当顧客も対象になるため、本日の予約に見つからない場合は
+  // useCustomerStore(既存の /api/customers/list・顧客タブと同じデータソース)から
+  // 解決する(新規API・新規クエリは追加していない)。
+  async function handleSelectCustomerFromNotification(customerId: string) {
     const match = reservations.find(r => r.customerId === customerId)
-    if (match) handleCardTap(match)
+    if (match) { handleCardTap(match); return }
+
+    let rows = useCustomerStore.getState().customers
+    if (rows.length === 0) {
+      await useCustomerStore.getState().fetchCustomers()
+      rows = useCustomerStore.getState().customers
+    }
+    const row = rows.find(c => c.id === customerId)
+    if (row) {
+      setSelected(null)
+      openNewSheet(toCustomerFromRow(row), toReservationFromRow(row))
+    }
   }
 
   // ── レンダー ──────────────────────────────────────────────────────────────
@@ -358,7 +415,7 @@ export default function Phase1Screen() {
           scrollbarWidth: 'none',
         }}>
         <InstallPrompt />
-        <TodayBriefingSummaryCard />
+        <TodayBriefingSummaryCard onSelectCustomer={handleSelectCustomerFromNotification} />
         <TodayBriefingCard onSelectCustomer={handleSelectFromBriefing} />
       </div>
 

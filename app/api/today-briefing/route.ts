@@ -49,6 +49,8 @@ import type {
   TodayBriefingCaution,
   TodayBriefingUpcoming,
   TodayBriefingSummary,
+  TodayBriefingNotificationTarget,
+  TodayBriefingNotificationTargets,
 } from '@/types/todayBriefing'
 
 const BRAIN_TYPE_MAP: Record<string, string> = {
@@ -96,6 +98,11 @@ const EMPTY_SUMMARY: TodayBriefingSummary = {
   recommendedRevisitCount: 0, staleVisitCount: 0, retailReplenishCount: 0,
 }
 
+const EMPTY_TARGETS: TodayBriefingNotificationTargets = {
+  firstVisit: [], contraindication: [], homecare: [], birthday: [],
+  importantMemo: [], recommendedRevisit: [], staleVisit: [], retailReplenish: [],
+}
+
 const EMPTY_RESPONSE: TodayBriefingResponse = {
   next: null,
   cautions: [],
@@ -105,6 +112,14 @@ const EMPTY_RESPONSE: TodayBriefingResponse = {
   },
   upcoming: [],
   summary: EMPTY_SUMMARY,
+  notificationTargets: EMPTY_TARGETS,
+}
+
+interface OverdueResult {
+  counts: DailyOverdueCounts
+  recommendedRevisitTargets: TodayBriefingNotificationTarget[]
+  staleVisitTargets: TodayBriefingNotificationTarget[]
+  retailReplenishTargets: TodayBriefingNotificationTarget[]
 }
 
 /**
@@ -114,16 +129,20 @@ const EMPTY_RESPONSE: TodayBriefingResponse = {
  * より前に呼び出せるよう独立した関数に切り出している(/api/notificationsの
  * 担当ロスター取得と同じ方針: is_internal_user除外・deleted_at除外・非管理者は
  * assigned_staff_idで絞る)。
+ *
+ * PHASE STAFF-NOTIFICATION-TAP-1(2026-08-01): 通知タップ→Customer Bottom Sheet
+ * 遷移用に、該当した顧客のid・nameも合わせて返す(rosterクエリのselectにname追加のみ・
+ * 新規クエリなし)。
  */
 async function computeOverdueCounts(
   supabase: ReturnType<typeof getServiceClient>,
   staff: RequestingStaff,
   /** 本日すでに予約が入っている顧客のbrain_customers.id。重複通知防止のため除外する。 */
   todayCustomerIds: string[]
-): Promise<DailyOverdueCounts> {
+): Promise<OverdueResult> {
   let rosterQuery = supabase
     .from('brain_customers')
-    .select('id, recommended_cycle_days')
+    .select('id, name, recommended_cycle_days')
     .eq('is_internal_user', false)
     .is('deleted_at', null)
   if (!staff.isAdmin) {
@@ -135,6 +154,7 @@ async function computeOverdueCounts(
   const { data: rosterRows } = await rosterQuery
   const overdueRosterRows = (rosterRows ?? []).filter((r) => !todayCustomerIds.includes(r.id))
   const overdueRosterIds = overdueRosterRows.map((r) => r.id)
+  const nameByRosterId = new Map(overdueRosterRows.map((r) => [r.id, r.name as string]))
 
   const rosterVisitsRes = overdueRosterIds.length > 0
     ? await supabase.from('brain_visits')
@@ -150,7 +170,7 @@ async function computeOverdueCounts(
     if (v.retail_category) lastRetailPurchaseByRosterCustomer.set(v.customer_id, v.visit_date)
   }
 
-  return countOverdueCustomers(
+  const counts = countOverdueCustomers(
     overdueRosterRows.map((r): RosterCustomerInput => ({
       id: r.id,
       lastVisitDate: lastVisitByRosterCustomer.get(r.id) ?? null,
@@ -158,6 +178,16 @@ async function computeOverdueCounts(
       recommendedCycleDays: r.recommended_cycle_days ?? null,
     }))
   )
+
+  const toTargets = (ids: string[]): TodayBriefingNotificationTarget[] =>
+    ids.map((id) => ({ id, name: nameByRosterId.get(id) ?? '' }))
+
+  return {
+    counts,
+    recommendedRevisitTargets: toTargets(counts.recommendedRevisitIds),
+    staleVisitTargets: toTargets(counts.staleVisitIds),
+    retailReplenishTargets: toTargets(counts.retailReplenishIds),
+  }
 }
 
 export async function GET(req: NextRequest) {
@@ -239,12 +269,23 @@ export async function GET(req: NextRequest) {
     // 再来推奨/来店45日/店販60日は今日の予約の有無と無関係な担当顧客ロスター起点の
     // データのため、reservations.length===0 の早期returnより前に計算する
     // (PHASE STAFF-NOTIFICATION-AI-2)。
-    const overdueCounts = await computeOverdueCounts(supabase, staff, allCustomerIds)
+    const overdue = await computeOverdueCounts(supabase, staff, allCustomerIds)
 
     if (reservations.length === 0) {
       return NextResponse.json<TodayBriefingResponse>({
         ...EMPTY_RESPONSE,
-        summary: { ...EMPTY_SUMMARY, ...overdueCounts },
+        summary: {
+          ...EMPTY_SUMMARY,
+          recommendedRevisitCount: overdue.counts.recommendedRevisitCount,
+          staleVisitCount: overdue.counts.staleVisitCount,
+          retailReplenishCount: overdue.counts.retailReplenishCount,
+        },
+        notificationTargets: {
+          ...EMPTY_TARGETS,
+          recommendedRevisit: overdue.recommendedRevisitTargets,
+          staleVisit: overdue.staleVisitTargets,
+          retailReplenish: overdue.retailReplenishTargets,
+        },
       })
     }
 
@@ -410,20 +451,39 @@ export async function GET(req: NextRequest) {
     let birthdayCount = 0
     let importantMemoCount = 0
 
+    // PHASE STAFF-NOTIFICATION-TAP-1: 通知タップ→Customer Bottom Sheet遷移用に、
+    // 該当した顧客のid・nameも件数と同時に集める(追加クエリなし・ループ内の既存データのみ)。
+    const firstVisitTargets: TodayBriefingNotificationTarget[] = []
+    const contraindicationTargets: TodayBriefingNotificationTarget[] = []
+    const homecareTargets: TodayBriefingNotificationTarget[] = []
+    const birthdayTargets: TodayBriefingNotificationTarget[] = []
+    const importantMemoTargets: TodayBriefingNotificationTarget[] = []
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     for (const r of reservations as any[]) {
-      if (r.is_new_customer) firstVisitCount += 1
+      const bcId = r.brain_customer.id as string
+      const bcName = r.brain_customer.name as string
+
+      if (r.is_new_customer) {
+        firstVisitCount += 1
+        firstVisitTargets.push({ id: bcId, name: bcName })
+      }
 
       const legacyCandidates = [r.brain_customer_id, r.customer_id].filter(Boolean)
-      if (legacyCandidates.some((id: string) => todayContraLegacyIds.has(id))) contraindicationCount += 1
+      if (legacyCandidates.some((id: string) => todayContraLegacyIds.has(id))) {
+        contraindicationCount += 1
+        contraindicationTargets.push({ id: bcId, name: bcName })
+      }
 
-      const bcId = r.brain_customer.id as string
       const bcMemories = todayMemoriesByCustomer.get(bcId) ?? []
-      if (bcMemories.some((m) => m.importance === 'high' && !m.is_sensitive)) importantMemoCount += 1
+      if (bcMemories.some((m) => m.importance === 'high' && !m.is_sensitive)) {
+        importantMemoCount += 1
+        importantMemoTargets.push({ id: bcId, name: bcName })
+      }
 
       const input: NotificationCustomerInput = {
         id: bcId,
-        name: r.brain_customer.name,
+        name: bcName,
         weddingDate: null,
         firstVisitDate: null,
         lastVisitDate: null,
@@ -435,8 +495,14 @@ export async function GET(req: NextRequest) {
         nearbyVisitDates: [],
       }
       const detected = detectNotificationsForCustomer(input)
-      if (detected.some((n) => n.kind === 'birthday')) birthdayCount += 1
-      if (detected.some((n) => n.kind.startsWith('homecare_'))) homecareCount += 1
+      if (detected.some((n) => n.kind === 'birthday')) {
+        birthdayCount += 1
+        birthdayTargets.push({ id: bcId, name: bcName })
+      }
+      if (detected.some((n) => n.kind.startsWith('homecare_'))) {
+        homecareCount += 1
+        homecareTargets.push({ id: bcId, name: bcName })
+      }
     }
 
     const summary: TodayBriefingSummary = {
@@ -446,9 +512,20 @@ export async function GET(req: NextRequest) {
       homecareCount,
       birthdayCount,
       importantMemoCount,
-      recommendedRevisitCount: overdueCounts.recommendedRevisitCount,
-      staleVisitCount: overdueCounts.staleVisitCount,
-      retailReplenishCount: overdueCounts.retailReplenishCount,
+      recommendedRevisitCount: overdue.counts.recommendedRevisitCount,
+      staleVisitCount: overdue.counts.staleVisitCount,
+      retailReplenishCount: overdue.counts.retailReplenishCount,
+    }
+
+    const notificationTargets: TodayBriefingNotificationTargets = {
+      firstVisit: firstVisitTargets,
+      contraindication: contraindicationTargets,
+      homecare: homecareTargets,
+      birthday: birthdayTargets,
+      importantMemo: importantMemoTargets,
+      recommendedRevisit: overdue.recommendedRevisitTargets,
+      staleVisit: overdue.staleVisitTargets,
+      retailReplenish: overdue.retailReplenishTargets,
     }
 
     const response: TodayBriefingResponse = {
@@ -483,6 +560,7 @@ export async function GET(req: NextRequest) {
         scheduledAt:   r.scheduled_at,
       })),
       summary,
+      notificationTargets,
     }
 
     return NextResponse.json(response)

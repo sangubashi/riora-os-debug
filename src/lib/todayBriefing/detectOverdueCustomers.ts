@@ -40,6 +40,10 @@ export interface DailyOverdueCounts {
   recommendedRevisitCount: number
   staleVisitCount: number
   retailReplenishCount: number
+  /** 該当した顧客のid一覧(PHASE STAFF-NOTIFICATION-TAP-1・通知タップ→顧客詳細遷移用)。 */
+  recommendedRevisitIds: string[]
+  staleVisitIds: string[]
+  retailReplenishIds: string[]
 }
 
 function startOfDay(d: Date): Date {
@@ -90,16 +94,23 @@ export function countOverdueCustomers(
   customers: RosterCustomerInput[],
   today: Date = new Date()
 ): DailyOverdueCounts {
-  let recommendedRevisitCount = 0
-  let staleVisitCount = 0
-  let retailReplenishCount = 0
+  const recommendedRevisitIds: string[] = []
+  const staleVisitIds: string[] = []
+  const retailReplenishIds: string[] = []
 
   for (const c of customers) {
     const result = evaluateOverdueCustomer(c, today)
-    if (result.recommendedRevisit) recommendedRevisitCount += 1
-    if (result.staleVisit) staleVisitCount += 1
-    if (result.retailReplenish) retailReplenishCount += 1
+    if (result.recommendedRevisit) recommendedRevisitIds.push(c.id)
+    if (result.staleVisit) staleVisitIds.push(c.id)
+    if (result.retailReplenish) retailReplenishIds.push(c.id)
   }
 
-  return { recommendedRevisitCount, staleVisitCount, retailReplenishCount }
+  return {
+    recommendedRevisitCount: recommendedRevisitIds.length,
+    staleVisitCount: staleVisitIds.length,
+    retailReplenishCount: retailReplenishIds.length,
+    recommendedRevisitIds,
+    staleVisitIds,
+    retailReplenishIds,
+  }
 }
