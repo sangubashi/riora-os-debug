@@ -42,6 +42,14 @@
  * PHASE MYPAGE-UX-1(2026-07-27・UI改善のみ): 今週予約サマリー(今日/明日)を追加。
  * 「今週残り(明後日以降)」はスタッフ本人に絞って取得できる既存データソースが無いため、
  * ユーザー承認のうえ今回は対象外(今日・明日のみ)としている。
+ *
+ * PHASE MYPAGE-COMMENT-TIERING(2026-08-01): 「今月のひとこと」「指名カード」の文言が
+ * 母数(件数)に関係なく同じ強さの表現になっていた不自然さを修正。指名カード(亀山)は
+ * 指名件数(0/1〜3/4〜9/10件以上)で文言を段階化し、「戻ってきてくださる方が多い」という
+ * 言い切りは実際のリピート率(50%以上)と十分な母数(今月の来店人数10人以上)がある場合
+ * のみ表示する(小さな指名件数・少ない母数で誇張した表現を出さない)。「今月のひとこと」の
+ * 指名・リピート率候補も同様に、指名件数/来店人数(母数)の段階に応じた表現の強さに
+ * 変更した。売上・客単価・店販(金額ベースの指標)は今回のスコープ外として文言は変更していない。
  */
 import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
@@ -94,8 +102,23 @@ interface NominationContent {
   lines: string[]
 }
 
-/** 指名カードの表示モード・補足文。 */
-function getNominationContent(staffId: string | null): NominationContent {
+/** 指名件数(0/1〜3/4〜9/10件以上)の段階(PHASE MYPAGE-COMMENT-TIERING)。 */
+function getCountTier(n: number): 'none' | 'low' | 'mid' | 'high' {
+  if (n <= 0) return 'none'
+  if (n <= 3) return 'low'
+  if (n <= 9) return 'mid'
+  return 'high'
+}
+
+/**
+ * 指名カードの表示モード・補足文。
+ * 亀山の補足文は指名件数の段階(0/1〜3/4〜9/10件以上)に応じて文言の強さを変える
+ * (PHASE MYPAGE-COMMENT-TIERING)。「戻ってきてくださる方が多い」という言い切りは
+ * 実際のリピート率が十分に高く(50%以上)、かつ算出根拠となる母数(今月の来店人数)が
+ * 十分にある(10人以上)場合のみ表示し、母数が少ない場合は指名件数のみに基づく
+ * 控えめな表現に切り替える(架空の「多い」を作らない)。
+ */
+function getNominationContent(staffId: string | null, stats: MyStats | null): NominationContent {
   if (staffId === SOTODATE_STAFF_ID) {
     return {
       mode: 'rate',
@@ -106,10 +129,35 @@ function getNominationContent(staffId: string | null): NominationContent {
     }
   }
   if (staffId === KAMEYAMA_STAFF_ID) {
+    const count      = stats?.nomination.thisMonth ?? 0
+    const visits     = stats?.visitCount.thisMonth ?? 0
+    const repeatRate = stats?.repeatRate.thisMonth ?? null
+    const canClaimManyRepeat = visits >= 10 && repeatRate !== null && repeatRate >= 50
+
+    const tier = getCountTier(count)
+    if (tier === 'none') {
+      return { mode: 'count', lines: ['今月はまだご指名がありません。日々の接客の積み重ねが、次のご指名につながっていきます。'] }
+    }
+    if (tier === 'low') {
+      return { mode: 'count', lines: ['ご指名をいただき始めています。日頃の接客がお客様に届いている証拠です。'] }
+    }
+    if (tier === 'mid') {
+      return {
+        mode: 'count',
+        lines: [
+          canClaimManyRepeat
+            ? '戻ってきてくださる方が増えているあなたなら、次回のご来店を一言お伝えするだけで、ご指名にも自然と繋がっていきます。'
+            : 'ご指名が着実に増えています。次回のご来店を一言お伝えすることが、さらなるご指名にも繋がります。',
+        ],
+      }
+    }
+    // tier === 'high'(10件以上)
     return {
       mode: 'count',
       lines: [
-        '戻ってきてくださる方が多いあなたなら、次回のご来店を一言お伝えするだけで、ご指名にも自然と繋がっていきます。',
+        canClaimManyRepeat
+          ? '戻ってきてくださる方が多いあなたなら、次回のご来店を一言お伝えするだけで、ご指名にも自然と繋がっていきます。'
+          : 'ご指名を多くいただいています。次回のご来店を一言お伝えすることが、さらなるご指名にも繋がります。',
       ],
     }
   }
@@ -206,49 +254,80 @@ type MonthlyCommentMetricKey = 'sales' | 'avgSpend' | 'nomination' | 'repeatRate
 interface MonthlyCommentCandidate {
   key:  MonthlyCommentMetricKey
   diff: number
+  /** その候補が選ばれた場合に表示する1文。母数を考慮して候補生成時に確定させる。 */
+  text: string
 }
 
+const MONTHLY_COMMENT_TEXT: Record<Exclude<MonthlyCommentMetricKey, 'nomination' | 'repeatRate'>, string> = {
+  sales:      '今月は売上が伸びています。',
+  avgSpend:   '今月は客単価が上がっています。',
+  retail:     '今月はホームケア提案がお客様に届いています。',
+}
+
+/** 指名件数(件数そのもの・PHASE MYPAGE-COMMENT-TIERING)の段階別文言。 */
+const NOMINATION_COMMENT_BY_TIER: Record<'low' | 'mid' | 'high', string> = {
+  low:  '今月はご指名をいただき始めています。',
+  mid:  '今月はご指名が増えています。',
+  high: '今月はご指名が大きく増えています。',
+}
+
+/** リピート率diffの母数(今月の来店人数)の段階別文言。母数が少ないほど控えめな表現にする。 */
+const REPEAT_COMMENT_BY_TIER: Record<'low' | 'mid' | 'high', string> = {
+  low:  '今月は戻ってきてくださるお客様が少しずつ増えています。',
+  mid:  '今月は戻ってきてくださるお客様が増えています。',
+  high: '今月は戻ってきてくださるお客様が多く、しっかり関係を築けています。',
+}
+
+const MONTHLY_NO_PLUS_COMMENT = '今月も一人ひとり丁寧に向き合えています。'
+
 /**
- * My Page「今月のひとこと」(PHASE MYPAGE-DEMO-CLEANUP)。
+ * My Page「今月のひとこと」(PHASE MYPAGE-DEMO-CLEANUP、母数考慮はPHASE MYPAGE-COMMENT-TIERING)。
  *
- * 従来はdiff値と無関係な固定テンプレートからのランダム抽選だったが廃止し、今月−先月の
- * 実データ(diff)のうちプラスで最も伸びた1指標を選び、その指標に対応する1文を返す方式に
- * 変更した。「先週のよかったところ」(週次diff)とは判定期間が異なる別ロジックとして
- * 両立させる(ユーザー承認済み)。プラスが無ければ、架空の改善を作らず中立の1文を返す。
- * 外舘の画面は既存方針どおり売上・客単価・店販を候補から除外する。
+ * 今月−先月の実データ(diff)のうちプラスで最も伸びた1指標を選び、その指標に対応する1文を
+ * 返す。「先週のよかったところ」(週次diff)とは判定期間が異なる別ロジックとして両立させる
+ * (ユーザー承認済み)。プラスが無ければ、架空の改善を作らず中立の1文を返す。
+ * 指名・リピート率の2指標は、diffがプラスというだけで一律の強い表現を使うと母数が
+ * 少ない場合に不自然(例: 指名2件でも「戻ってきてくださる方が多い」と言い切ってしまう)に
+ * なるため、指名は指名件数(今月)、リピート率は算出根拠となる来店人数(今月・母数)の
+ * 段階(1〜3/4〜9/10以上)に応じて文言の強さを変える。外舘の画面は既存方針どおり
+ * 売上・客単価・店販を候補から除外する。
  */
 function getMonthlyCommentCandidates(staffId: string | null, stats: MyStats): MonthlyCommentCandidate[] {
-  const candidates: MonthlyCommentCandidate[] = [
-    { key: 'nomination', diff: stats.nominationDiff },
-    { key: 'repeatRate', diff: stats.repeatRateDiff },
-  ]
+  const candidates: MonthlyCommentCandidate[] = []
+
+  if (stats.nominationDiff > 0) {
+    const tier = getCountTier(stats.nomination.thisMonth)
+    candidates.push({
+      key: 'nomination',
+      diff: stats.nominationDiff,
+      text: NOMINATION_COMMENT_BY_TIER[tier === 'none' ? 'low' : tier],
+    })
+  }
+  if (stats.repeatRateDiff > 0) {
+    const tier = getCountTier(stats.visitCount.thisMonth)
+    candidates.push({
+      key: 'repeatRate',
+      diff: stats.repeatRateDiff,
+      text: REPEAT_COMMENT_BY_TIER[tier === 'none' ? 'low' : tier],
+    })
+  }
   if (staffId !== SOTODATE_STAFF_ID) {
-    candidates.push({ key: 'sales', diff: stats.salesDiff })
-    if (stats.avgSpendDiff !== null) {
-      candidates.push({ key: 'avgSpend', diff: stats.avgSpendDiff })
+    if (stats.salesDiff > 0) {
+      candidates.push({ key: 'sales', diff: stats.salesDiff, text: MONTHLY_COMMENT_TEXT.sales })
     }
-    if (stats.retailSalesDiff !== null) {
-      candidates.push({ key: 'retail', diff: stats.retailSalesDiff })
+    if (stats.avgSpendDiff !== null && stats.avgSpendDiff > 0) {
+      candidates.push({ key: 'avgSpend', diff: stats.avgSpendDiff, text: MONTHLY_COMMENT_TEXT.avgSpend })
+    }
+    if (stats.retailSalesDiff !== null && stats.retailSalesDiff > 0) {
+      candidates.push({ key: 'retail', diff: stats.retailSalesDiff, text: MONTHLY_COMMENT_TEXT.retail })
     }
   }
   return candidates
 }
 
-const MONTHLY_COMMENT_TEXT: Record<MonthlyCommentMetricKey, string> = {
-  sales:      '今月は売上が伸びています。',
-  avgSpend:   '今月は客単価が上がっています。',
-  nomination: '今月はご指名が増えています。',
-  repeatRate: '今月は戻ってきてくださるお客様が増えています。',
-  retail:     '今月はホームケア提案がお客様に届いています。',
-}
-
-const MONTHLY_NO_PLUS_COMMENT = '今月も一人ひとり丁寧に向き合えています。'
-
 function buildMonthlyComment(staffId: string | null, stats: MyStats): string {
-  const top = getMonthlyCommentCandidates(staffId, stats)
-    .filter((c) => c.diff > 0)
-    .sort((a, b) => b.diff - a.diff)[0]
-  return top ? MONTHLY_COMMENT_TEXT[top.key] : MONTHLY_NO_PLUS_COMMENT
+  const top = getMonthlyCommentCandidates(staffId, stats).sort((a, b) => b.diff - a.diff)[0]
+  return top ? top.text : MONTHLY_NO_PLUS_COMMENT
 }
 
 function SmallStat({ label, value, color = '#5C4033' }: { label: string; value: string; color?: string }) {
@@ -299,7 +378,7 @@ export default function MyStatsScreen() {
 
   const staffId = stats?.staffId ?? null
   const hero              = useMemo(() => getHeroContent(stats),          [stats])
-  const nominationContent = useMemo(() => getNominationContent(staffId),  [staffId])
+  const nominationContent = useMemo(() => getNominationContent(staffId, stats),  [staffId, stats])
   const weeklyPraise       = useMemo(
     () => (stats ? buildWeeklyPraise(staffId, stats.weekly) : null),
     [staffId, stats]
