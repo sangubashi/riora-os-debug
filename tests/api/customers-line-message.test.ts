@@ -22,7 +22,16 @@ const mockRepos = {
     listApprovedByCategories: vi.fn(),
     listApprovedByProducts:   vi.fn(),
   },
+  menuRepo: {
+    findById: vi.fn(),
+  },
 };
+
+function lastPromptSentToClaude(): string {
+  const call = vi.mocked(fetch).mock.calls.find(c => c[0] === 'https://api.anthropic.com/v1/messages');
+  const body = JSON.parse((call?.[1] as RequestInit).body as string) as { messages: { content: string }[] };
+  return body.messages[0].content;
+}
 
 function buildReq(body: unknown): NextRequest {
   return new NextRequest(`http://localhost/api/customers/${CUSTOMER_ID}/line-message`, {
@@ -45,6 +54,7 @@ describe('POST /api/customers/[id]/line-message', () => {
     mockRepos.blogArticleRepo.listApprovedByKeywords.mockResolvedValue([]);
     mockRepos.blogArticleRepo.listApprovedByCategories.mockResolvedValue([]);
     mockRepos.blogArticleRepo.listApprovedByProducts.mockResolvedValue([]);
+    mockRepos.menuRepo.findById.mockResolvedValue(null);
     vi.stubGlobal('fetch', vi.fn(async () => ({
       ok: true,
       json: async () => ({ content: [{ type: 'text', text: '生成されたLINE文面です' }] }),
@@ -141,5 +151,63 @@ describe('POST /api/customers/[id]/line-message', () => {
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(body.reasons).toEqual([]);
+  });
+
+  describe('PHASE MENU-AI-3: Menu AI Context', () => {
+    const MENU = {
+      id: 'menu-1', storeId: 'store-1', name: 'ハーブピーリング', price: 12000, role: 'peeling', targetTypes: [],
+      durationMinutes: 60, skinConcernTags: ['毛穴'], expectedEffects: ['引き締め'], recommendedCycleDays: 28,
+      contraindicationTags: ['妊娠中'], recommendedHomecareProducts: ['美容液'], aiTags: ['毛穴', 'ピーリング'],
+    };
+
+    it.each(['thanks', 'homecare', 'reminder', undefined] as const)(
+      'menuIdが解決できる場合、プロンプト末尾にMenu AI Contextを追記する(type=%s)',
+      async (type) => {
+        mockRepos.menuRepo.findById.mockResolvedValue(MENU);
+        const res = await callRoute({
+          type, customerName: '山田様', skinTags: [], recentVisits: [], homecareProducts: [], recentNoteSummaries: [],
+          menuId: 'menu-1',
+        });
+        expect(res.status).toBe(200);
+        expect(mockRepos.menuRepo.findById).toHaveBeenCalledWith('menu-1');
+
+        const prompt = lastPromptSentToClaude();
+        expect(prompt).toContain('Menu AI Context');
+        expect(prompt).toContain('- category: peeling');
+        expect(prompt).toContain('- aiTags: 毛穴・ピーリング');
+        expect(prompt).toContain('- priceBand: ¥10,000〜¥15,000');
+        // 許可リスト外(name/skinConcernTags/expectedEffects/recommendedHomecareProducts)は渡さない
+        expect(prompt).not.toContain('ハーブピーリング');
+        expect(prompt).not.toContain('引き締め');
+        expect(prompt).not.toContain('美容液');
+      }
+    );
+
+    it('menuId未指定の場合はMenu AI Contextを追記しない(既存挙動を維持)', async () => {
+      const res = await callRoute({ customerName: '山田様', skinTags: [], recentVisits: [], homecareProducts: [], recentNoteSummaries: [] });
+      expect(res.status).toBe(200);
+      expect(mockRepos.menuRepo.findById).not.toHaveBeenCalled();
+      expect(lastPromptSentToClaude()).not.toContain('Menu AI Context');
+    });
+
+    it('menuIdを指定しても該当メニューが無い場合はエラーにせず、Menu AI Contextなしで生成する(④)', async () => {
+      mockRepos.menuRepo.findById.mockResolvedValue(null);
+      const res = await callRoute({ customerName: '山田様', skinTags: [], recentVisits: [], homecareProducts: [], recentNoteSummaries: [], menuId: 'missing-menu' });
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(body.success).toBe(true);
+      expect(lastPromptSentToClaude()).not.toContain('Menu AI Context');
+    });
+
+    it('menuRepo.findByIdが例外を投げてもエラーにせず、Menu AI Contextなしで生成する(④)', async () => {
+      mockRepos.menuRepo.findById.mockRejectedValue(new Error('db down'));
+      const res = await callRoute({ customerName: '山田様', skinTags: [], recentVisits: [], homecareProducts: [], recentNoteSummaries: [], menuId: 'menu-1' });
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(body.success).toBe(true);
+      expect(lastPromptSentToClaude()).not.toContain('Menu AI Context');
+    });
   });
 });

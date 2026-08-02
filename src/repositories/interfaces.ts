@@ -343,6 +343,15 @@ export interface MenuCreateInput {
   price:       number;
   role:        Exclude<MenuRole, 'imported_other'>;
   targetTypes: CustomerType[];
+  // PHASE MENU-AI-1: 以下すべてoptional(現状Menu Master画面のUIには編集欄が無く、
+  // API経由の値渡しのみに対応する)。
+  durationMinutes?: number | null;
+  skinConcernTags?: string[];
+  expectedEffects?: string[];
+  recommendedCycleDays?: number | null;
+  contraindicationTags?: string[];
+  recommendedHomecareProducts?: string[];
+  aiTags?: string[];
 }
 
 /** brain_menus部分更新入力(メニューマスタ管理画面専用)。指定したフィールドのみSET。 */
@@ -351,6 +360,15 @@ export interface MenuUpdateInput {
   price?:       number;
   role?:        Exclude<MenuRole, 'imported_other'>;
   targetTypes?: CustomerType[];
+  // PHASE MENU-AI-1: 以下すべてoptional(現状Menu Master画面のUIには編集欄が無く、
+  // API経由の値渡しのみに対応する)。
+  durationMinutes?: number | null;
+  skinConcernTags?: string[];
+  expectedEffects?: string[];
+  recommendedCycleDays?: number | null;
+  contraindicationTags?: string[];
+  recommendedHomecareProducts?: string[];
+  aiTags?: string[];
 }
 
 export interface IMenuRepo {

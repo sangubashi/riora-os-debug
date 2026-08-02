@@ -14,14 +14,14 @@ import { z } from 'zod';
 import { getRepos } from '../../../../lib/repos';
 import { idSchema, toValidationErrorResponse } from '../../../_schemas/common';
 import { requireAdmin } from '@/lib/auth/requireAdmin';
-import { EDITABLE_MENU_ROLES, ALL_CUSTOMER_TYPES } from '@/lib/menu/menuMasterConstants';
+import { EDITABLE_MENU_ROLES, ALL_CUSTOMER_TYPES, menuAIFieldsSchema } from '@/lib/menu/menuMasterConstants';
 
 const updateBodySchema = z.object({
   name: z.string().min(1).optional(),
   price: z.number().int().min(0).optional(),
   role: z.enum(EDITABLE_MENU_ROLES).optional(),
   targetTypes: z.array(z.enum(ALL_CUSTOMER_TYPES)).optional(),
-});
+}).extend(menuAIFieldsSchema.shape);
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireAdmin(req);

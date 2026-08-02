@@ -698,6 +698,39 @@ export interface BrainMenuRow {
   price: number;
   role: MenuRole;
   target_types: CustomerType[];
+  // PHASE MENU-AI-1で追加。既存クエリ(MENU_COLUMNSにこれらを含めない箇所)との
+  // 互換性のためoptionalにしている(toMenu()側で??フォールバックする)。
+  duration_minutes?: number | null;
+  skin_concern_tags?: string[];
+  expected_effects?: string[];
+  recommended_cycle_days?: number | null;
+  contraindication_tags?: string[];
+  recommended_homecare_products?: string[];
+  ai_tags?: string[];
+}
+
+/** PHASE MENU-AI-1: create/updateどちらのInputでも共通の追加項目(全てoptional)。 */
+interface MenuAIFieldsInput {
+  durationMinutes?: number | null;
+  skinConcernTags?: string[];
+  expectedEffects?: string[];
+  recommendedCycleDays?: number | null;
+  contraindicationTags?: string[];
+  recommendedHomecareProducts?: string[];
+  aiTags?: string[];
+}
+
+/** PHASE MENU-AI-1追加項目のみをsnake_caseへ変換する(undefinedのキーは含めない)。 */
+function fromMenuAIFieldsInput(input: MenuAIFieldsInput): Record<string, unknown> {
+  const patch: Record<string, unknown> = {};
+  if (input.durationMinutes !== undefined) patch.duration_minutes = input.durationMinutes;
+  if (input.skinConcernTags !== undefined) patch.skin_concern_tags = input.skinConcernTags;
+  if (input.expectedEffects !== undefined) patch.expected_effects = input.expectedEffects;
+  if (input.recommendedCycleDays !== undefined) patch.recommended_cycle_days = input.recommendedCycleDays;
+  if (input.contraindicationTags !== undefined) patch.contraindication_tags = input.contraindicationTags;
+  if (input.recommendedHomecareProducts !== undefined) patch.recommended_homecare_products = input.recommendedHomecareProducts;
+  if (input.aiTags !== undefined) patch.ai_tags = input.aiTags;
+  return patch;
 }
 
 /** MenuCreateInput(camelCase) → brain_menus INSERT行(snake_case)。 */
@@ -707,13 +740,14 @@ export function fromMenuCreateInput(input: {
   price: number;
   role: Exclude<MenuRole, 'imported_other'>;
   targetTypes: CustomerType[];
-}): Record<string, unknown> {
+} & MenuAIFieldsInput): Record<string, unknown> {
   return {
     store_id: input.storeId,
     name: input.name,
     price: input.price,
     role: input.role,
     target_types: input.targetTypes,
+    ...fromMenuAIFieldsInput(input),
   };
 }
 
@@ -723,13 +757,13 @@ export function fromMenuUpdateInput(input: {
   price?: number;
   role?: Exclude<MenuRole, 'imported_other'>;
   targetTypes?: CustomerType[];
-}): Record<string, unknown> {
+} & MenuAIFieldsInput): Record<string, unknown> {
   const patch: Record<string, unknown> = {};
   if (input.name !== undefined) patch.name = input.name;
   if (input.price !== undefined) patch.price = input.price;
   if (input.role !== undefined) patch.role = input.role;
   if (input.targetTypes !== undefined) patch.target_types = input.targetTypes;
-  return patch;
+  return { ...patch, ...fromMenuAIFieldsInput(input) };
 }
 
 export function toMenu(row: BrainMenuRow): Menu {
@@ -740,6 +774,13 @@ export function toMenu(row: BrainMenuRow): Menu {
     price: row.price,
     role: row.role,
     targetTypes: row.target_types,
+    durationMinutes: row.duration_minutes ?? null,
+    skinConcernTags: row.skin_concern_tags ?? [],
+    expectedEffects: row.expected_effects ?? [],
+    recommendedCycleDays: row.recommended_cycle_days ?? null,
+    contraindicationTags: row.contraindication_tags ?? [],
+    recommendedHomecareProducts: row.recommended_homecare_products ?? [],
+    aiTags: row.ai_tags ?? [],
   };
 }
 

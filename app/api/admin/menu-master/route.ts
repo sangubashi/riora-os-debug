@@ -14,7 +14,7 @@ import { getRepos } from '../../../lib/repos';
 import { DEMO_STORE_ID } from '@/lib/constants';
 import { toValidationErrorResponse } from '../../_schemas/common';
 import { requireAdmin } from '@/lib/auth/requireAdmin';
-import { EDITABLE_MENU_ROLES, ALL_CUSTOMER_TYPES } from '@/lib/menu/menuMasterConstants';
+import { EDITABLE_MENU_ROLES, ALL_CUSTOMER_TYPES, menuAIFieldsSchema } from '@/lib/menu/menuMasterConstants';
 
 export async function GET(req: NextRequest) {
   const gate = await requireAdmin(req);
@@ -43,7 +43,7 @@ const createBodySchema = z.object({
   price: z.number().int().min(0),
   role: z.enum(EDITABLE_MENU_ROLES),
   targetTypes: z.array(z.enum(ALL_CUSTOMER_TYPES)).default([]),
-});
+}).extend(menuAIFieldsSchema.shape);
 
 export async function POST(req: NextRequest) {
   const gate = await requireAdmin(req);
@@ -60,7 +60,11 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json(toValidationErrorResponse(parsed.error), { status: 400 });
   }
-  const { storeId, name, price, role, targetTypes } = parsed.data;
+  const {
+    storeId, name, price, role, targetTypes,
+    durationMinutes, skinConcernTags, expectedEffects, recommendedCycleDays,
+    contraindicationTags, recommendedHomecareProducts, aiTags,
+  } = parsed.data;
 
   let repos;
   try {
@@ -76,6 +80,8 @@ export async function POST(req: NextRequest) {
       price,
       role,
       targetTypes,
+      durationMinutes, skinConcernTags, expectedEffects, recommendedCycleDays,
+      contraindicationTags, recommendedHomecareProducts, aiTags,
     });
     return NextResponse.json({ success: true, menu });
   } catch (e) {

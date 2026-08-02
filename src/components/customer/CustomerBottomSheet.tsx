@@ -150,6 +150,8 @@ interface VisitHistoryEntry {
   id:        string;
   visitDate: string;
   menuName:  string | null;
+  /** brain_visits.menu_id（PHASE MENU-AI-3・line-messageのMenu AI Context組み立てに使う）。 */
+  menuId:    string | null;
   amount:    number;
   staffName: string | null;
 }
@@ -937,7 +939,12 @@ export default function CustomerBottomSheet({
       const res = await authedFetch(`/api/customers/${c.id}/homecare-message`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ productName, lastPurchasedAt, daysSincePurchase, customerName: c.name }),
+        body:    JSON.stringify({
+          productName, lastPurchasedAt, daysSincePurchase, customerName: c.name,
+          // PHASE MENU-AI-4: 直近来店(visitHistory[0]。visit_date降順)のmenu_idを渡す。
+          // 未指定/取得不可時はAPI側が従来どおり生成する(buildMenuAIContext参照)。
+          menuId: visitHistory[0]?.menuId ?? undefined,
+        }),
       });
       const json = res.ok
         ? await res.json() as { success: boolean; message?: string }
@@ -953,7 +960,7 @@ export default function CustomerBottomSheet({
     } finally {
       setAiGeneratingProduct(null);
     }
-  }, [c, aiGeneratingProduct]);
+  }, [c, aiGeneratingProduct, visitHistory]);
 
   // ─── LINEメッセージ生成（PHASE2-C-4・PHASE LINE-AI-1でtype対応拡張・生成/編集/コピーのみ。
   //     送信APIは呼ばない）──────
@@ -983,6 +990,11 @@ export default function CustomerBottomSheet({
           recommendedCycleDays:   c.recommended_cycle_days ?? null,
           churnRisk:              c.churn_risk ?? null,
           contraindicationTitles: contraindications.map(ci => ci.title),
+          // PHASE MENU-AI-3: 直近来店(visitHistory[0]。visit_date降順)のmenu_idを渡す。
+          // API側がmenuId指定時のみMenu AI Context(施術メニューのai_tags/カテゴリ/
+          // 価格帯/施術時間/禁忌/おすすめ頻度)をプロンプト末尾に追記する
+          // (buildMenuAIContext参照。未指定/取得不可時は従来どおり生成)。
+          menuId: visitHistory[0]?.menuId ?? undefined,
         }),
       });
       const json = res.ok

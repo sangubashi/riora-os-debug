@@ -18,7 +18,15 @@
  * keywordsに対してこのAPI内でDBクエリする）:
  *   customerName, skinTags(肌タグの日本語ラベル), recentVisits, homecareProducts,
  *   recentNoteSummaries(接客メモ), insightTags(voice_notes.insight_tags集約・PHASE LINE-AI-1),
- *   visitCount, lastVisitDate, recommendedCycleDays, churnRisk, contraindicationTitles
+ *   visitCount, lastVisitDate, recommendedCycleDays, churnRisk, contraindicationTitles,
+ *   menuId(PHASE MENU-AI-3・任意・省略時は既存挙動と同じ)
+ *
+ * PHASE MENU-AI-3(2026-08-01): menuId指定時のみ、menuRepo.findById()で
+ * brain_menusを1件取得しMenu AI Context(ai_tags/カテゴリ/価格帯/施術時間/禁忌/
+ * おすすめ頻度の許可リストのみ・buildMenuAIContext参照)をプロンプト末尾に追記する。
+ * 既存プロンプトの文章(SYSTEM_PROMPT*・buildXxxPrompt)は書き換えない。現状
+ * CustomerBottomSheetはmenuIdを送っていない(UI変更禁止のため今回は未接続)ため、
+ * 実際に付与されるのはmenuIdを渡す呼び出し元が現れてから。
  *
  * 【重要・利用禁止情報（ユーザー指示・2026-07-31確定）】
  *   customer_memories本文・AI Timelineのsummary/recentChange/nextFocusは、
@@ -53,6 +61,7 @@ import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest'
 import { canAccessCustomer } from '@/lib/auth/canAccessCustomer'
 import { getRepos } from '../../../../lib/repos'
 import { buildProductCategoryVocabulary, buildMatchReasons } from '@/lib/nextAction/knowledgeMatch'
+import { buildMenuAIContext, formatMenuAIContextBlock } from '@/lib/menu/buildMenuAIContext'
 
 type LineMessageType = 'thanks' | 'homecare' | 'reminder'
 
@@ -124,6 +133,13 @@ interface RequestBody {
   recommendedCycleDays?:   number | null
   churnRisk?:              number | null
   contraindicationTitles?: string[]
+  /**
+   * PHASE MENU-AI-3: 施術メニューのbrain_menus.id（任意・省略時は既存挙動と同じ）。
+   * 現状クライアント(CustomerBottomSheet)は本フィールドを渡していない
+   * （Customer Bottom SheetのUI変更禁止のため今回は未接続）。指定された場合のみ
+   * Menu AI Contextをプロンプト末尾に追記する。
+   */
+  menuId?: string
 }
 
 /** daysSince: 前回来店からの経過日数（lastVisitDateがなければnull）。 */
@@ -326,6 +342,19 @@ export async function POST(
     recommendedCycleDays:   typeof body.recommendedCycleDays === 'number' ? body.recommendedCycleDays : null,
     churnRisk:              typeof body.churnRisk === 'number' ? body.churnRisk : null,
     contraindicationTitles: Array.isArray(body.contraindicationTitles) ? body.contraindicationTitles.filter((t): t is string => typeof t === 'string') : [],
+    menuId:                 typeof body.menuId === 'string' && body.menuId.length > 0 ? body.menuId : undefined,
+  }
+
+  // PHASE MENU-AI-3: menuIdが渡された場合のみMenu AI Contextを組み立てる。
+  // 未指定・取得失敗・該当なしはすべてnullのまま(④: エラーにしない・従来どおり生成)。
+  let menuAIContextBlock: string | null = null
+  if (normalized.menuId) {
+    try {
+      const menu = await getRepos().menuRepo.findById(normalized.menuId)
+      menuAIContextBlock = menu ? formatMenuAIContextBlock(buildMenuAIContext(menu)) : null
+    } catch {
+      menuAIContextBlock = null
+    }
   }
 
   // 関連記事(ブログ)との一致確認: keywords/category/productsの一致有無のみを使う。
@@ -365,7 +394,7 @@ export async function POST(
     hasRecentPurchase:   normalized.homecareProducts.length > 0,
   })
 
-  const { prompt, systemPrompt } = (() => {
+  const { prompt: basePrompt, systemPrompt } = (() => {
     switch (type) {
       case 'thanks':   return { prompt: buildThanksPrompt(normalized, matchedTagKeywords),   systemPrompt: SYSTEM_PROMPT_THANKS }
       case 'homecare': return { prompt: buildHomecarePrompt(normalized, matchedTagKeywords), systemPrompt: SYSTEM_PROMPT_HOMECARE }
@@ -373,6 +402,11 @@ export async function POST(
       default:         return { prompt: buildPrompt(normalized, matchedTagKeywords),          systemPrompt: SYSTEM_PROMPT }
     }
   })()
+
+  // PHASE MENU-AI-3: 既存プロンプトの文章は書き換えず、末尾にMenu AI Contextブロックを
+  // 追記するだけ(⑤: 新しい指示文はAIへ渡さない)。3種類(thanks/homecare/reminder)+
+  // 汎用生成のいずれも対象。
+  const prompt = menuAIContextBlock ? `${basePrompt}\n\n${menuAIContextBlock}` : basePrompt
 
   const message = await callClaude(prompt, systemPrompt)
   if (!message) {

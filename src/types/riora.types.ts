@@ -64,6 +64,12 @@ export interface Customer {
   city: string | null;
   /** CSV取込元の会員番号等をsha256ハッシュ化した名寄せキー。store_id単位でUNIQUE。 */
   externalKeyHash: string | null;
+  /**
+   * スタッフ本人の試用・検証購入等、実顧客ではない社内利用者フラグ(手動設定)。
+   * optional: 既存の手書きCustomerフィクスチャ(テスト等)への影響を避けるため。
+   * DB上はNOT NULL DEFAULT falseだが、ドメイン型では未指定時はfalse相当として扱う。
+   */
+  isInternalUser?: boolean;
 }
 
 export interface Staff {
@@ -83,6 +89,26 @@ export interface Menu {
   price: number;
   role: MenuRole;
   targetTypes: CustomerType[];
+  /**
+   * PHASE MENU-AI-1で追加。以下すべてoptional: 既存の手書きMenuフィクスチャ
+   * (テスト等・CustomerのisInternalUserと同じ方針)への影響を避けるため。
+   * DB(brain_menus)上は配列列がNOT NULL DEFAULT '{}'のため、実データ経路
+   * (toMenu())では常に配列が入る(undefinedにはならない)。
+   */
+  /** 施術時間(分)。未入力はnull。 */
+  durationMinutes?: number | null;
+  /** 対象肌悩みタグ(例: 乾燥・ニキビ・毛穴)。customer_type(接客傾向の型)とは別軸。 */
+  skinConcernTags?: string[];
+  /** 期待できる効果タグ(例: 保湿・美白)。管理画面表示用。AIプロンプトには含めない(aiTagsで代替)。 */
+  expectedEffects?: string[];
+  /** このメニューのおすすめ来店サイクル(日数)。未入力はnull。 */
+  recommendedCycleDays?: number | null;
+  /** メニュー共通の禁忌タグ(顧客個別のcontraindicationsとは別軸)。 */
+  contraindicationTags?: string[];
+  /** おすすめホームケア商品名タグ。管理画面表示用。AIプロンプトには含めない(aiTagsで代替)。 */
+  recommendedHomecareProducts?: string[];
+  /** AI提案向けの短いタグ配列(例: 乾燥・ニキビ・毛穴・たるみ・くすみ・敏感肌・リフトアップ・保湿・美白・赤み)。 */
+  aiTags?: string[];
 }
 
 export interface Booking {

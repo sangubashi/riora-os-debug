@@ -19,7 +19,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  ICandidateRepo, ICustomerRepo, ILineQueueRepo, IOutcomeRepo, IParamsRepo,
+  ICandidateRepo, ICustomerRepo, ILineQueueRepo, IMenuRepo, IOutcomeRepo, IParamsRepo,
   IStaffRepo, IStatsRepo, IStoreRepo, ISubscriptionRepo, IVisitRepo,
 } from '../../repositories/interfaces';
 import type { FinalProposalSet, EngineDegradedResult, PatternContext, Overrides, StaffAdjustment } from '../../types/riora.types';
@@ -32,6 +32,7 @@ import { PatternScorer } from '../../engines/pattern/PatternScorer';
 import { ConflictResolver } from '../../engines/pattern/ConflictResolver';
 import { StaffAdjustmentEngine } from '../../engines/pattern/StaffAdjustmentEngine';
 import { ProposalOrchestrator } from '../../engines/pattern/ProposalOrchestrator';
+import { buildMenuAIContext, type MenuAIContext } from '../menu/buildMenuAIContext';
 
 export interface ProposalGenerationRepos {
   customerRepo: ICustomerRepo;
@@ -44,6 +45,8 @@ export interface ProposalGenerationRepos {
   statsRepo: IStatsRepo;
   storeRepo: IStoreRepo;
   lineQueueRepo: ILineQueueRepo;
+  /** PHASE MENU-AI-3: 直近来店のmenuIdからMenu AI Contextを組み立てるために使う。 */
+  menuRepo: IMenuRepo;
 }
 
 export interface VoiceMemoContext {
@@ -69,6 +72,13 @@ export type GenerateCustomerProposalResult =
       voiceMemoContext: VoiceMemoContext;
       lineHistoryContext: LineHistoryContext;
       nextBookingSuggestion: NextBookingSuggestion | null;
+      /**
+       * PHASE MENU-AI-3: 直近来店(visits[0])のmenuIdからMenu AI Context(ai_tags/
+       * カテゴリ/価格帯/施術時間/禁忌/おすすめ頻度の許可リストのみ)を組み立てたもの。
+       * 直近来店が無い・menu_idが無い・該当メニューが見つからない場合はnull
+       * (エラーにはしない・従来どおり提案を生成する)。
+       */
+      menuAIContext: MenuAIContext | null;
     }
   | { ok: false; reason: 'customer_not_found' | 'staff_not_found' | 'no_customer_type' | 'no_visit_history' };
 
@@ -183,11 +193,27 @@ export async function generateCustomerProposal(
 
   const voiceMemoContext = await fetchVoiceMemoContext(input.legacyClient ?? null, customer.name);
 
+  // PHASE MENU-AI-3: 直近来店(visits[0]。recentByCustomerはvisit_date降順)の
+  // menu_idからMenu AI Contextを組み立てる。来店履歴が無い/menu_idが無い/該当
+  // メニューが見つからない/取得に失敗した場合は全てnullにするだけで、提案生成
+  // 自体は今までどおり続行する(④: エラーにしない)。
+  const menuAIContext = await (async () => {
+    const menuId = visits[0]?.menuId ?? null;
+    if (!menuId) return null;
+    try {
+      const menu = await repos.menuRepo.findById(menuId);
+      return menu ? buildMenuAIContext(menu) : null;
+    } catch {
+      return null;
+    }
+  })();
+
   return {
     ok: true,
     proposal,
     context: ctx,
     voiceMemoContext,
+    menuAIContext,
     lineHistoryContext: {
       recentCount: lineHistory.length,
       items: lineHistory.map((i) => ({ scenarioCode: i.scenarioCode, approvalStatus: i.approvalStatus, createdAt: i.createdAt })),

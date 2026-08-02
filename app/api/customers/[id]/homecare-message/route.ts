@@ -4,7 +4,8 @@
  * 認証: extractStaffFromRequest + canAccessCustomer (AUTH-2 準拠)
  *
  * 入力（クライアントから渡す。DBへの新規クエリ・保存は行わない）:
- *   productName, lastPurchasedAt, daysSincePurchase, customerName
+ *   productName, lastPurchasedAt, daysSincePurchase, customerName,
+ *   menuId(PHASE MENU-AI-3・任意・省略時は既存挙動と同じ)
  *
  * LLM: Claude Haiku（timeline-summary route と同一モデル・同一呼び出し方式）。
  * キャッシュ・DB保存は行わない（毎回生成。DB変更・migration禁止のため）。
@@ -15,11 +16,21 @@
  *
  * 失敗時（APIキー未設定・LLMエラー・不正レスポンス等）は success:false を返し、
  * クライアント側で既存辞書メッセージにフォールバックする。
+ *
+ * PHASE MENU-AI-3(2026-08-01): menuId指定時のみ、menuRepo.findById()でbrain_menusを
+ * 1件取得しMenu AI Context(ai_tags/カテゴリ/価格帯/施術時間/禁忌/おすすめ頻度の
+ * 許可リストのみ・buildMenuAIContext参照)をプロンプト末尾に追記する。既存プロンプトの
+ * 文章(SYSTEM_PROMPT・callClaude内のprompt組み立て)は書き換えない。現状
+ * CustomerBottomSheetはmenuIdを送っていない(UI変更禁止のため今回は未接続)ため、
+ * 実際に付与されるのはmenuIdを渡す呼び出し元が現れてから。取得できない/失敗時は
+ * エラーにせず、Menu AI Contextなしで従来どおり生成する。
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { idSchema, toValidationErrorResponse } from '../../../_schemas/common'
 import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest'
 import { canAccessCustomer } from '@/lib/auth/canAccessCustomer'
+import { getRepos } from '../../../../lib/repos'
+import { buildMenuAIContext, formatMenuAIContextBlock } from '@/lib/menu/buildMenuAIContext'
 
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 
@@ -38,12 +49,25 @@ interface RequestBody {
   lastPurchasedAt:    string
   daysSincePurchase:  number
   customerName:       string
+  menuId?:             string
+}
+
+async function resolveMenuAIContextBlock(menuId: string | undefined): Promise<string | null> {
+  if (!menuId) return null
+  try {
+    const menu = await getRepos().menuRepo.findById(menuId)
+    return menu ? formatMenuAIContextBlock(buildMenuAIContext(menu)) : null
+  } catch {
+    return null
+  }
 }
 
 async function callClaude(body: RequestBody): Promise<string | null> {
   if (!ANTHROPIC_KEY) return null
   try {
-    const prompt = `顧客名: ${body.customerName}\n商品名: ${body.productName}\n前回購入日: ${body.lastPurchasedAt}\n前回購入からの経過日数: ${body.daysSincePurchase}日`
+    const basePrompt = `顧客名: ${body.customerName}\n商品名: ${body.productName}\n前回購入日: ${body.lastPurchasedAt}\n前回購入からの経過日数: ${body.daysSincePurchase}日`
+    const menuAIContextBlock = await resolveMenuAIContextBlock(body.menuId)
+    const prompt = menuAIContextBlock ? `${basePrompt}\n\n${menuAIContextBlock}` : basePrompt
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method:  'POST',
@@ -106,7 +130,15 @@ export async function POST(
     return NextResponse.json({ success: false, error: 'invalid_body' }, { status: 400 })
   }
 
-  const message = await callClaude(body as RequestBody)
+  const normalized: RequestBody = {
+    productName: body.productName,
+    lastPurchasedAt: body.lastPurchasedAt,
+    daysSincePurchase: body.daysSincePurchase,
+    customerName: body.customerName,
+    menuId: typeof body.menuId === 'string' && body.menuId.length > 0 ? body.menuId : undefined,
+  }
+
+  const message = await callClaude(normalized)
   if (!message) {
     return NextResponse.json({ success: false, error: 'generation_failed' }, { status: 503 })
   }

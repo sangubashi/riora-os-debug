@@ -3,7 +3,10 @@ import type { Menu, UUID } from '../../types/riora.types';
 import type { IMenuRepo, MenuCreateInput, MenuUpdateInput } from '../interfaces';
 import { toMenu, fromMenuCreateInput, fromMenuUpdateInput, type BrainMenuRow } from './mappers';
 
-const MENU_COLUMNS = 'id, store_id, name, price, role, target_types';
+// PHASE MENU-AI-1: AI提案向け詳細情報の列を追加(brain_menusへのADD COLUMNのみ・新規テーブルなし)。
+const MENU_COLUMNS = 'id, store_id, name, price, role, target_types, ' +
+  'duration_minutes, skin_concern_tags, expected_effects, recommended_cycle_days, ' +
+  'contraindication_tags, recommended_homecare_products, ai_tags';
 
 export class MenuRepo implements IMenuRepo {
   constructor(private readonly client: SupabaseClient) {}

@@ -44,6 +44,7 @@ const SUCCESS_RESULT: GenerateCustomerProposalResult = {
   voiceMemoContext: { linkStatus: 'no_match', legacyCustomerId: null, customerNotes: [], contraindications: [], latestBookingPromptSummary: null, latestHandoverSummary: null },
   lineHistoryContext: { recentCount: 0, items: [] },
   nextBookingSuggestion: null,
+  menuAIContext: null,
 };
 
 describe('GET/POST /api/admin/proposals', () => {

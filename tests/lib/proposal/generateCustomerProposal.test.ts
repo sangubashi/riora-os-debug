@@ -7,7 +7,7 @@
 // ================================================================
 import { describe, expect, it, vi } from 'vitest';
 import { generateCustomerProposal, type ProposalGenerationRepos } from '../../../src/lib/proposal/generateCustomerProposal';
-import type { Customer, Visit, Staff, Candidate, Store, ScoringWeights } from '../../../src/types/riora.types';
+import type { Customer, Visit, Staff, Candidate, Store, ScoringWeights, Menu } from '../../../src/types/riora.types';
 import type { StyleAffinityTable } from '../../../src/types/brain.types';
 
 function customer(overrides: Partial<Customer> = {}): Customer {
@@ -57,7 +57,16 @@ function styleAffinity(): StyleAffinityTable {
   return { theory: { ...perKind }, empathy: { ...perKind }, evidence: { ...perKind } };
 }
 
-function createFakeRepos(overrides: { customer?: Customer | null; visits?: Visit[]; candidates?: Candidate[] } = {}): ProposalGenerationRepos {
+function menu(overrides: Partial<Menu> = {}): Menu {
+  return {
+    id: 'menu-1', storeId: 'store-1', name: 'ハーブピーリング', price: 12000, role: 'peeling', targetTypes: [],
+    durationMinutes: 60, skinConcernTags: ['毛穴'], expectedEffects: ['引き締め'], recommendedCycleDays: 28,
+    contraindicationTags: ['妊娠中'], recommendedHomecareProducts: ['美容液'], aiTags: ['毛穴', 'ピーリング'],
+    ...overrides,
+  };
+}
+
+function createFakeRepos(overrides: { customer?: Customer | null; visits?: Visit[]; candidates?: Candidate[]; menu?: Menu | null } = {}): ProposalGenerationRepos {
   return {
     customerRepo: { findById: async () => (overrides.customer !== undefined ? overrides.customer : customer()), listByStore: async () => [], findByExternalKeyHash: async () => null, create: async () => customer(), patchFromImport: async () => customer(), updateCustomerType: async () => customer() },
     visitRepo: {
@@ -73,6 +82,11 @@ function createFakeRepos(overrides: { customer?: Customer | null; visits?: Visit
     statsRepo: { loadCells: async () => new Map(), refreshStepStats: async () => {} },
     storeRepo: { findById: async () => store() },
     lineQueueRepo: { enqueue: async () => 'q1', listPendingByStore: async () => [], updateStatus: async () => null, recentByCustomer: async () => [] },
+    menuRepo: {
+      listByStore: async () => [],
+      findById: async () => (overrides.menu !== undefined ? overrides.menu : menu()),
+      create: async () => menu(), update: async () => menu(), softDelete: async () => {}, countVisitsByMenuId: async () => 0,
+    },
   };
 }
 
@@ -123,6 +137,33 @@ describe('generateCustomerProposal', () => {
     }
     expect(result.ok && result.lineHistoryContext.recentCount).toBe(0);
     expect(result.ok && result.voiceMemoContext.linkStatus).toBe('no_match'); // legacyClient未指定
+  });
+
+  it('PHASE MENU-AI-3: 直近来店にmenuIdがあればmenuAIContextを許可リストのみで組み立てる', async () => {
+    const repos = createFakeRepos({
+      visits: [visit({ visitDate: '2026-06-01', menuId: 'menu-1' })],
+      menu: menu({ id: 'menu-1', price: 12000, role: 'peeling', aiTags: ['毛穴', 'ピーリング'], durationMinutes: 60, recommendedCycleDays: 28, contraindicationTags: ['妊娠中'] }),
+    });
+    const result = await generateCustomerProposal(
+      { storeId: 'store-1', customerId: 'c1', staffId: 'staff-1', nowJst: '2026-06-25' },
+      repos
+    );
+
+    expect(result.ok && result.menuAIContext).toEqual({
+      aiTags: ['毛穴', 'ピーリング'], category: 'peeling', priceBand: { min: 10000, max: 15000 },
+      durationMinutes: 60, contraindicationTags: ['妊娠中'], recommendedCycleDays: 28,
+    });
+  });
+
+  it('PHASE MENU-AI-3: 該当メニューが見つからない場合はmenuAIContext=nullでエラーにしない(④)', async () => {
+    const repos = createFakeRepos({ menu: null });
+    const result = await generateCustomerProposal(
+      { storeId: 'store-1', customerId: 'c1', staffId: 'staff-1', nowJst: '2026-06-25' },
+      repos
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.menuAIContext).toBeNull();
   });
 
   it('legacyClient指定時、氏名一致する旧顧客が1件あればvoiceMemoContext.linkStatus=matchedになる', async () => {
