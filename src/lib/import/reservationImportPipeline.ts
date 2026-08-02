@@ -225,6 +225,13 @@ export type ReservationImportResult =
   | { ok: true; report: ReservationImportReport }
   | { ok: false; code: string; message: string }
 
+/** brain_ops_logs.detail.skippedDetail 1件分(RES-9: スキップ理由の事後調査用)。 */
+interface SkippedDetailEntry {
+  rowNumber:    number
+  customerName: string
+  reasonCode:   'missing_field' | 'unresolved_staff' | 'unresolved_status' | 'invalid_datetime'
+}
+
 export async function runReservationImportPipeline(
   input: ReservationImportInput, repos: ReservationPipelineRepos, supabase: SupabaseClient
 ): Promise<ReservationImportResult> {
@@ -240,10 +247,17 @@ export async function runReservationImportPipeline(
   let skipped = parsed.issues.filter(i => i.lineNumber !== undefined).length
   let needsReviewCount = 0
 
+  // missing_field分(CSVパース時点で行自体が組み立てられなかった行)は
+  // customerNameを取得する術が無いため空文字とする(RES-9)。
+  const skippedDetail: SkippedDetailEntry[] = parsed.issues
+    .filter((i): i is typeof i & { lineNumber: number } => i.lineNumber !== undefined)
+    .map(i => ({ rowNumber: i.lineNumber, customerName: '', reasonCode: 'missing_field' }))
+
   for (const row of parsed.rows) {
     const resolved = resolveRow(row, ctx)
     if (!resolved.ok) {
       skipped += 1
+      skippedDetail.push({ rowNumber: row.lineNumber, customerName: row.customerName, reasonCode: resolved.reasonCode })
       continue
     }
 
@@ -304,7 +318,7 @@ export async function runReservationImportPipeline(
     storeId: input.storeId,
     kind:    'reservation_csv_import',
     actorId: null,
-    detail:  { fileName: input.fileName ?? '', rows: parsed.totalLines, created, updated, skipped, needsReviewCount, durationMs },
+    detail:  { fileName: input.fileName ?? '', rows: parsed.totalLines, created, updated, skipped, needsReviewCount, durationMs, skippedDetail },
   })
 
   return { ok: true, report: { created, updated, skipped, needsReviewCount, durationMs } }
