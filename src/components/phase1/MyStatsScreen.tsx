@@ -72,6 +72,10 @@ import { useMyStatsStore, type WeeklyDiff, type MyStats } from '@/store/useMySta
 import { useHomeStore } from '@/store/useHomeStore'
 import { useNotificationsStore } from '@/store/useNotificationsStore'
 import { useAuthStore } from '@/store/useAuthStore'
+import { useNewCustomerSheetStore } from '@/store/useNewCustomerSheetStore'
+import { useCustomerStore, type CustomerRow } from '@/store/useCustomerStore'
+import CustomerBottomSheet from '@/components/customer/CustomerBottomSheet'
+import type { Customer as BSCustomer, Reservation as BSReservation } from '@/types'
 
 // ─── スタッフ別出し分け(PHASE MYPAGE-STAFF-VARIANT) ───────────────────────────
 //
@@ -341,6 +345,49 @@ function buildMonthlyComment(staffId: string | null, stats: MyStats): string {
   return top ? top.text : MONTHLY_NO_PLUS_COMMENT
 }
 
+// ─── そろそろの方タップ → Customer Bottom Sheet(PHASE MYPAGE-REPLENISH-TAP) ──────
+//
+// Phase1Screen.tsx(今日タブ)のhandleSelectCustomerFromNotification/
+// toCustomerFromRow/toReservationFromRowと同じ変換(useCustomerStore→
+// CustomerBottomSheet)をそのまま流用する。そろそろの方の通知(kind='homecare_replenish')
+// は既にcustomerId/customerNameを持っているため、新規APIは追加しない。
+function toCustomerFromRow(c: CustomerRow): BSCustomer {
+  return {
+    id:                    c.id,
+    name:                  c.name,
+    visits:                c.visitCount,
+    visit_count:           c.visitCount,
+    total_sales:           c.totalSpent,
+    avg_price:             c.visitCount > 0 ? Math.round(c.totalSpent / c.visitCount) : 0,
+    last_visit:            c.lastVisitDate ?? new Date(Date.now() - c.lastVisit * 86400000).toISOString().slice(0, 10),
+    customer_type:         c.type,
+    skinConcernType:       c.skinConcernType,
+    vip_rank:              c.isVip ? 4 : 1,
+    churn_risk:            c.churnRisk,
+    line_response_rate:    c.lineResponseRate,
+    next_visit_prediction: '',
+    skin_tags:             [],
+    recommended_cycle_days: undefined,
+  }
+}
+
+function toReservationFromRow(c: CustomerRow): BSReservation {
+  return {
+    id:                    null,
+    customer_id:           null,
+    customer_hash_id:      null,
+    staff_id:              c.assignedStaffId ?? '',
+    menu:                  c.treatments[0] ?? '施術履歴未設定',
+    scheduled_at:          new Date().toISOString(),
+    status:                'confirmed',
+    customer_name:         c.name,
+    is_vip:                c.isVip,
+    churn_risk:            c.churnRisk,
+    days_since_last_visit: c.lastVisit,
+    customer_type:         c.type,
+  }
+}
+
 function SmallStat({ label, value, color = '#5C4033' }: { label: string; value: string; color?: string }) {
   return (
     <div
@@ -363,6 +410,27 @@ export default function MyStatsScreen() {
   // 再利用する(新規API・新規fetchロジックは追加しない)。
   const { reservations: todayReservations, isLoading: isHomeLoading, fetchTodayReservations } = useHomeStore()
   const { notifications, isLoading: isNotifLoading, error: notifError, fetchNotifications } = useNotificationsStore()
+
+  // そろそろの方タップ → Customer Bottom Sheet(PHASE MYPAGE-REPLENISH-TAP)。
+  // Phase1Screen.tsx(今日タブ)の通知タップと同じ遷移フロー(useNewCustomerSheetStore +
+  // useCustomerStoreからの解決)を流用する。
+  const {
+    isOpen:      sheetOpen,
+    customer:    sheetCustomer,
+    reservation: sheetReservation,
+    open:        openSheet,
+    close:       closeSheet,
+  } = useNewCustomerSheetStore()
+
+  async function handleSelectCustomer(customerId: string) {
+    let rows = useCustomerStore.getState().customers
+    if (rows.length === 0) {
+      await useCustomerStore.getState().fetchCustomers()
+      rows = useCustomerStore.getState().customers
+    }
+    const row = rows.find((c) => c.id === customerId)
+    if (row) openSheet(toCustomerFromRow(row), toReservationFromRow(row))
+  }
 
   useEffect(() => {
     if (!authInitialized) return
@@ -664,8 +732,12 @@ export default function MyStatsScreen() {
                     return (
                       <div
                         key={n.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => { if (n.customerId) handleSelectCustomer(n.customerId) }}
+                        onKeyDown={(e) => { if (e.key === 'Enter' && n.customerId) handleSelectCustomer(n.customerId) }}
                         className="bg-white rounded-[16px] border border-[#F5E6E8] px-4 py-3"
-                        style={{ boxShadow: '0 2px 10px rgba(245,160,181,0.06)' }}
+                        style={{ boxShadow: '0 2px 10px rgba(245,160,181,0.06)', cursor: n.customerId ? 'pointer' : undefined }}
                       >
                         <p className="text-[13px] font-semibold" style={{ color: '#5C4033' }}>
                           {n.customerName ?? '—'} 様
@@ -762,6 +834,16 @@ export default function MyStatsScreen() {
         isOpen={showChangePassword}
         onClose={() => setShowChangePassword(false)}
       />
+
+      {sheetOpen && sheetCustomer && sheetReservation && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60 }}>
+          <CustomerBottomSheet
+            customer={sheetCustomer}
+            reservation={sheetReservation}
+            onClose={closeSheet}
+          />
+        </div>
+      )}
     </div>
   )
 }
