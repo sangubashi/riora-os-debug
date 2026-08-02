@@ -87,7 +87,9 @@ async function transcribeWithWhisper(
 ): Promise<string> {
   if (!OPENAI_KEY) throw new Error('OPENAI_API_KEY が未設定です')
 
-  const ext = mimeType.includes('mp4') || mimeType.includes('aac') ? 'm4a' : 'webm'
+  const ext = mimeType.includes('mp4') || mimeType.includes('aac') ? 'm4a'
+    : mimeType.includes('wav') ? 'wav'
+    : 'webm'
   const fd  = new FormData()
   fd.append('file', new Blob([audioBuffer], { type: mimeType }), `audio.${ext}`)
   fd.append('model', 'whisper-1')
