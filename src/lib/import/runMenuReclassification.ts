@@ -10,6 +10,12 @@
  *   - customer_type は変更しない(別途 /api/admin/customer-type/classify を実行)
  *   - fallback_other への再マッチは更新しない(改悪防止)
  *   - 同一 CSV を複数回投入しても冪等(変化なし行を noChange でカウント)
+ *
+ * PHASE CSV-MENU-FALLBACK-IMPROVE(2026-08-02): CSV取込側がrole='imported_other'の行を
+ * 未マッチ名ごとに複数作成するようになったため、「更新前がfallbackだったか」の判定を
+ * 旧来のfallbackMenuId(店舗共有1行のID)単純比較から、imported_otherロールの全行ID
+ * 集合(importedOtherIds)への包含チェックに変更した。旧来の共有1行のみに依存していると、
+ * 新方式で作られた行に乗っている来店が再分類対象から漏れてしまうため。
  */
 import {
   parseSalonBoardDetailCsv,
@@ -60,7 +66,9 @@ export async function runMenuReclassification(
   ])
 
   const menuLookup = buildMenuLookup(menus)
-  const fallbackMenuId = menuLookup.fallbackMenuId
+  // PHASE CSV-MENU-FALLBACK-IMPROVE: fallbackMenuId(店舗共有1行)だけでなく、未マッチ名
+  // ごとに作られたimported_other行もすべて「フォールバック扱い」として拾う。
+  const importedOtherIds = new Set(menus.filter(m => m.role === 'imported_other').map(m => m.id))
 
   let updated = 0, noChange = 0, skipped = 0, errors = 0
   const details: ReclassificationDetail[] = []
@@ -100,7 +108,7 @@ export async function runMenuReclassification(
       if (existingVisit.menuId === menuRes.menuId) { noChange++; continue }
 
       // 5. 変更前が fallback_other 以外なら skip（手動設定を上書きしない）
-      if (existingVisit.menuId !== fallbackMenuId) { skipped++; continue }
+      if (!importedOtherIds.has(existingVisit.menuId)) { skipped++; continue }
 
       // 6. menu_id 更新（source='salonboard_import' ガードはリポジトリ層にもある）
       await repos.visitRepo.updateMenuId(existingVisit.id, menuRes.menuId)

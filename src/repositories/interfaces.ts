@@ -333,15 +333,17 @@ export interface IBlogArticleRepo {
 }
 
 /**
- * brain_menus新規作成入力(メニューマスタ管理画面専用)。
- * role='imported_other'はCSV突合エンジンのフォールバック専用行のため、
- * 新規作成時の選択肢からは除外する(API層でも二重にガードする)。
+ * brain_menus新規作成入力。
+ * メニューマスタ管理画面はroleに'imported_other'を選択できない(EDITABLE_MENU_ROLES・
+ * zodスキーマで別途ガード済み)。PHASE CSV-MENU-FALLBACK-IMPROVEで、CSV取込の
+ * menuResolver.tsが未マッチのCSVメニュー名ごとにrole='imported_other'の行を作成できる
+ * よう、role型はMenuRole全体を許容する(実行時の制限はAPI層のzod検証が担う)。
  */
 export interface MenuCreateInput {
   storeId:     UUID;
   name:        string;
   price:       number;
-  role:        Exclude<MenuRole, 'imported_other'>;
+  role:        MenuRole;
   targetTypes: CustomerType[];
   // PHASE MENU-AI-1: 以下すべてoptional(現状Menu Master画面のUIには編集欄が無く、
   // API経由の値渡しのみに対応する)。

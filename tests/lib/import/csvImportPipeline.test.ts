@@ -103,6 +103,7 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
   };
   let customerSeq = 0;
   let visitSeq = 0;
+  let menuSeq = 0;
 
   const repos: PipelineRepos = {
     storeRepo: {
@@ -115,9 +116,22 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
       create: async () => { throw new Error('not implemented in test fake'); },
     },
     menuRepo: {
+      // PHASE CSV-MENU-FALLBACK-IMPROVE: resolveOrCreateFallbackMenu()が同一store内で
+      // 同じ生CSVメニュー名を検索できるよう、find-or-create相当(既存行があれば再利用)に
+      // する(本番のMenuRepo.create()は素直にINSERTするだけだが、テストでは「同じ未マッチ名
+      // で複数回import実行しても新規作成されない」ことをlistByStore()の再取得経由で
+      // 検証したいため、作成した行をmenus配列にも反映する)。
       listByStore: async () => menus,
       findById: async () => null,
-      create: async (input) => ({ id: 'menu-new', storeId: input.storeId, name: input.name, price: input.price, role: input.role, targetTypes: input.targetTypes }),
+      create: async (input) => {
+        menuSeq += 1;
+        const created: Menu = {
+          id: `menu-created-${menuSeq}`, storeId: input.storeId, name: input.name,
+          price: input.price, role: input.role, targetTypes: input.targetTypes,
+        };
+        menus.push(created);
+        return created;
+      },
       update: async () => null,
       softDelete: async () => {},
       countVisitsByMenuId: async () => 0,
@@ -575,7 +589,11 @@ describe('csvImportPipeline', () => {
       });
     });
 
-    it('メニュー名が不一致でフォールバックも無い場合はその会計をスキップする(来店・顧客を作らない)', async () => {
+    // PHASE CSV-MENU-FALLBACK-IMPROVE(2026-08-02)以前は、店舗共有フォールバック行
+    // (role='imported_other')が無い店舗では未マッチメニューをスキップしていたが、
+    // 未マッチ名ごとにフォールバック行を新規作成する方式に変更したため、店舗共有行の
+    // 有無に関わらず取込めるようになった(ユーザー承認済みの挙動変更)。
+    it('メニュー名が不一致で店舗共有フォールバック行も無い場合、専用のimported_other行を新規作成して取込む', async () => {
       const repos = createFakeRepos({ menus: [
         { id: 'menu-1', storeId: STORE_ID, name: '全く違うメニュー', price: 5000, role: 'entry', targetTypes: [] },
       ] });
@@ -587,10 +605,101 @@ describe('csvImportPipeline', () => {
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.report.newCustomers).toBe(0);
-      expect(result.report.visitsImported).toBe(0);
-      expect(repos.state.customers).toHaveLength(0);
-      expect(repos.state.visits).toHaveLength(0);
+      expect(result.report.newCustomers).toBe(1);
+      expect(result.report.visitsImported).toBe(1);
+      expect(repos.state.visits).toHaveLength(1);
+      const createdMenuId = repos.state.visits[0].menuId;
+      expect(createdMenuId).not.toBe('menu-1');
+      const createdMenu = (await repos.menuRepo.listByStore(STORE_ID)).find(m => m.id === createdMenuId);
+      expect(createdMenu).toMatchObject({ name: 'カット', role: 'imported_other' });
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // PHASE CSV-MENU-FALLBACK-IMPROVE: 未マッチのCSVメニュー名ごとのimported_other行
+  // ──────────────────────────────────────────────────────────────────────────
+  describe('runImportPipeline(PHASE CSV-MENU-FALLBACK-IMPROVE: 未マッチ名ごとのimported_other行)', () => {
+    it('未マッチ名Aは専用のimported_other行を新規作成してmenu_idに保存する', async () => {
+      const repos = createFakeRepos({ menus: [
+        { id: 'menu-1', storeId: STORE_ID, name: 'カット', price: 5000, role: 'entry', targetTypes: [] },
+      ] });
+      const csv = buildCsv([
+        row({ checkoutId: 'A1', date: '2026-06-01', staff: '鈴木', customerName: '田中花子', customerNumber: 'C001', menu: '毛穴洗浄コース' }),
+      ]);
+
+      const result = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.report.visitsImported).toBe(1);
+      const createdMenuId = repos.state.visits[0].menuId;
+      expect(createdMenuId).not.toBe('menu-1');
+      const createdMenu = (await repos.menuRepo.listByStore(STORE_ID)).find(m => m.id === createdMenuId);
+      expect(createdMenu).toMatchObject({ name: '毛穴洗浄コース', role: 'imported_other' });
+    });
+
+    it('同じ未マッチ名Aを別のCSV取込で再取込すると、新規作成済みの同じmenu_idを再利用する(重複作成しない)', async () => {
+      const repos = createFakeRepos({ menus: [
+        { id: 'menu-1', storeId: STORE_ID, name: 'カット', price: 5000, role: 'entry', targetTypes: [] },
+      ] });
+      const csv1 = buildCsv([
+        row({ checkoutId: 'A1', date: '2026-06-01', staff: '鈴木', customerName: '田中花子', customerNumber: 'C001', menu: '毛穴洗浄コース' }),
+      ]);
+      const first = await runImportPipeline({ storeId: STORE_ID, csvText: csv1, reviewDecisions: {} }, repos);
+      expect(first.ok).toBe(true);
+      if (!first.ok) return;
+      const firstMenuId = repos.state.visits[0].menuId;
+
+      // 別日・別顧客の会計で同じ未マッチ名を、別のCSV取込実行(=新しいbuildResolutionContext)で再取込む
+      const csv2 = buildCsv([
+        row({ checkoutId: 'B1', date: '2026-06-02', staff: '鈴木', customerName: '佐藤太郎', customerNumber: 'C002', menu: '毛穴洗浄コース' }),
+      ]);
+      const second = await runImportPipeline({ storeId: STORE_ID, csvText: csv2, reviewDecisions: {} }, repos);
+      expect(second.ok).toBe(true);
+      if (!second.ok) return;
+
+      expect(repos.state.visits).toHaveLength(2);
+      expect(repos.state.visits[1].menuId).toBe(firstMenuId);
+
+      const importedOtherRows = (await repos.menuRepo.listByStore(STORE_ID))
+        .filter(m => m.role === 'imported_other' && m.name === '毛穴洗浄コース');
+      expect(importedOtherRows).toHaveLength(1);
+    });
+
+    it('未マッチ名Bは未マッチ名Aとは別のmenu_idを新規作成する', async () => {
+      const repos = createFakeRepos({ menus: [
+        { id: 'menu-1', storeId: STORE_ID, name: 'カット', price: 5000, role: 'entry', targetTypes: [] },
+      ] });
+      const csv = buildCsv([
+        row({ checkoutId: 'A1', date: '2026-06-01', staff: '鈴木', customerName: '田中花子', customerNumber: 'C001', menu: '毛穴洗浄コース' }),
+        row({ checkoutId: 'B1', date: '2026-06-02', staff: '鈴木', customerName: '佐藤太郎', customerNumber: 'C002', menu: '小顔フェイシャル' }),
+      ]);
+
+      const result = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const [visitA, visitB] = repos.state.visits;
+      expect(visitA.menuId).not.toBe(visitB.menuId);
+      const menus = await repos.menuRepo.listByStore(STORE_ID);
+      expect(menus.find(m => m.name === '毛穴洗浄コース')?.role).toBe('imported_other');
+      expect(menus.find(m => m.name === '小顔フェイシャル')?.role).toBe('imported_other');
+    });
+
+    it('既存の一致方式(exact/normalized/partial/keyword_match)は変更されない', async () => {
+      const repos = createFakeRepos({ menus: [
+        { id: 'menu-1', storeId: STORE_ID, name: 'EMSフェイシャル', price: 8000, role: 'entry', targetTypes: [] },
+      ] });
+      const csv = buildCsv([
+        row({ checkoutId: 'A1', date: '2026-06-01', staff: '鈴木', customerName: '田中花子', customerNumber: 'C001', menu: ' ems　フェイシャル ' }),
+      ]);
+
+      const result = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(repos.state.visits[0].menuId).toBe('menu-1');
+      expect(result.report.menuResolution.normalizedMatch).toBe(1);
     });
   });
 

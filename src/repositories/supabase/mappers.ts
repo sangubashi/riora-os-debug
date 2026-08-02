@@ -733,12 +733,14 @@ function fromMenuAIFieldsInput(input: MenuAIFieldsInput): Record<string, unknown
   return patch;
 }
 
-/** MenuCreateInput(camelCase) → brain_menus INSERT行(snake_case)。 */
+/** MenuCreateInput(camelCase) → brain_menus INSERT行(snake_case)。
+ *  role型はinterfaces.ts側と同じ理由でMenuRole全体を許容する(PHASE
+ *  CSV-MENU-FALLBACK-IMPROVE)。 */
 export function fromMenuCreateInput(input: {
   storeId: string;
   name: string;
   price: number;
-  role: Exclude<MenuRole, 'imported_other'>;
+  role: MenuRole;
   targetTypes: CustomerType[];
 } & MenuAIFieldsInput): Record<string, unknown> {
   return {

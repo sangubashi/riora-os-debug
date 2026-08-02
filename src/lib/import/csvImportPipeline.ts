@@ -12,9 +12,15 @@
  * このCSV形式(SalonBoard売上明細)には住所・生年月日列が存在しないため、
  * prefecture/city/ageGroupは常にnull(将来別形式の顧客マスタCSVに対応する場合に補完する)。
  *
- * menuResolverのフォールバック(role='imported_other')は
- * supabase/migrations/20260621_csv_import_fallback_menu_seed.sql 未適用の店舗では存在しないため、
- * その場合は完全一致(正規化・部分一致含む)しないメニューはすべてcheckout_integrity_error扱いになる。
+ * PHASE CSV-MENU-FALLBACK-IMPROVE(2026-08-02): runImportPipeline()内の実取込経路では
+ * menuResolver.resolveOrCreateFallbackMenu()を使い、完全一致(正規化・部分一致・
+ * keyword_match含む)しないメニューはCSVメニュー名ごとのrole='imported_other'行を検索/
+ * 新規作成して解決する(店舗共有の1行への集約は既存データ互換のため残置するが、新規の
+ * 未マッチ名はもう使わない)。そのため実取込では基本的にmenuUnresolvedSkippedCountは
+ * 発生しない。buildDryRunResult()(Dry Run)は書き込みを行わないため引き続き
+ * menuResolver.resolveMenuId()を直接呼び、店舗共有フォールバック行が無い場合は従来どおり
+ * checkout_integrity_error相当として数える(Dry Runと実取込の挙動差については
+ * PHASE CSV-MENU-FALLBACK-IMPROVE報告参照)。
  *
  * Pass C(名寄せ精度改善): menuResolver.resolveMenuId()の解決結果(exact_match/
  * normalized_match/partial_match/fallback_other/unresolved)はrawMenuNameごとに集計し、
@@ -36,7 +42,7 @@ import {
 } from './salonBoardDetailParser'
 import { sanitizeResidualPii, hashExternalKey } from './piiSanitizer'
 import { buildStaffLookup, resolveStaffId, type StaffLookup } from './staffResolver'
-import { buildMenuLookup, resolveMenuId, type MenuLookup } from './menuResolver'
+import { buildMenuLookup, resolveMenuId, resolveOrCreateFallbackMenu, type MenuLookup } from './menuResolver'
 import { findNameCandidates, decideCustomerMatch, type CustomerCandidate } from './customerMatcher'
 import { recordMenuResolution, summarizeMenuResolution, computeCsvQualityReport } from './csvImportQualityReport'
 import { recordProposalOutcome } from '../proposal/recordProposalOutcome'
@@ -545,7 +551,10 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
       continue // allStaffResolvedゲートで通常発生しない(競合時のみ)
     }
 
-    const menuRes = resolveMenuId(agg.menuName, ctx.menuLookup)
+    // PHASE CSV-MENU-FALLBACK-IMPROVE: 未マッチのCSVメニュー名ごとにimported_other行を
+    // 検索/新規作成する(resolveMenuId()の4つの一致方式自体は無変更)。DBへ書き込む
+    // この実取込経路でのみ使う(Dry Run/品質レポート/再分類は従来のresolveMenuId()のまま)。
+    const menuRes = await resolveOrCreateFallbackMenu(agg.menuName, ctx.menuLookup, input.storeId, repos.menuRepo)
     recordMenuResolution(agg.menuName, menuRes, menuResolutionByRawName)
     if (menuRes.status === 'unresolved') {
       menuUnresolvedSkippedCount += 1
