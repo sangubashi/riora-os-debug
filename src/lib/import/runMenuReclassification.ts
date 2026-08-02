@@ -16,12 +16,29 @@
  * 旧来のfallbackMenuId(店舗共有1行のID)単純比較から、imported_otherロールの全行ID
  * 集合(importedOtherIds)への包含チェックに変更した。旧来の共有1行のみに依存していると、
  * 新方式で作られた行に乗っている来店が再分類対象から漏れてしまうため。
+ *
+ * PHASE CSV-RECOVERY-1(2026-08-02): 過去にCSV取込(メニュー名未マッチ)へ集約された
+ * 来店を、元のCSVメニュー名専用のimported_other行(PHASE CSV-MENU-FALLBACK-IMPROVEで
+ * 導入)へ復元する機能を追加した。
+ *   - デフォルト(recoverFallbackNames省略/false)では追加前と完全に同じ挙動
+ *     (既存呼び出し元・/api/admin/visits/reclassify-menusの動作は無変更)。
+ *   - recoverFallbackNames: true を指定すると、resolveMenuId()が'matched'を返さない
+ *     行についても、既存visitが現在imported_other行に乗っている場合に限り復元対象にする。
+ *   - dryRun(recoverFallbackNames時のデフォルトはtrue)がtrueの間はbrain_menus/
+ *     brain_visitsへ一切書き込まず、previewFallbackMenu()で計算した結果のみを
+ *     detailsとして返す(menu_id更新前に変更一覧を確認できるようにするため)。
+ *     dryRun: false を明示した場合のみ、実際にresolveOrCreateFallbackMenu()で
+ *     imported_other行を検索/新規作成し、menu_idを更新する。
+ *   - treatment_amount=0の来店(店販・割引のみ等、実質メニューが無い会計)は
+ *     復元対象から除外する(元々「メニュー」と呼べる実体が無いため)。
+ *   - resolveMenuId()による既存の'matched'再分類ロジック(exact/normalized/partial/
+ *     keyword_match)自体は変更していない。
  */
 import {
   parseSalonBoardDetailCsv,
   aggregateCheckouts,
 } from './salonBoardDetailParser'
-import { buildMenuLookup, resolveMenuId } from './menuResolver'
+import { buildMenuLookup, resolveMenuId, resolveOrCreateFallbackMenu, previewFallbackMenu } from './menuResolver'
 import { findNameCandidates } from './customerMatcher'
 import type { ICustomerRepo, IVisitRepo, IMenuRepo } from '../../repositories/interfaces'
 import type { UUID } from '../../types/riora.types'
@@ -39,6 +56,8 @@ export interface ReclassificationDetail {
   beforeMenuId: string
   afterMenuId:  string
   method:       string
+  /** PHASE CSV-RECOVERY-1: 実際にDBへ書き込んだか。dry-run時はfalse(プレビューのみ)。 */
+  applied:      boolean
 }
 
 export interface ReclassificationReport {
@@ -47,6 +66,26 @@ export interface ReclassificationReport {
   skipped:   number
   errors:    number
   details:   ReclassificationDetail[]
+  /** PHASE CSV-RECOVERY-1: このレポートがdry-run(書き込みなし)結果かどうか。 */
+  dryRun:    boolean
+}
+
+export interface RunMenuReclassificationInput {
+  storeId: UUID
+  csvText: string
+  /**
+   * PHASE CSV-RECOVERY-1: 未マッチ名(fallback_other/unresolved)の来店も、元のCSV
+   * メニュー名専用のimported_other行への復元対象にする。省略時はfalse(既存挙動と
+   * 完全に同じ。matched以外は従来どおりskip)。
+   */
+  recoverFallbackNames?: boolean
+  /**
+   * PHASE CSV-RECOVERY-1: trueの間はbrain_menus/brain_visitsへ一切書き込まず、
+   * 変更されるであろう内容だけをreport.detailsで返す。recoverFallbackNames:true時の
+   * デフォルトはtrue(まずdry-runのみ)。recoverFallbackNamesがfalse(既存の再分類のみ)
+   * の場合は常にfalse相当(既存呼び出し元の挙動を変えないため、このフラグの影響を受けない)。
+   */
+  dryRun?: boolean
 }
 
 function dateOnly(iso: string): string {
@@ -54,9 +93,15 @@ function dateOnly(iso: string): string {
 }
 
 export async function runMenuReclassification(
-  input: { storeId: UUID; csvText: string },
+  input: RunMenuReclassificationInput,
   repos: ReclassificationRepos,
 ): Promise<ReclassificationReport> {
+  const recoverFallbackNames = input.recoverFallbackNames ?? false
+  // 既存の再分類のみ(recoverFallbackNames=false)の場合はdry-run概念自体が既存挙動に
+  // 存在しなかったため、常に書き込む(=dryRun扱いにしない)。復元機能を使う場合のみ、
+  // 明示的にdryRun:falseを指定しない限りdry-run(書き込みなし)にする。
+  const dryRun = recoverFallbackNames ? (input.dryRun ?? true) : false
+
   const parsed = parseSalonBoardDetailCsv(input.csvText)
   const { aggregates } = aggregateCheckouts(parsed.rows)
 
@@ -75,10 +120,11 @@ export async function runMenuReclassification(
 
   for (const agg of aggregates) {
     try {
-      // 1. メニュー再解決
+      // 1. メニュー再解決(既存4方式。変更なし)
       const menuRes = resolveMenuId(agg.menuName, menuLookup)
-      // fallback_other への「変更」は行わない（改悪防止）
-      if (menuRes.status !== 'matched') {
+
+      // matched以外の行は、復元機能が無効ならここで早期skip(既存挙動と完全に同じ)。
+      if (menuRes.status !== 'matched' && !recoverFallbackNames) {
         skipped++
         continue
       }
@@ -104,27 +150,71 @@ export async function runMenuReclassification(
       const existingVisit = await repos.visitRepo.findByCustomerAndDate(matchedCustomerId, visitDate)
       if (!existingVisit || existingVisit.source !== 'salonboard_import') { skipped++; continue }
 
-      // 4. 変更不要チェック
-      if (existingVisit.menuId === menuRes.menuId) { noChange++; continue }
+      if (menuRes.status === 'matched') {
+        // ── 既存の「本当に一致するメニューが見つかった」場合の再分類(挙動は無変更) ──
+        if (existingVisit.menuId === menuRes.menuId) { noChange++; continue }
+        // 変更前が fallback_other 以外なら skip（手動設定を上書きしない）
+        if (!importedOtherIds.has(existingVisit.menuId)) { skipped++; continue }
 
-      // 5. 変更前が fallback_other 以外なら skip（手動設定を上書きしない）
+        if (!dryRun) {
+          await repos.visitRepo.updateMenuId(existingVisit.id, menuRes.menuId)
+        }
+        updated++
+        details.push({
+          visitDate,
+          customerName: agg.customerName,
+          rawMenuName:  agg.menuName,
+          beforeMenuId: existingVisit.menuId,
+          afterMenuId:  menuRes.menuId,
+          method:       menuRes.method,
+          applied:      !dryRun,
+        })
+        continue
+      }
+
+      // ── PHASE CSV-RECOVERY-1: 未マッチ名の復元(recoverFallbackNames:trueのみ到達) ──
+
+      // 元々「メニュー」と呼べる実体が無い会計(店販・割引のみ等)は対象外。
+      if (existingVisit.treatmentAmount === 0) { skipped++; continue }
+      // 現在imported_other行に乗っていない(既に実メニューに手動設定済み等)来店は対象外。
       if (!importedOtherIds.has(existingVisit.menuId)) { skipped++; continue }
 
-      // 6. menu_id 更新（source='salonboard_import' ガードはリポジトリ層にもある）
-      await repos.visitRepo.updateMenuId(existingVisit.id, menuRes.menuId)
+      if (dryRun) {
+        const preview = previewFallbackMenu(agg.menuName, menuLookup)
+        if (preview.menuId === null && !preview.wouldCreate) { skipped++; continue } // 空文字等、対象外
+        if (preview.menuId === existingVisit.menuId) { noChange++; continue }
+        details.push({
+          visitDate,
+          customerName: agg.customerName,
+          rawMenuName:  agg.menuName,
+          beforeMenuId: existingVisit.menuId,
+          afterMenuId:  preview.menuId ?? '(新規作成予定)',
+          method:       'fallback_other_recovered',
+          applied:      false,
+        })
+        updated++
+        continue
+      }
+
+      const recovered = await resolveOrCreateFallbackMenu(agg.menuName, menuLookup, input.storeId, repos.menuRepo)
+      if (recovered.status !== 'fallback') { skipped++; continue } // 空文字等、対象外(matchedはこの分岐に来ない)
+      if (recovered.menuId === existingVisit.menuId) { noChange++; continue }
+
+      await repos.visitRepo.updateMenuId(existingVisit.id, recovered.menuId)
       updated++
       details.push({
         visitDate,
         customerName: agg.customerName,
         rawMenuName:  agg.menuName,
         beforeMenuId: existingVisit.menuId,
-        afterMenuId:  menuRes.menuId,
-        method:       menuRes.method,
+        afterMenuId:  recovered.menuId,
+        method:       'fallback_other_recovered',
+        applied:      true,
       })
     } catch (e) {
       errors++
     }
   }
 
-  return { updated, noChange, skipped, errors, details }
+  return { updated, noChange, skipped, errors, details, dryRun }
 }

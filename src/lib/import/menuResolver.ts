@@ -34,6 +34,11 @@
  * resolveOrCreateFallbackMenu()が新規作成した行も、この場でlookup(fallbackByRawName)へ
  * 追記するため、同一CSV内で同じ未マッチ名が複数回出現しても2回目以降はDB問い合わせ・
  * 追加作成を行わない。
+ *
+ * PHASE CSV-RECOVERY-1(2026-08-02): previewFallbackMenu()は
+ * resolveOrCreateFallbackMenu()と同じ判定をDB書き込みなしで行う(dry-run用)。
+ * runMenuReclassification.tsが、過去にCSV取込(メニュー名未マッチ)へ集約された
+ * 来店を元のCSVメニュー名へ復元する機能(recoverFallbackNames)で使う。
  */
 
 import { normalizeForMenuMatch, extractSalonBoardNormalized, extractBrainMenuKeywords } from './normalizer'
@@ -180,4 +185,34 @@ export async function resolveOrCreateFallbackMenu(
   })
   lookup.fallbackByRawName.set(rawMenuName, { id: created.id, name: created.name })
   return { status: 'fallback', menuId: created.id, menuName: created.name, method: 'fallback_other' }
+}
+
+export interface FallbackMenuPreview {
+  /** 既存行を再利用する場合はそのid。まだ存在せず新規作成が必要な場合はnull。 */
+  menuId: string | null
+  menuName: string
+  /** trueの場合、実行(dryRun=false)時にresolveOrCreateFallbackMenu()が新規にbrain_menus行を作成する。 */
+  wouldCreate: boolean
+}
+
+/**
+ * PHASE CSV-RECOVERY-1: resolveOrCreateFallbackMenu()のDB書き込みなし版(dry-run用)。
+ * 「実行したら何が起きるか」だけを計算する純粋関数で、brain_menusへは一切問い合わせ・
+ * 書き込みをしない(lookupは呼び出し元が事前に取得済みのものを渡す)。
+ * 呼び出し元(runMenuReclassification.ts)は、resolveMenuId()が'matched'を返さなかった
+ * 場合にのみこの関数を使うこと(matched時はそちらの結果を使う)。
+ */
+export function previewFallbackMenu(rawMenuName: string, lookup: MenuLookup): FallbackMenuPreview {
+  if (rawMenuName.trim() === '') {
+    // 空文字は専用行を作らない方針(resolveOrCreateFallbackMenu参照)。店舗共有行があれば
+    // それを、無ければ「対象外」として返す。
+    return lookup.fallbackMenuId
+      ? { menuId: lookup.fallbackMenuId, menuName: lookup.fallbackMenuName ?? '', wouldCreate: false }
+      : { menuId: null, menuName: '', wouldCreate: false }
+  }
+
+  const existing = lookup.fallbackByRawName.get(rawMenuName)
+  if (existing) return { menuId: existing.id, menuName: existing.name, wouldCreate: false }
+
+  return { menuId: null, menuName: rawMenuName, wouldCreate: true }
 }
