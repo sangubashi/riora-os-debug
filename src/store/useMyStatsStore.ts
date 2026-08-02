@@ -34,8 +34,8 @@ export interface LastMonthSummary {
   nominationRate: number | null
   /** リピート率(%)。先月の来店が0件ならnull。 */
   repeatRate:     number | null
-  /** このスタッフが先月担当した顧客のLTV平均値(全履歴売上+継続中サブスク月額×6)。対象顧客0人ならnull。 */
-  ltv:            number | null
+  /** 店販売上(円)。先月の来店が0件なら0(PHASE MYPAGE-METRICS-RETAILで追加)。 */
+  retailSales:    number
 }
 
 export interface MyStats {
@@ -115,7 +115,7 @@ export const useMyStatsStore = create<MyStatsState>((set) => ({
             avgSpend:       data.lastMonthSummary?.avgSpend ?? null,
             nominationRate: data.lastMonthSummary?.nominationRate ?? null,
             repeatRate:     data.lastMonthSummary?.repeatRate ?? null,
-            ltv:            data.lastMonthSummary?.ltv ?? null,
+            retailSales:    data.lastMonthSummary?.retailSales ?? 0,
           },
         },
       });

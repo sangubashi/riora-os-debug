@@ -43,6 +43,17 @@
  * 「今週残り(明後日以降)」はスタッフ本人に絞って取得できる既存データソースが無いため、
  * ユーザー承認のうえ今回は対象外(今日・明日のみ)としている。
  *
+ * PHASE MYPAGE-METRICS-RETAIL(2026-08-02): 「先月の実績」カードのLTV表示を削除し、
+ * 店販売上に差し替えた(行動につながる指標へ変更・ユーザー指示)。この時点ではLTVの
+ * 算出ロジック(/api/me/monthly-stats側)・型・レスポンスフィールドは変更していない。
+ *
+ * PHASE STAFF-LTV-CLEANUP(2026-08-02): スタッフアプリ全体を再調査し、上記で表示から
+ * 外したLTVがフロントエンドのどこからも参照されない完全なデッドコードだったと判明した
+ * ため、/api/me/monthly-stats側のLTV算出ロジック・レスポンスフィールド・
+ * useMyStatsStore.tsの型フィールドを削除した(ユーザー承認済み)。管理者ダッシュボード
+ * (StaffAnalyticsEngine/CustomerAssetEngine)側のLTV機能・表示は完全に独立した別実装
+ * のため無変更。
+ *
  * PHASE MYPAGE-COMMENT-TIERING(2026-08-01): 「今月のひとこと」「指名カード」の文言が
  * 母数(件数)に関係なく同じ強さの表現になっていた不自然さを修正。指名カード(亀山)は
  * 指名件数(0/1〜3/4〜9/10件以上)で文言を段階化し、「戻ってきてくださる方が多い」という
@@ -472,8 +483,8 @@ export default function MyStatsScreen() {
                   value={stats.lastMonthSummary.repeatRate !== null ? `${stats.lastMonthSummary.repeatRate}%` : '—'}
                 />
                 <SmallStat
-                  label="LTV"
-                  value={stats.lastMonthSummary.ltv !== null ? formatYen(stats.lastMonthSummary.ltv) : '—'}
+                  label="店販売上"
+                  value={formatYen(stats.lastMonthSummary.retailSales)}
                 />
               </div>
             </div>
