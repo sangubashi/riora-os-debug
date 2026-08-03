@@ -19,6 +19,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronLeft } from 'lucide-react'
 import { authedFetch } from '@/lib/api/authedFetch'
+import CelebrationCards from './CelebrationCards'
 
 // ─── 型 ────────────────────────────────────────────────────────────────────────
 
@@ -273,6 +274,9 @@ export default function CustomerAITimelineTab({ customerId, customerName, onBack
         ) : !data ? null : (
           <AnimatePresence mode="popLayout">
             <motion.div key="content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: 'contents' }}>
+
+              {/* ── 祝福・気遣いカード ──────────────────────────────────────── */}
+              <CelebrationCards customerId={customerId} />
 
               {/* ── ② 接客リスク検知 ────────────────────────────────────────── */}
               {summaryData && summaryData.risks && summaryData.risks.length > 0 && (
