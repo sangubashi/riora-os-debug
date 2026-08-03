@@ -1,0 +1,22 @@
+-- ================================================================
+-- STAFF_INVITE_IMPLEMENT_1 (2026-08-03)
+--
+-- 目的: 20260717150000_staff_management_phase2_2_staff_invites.sql が
+-- staff_invitesテーブルを作成した際、service_roleへのGRANT文を含めていな
+-- かったため、本番適用後にPostgREST経由(service_roleクライアント)での
+-- アクセスが 42501 permission denied で失敗することが判明した
+-- (STAFF_INVITE_MIGRATION_APPLY_1で実測確認)。
+--
+-- このプロジェクトでは新規テーブル作成時にservice_roleへの権限が自動付与
+-- されない構成であり、同種の問題は timeline_summary_cache でも過去に
+-- 発生している。既存の20260717150000ファイル自体は変更せず(適用済みの
+-- 不変の履歴として保持)、不足分のGRANTのみを本ファイルで追加する。
+--
+-- アプリ側の実際のアクセスパターン(src/repositories/supabase/InviteRepo.ts):
+--   createInvite  → INSERT
+--   validateInvite → SELECT
+--   consumeInvite  → UPDATE
+-- DELETEは使用しないため付与しない。
+-- ================================================================
+
+GRANT SELECT, INSERT, UPDATE ON public.staff_invites TO service_role;
