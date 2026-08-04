@@ -21,6 +21,7 @@ import { createClient } from '@supabase/supabase-js'
 import { extractInsightTags } from '@/lib/voiceInsight/extractInsightTags'
 import { extractVoiceMemoCategories } from '@/lib/voiceInsight/extractVoiceMemoCategories'
 import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest'
+import { canAccessCustomer } from '@/lib/auth/canAccessCustomer'
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SVC_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -314,10 +315,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid_body' }, { status: 400 })
   }
 
-  const { voiceNoteId, storagePath, customerId, staffId, reservationId } = body
-  if (!voiceNoteId || !storagePath || !customerId || !staffId) {
+  const { voiceNoteId, storagePath, customerId, staffId: bodyStaffId, reservationId } = body
+  if (!voiceNoteId || !storagePath || !customerId || !bodyStaffId) {
     return NextResponse.json({ error: 'missing_fields' }, { status: 400 })
   }
+
+  // SECURITY_FINAL_AUDIT H-2: 担当外顧客への解析結果書き込みを防ぐ。
+  // staffIdはBearerトークンから解決したauthUserId(voice_notes/customer_notesの
+  // staff_id列は auth.users(id) 参照・auth.uid()前提のRLSのため、staffBrainIdではなく
+  // こちらを使う)を使用し、client供給値(bodyStaffId)は信用しない。
+  const accessible = await canAccessCustomer(staff.staffBrainId, customerId, staff.isAdmin)
+  if (!accessible) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
+  const staffId = staff.authUserId
 
   const sb = createClient(SB_URL, SVC_KEY)
   const now = new Date().toISOString()

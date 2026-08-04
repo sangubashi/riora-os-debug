@@ -3,10 +3,12 @@ import { NextRequest } from 'next/server';
 import { POST } from '../../app/api/visits/service-complete/route';
 import { getRepos } from '../../app/lib/repos';
 import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
+import { canAccessCustomer } from '@/lib/auth/canAccessCustomer';
 import type { Customer, Menu, Visit } from '../../src/types/riora.types';
 
 vi.mock('../../app/lib/repos', () => ({ getRepos: vi.fn() }));
 vi.mock('@/lib/auth/extractStaffFromRequest', () => ({ extractStaffFromRequest: vi.fn() }));
+vi.mock('@/lib/auth/canAccessCustomer', () => ({ canAccessCustomer: vi.fn() }));
 
 const STAFF = {
   authUserId: 'auth-uid-1', staffBrainId: 'staff-1',
@@ -95,6 +97,7 @@ describe('POST /api/visits/service-complete (RecordServiceCompletion)', () => {
     vi.clearAllMocks();
     vi.mocked(getRepos).mockReturnValue(mockRepos as never);
     vi.mocked(extractStaffFromRequest).mockResolvedValue(STAFF as never);
+    vi.mocked(canAccessCustomer).mockResolvedValue(true);
     mockRepos.customerRepo.findById.mockResolvedValue(CUSTOMER);
     mockRepos.menuRepo.listByStore.mockResolvedValue([MENU]);
     mockRepos.visitRepo.findByCustomerAndDate.mockResolvedValue(null);
@@ -154,6 +157,18 @@ describe('POST /api/visits/service-complete (RecordServiceCompletion)', () => {
 
     expect(res.status).toBe(422);
     expect(body).toEqual({ success: false, error: 'menu_unresolved' });
+    expect(mockRepos.visitRepo.createSequenced).not.toHaveBeenCalled();
+    expect(mockRepos.visitRepo.updateNextBookingMade).not.toHaveBeenCalled();
+  });
+
+  it('担当外顧客(canAccessCustomerがfalse)の場合は403を返し、何も書き込まない', async () => {
+    vi.mocked(canAccessCustomer).mockResolvedValue(false);
+
+    const res = await POST(buildRequest(VALID_PAYLOAD));
+    const body = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(body).toEqual({ success: false, error: 'forbidden' });
     expect(mockRepos.visitRepo.createSequenced).not.toHaveBeenCalled();
     expect(mockRepos.visitRepo.updateNextBookingMade).not.toHaveBeenCalled();
   });

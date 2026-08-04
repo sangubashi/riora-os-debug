@@ -21,6 +21,7 @@ import { getRepos } from '../../../lib/repos';
 import { serviceCompleteInputSchema } from '../../_schemas/visit';
 import { toValidationErrorResponse } from '../../_schemas/common';
 import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
+import { canAccessCustomer } from '@/lib/auth/canAccessCustomer';
 import { buildMenuLookup, resolveMenuId } from '@/lib/import/menuResolver';
 
 function todayDateOnly(): string {
@@ -57,6 +58,14 @@ export async function POST(req: NextRequest) {
     const customer = await repos.customerRepo.findById(input.customerId);
     if (!customer) {
       return NextResponse.json({ success: false, error: 'customer_not_found' }, { status: 404 });
+    }
+
+    // SECURITY_FINAL_AUDIT H-4: 担当外顧客への接客完了記録(次回予約/ホームケア購入等)
+    // 作成を防ぐ。staffIdは既にトークンから解決済み(なりすまし不可)だが、customerIdへの
+    // アクセス権チェックが無かったため追加する。
+    const accessible = await canAccessCustomer(staff.staffBrainId, input.customerId, staff.isAdmin);
+    if (!accessible) {
+      return NextResponse.json({ success: false, error: 'forbidden' }, { status: 403 });
     }
 
     const menus = await repos.menuRepo.listByStore(customer.storeId);
