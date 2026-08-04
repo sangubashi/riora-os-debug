@@ -12,6 +12,7 @@
  * 代わりにline_send_logs(Webhook受信ログ+送信実行ログ・実データ)を使う。
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { filterAccessibleCustomerIds } from '@/lib/auth/canAccessCustomer';
 
 export interface LineLogMetadata {
   direction?: 'incoming' | 'outgoing';
@@ -66,7 +67,22 @@ function isRealMessageRow(row: LineSendLogRow): boolean {
   return false;
 }
 
-export async function listLineThreads(supabase: SupabaseClient): Promise<LineThreadSummary[]> {
+/**
+ * STAFF_PERMISSION_AUDIT_1: scope省略時(admin画面ChatListTab.tsx等)は従来どおり
+ * 店舗全件を返す。scope指定時(一般スタッフの未読バッジ等)は、canAccessCustomer
+ * (brain_customers前提)のRule A'/B'/Cで担当範囲に絞り込む。
+ *
+ * line_user_ids.customer_id は legacy customers(id) 空間だが、brain_customersへの
+ * 新規作成時に稼働中のDBトリガーで同一UUIDのミラー行が作られる仕組み
+ * (docs/STAFF_PERMISSION_AUDIT.md参照)のため、brain_customers前提の
+ * filterAccessibleCustomerIds にそのまま渡せる。ミラーが無い(legacyのみの)行は
+ * brain_customers側で見つからず自動的に除外される(安全側)。customer_id未紐付けの
+ * LINEユーザー(customerId=null)は担当判定不能なため、非adminには常に除外する。
+ */
+export async function listLineThreads(
+  supabase: SupabaseClient,
+  scope?: { staffBrainId: string | null; isAdmin: boolean }
+): Promise<LineThreadSummary[]> {
   const { data: logs, error } = await supabase
     .from('line_send_logs')
     .select('id, recipient_id, message_body, status, sent_at, metadata')
@@ -97,7 +113,7 @@ export async function listLineThreads(supabase: SupabaseClient): Promise<LineThr
     : { data: [] as { id: string; name: string }[] };
   const customerNameById = new Map((customers ?? []).map((c) => [c.id, c.name]));
 
-  return recipientIds.map((recipientId) => {
+  const allThreads = recipientIds.map((recipientId) => {
     const rows = byRecipient.get(recipientId)!; // 既に新しい順でsent_atソート済み
     const latest = rows[0];
     const user = userByRecipient.get(recipientId) ?? null;
@@ -113,6 +129,15 @@ export async function listLineThreads(supabase: SupabaseClient): Promise<LineThr
       messageCount: rows.length,
     };
   }).sort((a, b) => b.lastAt.localeCompare(a.lastAt));
+
+  if (!scope || scope.isAdmin) return allThreads;
+
+  // 非admin: 担当外顧客のスレッドは除外する。未紐付け(customerId=null)も担当判定不能なため除外。
+  const candidateIds = allThreads
+    .map((t) => t.customerId)
+    .filter((id): id is string => !!id);
+  const accessibleIds = await filterAccessibleCustomerIds(candidateIds, scope.staffBrainId, false);
+  return allThreads.filter((t) => t.customerId !== null && accessibleIds.has(t.customerId));
 }
 
 export async function getLineThreadMessages(supabase: SupabaseClient, recipientId: string): Promise<LineThreadMessage[]> {
