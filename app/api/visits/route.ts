@@ -13,6 +13,7 @@ import { getRepos } from '../../lib/repos';
 import { visitInputSchema } from '../_schemas/visit';
 import { toValidationErrorResponse } from '../_schemas/common';
 import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
+import { canAccessCustomer } from '@/lib/auth/canAccessCustomer';
 
 export async function POST(req: NextRequest) {
   const staff = await extractStaffFromRequest(req);
@@ -46,10 +47,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'customer_not_found' }, { status: 404 });
     }
 
+    // STAFF_PERMISSION_AUDIT_1: 担当外顧客への記録追加・他スタッフへのなりすましを防止する。
+    // staffIdはBearerトークンから解決した本人のstaffBrainIdで上書きする(client供給値は
+    // 信用しない。/api/visits/service-completeと同じ原則)。adminはbrain_staff行を
+    // 持たないため、その場合のみinput.staffId(クライアント指定)にフォールバックする。
+    const accessible = await canAccessCustomer(staff.staffBrainId, input.customerId, staff.isAdmin);
+    if (!accessible) {
+      return NextResponse.json({ success: false, error: 'forbidden' }, { status: 403 });
+    }
+
     const visit = await repos.visitRepo.createSequenced({
       storeId: customer.storeId,
       customerId: input.customerId,
-      staffId: input.staffId,
+      staffId: staff.staffBrainId ?? input.staffId,
       menuId: input.menuId,
       visitDate: new Date().toISOString(),
       isNomination: input.isNomination,

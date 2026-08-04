@@ -19,6 +19,7 @@ import { create } from 'zustand'
 import { supabase, DEMO_MODE } from '@/lib/supabase'
 import type { User, Session } from '@supabase/supabase-js'
 import type { UserRole } from './useDashboardStore'
+import { isAdminEmail } from '@/lib/auth/adminEmail'
 
 // ─── 型定義 ──────────────────────────────────────────────────────────────────
 
@@ -250,6 +251,29 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (data.user) {
         set({ role: await fetchRole(data.user.id) })
       }
+
+      // STAFF_PERMISSION_AUDIT_1: 退職済み(brain_staff.is_active=false)スタッフは
+      // Supabase Auth自体は認証成功してしまう(brain_staffのis_active判定はAPI層の
+      // extractStaffFromRequestのみが行うため)。ログイン画面を実質的に通過させない
+      // よう、ここでAPI認証を1回検証する。新規APIは追加せず、既存のrequireAdmin配下
+      // 軽量GET(/api/admin/staff)を流用する: 401=brain_staff未検出(退職済み/無効)、
+      // 403=有効なスタッフ(admin専用リソースへの想定通りの拒否)として扱う。
+      if (!isAdminEmail(data.user?.email) && data.session) {
+        try {
+          const check = await fetch('/api/admin/staff', {
+            headers: { Authorization: `Bearer ${data.session.access_token}` },
+          })
+          if (check.status === 401) {
+            await supabase.auth.signOut()
+            const msg = 'このアカウントは現在ご利用いただけません。管理者にお問い合わせください。'
+            set({ user: null, session: null, role: null, error: msg })
+            return { success: false, error: msg }
+          }
+        } catch {
+          // 検証APIに到達できない場合はfail-open(既存のログイン成功フローを優先)
+        }
+      }
+
       return { success: true }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'ログインに失敗しました。'

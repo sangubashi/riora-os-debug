@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '../../../lib/repos'
 import type { MemoryType, MemoryImportance } from '@/types/customerMemory'
 import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest'
+import { canAccessCustomer } from '@/lib/auth/canAccessCustomer'
 
 const STORE_ID = '00000000-0000-0000-0000-000000000001'
 
@@ -54,6 +55,11 @@ export async function PATCH(
     return NextResponse.json({ error: 'customer_id is required' }, { status: 400 })
   }
 
+  const accessible = await canAccessCustomer(reqStaff.staffBrainId, body.customer_id, reqStaff.isAdmin)
+  if (!accessible) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+  }
+
   const { id } = await params
   const owned = await verifyOwnership(id, body.customer_id)
   if (!owned) {
@@ -97,6 +103,11 @@ export async function DELETE(
   const customerId = req.nextUrl.searchParams.get('customer_id')
   if (!customerId) {
     return NextResponse.json({ error: 'customer_id is required' }, { status: 400 })
+  }
+
+  const accessible = await canAccessCustomer(reqStaff.staffBrainId, customerId, reqStaff.isAdmin)
+  if (!accessible) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
   const { id } = await params
