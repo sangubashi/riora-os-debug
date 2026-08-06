@@ -30,10 +30,13 @@ const mockRepos = {
   },
 };
 
-function lastPromptSentToClaude(): string {
+function lastClaudeRequestBody(): { messages: { content: string }[]; system: string; max_tokens: number } {
   const call = vi.mocked(fetch).mock.calls.find(c => c[0] === 'https://api.anthropic.com/v1/messages');
-  const body = JSON.parse((call?.[1] as RequestInit).body as string) as { messages: { content: string }[] };
-  return body.messages[0].content;
+  return JSON.parse((call?.[1] as RequestInit).body as string) as { messages: { content: string }[]; system: string; max_tokens: number };
+}
+
+function lastPromptSentToClaude(): string {
+  return lastClaudeRequestBody().messages[0].content;
 }
 
 function buildReq(body: unknown): NextRequest {
@@ -154,6 +157,43 @@ describe('POST /api/customers/[id]/line-message', () => {
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(body.reasons).toEqual([]);
+  });
+
+  describe('LINE UX改善: variant(通常版/簡易版)・別案生成(previousDraft)', () => {
+    it('variant未指定は既存の文字数指示(通常版)のまま(後方互換)', async () => {
+      await callRoute({ customerName: '山田様', skinTags: [], recentVisits: [], homecareProducts: [], recentNoteSummaries: [] });
+      const { system, max_tokens } = lastClaudeRequestBody();
+      expect(system).toContain('200文字以内');
+      expect(max_tokens).toBe(400);
+    });
+
+    it("variant='short'は簡易版の文字数指示・縮小されたmax_tokensで呼び出す", async () => {
+      await callRoute({ customerName: '山田様', variant: 'short', skinTags: [], recentVisits: [], homecareProducts: [], recentNoteSummaries: [] });
+      const { system, max_tokens } = lastClaudeRequestBody();
+      expect(system).toContain('60文字以内');
+      expect(system).not.toContain('200文字以内');
+      expect(max_tokens).toBe(120);
+    });
+
+    it("type='thanks'かつvariant='short'でも該当typeの簡易版指示になる", async () => {
+      await callRoute({ customerName: '山田様', type: 'thanks', variant: 'short', skinTags: [], recentVisits: [], homecareProducts: [], recentNoteSummaries: [] });
+      const { system } = lastClaudeRequestBody();
+      expect(system).toContain('60文字以内');
+      expect(system).not.toContain('180文字以内');
+    });
+
+    it('previousDraftを渡すと「別案」指示とともにプロンプトへ含める', async () => {
+      await callRoute({ customerName: '山田様', previousDraft: '前回の下書き文面です', skinTags: [], recentVisits: [], homecareProducts: [], recentNoteSummaries: [] });
+      const prompt = lastPromptSentToClaude();
+      expect(prompt).toContain('前回の下書き文面です');
+      expect(prompt).toContain('別パターン');
+    });
+
+    it('previousDraft未指定時は別案指示を含めない(既存挙動を維持)', async () => {
+      await callRoute({ customerName: '山田様', skinTags: [], recentVisits: [], homecareProducts: [], recentNoteSummaries: [] });
+      const prompt = lastPromptSentToClaude();
+      expect(prompt).not.toContain('別パターン');
+    });
   });
 
   describe('PHASE MENU-AI-3: Menu AI Context', () => {

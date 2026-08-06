@@ -15,7 +15,7 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, ChevronLeft, X, Copy, Check } from 'lucide-react';
+import { ChevronRight, ChevronLeft, X, Copy, Check, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 // ── Zustand ──────────────────────────────────────────────────────────────────
@@ -355,6 +355,8 @@ export default function CustomerBottomSheet({
   // PHASE LINE-AI-1: 直近に生成した種別（来店お礼/ホームケア提案/来店リマインド）。
   // コピー時の送信ログkindに使う。
   const [lineMessageType,       setLineMessageType]       = useState<'thanks' | 'homecare' | 'reminder' | null>(null);
+  // LINE UX改善: 通常版/簡易版の切り替え。永続化はせずこの画面を開いている間のみ保持。
+  const [lineMessageVariant,    setLineMessageVariant]    = useState<'normal' | 'short'>('normal');
 
   // ── ホームケア使い方カード（PHASE HC-4） ────────────────────────────────────────
   const [expandedUsageCards, setExpandedUsageCards] = useState<Set<string>>(new Set());
@@ -426,6 +428,7 @@ export default function CustomerBottomSheet({
     setLineMessageCopied(false);
     setLineMessageReasons([]);
     setLineMessageType(null);
+    setLineMessageVariant('normal');
     setLineSendLogs([]);
     setAllDone(false);
     setServiceReplay(null);
@@ -708,6 +711,7 @@ export default function CustomerBottomSheet({
     setLineMessageCopied(false);
     setLineMessageReasons([]);
     setLineMessageType(null);
+    setLineMessageVariant('normal');
     setLineSendLogs([]);
     setAllDone(false);
     setServiceReplay(null);
@@ -968,8 +972,15 @@ export default function CustomerBottomSheet({
   // customer_memories本文・AI Timelineのsummary/recentChange/nextFocusは一切送らない
   // （ユーザー指示・2026-07-31確定。音声メモ由来の文脈はinsightTags(ルールベース抽出済み
   // タグ)のみを使う）。
-  const generateLineMessage = useCallback(async (type: 'thanks' | 'homecare' | 'reminder') => {
+  // LINE UX改善: variant('normal'|'short')の切り替えと、「別案を生成」(alternate)に対応。
+  // alternate=trueのときは直前の下書き文面をpreviousDraftとしてAPIへ渡し、表現を変えた
+  // 別パターンを作らせる(DB保存はしない・APIへ渡すだけ)。
+  const generateLineMessage = useCallback(async (
+    type: 'thanks' | 'homecare' | 'reminder',
+    opts?: { variant?: 'normal' | 'short'; alternate?: boolean },
+  ) => {
     if (!c || lineMessageGenerating) return;
+    const variant = opts?.variant ?? 'normal';
     setLineMessageGenerating(true);
     try {
       const res = await authedFetch(`/api/customers/${c.id}/line-message`, {
@@ -977,6 +988,8 @@ export default function CustomerBottomSheet({
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
           type,
+          variant,
+          previousDraft: opts?.alternate && lineMessageDraft ? lineMessageDraft : undefined,
           customerName: c.name,
           skinTags:     skinTags.map(t => SKIN_TAG_LABELS[t]).filter(Boolean),
           recentVisits: visitHistory.slice(0, 3).map(v => ({ menuName: v.menuName, visitDate: v.visitDate })),
@@ -1005,7 +1018,8 @@ export default function CustomerBottomSheet({
         setLineMessageReasons(json.reasons ?? []);
         setLineMessageCopied(false);
         setLineMessageType(type);
-        toast.success('LINE文面を生成しました', { duration: 1500 });
+        setLineMessageVariant(variant);
+        toast.success(opts?.alternate ? '別案を生成しました' : 'LINE文面を生成しました', { duration: 1500 });
       } else {
         setLineMessageReasons([]);
         toast.error('生成に失敗しました。もう一度お試しください');
@@ -1016,7 +1030,17 @@ export default function CustomerBottomSheet({
     } finally {
       setLineMessageGenerating(false);
     }
-  }, [c, lineMessageGenerating, skinTags, visitHistory, homecareProducts, recentNotes, insightTags, contraindications]);
+  }, [c, lineMessageGenerating, lineMessageDraft, skinTags, visitHistory, homecareProducts, recentNotes, insightTags, contraindications]);
+
+  // LINE UX改善: 下書きクリア。ローカルstateのみをリセットし、送信済みログ・送信フローには
+  // 一切触れない(APIコールなし)。
+  const clearLineMessageDraft = useCallback(() => {
+    setLineMessageDraft('');
+    setLineMessageCopied(false);
+    setLineMessageReasons([]);
+    setLineMessageType(null);
+    setLineMessageVariant('normal');
+  }, []);
 
   // コピー操作を送信とみなして記録する(PHASE LINE-LOG-1)。kindは直近に生成した種別。
   const copyLineMessageDraft = useCallback(async () => {
@@ -1973,7 +1997,7 @@ export default function CustomerBottomSheet({
                           ] as const).map(({ type, label }) => (
                             <button
                               key={type}
-                              onClick={() => generateLineMessage(type)}
+                              onClick={() => generateLineMessage(type, { variant: 'normal' })}
                               disabled={lineMessageGenerating}
                               className={`flex-1 text-[11px] font-semibold rounded-full px-2 py-1.5 cursor-pointer whitespace-nowrap disabled:opacity-60 border ${
                                 lineMessageType === type
@@ -1985,6 +2009,43 @@ export default function CustomerBottomSheet({
                             </button>
                           ))}
                         </div>
+                        {/* LINE UX改善: 下書きがある間だけ表示する再生成クラスタ。
+                            通常版/簡易版はvariantを切り替えて再生成、別案は同じvariantのまま
+                            直前の下書きをpreviousDraftとしてAPIへ渡し表現を変えさせる。
+                            いずれもローカルstateのみで完結し、DB・送信フローには触れない。 */}
+                        {lineMessageDraft && lineMessageType && (
+                          <div className="flex gap-1.5 mb-2">
+                            <button
+                              onClick={() => generateLineMessage(lineMessageType, { variant: 'normal' })}
+                              disabled={lineMessageGenerating}
+                              className={`flex-1 text-[11px] font-semibold rounded-full px-2 py-1 cursor-pointer whitespace-nowrap disabled:opacity-60 border ${
+                                lineMessageVariant === 'normal'
+                                  ? 'bg-[#3C5C45] text-white border-[#3C5C45]'
+                                  : 'bg-white text-[#3C5C45] border-[#C0E8D0]'
+                              }`}
+                            >
+                              📝 通常版
+                            </button>
+                            <button
+                              onClick={() => generateLineMessage(lineMessageType, { variant: 'short' })}
+                              disabled={lineMessageGenerating}
+                              className={`flex-1 text-[11px] font-semibold rounded-full px-2 py-1 cursor-pointer whitespace-nowrap disabled:opacity-60 border ${
+                                lineMessageVariant === 'short'
+                                  ? 'bg-[#3C5C45] text-white border-[#3C5C45]'
+                                  : 'bg-white text-[#3C5C45] border-[#C0E8D0]'
+                              }`}
+                            >
+                              ⚡ 簡易版
+                            </button>
+                            <button
+                              onClick={() => generateLineMessage(lineMessageType, { variant: lineMessageVariant, alternate: true })}
+                              disabled={lineMessageGenerating}
+                              className="flex-1 text-[11px] font-semibold rounded-full px-2 py-1 cursor-pointer whitespace-nowrap disabled:opacity-60 border bg-white text-[#3C5C45] border-[#C0E8D0]"
+                            >
+                              🔄 別案を生成
+                            </button>
+                          </div>
+                        )}
                         {/* 送信済み表示（PHASE LINE-LOG-1・コピー操作を送信とみなした近似） */}
                         {(sentStatusLabel(lineSendLogs, 'thanks') || sentStatusLabel(lineSendLogs, 'homecare') || sentStatusLabel(lineSendLogs, 'reminder')) && (
                           <div className="flex gap-1.5 mb-1.5 flex-wrap">
@@ -2006,15 +2067,24 @@ export default function CustomerBottomSheet({
                               className="w-full bg-white rounded-2xl p-3 border border-[#C0E8D0] text-sm text-[#3C5C45] leading-[1.8] mb-2.5 resize-none"
                               placeholder="生成された文面がここに表示されます。自由に編集できます。"
                             />
-                            <button onClick={() => copyLineMessageDraft()}
-                              className={`w-full py-2.5 rounded-full text-sm font-bold text-white flex items-center justify-center gap-1.5 transition-colors border-none cursor-pointer ${
-                                lineMessageCopied ? 'bg-[#34D399]' : 'bg-[#2ECC8A]'
-                              }`}>
-                              {lineMessageCopied
-                                ? <><Check size={14} strokeWidth={2.5} /> コピー済</>
-                                : <><Copy size={14} strokeWidth={2} /> {lineMessageType ? LINE_SEND_KIND_LABEL[lineMessageType] : ''}としてコピー</>
-                              }
-                            </button>
+                            <div className="flex gap-1.5">
+                              <button onClick={() => copyLineMessageDraft()}
+                                className={`flex-1 py-2.5 rounded-full text-sm font-bold text-white flex items-center justify-center gap-1.5 transition-colors border-none cursor-pointer ${
+                                  lineMessageCopied ? 'bg-[#34D399]' : 'bg-[#2ECC8A]'
+                                }`}>
+                                {lineMessageCopied
+                                  ? <><Check size={14} strokeWidth={2.5} /> コピー済</>
+                                  : <><Copy size={14} strokeWidth={2} /> {lineMessageType ? LINE_SEND_KIND_LABEL[lineMessageType] : ''}としてコピー</>
+                                }
+                              </button>
+                              {/* LINE UX改善: 下書き削除。ローカルstateのみリセット(APIコールなし)。
+                                  送信済みログ・LINE送信フローには一切影響しない。 */}
+                              <button onClick={clearLineMessageDraft}
+                                aria-label="下書きを削除"
+                                className="py-2.5 px-3.5 rounded-full text-sm font-bold text-[#7C9C88] bg-white border border-[#C0E8D0] flex items-center justify-center cursor-pointer">
+                                <Trash2 size={14} strokeWidth={2} />
+                              </button>
+                            </div>
                             <p className="text-[10px] text-[#7C9C88] mt-2 leading-relaxed">
                               送信はこのアプリからは行いません。コピーした文面をLINEアプリに貼り付けて、ご自身で送信してください。
                             </p>

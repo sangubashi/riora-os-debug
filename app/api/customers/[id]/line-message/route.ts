@@ -54,6 +54,14 @@
  * 失敗時（APIキー未設定・LLMエラー等）はsuccess:falseを返す。クライアント側で
  * フォールバック文言は持たない(この機能は「生成→編集→コピー」のみのため、
  * 生成失敗時は再試行を促すのみでよい)。
+ *
+ * variant（LINE UX改善・任意。省略時は既存の'normal'のまま・後方互換）:
+ *   'normal' 通常版（既存の文字数制限のまま） / 'short' 簡易版（60文字程度・要点のみ）。
+ *   永続化はしない（Tier1・CustomerBottomSheet側のローカルstateのみで管理）。
+ *
+ * previousDraft（LINE UX改善・任意）: 直前にこの画面で表示していた下書き文面を渡すと、
+ * 「別案を生成」として同じ入力から表現を変えた文面を作る。DBには保存せず、この
+ * リクエスト内でプロンプトに含めるだけ。
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { idSchema, toValidationErrorResponse } from '../../../_schemas/common'
@@ -78,39 +86,53 @@ const COMMON_CONSTRAINTS = `
 - 押し売り感を出さないこと
 - 出力はメッセージ本文のみ（前置き・説明・記号装飾・見出しは一切不要）`
 
-const SYSTEM_PROMPT = `あなたは高級美容サロンのスタッフが顧客へLINEで送るメッセージの下書きを作成するアシスタントです。
+const SYSTEM_PROMPT_BASE = `あなたは高級美容サロンのスタッフが顧客へLINEで送るメッセージの下書きを作成するアシスタントです。
 渡された情報のみを使って、温かく自然な日本語のLINEメッセージを1つ作成してください。
 このメッセージはスタッフが内容を確認・編集した上で、スタッフ自身の手でLINEアプリから手動送信します。
 あなた自身がメッセージを送信することはありません。
-${COMMON_CONSTRAINTS}
-- 200文字以内`
+${COMMON_CONSTRAINTS}`
 
-const SYSTEM_PROMPT_THANKS = `あなたは高級美容サロンのスタッフが、来店直後の顧客へLINEで送る「来店お礼」メッセージの下書きを作成するアシスタントです。
+const SYSTEM_PROMPT_THANKS_BASE = `あなたは高級美容サロンのスタッフが、来店直後の顧客へLINEで送る「来店お礼」メッセージの下書きを作成するアシスタントです。
 渡された情報（本日の施術内容・肌の悩み・ホームケア状況・来店回数・接客メモ・音声メモから抽出されたタグ）のみを使って、
 本日のご来店に対する温かく自然な感謝のメッセージを1つ作成してください。
 このメッセージはスタッフが内容を確認・編集した上で、スタッフ自身の手でLINEアプリから手動送信します。
 あなた自身がメッセージを送信することはありません。
 ${COMMON_CONSTRAINTS}
-- 次回の売り込みや提案は含めず、あくまで「今日来てくれたことへの感謝」に徹すること
-- 180文字以内`
+- 次回の売り込みや提案は含めず、あくまで「今日来てくれたことへの感謝」に徹すること`
 
-const SYSTEM_PROMPT_HOMECARE = `あなたは高級美容サロンのスタッフが顧客へLINEで送る「ホームケアフォロー」メッセージの下書きを作成するアシスタントです。
+const SYSTEM_PROMPT_HOMECARE_BASE = `あなたは高級美容サロンのスタッフが顧客へLINEで送る「ホームケアフォロー」メッセージの下書きを作成するアシスタントです。
 渡された情報（購入・使用中のホームケア商品・直近の施術内容・肌の状態・音声メモから抽出されたタグ）のみを使って、
 押し売りではない、自然な気遣いのフォローメッセージを1つ作成してください。
 このメッセージはスタッフが内容を確認・編集した上で、スタッフ自身の手でLINEアプリから手動送信します。
 あなた自身がメッセージを送信することはありません。
 ${COMMON_CONSTRAINTS}
-- 「購入してください」「補充してください」のような直接的な購入依頼は避け、使い心地や調子を尋ねる形にすること
-- 200文字以内`
+- 「購入してください」「補充してください」のような直接的な購入依頼は避け、使い心地や調子を尋ねる形にすること`
 
-const SYSTEM_PROMPT_REMINDER = `あなたは高級美容サロンのスタッフが顧客へLINEで送る「来店リマインド」メッセージの下書きを作成するアシスタントです。
+const SYSTEM_PROMPT_REMINDER_BASE = `あなたは高級美容サロンのスタッフが顧客へLINEで送る「来店リマインド」メッセージの下書きを作成するアシスタントです。
 渡された情報（推奨来店サイクル・前回来店日からの経過日数・来店回数・離脱リスクの傾向）のみを使って、
 自然で押し付けがましくない次回来店促進のメッセージを1つ作成してください。
 このメッセージはスタッフが内容を確認・編集した上で、スタッフ自身の手でLINEアプリから手動送信します。
 あなた自身がメッセージを送信することはありません。
 ${COMMON_CONSTRAINTS}
-- 「そろそろ来てください」といった催促口調は避け、体調や肌の様子を気遣いつつ次回の来店を軽く案内する形にすること
-- 180文字以内`
+- 「そろそろ来てください」といった催促口調は避け、体調や肌の様子を気遣いつつ次回の来店を軽く案内する形にすること`
+
+type LineMessageVariant = 'normal' | 'short'
+
+/** variant別の文字数指示。'normal'は既存の各typeの制限文をそのまま維持(後方互換)。 */
+const LENGTH_INSTRUCTION: Record<'generic' | LineMessageType, Record<LineMessageVariant, string>> = {
+  generic:  { normal: '- 200文字以内', short: '- 60文字以内・要点のみを一言で' },
+  thanks:   { normal: '- 180文字以内', short: '- 60文字以内・要点のみを一言で' },
+  homecare: { normal: '- 200文字以内', short: '- 60文字以内・要点のみを一言で' },
+  reminder: { normal: '- 180文字以内', short: '- 60文字以内・要点のみを一言で' },
+}
+
+function systemPromptFor(type: LineMessageType | undefined, variant: LineMessageVariant): string {
+  const base = type === 'thanks'   ? SYSTEM_PROMPT_THANKS_BASE
+             : type === 'homecare' ? SYSTEM_PROMPT_HOMECARE_BASE
+             : type === 'reminder' ? SYSTEM_PROMPT_REMINDER_BASE
+             : SYSTEM_PROMPT_BASE
+  return `${base}\n${LENGTH_INSTRUCTION[type ?? 'generic'][variant]}`
+}
 
 interface RecentVisit {
   menuName: string | null
@@ -122,6 +144,10 @@ interface HomecareProduct {
 }
 interface RequestBody {
   type?:                 LineMessageType
+  /** 通常版/簡易版の切り替え(任意・省略時は'normal'・後方互換)。永続化はしない。 */
+  variant?:               LineMessageVariant
+  /** 「別案を生成」用。直前の下書き文面を渡すと、表現を変えた別パターンを作る。DB保存はしない。 */
+  previousDraft?:         string
   customerName:        string
   skinTags:             string[]
   recentVisits:         RecentVisit[]
@@ -263,7 +289,7 @@ function stripPreamble(text: string): string {
   return text.slice(newlineIdx + 1).replace(/^\n+/, '').trim()
 }
 
-async function callClaude(prompt: string, systemPrompt: string): Promise<string | null> {
+async function callClaude(prompt: string, systemPrompt: string, variant: LineMessageVariant): Promise<string | null> {
   const anthropicKey = process.env.ANTHROPIC_API_KEY
   if (!anthropicKey) return null
   try {
@@ -276,7 +302,7 @@ async function callClaude(prompt: string, systemPrompt: string): Promise<string 
       },
       body: JSON.stringify({
         model:      'claude-haiku-4-5-20251001',
-        max_tokens: 400,
+        max_tokens: variant === 'short' ? 120 : 400,
         system:     systemPrompt,
         messages:   [{ role: 'user', content: prompt }],
       }),
@@ -338,8 +364,16 @@ export async function POST(
       ? (body.type as LineMessageType)
       : undefined
 
+  const variant: LineMessageVariant = body.variant === 'short' ? 'short' : 'normal'
+  const previousDraft: string | undefined =
+    typeof body.previousDraft === 'string' && body.previousDraft.trim().length > 0
+      ? body.previousDraft.trim().slice(0, 500)
+      : undefined
+
   const normalized: RequestBody = {
     type,
+    variant,
+    previousDraft,
     customerName:       body.customerName,
     skinTags:            Array.isArray(body.skinTags) ? body.skinTags.filter((t): t is string => typeof t === 'string') : [],
     recentVisits:        Array.isArray(body.recentVisits) ? body.recentVisits : [],
@@ -403,21 +437,27 @@ export async function POST(
     hasRecentPurchase:   normalized.homecareProducts.length > 0,
   })
 
-  const { prompt: basePrompt, systemPrompt } = (() => {
+  const basePrompt = (() => {
     switch (type) {
-      case 'thanks':   return { prompt: buildThanksPrompt(normalized, matchedTagKeywords),   systemPrompt: SYSTEM_PROMPT_THANKS }
-      case 'homecare': return { prompt: buildHomecarePrompt(normalized, matchedTagKeywords), systemPrompt: SYSTEM_PROMPT_HOMECARE }
-      case 'reminder': return { prompt: buildReminderPrompt(normalized),                     systemPrompt: SYSTEM_PROMPT_REMINDER }
-      default:         return { prompt: buildPrompt(normalized, matchedTagKeywords),          systemPrompt: SYSTEM_PROMPT }
+      case 'thanks':   return buildThanksPrompt(normalized, matchedTagKeywords)
+      case 'homecare': return buildHomecarePrompt(normalized, matchedTagKeywords)
+      case 'reminder': return buildReminderPrompt(normalized)
+      default:         return buildPrompt(normalized, matchedTagKeywords)
     }
   })()
+  const systemPrompt = systemPromptFor(type, variant)
 
   // PHASE MENU-AI-3: 既存プロンプトの文章は書き換えず、末尾にMenu AI Contextブロックを
   // 追記するだけ(⑤: 新しい指示文はAIへ渡さない)。3種類(thanks/homecare/reminder)+
   // 汎用生成のいずれも対象。
-  const prompt = menuAIContextBlock ? `${basePrompt}\n\n${menuAIContextBlock}` : basePrompt
+  const withMenuContext = menuAIContextBlock ? `${basePrompt}\n\n${menuAIContextBlock}` : basePrompt
 
-  const message = await callClaude(prompt, systemPrompt)
+  // 「別案を生成」: 直前の下書きを渡し、同じ入力から表現を変えた別パターンを作らせる。
+  const prompt = previousDraft
+    ? `${withMenuContext}\n\n直前に生成した文章（この文面とは言葉選び・文の構成を変えて、別パターンを1つ作成すること）:\n${previousDraft}`
+    : withMenuContext
+
+  const message = await callClaude(prompt, systemPrompt, variant)
   if (!message) {
     return NextResponse.json({ success: false, error: 'generation_failed' }, { status: 503 })
   }
