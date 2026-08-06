@@ -195,7 +195,7 @@ export default function CustomerMemorySection({
 
   return (
     <div
-      className="rounded-[18px] overflow-hidden"
+      className="rounded-[18px] overflow-hidden flex-shrink-0"
       style={{ border: '1px solid #F0E8E8', background: '#FEFCFD' }}
     >
       <AnimatePresence mode="wait" initial={false}>
