@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { sendLineMessage } from '../../../lib/line/sender'
 import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest'
+import { lineSendDuplicateLimiter } from '@/lib/rateLimit'
 
 function getSupabase(): SupabaseClient {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -83,6 +84,16 @@ export async function POST(req: NextRequest) {
 
     if (fetchError || !item) {
       return NextResponse.json({ error: fetchError?.message ?? 'queue item not found' }, { status: 404 })
+    }
+
+    // STAFF_PERMISSION_AUDIT_1 STEP3: 二重送信事故防止(skipはカウント対象外・
+    // approve時のみ)。同一送信先への短時間の重複承認をブロックする。
+    const rl = await lineSendDuplicateLimiter.limit(item.line_user_id)
+    if (!rl.success) {
+      return NextResponse.json(
+        { success: false, error: 'duplicate_send_blocked' },
+        { status: 429, headers: { 'Retry-After': String(Math.ceil((rl.reset - Date.now()) / 1000)) } },
+      )
     }
 
     await supabase

@@ -59,6 +59,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { idSchema, toValidationErrorResponse } from '../../../_schemas/common'
 import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest'
 import { canAccessCustomer } from '@/lib/auth/canAccessCustomer'
+import { claudeLimiter } from '@/lib/rateLimit'
 import { getRepos } from '../../../../lib/repos'
 import { buildProductCategoryVocabulary, buildMatchReasons } from '@/lib/nextAction/knowledgeMatch'
 import { buildMenuAIContext, formatMenuAIContextBlock } from '@/lib/menu/buildMenuAIContext'
@@ -298,6 +299,14 @@ export async function POST(
   const staff = await extractStaffFromRequest(req)
   if (!staff) {
     return NextResponse.json({ success: false, error: 'unauthorized' }, { status: 401 })
+  }
+
+  const rl = await claudeLimiter.limit(staff.authUserId)
+  if (!rl.success) {
+    return NextResponse.json(
+      { success: false, error: 'rate_limited' },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil((rl.reset - Date.now()) / 1000)) } },
+    )
   }
 
   const { id } = await params

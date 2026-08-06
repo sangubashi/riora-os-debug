@@ -17,6 +17,7 @@ import { NextRequest, NextResponse }  from 'next/server'
 import { createClient }  from '@supabase/supabase-js'
 import { sendLineMessage } from '../../../lib/line/sender'
 import { requireAdmin } from '@/lib/auth/requireAdmin'
+import { lineTestSendLimiter } from '@/lib/rateLimit'
 
 // テスト送信のデフォルトメッセージ
 // 将来: リクエストボディの message_body フィールドで AI 生成文を渡せる
@@ -29,6 +30,14 @@ ${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}
 export async function POST(req: NextRequest) {
   const gate = await requireAdmin(req)
   if (gate instanceof NextResponse) return gate
+
+  const rl = await lineTestSendLimiter.limit(gate.authUserId)
+  if (!rl.success) {
+    return NextResponse.json(
+      { ok: false, error: 'rate_limited' },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil((rl.reset - Date.now()) / 1000)) } },
+    )
+  }
 
   // ── ENV 検証 ──────────────────────────────────────────────────────────────
   const recipientId = process.env.LINE_TEST_USER_ID

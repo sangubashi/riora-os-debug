@@ -22,6 +22,7 @@ import { extractInsightTags } from '@/lib/voiceInsight/extractInsightTags'
 import { extractVoiceMemoCategories } from '@/lib/voiceInsight/extractVoiceMemoCategories'
 import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest'
 import { canAccessCustomer } from '@/lib/auth/canAccessCustomer'
+import { voicePipelineLimiter } from '@/lib/rateLimit'
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SVC_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -306,6 +307,14 @@ export async function POST(req: NextRequest) {
   const staff = await extractStaffFromRequest(req)
   if (!staff) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  }
+
+  const rl = await voicePipelineLimiter.limit(staff.authUserId)
+  if (!rl.success) {
+    return NextResponse.json(
+      { error: 'rate_limited' },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil((rl.reset - Date.now()) / 1000)) } },
+    )
   }
 
   let body: PipelineRequest

@@ -25,6 +25,7 @@ import { getServiceClient } from '../../../../lib/repos'
 import { idSchema, toValidationErrorResponse } from '../../../_schemas/common'
 import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest'
 import { canAccessCustomer } from '@/lib/auth/canAccessCustomer'
+import { claudeLimiter } from '@/lib/rateLimit'
 
 const STORE_ID = '00000000-0000-0000-0000-000000000001'
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
@@ -213,6 +214,14 @@ export async function GET(
   const staff = await extractStaffFromRequest(req)
   if (!staff) {
     return NextResponse.json({ success: false, error: 'unauthorized' }, { status: 401 })
+  }
+
+  const rl = await claudeLimiter.limit(staff.authUserId)
+  if (!rl.success) {
+    return NextResponse.json(
+      { success: false, error: 'rate_limited' },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil((rl.reset - Date.now()) / 1000)) } },
+    )
   }
 
   const { id } = await params

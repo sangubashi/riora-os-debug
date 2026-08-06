@@ -21,6 +21,9 @@ import { canAccessCustomer } from '@/lib/auth/canAccessCustomer'
 
 vi.mock('@/lib/auth/extractStaffFromRequest', () => ({ extractStaffFromRequest: vi.fn() }))
 vi.mock('@/lib/auth/canAccessCustomer', () => ({ canAccessCustomer: vi.fn() }))
+vi.mock('@/lib/rateLimit', () => ({
+  voicePipelineLimiter: { limit: vi.fn().mockResolvedValue({ success: true, limit: 10, remaining: 9, reset: Date.now() + 60_000 }) },
+}))
 
 // ─── Supabase(createClient直呼び出し)モック ────────────────────────────────
 // テーブルごとにcall順でresultを消費する汎用チェーンビルダー。insert/updateの

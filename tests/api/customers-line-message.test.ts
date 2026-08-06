@@ -8,6 +8,9 @@ import { canAccessCustomer } from '@/lib/auth/canAccessCustomer';
 vi.mock('../../app/lib/repos', () => ({ getRepos: vi.fn() }));
 vi.mock('@/lib/auth/extractStaffFromRequest', () => ({ extractStaffFromRequest: vi.fn() }));
 vi.mock('@/lib/auth/canAccessCustomer', () => ({ canAccessCustomer: vi.fn() }));
+vi.mock('@/lib/rateLimit', () => ({
+  claudeLimiter: { limit: vi.fn().mockResolvedValue({ success: true, limit: 20, remaining: 19, reset: Date.now() + 60_000 }) },
+}));
 
 const STAFF = {
   authUserId: 'staff-auth-uid', staffBrainId: 'staff-id',
