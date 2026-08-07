@@ -810,12 +810,19 @@ export default function CustomerBottomSheet({
   // ─── ログ保存 ──────────────────────────────────────────────────────────────
   const saveLog = useCallback(async () => {
     if (logSaving || logSaved || !c) return;
+    // staff_logs.staff_idはNOT NULL制約のため、currentStaffId未取得のままINSERTすると
+    // DB側のNOT NULL違反で失敗する(docs/STAFF_LOGS_SCHEMA_MISMATCH_DESIGN.md §9.1)。
+    // セッション未確立・喪失時にDBエラーへ委ねず、ここで理由が分かる形で止める。
+    if (!currentStaffId) {
+      toast.error('スタッフ情報が取得できないため保存できません。再読み込みしてください。');
+      return;
+    }
     setLogSaving(true);
 
     const { error } = await supabase.from('staff_logs').insert({
       reservation_id: r?.id ?? null,
       customer_id:    c.id,
-      staff_id:       currentStaffId ?? null,
+      staff_id:       currentStaffId,
       ai_adopted:     logSelected.has('ai_adopted'),
       next_reserved:  logSelected.has('next_reserved'),
       option_sold:    logSelected.has('option_sold'),
