@@ -1,8 +1,10 @@
 # スタッフ向けAI提案 学習データ蓄積パイプライン 詳細設計
 
-作成日: 2026-08-07（2026-08-07 UI仕様詳細化・案1確定を追記／2026-08-07 実装完了を追記）
-ステータス: **実装完了・実データ検証済み**（2026-08-07、ユーザー承認スコープ内で実装。
-build/tsc/vitest/実データE2E検証まで完了。詳細は本ファイル末尾「§10 実装完了報告」参照）
+作成日: 2026-08-07（2026-08-07 UI仕様詳細化・案1確定を追記／2026-08-07 実装完了を追記／
+2026-08-07 commit・push・本番反映を追記）
+ステータス: **本番反映済み**（2026-08-07、commit `ed1d3f6`をorigin/masterへpush、Vercel
+Production自動デプロイ完了(READY、push後約2.4分)。ユーザーによるブラウザ実機確認(8項目)も
+完了。詳細は本ファイル末尾「§10 実装完了報告」参照）
 
 ## 更新履歴
 - 2026-08-07: 初版提出。方針（ProposalOrchestratorを正式経路に採用／`POST /api/proposals/fire`
@@ -528,9 +530,23 @@ DB変更なしの制約があるため、UNIQUE制約ではなくアプリケー
   （書き込み系操作の無断ロールバックを避ける方針[[feedback-scoped-approval-discipline]]に従い、
   削除の要否はユーザー判断に委ねる）。
 
-- **ブラウザでの目視UI確認**: 本環境ではClaude in Chrome拡張が未接続のため、実施できなかった。
-  カード自体は既存JSX（デザイントークン込み）を`AIProposalCard.tsx`へそのまま移設したのみで、
-  レイアウト変更は行っていない。目視確認は`npm run build`成功・E2E検証で表示内容
-  （`advice`/`avoidNote`の実データ）が正しく取得できることまでは確認済みだが、**実際のレンダリング
-  結果そのものはユーザー側での確認を推奨する**（`docs/STAFF_PROPOSAL_LEARNING_PIPELINE_DESIGN.md`
-  §8.6の手動確認項目を参照）。
+- **ブラウザでの目視UI確認**: Claude Code環境ではClaude in Chrome拡張が未接続のため実施できず、
+  ユーザーに§8.6の8項目をそのまま依頼した。2026-08-07、ユーザーが実機で全8項目
+  （CustomerBottomSheet表示/AI提案表示/`by-name`200/`fire`200/フォールバック表示/再表示時の
+  崩れ無し/長文レイアウト崩れ無し/顧客切替時の提案切替/Consoleエラー無し/Networkエラー無し）を
+  確認し、問題無しとの報告を受けた。
+
+### 10.3 commit・push・Vercel Production反映
+
+- commit `ed1d3f6`(`feat(customer): fire AI proposal usage into brain_pattern_fire_log for
+  staff learning pipeline`)。ステージした11ファイルは本ドキュメント§6の一覧と完全一致
+  （このセッションで生じた他の無関係な未コミット変更は含めていない）。
+- `git push origin master`成功。
+- Vercel自動デプロイ(GitHub連携)を`list_deployments`/`get_deployment`/
+  `get_deployment_build_logs`で追跡: `dpl_ET1bGUcYcofq4wduH4jQPYAUcYYg`(target:null)が
+  READY(ビルドエラー0件)→自動的に`dpl_6qkkJYV2JFDFJMWAP24ykDJnPsp6`(action:promote,
+  target:production)が生成されREADYに到達（push後 約144秒、[[project-vercel-setup]]記載の
+  「最大8.5分」の範囲内）。
+- 本番ドメイン`https://riora-os-debug-webhook.vercel.app`に対し`GET /api/proposals/by-name`・
+  `POST /api/proposals/fire`とも未認証で401(想定通り)を実測確認し、新ルートが本番で実際に
+  稼働していることを検証した。
