@@ -192,4 +192,24 @@ export class BriefingRepo implements IBriefingRepo {
     }
     return rows;
   }
+
+  async listSinceByStore(storeId: UUID, sinceIso: string | null, limit: number): Promise<BriefingEntry[]> {
+    let query = this.client
+      .from('brain_pattern_fire_log')
+      .select(FIRE_LOG_COLUMNS)
+      .eq('store_id', storeId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (sinceIso) {
+      query = query.gte('created_at', sinceIso);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(`BriefingRepo.listSinceByStore failed: ${error.message}`);
+    }
+    return ((data ?? []) as unknown as BrainFireLogRow[]).map((row) => toBriefingEntry(row, ''));
+  }
 }

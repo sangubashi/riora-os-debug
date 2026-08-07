@@ -488,6 +488,24 @@ export interface CellStats {
   repeatRate90d: number | null;
 }
 
+/**
+ * brain_pattern_step_stats(マテビュー)の1行をそのまま管理者向けに表示するための型
+ * (AI提案分析MVP、パターン別成功率)。CellStatsはPatternScorerの内部計算用に識別子
+ * (pattern_id/step_no等)を持たない設計のため、表示用に識別子込みで別途定義する。
+ */
+export interface PatternStepStatSummary {
+  candidateCode: string;
+  patternId: string;
+  stepNo: number;
+  customerType: CustomerType;
+  staffStyle: StaffStyle;
+  executedN: number;
+  acceptedN: number;
+  laplaceRate: number;
+  /** brain_proposal_outcomes.fire_scoreが常にNULLの現状では常にnull(docs/AI_PROPOSAL_ANALYTICS_DASHBOARD_DESIGN.md §1.2参照)。 */
+  avgFireScore: number | null;
+}
+
 export interface ScoringWeights {
   w1: number;
   w2: number;

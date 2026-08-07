@@ -27,6 +27,7 @@ import type {
   NoBookingReason,
   OpsLog,
   OutcomeLite,
+  PatternStepStatSummary,
   ProposalKind,
   RevisionRecord,
   RevisionScope,
@@ -133,6 +134,31 @@ export function toCellStats(row: PatternStepStatsRow): CellStats {
     acceptedN: row.accepted_n,
     laplaceRate: Number(row.laplace_rate),
     repeatRate90d: row.repeat_rate_90d == null ? null : Number(row.repeat_rate_90d),
+  };
+}
+
+/**
+ * brain_pattern_step_stats全行取得用(AI提案分析MVP、パターン別成功率)。
+ * PatternStepStatsRowはCellStats用に識別子(pattern_id/step_no/avg_fire_score)を
+ * 持たない設計のため、表示用に識別子込みで別途定義する。
+ */
+export interface PatternStepStatFullRow extends PatternStepStatsRow {
+  pattern_id: string;
+  step_no: number;
+  avg_fire_score: number | string | null;
+}
+
+export function toPatternStepStatSummary(row: PatternStepStatFullRow): PatternStepStatSummary {
+  return {
+    candidateCode: row.candidate_code,
+    patternId: row.pattern_id,
+    stepNo: row.step_no,
+    customerType: row.customer_type as CustomerType,
+    staffStyle: row.staff_style as StaffStyle,
+    executedN: row.executed_n,
+    acceptedN: row.accepted_n,
+    laplaceRate: Number(row.laplace_rate),
+    avgFireScore: row.avg_fire_score == null ? null : Number(row.avg_fire_score),
   };
 }
 

@@ -47,4 +47,24 @@ export class OutcomeRepo implements IOutcomeRepo {
     }
     return { id: (data as { id: string }).id };
   }
+
+  async listSinceByStore(storeId: UUID, sinceIso: string | null, limit: number): Promise<OutcomeLite[]> {
+    let query = this.client
+      .from('brain_proposal_outcomes')
+      .select('pattern_id, step_no, proposal_kind, visit_count_at, was_executed, was_accepted, created_at')
+      .eq('store_id', storeId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (sinceIso) {
+      query = query.gte('created_at', sinceIso);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(`OutcomeRepo.listSinceByStore failed: ${error.message}`);
+    }
+    return ((data ?? []) as ProposalOutcomeRow[]).map(toOutcomeLite);
+  }
 }

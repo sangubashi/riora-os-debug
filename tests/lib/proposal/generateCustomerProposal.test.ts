@@ -76,10 +76,10 @@ function createFakeRepos(overrides: { customer?: Customer | null; visits?: Visit
     },
     staffRepo: { listByStore: async () => [staff()], addNameAlias: async () => null, deactivate: async () => null, create: async () => { throw new Error('not implemented in test fake'); } },
     subscriptionRepo: { listByStore: async () => [] },
-    outcomeRepo: { recent: async () => [], create: async (input) => ({ id: 'new-outcome', ...input }) },
+    outcomeRepo: { recent: async () => [], create: async (input) => ({ id: 'new-outcome', ...input }), listSinceByStore: async () => [] },
     candidateRepo: { loadActive: async () => overrides.candidates ?? [candidate()] },
     paramsRepo: { weights: async () => weights(), styleAffinity: async () => styleAffinity() },
-    statsRepo: { loadCells: async () => new Map(), refreshStepStats: async () => {} },
+    statsRepo: { loadCells: async () => new Map(), refreshStepStats: async () => {}, listAllStepStats: async () => [] },
     storeRepo: { findById: async () => store() },
     lineQueueRepo: { enqueue: async () => 'q1', listPendingByStore: async () => [], updateStatus: async () => null, recentByCustomer: async () => [] },
     menuRepo: {

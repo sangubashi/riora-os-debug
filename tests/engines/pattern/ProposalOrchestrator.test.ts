@@ -122,6 +122,7 @@ function buildStatsRepo(): IStatsRepo & { loadCells: ReturnType<typeof vi.fn> } 
   return {
     loadCells: vi.fn(async (_keys: CellKey[]) => new Map<CellKey, CellStats>()),
     refreshStepStats: async () => {},
+    listAllStepStats: async () => [],
   };
 }
 

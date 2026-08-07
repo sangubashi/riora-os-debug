@@ -259,10 +259,12 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
       recentByCustomer: async () => [],
       attachFeedback: async () => ({ attached: false, reason: 'not_found' as const }),
       listWithStaffFeedback: async () => [],
+      listSinceByStore: async () => [],
     },
     outcomeRepo: {
       recent: async () => [],
       create: async () => ({ id: 'outcome-fake' }),
+      listSinceByStore: async () => [],
     },
     // Phase 1-Cc: このテストではrecordProposalOutcome()が常にno_eligible_fire_logで
     // 早期returnするため(briefingRepo.recentByCustomerが空配列)、refreshStepStatsは
@@ -270,6 +272,7 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
     statsRepo: {
       loadCells: async () => new Map(),
       refreshStepStats: async () => {},
+      listAllStepStats: async () => [],
     },
   };
 

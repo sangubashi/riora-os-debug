@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { CellKey, CellStats } from '../../types/riora.types';
+import type { CellKey, CellStats, PatternStepStatSummary } from '../../types/riora.types';
 import type { IStatsRepo } from '../interfaces';
-import { cellKeyOf, toCellStats, type PatternStepStatsRow } from './mappers';
+import { cellKeyOf, toCellStats, toPatternStepStatSummary, type PatternStepStatFullRow, type PatternStepStatsRow } from './mappers';
 
 export class StatsRepo implements IStatsRepo {
   constructor(private readonly client: SupabaseClient) {}
@@ -38,5 +38,19 @@ export class StatsRepo implements IStatsRepo {
     if (error) {
       throw new Error(`StatsRepo.refreshStepStats failed: ${error.message}`);
     }
+  }
+
+  async listAllStepStats(): Promise<PatternStepStatSummary[]> {
+    // brain_pattern_step_statsにstore_id列が無いため店舗絞り込みは行わない
+    // (単一店舗運用の現状では実害なし、IStatsRepo.listAllStepStatsのコメント参照)。
+    const { data, error } = await this.client
+      .from('brain_pattern_step_stats')
+      .select('candidate_code, pattern_id, step_no, customer_type, staff_style, executed_n, accepted_n, laplace_rate, repeat_rate_90d, avg_fire_score')
+      .order('executed_n', { ascending: false });
+
+    if (error) {
+      throw new Error(`StatsRepo.listAllStepStats failed: ${error.message}`);
+    }
+    return ((data ?? []) as PatternStepStatFullRow[]).map(toPatternStepStatSummary);
   }
 }

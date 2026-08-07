@@ -19,6 +19,7 @@ import type {
   Candidate,
   CellKey,
   CellStats,
+  PatternStepStatSummary,
   ScoringWeights,
   OutcomeLite,
   Customer,
@@ -65,6 +66,12 @@ export interface IStatsRepo {
    * されないため、呼び出し側(CSV取込完了後)が明示的に呼ぶ必要がある。
    */
   refreshStepStats(): Promise<void>;
+  /**
+   * brain_pattern_step_stats(マテビュー)の全行を識別子込みで返す(AI提案分析MVP、
+   * パターン別成功率表示用)。matviewにstore_id列が無いため店舗絞り込みは行わない
+   * (現状単一店舗運用のため実害なし、docs/AI_PROPOSAL_ANALYTICS_DASHBOARD_DESIGN.md §1.3)。
+   */
+  listAllStepStats(): Promise<PatternStepStatSummary[]>;
 }
 
 export interface IParamsRepo {
@@ -97,6 +104,12 @@ export interface IOutcomeRepo {
   recent(customerId: UUID, n: number): Promise<OutcomeLite[]>;
   /** brain_proposal_outcomesへ1件追加し、生成された行のidを返す(Phase 1-Bc)。 */
   create(input: CreateProposalOutcomeInput): Promise<{ id: UUID }>;
+  /**
+   * brain_proposal_outcomesをstore単位でcreated_at降順に取得する(AI提案分析MVP、
+   * 実施率・施術一致率・proposal_kind内訳・月別推移の算出用)。sinceIso指定時は
+   * created_at >= sinceIsoのみ(listWithStaffFeedbackと同じ期間絞り込み方式)。
+   */
+  listSinceByStore(storeId: UUID, sinceIso: string | null, limit: number): Promise<OutcomeLite[]>;
 }
 
 /** brain_pattern_fire_log.decision_recordへ追記するstaffFeedbackの入力(AI提案学習Phase1: 👍👎)。 */
@@ -714,6 +727,13 @@ export interface IBriefingRepo {
    * options省略時は従来通り期間無制限(呼び出し側で明示的に'all'を選んだ場合)。
    */
   listWithStaffFeedback(storeId: UUID, options?: { sinceIso?: string | null; limit?: number }): Promise<FireLogFeedbackRow[]>;
+  /**
+   * brain_pattern_fire_logをstore単位でcreated_at降順に取得する(AI提案分析MVP、
+   * 「AI提案表示数」・月別推移の算出用)。listWithStaffFeedbackと異なりstaffFeedback
+   * の有無でフィルタしない(表示された全件が対象)。customerNameは取得しない
+   * (recentByCustomerと同じ理由、集計目的で個別の顧客名は不要)。
+   */
+  listSinceByStore(storeId: UUID, sinceIso: string | null, limit: number): Promise<BriefingEntry[]>;
 }
 
 /** brain_pattern_fire_log.decision_record(jsonb)から読み取ったstaffFeedback付き1件分(AI提案学習Phase2)。 */

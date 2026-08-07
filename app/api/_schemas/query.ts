@@ -64,3 +64,13 @@ export const proposalFeedbackAnalyticsQuerySchema = z.object({
   storeId: idSchema,
   range: z.enum(['30d', '90d', 'all']).default('30d'),
 });
+
+/**
+ * GetProposalAnalytics(GET /api/admin/proposal-analytics?storeId=...&range=...)の
+ * クエリ検証スキーマ(AI提案分析MVP)。proposalFeedbackAnalyticsQuerySchemaと同形だが、
+ * 独立した画面機能のため別スキーマとして定義する(既存コードの慣例に合わせる)。
+ */
+export const proposalAnalyticsQuerySchema = z.object({
+  storeId: idSchema,
+  range: z.enum(['30d', '90d', 'all']).default('30d'),
+});
