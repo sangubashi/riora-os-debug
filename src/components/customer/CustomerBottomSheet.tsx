@@ -88,6 +88,7 @@ import AIProposalCard from '@/components/customer/AIProposalCard';
 import CustomerRiskCard from '@/components/customer/CustomerRiskCard';
 import ServiceReplayCard from '@/components/customer/ServiceReplayCard';
 import VoiceMemoSection from '@/components/customer/VoiceMemoSection';
+import KarteImportSection from '@/components/customer/KarteImportSection';
 import CustomerNotesSection from '@/components/customer/CustomerNotesSection';
 import BookingPromptSection from '@/components/customer/BookingPromptSection';
 import HandoverSection from '@/components/customer/HandoverSection';
@@ -144,7 +145,7 @@ const ACTION_BUTTONS: Array<{ action: ActionType; emoji: string; label: string }
   { action: 'product_purchased',   emoji: '✅', label: '商品を購入した' },
 ];
 
-type SectionKey = 'homecare' | 'line' | 'voice' | 'lineSendLog';
+type SectionKey = 'homecare' | 'line' | 'voice' | 'lineSendLog' | 'karteImport';
 
 /** 来店履歴1件（Phase UX-1・/api/customers/[id]/visit-history のレスポンス型） */
 interface VisitHistoryEntry {
@@ -2176,6 +2177,34 @@ export default function CustomerBottomSheet({
                                     servicePhase === 'checkout' ? 'checkout' : 'aftercare'
                                   );
                                 }
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Salon Boardカルテ取込（Phase1・docs/CALTE_IMPORT_MVP_DESIGN.md） */}
+                      <div className="bg-[#F0F5FA] rounded-[22px] overflow-hidden flex-shrink-0">
+                        <button onClick={() => toggleSection('karteImport')}
+                          className="w-full flex items-center justify-between px-4 py-3.5 bg-transparent border-none cursor-pointer">
+                          <p className="text-[11px] tracking-[0.18em] text-[#4878A8] font-semibold">
+                            📋 Salon Boardカルテ取込
+                          </p>
+                          <span className="text-sm text-[#4878A8] transition-transform duration-200 inline-block"
+                            style={{ transform: openSections.has('karteImport') ? 'rotate(180deg)' : 'none' }}>▾</span>
+                        </button>
+                        {openSections.has('karteImport') && (
+                          <div className="px-4 pb-4">
+                            <KarteImportSection
+                              customerId={c.id}
+                              customerName={c.name}
+                              onSaved={() => {
+                                setNotesRefreshKey(p => p + 1);
+                                void loadRecentNotes(c.id);
+                                void (async () => {
+                                  const updated = await fetchContraindications(c.id);
+                                  if (updated.length > 0) setContraindications(updated);
+                                })();
                               }}
                             />
                           </div>

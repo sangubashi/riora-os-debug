@@ -321,7 +321,7 @@ export interface CustomerNote {
   staff_id:       string | null
   note:           string
   category:       NoteCategory | null
-  source:         'voice_note' | 'manual'
+  source:         'voice_note' | 'manual' | 'salonboard'
   voice_note_id:  string | null
   created_at:     string
 }
