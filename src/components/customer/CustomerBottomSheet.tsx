@@ -84,6 +84,7 @@ import {
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import CustomerInsightPanel from '@/components/customer/CustomerInsightPanel';
 import NextActionPanel from '@/components/customer/NextActionPanel';
+import AIProposalCard from '@/components/customer/AIProposalCard';
 import CustomerRiskCard from '@/components/customer/CustomerRiskCard';
 import ServiceReplayCard from '@/components/customer/ServiceReplayCard';
 import VoiceMemoSection from '@/components/customer/VoiceMemoSection';
@@ -1746,22 +1747,16 @@ export default function CustomerBottomSheet({
                         </ErrorBoundary>
                       )}
 
-                      {/* 今日の接客ポイント */}
-                      <div className="bg-[#FFF8F7] rounded-[22px] p-4 border border-[#F5E6E8]">
-                        <p className="text-[11px] tracking-[0.2em] text-[#C8A58C] font-semibold mb-2.5">
-                          ✨ 今日の接客ポイント
-                        </p>
-                        <p className="text-sm text-[#5C4033] leading-[1.75]">{aiAdvice}</p>
-                        {aiNg && (
-                          <div className="mt-2.5 bg-[#FFF0F2] rounded-2xl p-2.5 flex gap-2">
-                            <span className="text-sm flex-shrink-0">⚠️</span>
-                            <div>
-                              <p className="text-[10px] text-[#C05060] tracking-[0.08em] mb-0.5">NGワード</p>
-                              <p className="text-sm text-[#C05060] leading-relaxed">{aiNg}</p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                      {/* 今日の接客ポイント(STAFF_PROPOSAL_LEARNING_PIPELINE: ProposalOrchestrator
+                          由来の実データへ差し替え。取得できない場合は従来のfallback文言(aiAdvice/
+                          aiNg、TYPE_COPYベース)をそのまま表示する。算出ロジック自体は無変更) */}
+                      <ErrorBoundary label="AIProposalCard" silentFail>
+                        <AIProposalCard
+                          customerId={c.id}
+                          fallbackAdvice={aiAdvice}
+                          fallbackNg={aiNg}
+                        />
+                      </ErrorBoundary>
 
                       {/* 再来推奨タイミング */}
                       <ReturnTimingBadge />

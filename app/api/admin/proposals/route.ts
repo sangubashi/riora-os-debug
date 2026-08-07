@@ -13,6 +13,7 @@ import { getRepos, getServiceClient } from '../../../lib/repos';
 import { proposalQuerySchema, proposalSaveSchema } from '../../_schemas/proposal';
 import { toValidationErrorResponse } from '../../_schemas/common';
 import { generateCustomerProposal } from '@/lib/proposal/generateCustomerProposal';
+import { buildFireLogDecisionRecord } from '@/lib/proposal/buildFireLogDecisionRecord';
 import { requireAdmin } from '@/lib/auth/requireAdmin';
 
 async function buildResult(storeId: string, customerId: string, staffId: string) {
@@ -71,20 +72,9 @@ export async function POST(req: NextRequest) {
     // PHASE 1-Ba: candidateCode文字列のみでは後続のoutcome学習(pattern_id/step_no
     // 単位の集計)に不十分なため、FiredProposalが既に持つ構造化フィールドを
     // decision_recordへ素通しで追加保存する(既存フィールドは変更しない・後方互換)。
-    const mandatory = 'degraded' in result.proposal ? null : result.proposal.inStore.mandatory;
-    const decisionRecord = 'degraded' in result.proposal
-      ? { degraded: true, reason: result.proposal.reason, contextSnapshot: result.context }
-      : {
-          candidates: [],
-          resolution: { winner: [result.proposal.inStore.mandatory?.candidateCode].filter((v): v is string => !!v), stage4TiebreakUsed: false },
-          contextSnapshot: result.context,
-          explainTexts: result.proposal.explanation,
-          patternId: mandatory?.patternId ?? null,
-          stepNo: mandatory?.stepNo ?? null,
-          proposalKind: mandatory?.proposalKind ?? null,
-          scriptStyle: mandatory?.scriptStyle ?? null,
-        };
-    const explanation = 'degraded' in result.proposal ? `提案生成が縮退しました: ${result.proposal.reason}` : result.proposal.explanation.staffLine1;
+    // 組み立てロジックはbuildFireLogDecisionRecord.tsへ共通化(STAFF_PROPOSAL_LEARNING_PIPELINE、
+    // app/api/proposals/fire/route.tsと共用)。
+    const { decisionRecord, explanation } = buildFireLogDecisionRecord(result);
 
     const saved = await repos.briefingRepo.insert({
       storeId: parsed.data.storeId,

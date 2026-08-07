@@ -1,9 +1,14 @@
 /**
- * GET /api/proposals/by-name?customerName=xxx
+ * GET /api/proposals/by-name?customerName=xxx | ?customerId=xxx
  * Phase1 スタッフ画面向け AI 提案 API。
- * brain_customers を顧客名で検索し、brain_visits 来歴 + ProposalOrchestrator から
- * 実データ提案を生成して返す。
+ * brain_customers を顧客名(customerName)または顧客ID(customerId)で検索し、
+ * brain_visits 来歴 + ProposalOrchestrator から実データ提案を生成して返す。
  * 顧客が brain_customers に存在しない場合は found:false を返す（クラッシュしない）。
+ *
+ * STAFF_PROPOSAL_LEARNING_PIPELINE: customerIdは AIProposalCard.tsx(CustomerBottomSheet、
+ * customerIdを既に保持している)向けの後方互換拡張。customerNameは既存のAIProposalView.tsx
+ * (予約カードがcustomerNameしか持たないため)からの呼び出しをそのまま維持する。
+ * 両方指定時はcustomerIdを優先する。
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getRepos, getServiceClient } from '../../../lib/repos';
@@ -26,22 +31,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ found: false, reason: 'staff_required' }, { status: 400 })
   }
 
+  const customerId   = req.nextUrl.searchParams.get('customerId');
   const customerName = req.nextUrl.searchParams.get('customerName');
-  if (!customerName) {
-    return NextResponse.json({ found: false, reason: 'missing_customerName' });
+  if (!customerId && !customerName) {
+    return NextResponse.json({ found: false, reason: 'missing_customer_identifier' });
   }
 
   try {
     const client = getServiceClient();
 
-    // brain_customers を名前で検索
-    const { data: matches } = await client
+    // brain_customers を customerId(優先) または customerName で検索
+    const baseQuery = client
       .from('brain_customers')
       .select('id, customer_type, is_internal_user')
       .eq('store_id', STORE_ID)
-      .eq('name', customerName)
       .is('deleted_at', null)
       .limit(1);
+    const { data: matches } = customerId
+      ? await baseQuery.eq('id', customerId)
+      : await baseQuery.eq('name', customerName as string);
 
     if (!matches || matches.length === 0) {
       return NextResponse.json({ found: false, reason: 'customer_not_found' });

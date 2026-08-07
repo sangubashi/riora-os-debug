@@ -21,3 +21,12 @@ export const proposalFeedbackSchema = z.object({
   fireLogId: idSchema,
   feedback: z.enum(['good', 'bad']),
 });
+
+/**
+ * FireProposal(POST /api/proposals/fire、STAFF_PROPOSAL_LEARNING_PIPELINE)の入力検証スキーマ。
+ * storeId/staffIdは渡さない(サーバー側でSTORE_ID固定値とextractStaffFromRequestの結果を使う。
+ * クライアント供給値を信用しない設計)。
+ */
+export const proposalFireSchema = z.object({
+  customerId: idSchema,
+});
