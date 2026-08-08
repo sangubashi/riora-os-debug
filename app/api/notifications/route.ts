@@ -180,10 +180,15 @@ export async function GET(req: NextRequest) {
     // today-briefingと同じ判定基準(staff_id一致)を使い、整合性を取る。
     const { start: todayStart } = todayJst()
     const { end: tomorrowEnd } = tomorrowJst()
+    // 「来店リマインド」は今後の来店予定のみを対象とする。completed(来店済み)・
+    // cancelled・no_showまで含めてしまうと、既に来店済みの予約からも同じ文言の
+    // 通知が生成され、同一顧客が同日に複数予約を持つ場合に重複表示される
+    // (実例: LEE JAEHEON様、confirmed×1件+completed×1件で「本日ご来店」が2件表示)。
     let reminderQuery = supabase
       .from('reservations')
       .select('id, brain_customer_id, staff_id, scheduled_at, created_at')
       .not('brain_customer_id', 'is', null)
+      .in('status', ['confirmed', 'in_progress'])
       .gte('scheduled_at', todayStart)
       .lte('scheduled_at', tomorrowEnd)
 
