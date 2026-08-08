@@ -57,6 +57,7 @@ import { buildCustomerTagVocabulary, buildProductCategoryVocabulary, deriveHints
 import { fetchKnowledgeMatch } from '@/lib/nextAction/fetchKnowledgeMatch';
 import { logAction, fetchRecentActions, type ActionLogRow } from '@/lib/actionLog';
 import { buildServiceReplay } from '@/lib/phase5/serviceReplay';
+import { pickManualMemoPrefill } from '@/lib/customer/pickManualMemoPrefill';
 import { Mutex, prodLog } from '@/lib/stability';
 import { useSectionPriority, isSectionVisible } from '@/lib/phase8/sectionPriority';
 import {
@@ -442,8 +443,10 @@ export default function CustomerBottomSheet({
     // customer_notes 最新分を1回だけ取得し、①メモ欄プリフィル ②「最近の会話」の両方に使う
     // （CUSTOMER_MEMORY_OPTIMIZE_1: 従来は limit(1) のプリフィル用取得と
     //   CustomerMemorySection 側の別クエリ(limit 3)が並走していたのを統合）
+    // カルテ取込由来(source='salonboard')は手動メモ欄へプリフィルしない(pickManualMemoPrefill)
     void loadRecentNotes(c.id).then(rows => {
-      if (rows[0]?.note) { setSavedMemoText(rows[0].note); setMemo(rows[0].note); }
+      const prefill = pickManualMemoPrefill(rows);
+      if (prefill) { setSavedMemoText(prefill); setMemo(prefill); }
     });
 
       {
