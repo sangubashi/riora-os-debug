@@ -13,6 +13,14 @@ import { canAccessCustomer } from '@/lib/auth/canAccessCustomer'
 
 const STORE_ID = '00000000-0000-0000-0000-000000000001'
 
+// 音声メモ保存時、/api/voice-pipeline(Claude解析経由)とVoiceMemoSection(スタッフ手動選択経由)
+// が同じ録音から並行してcustomer_memoriesへ書き込む構造になっているため、この経路(POST)側に
+// 軽量な重複チェックを追加する。voice-pipeline側の重複チェック(app/api/voice-pipeline/route.ts
+// の content.slice(0,30) 前方一致)と判定基準を揃え、直近数分以内・同一customer_idの範囲に限定
+// することで、明確に異なる内容の通常のMemory登録(手動含む)まで誤って潰さないようにする。
+const DUPLICATE_CHECK_WINDOW_MS = 5 * 60 * 1000
+const DUPLICATE_CHECK_PREFIX_LEN = 30
+
 export async function GET(req: NextRequest) {
   const staff = await extractStaffFromRequest(req)
   if (!staff) {
@@ -73,12 +81,33 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = getServiceClient()
+  const trimmedContent = body.content.trim()
+
+  // 直近数分以内・同一customer_idの既存レコードと前方一致すればスキップする
+  // (音声メモの2経路並行書込みによる重複のみを狙い撃ちし、内容が明確に異なる
+  // Memoryや、時間の空いた通常のMemory登録は従来通り保存される)。
+  const since = new Date(Date.now() - DUPLICATE_CHECK_WINDOW_MS).toISOString()
+  const { data: recent } = await supabase
+    .from('customer_memories')
+    .select('content')
+    .eq('customer_id', body.customer_id)
+    .gte('created_at', since)
+
+  const prefix = trimmedContent.slice(0, DUPLICATE_CHECK_PREFIX_LEN)
+  const isDuplicate = (recent ?? []).some(
+    (m: { content: string }) => m.content.slice(0, DUPLICATE_CHECK_PREFIX_LEN) === prefix
+  )
+
+  if (isDuplicate) {
+    return NextResponse.json({ skipped: true, reason: 'duplicate_recent_memory' }, { status: 200 })
+  }
+
   const { data, error } = await supabase
     .from('customer_memories')
     .insert({
       customer_id:  body.customer_id,
       store_id:     STORE_ID,
-      content:      body.content.trim(),
+      content:      trimmedContent,
       memory_type:  body.memory_type  ?? 'other',
       trigger_date: body.trigger_date ?? null,
       importance:   body.importance   ?? 'medium',
