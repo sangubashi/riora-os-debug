@@ -13,6 +13,11 @@
  *   (reservations.staff_id=auth.users.id、staffBrainId=brain_staff.id)により
  *   常に不成立だったため、brain_staff.user_id を介した変換を追加。
  *
+ * PHASE SECURITY-H1: is_internal_user=true(スタッフ本人の試用・検証購入等)の顧客は、
+ * 管理者以外に対しては上記Rule A'/B'/Cの判定に関わらず常にアクセス不可とする
+ * (Rule判定より前段の共通ゲート)。管理者はisAdmin分岐で従来通り常時アクセス可。
+ * 設計根拠: docs/SECURITY_FINAL_AUDIT.md H-1。
+ *
  * 注意: サーバーサイド専用（service role キー使用）
  */
 import { createClient } from '@supabase/supabase-js'
@@ -42,13 +47,16 @@ export async function canAccessCustomer(
 
   const { data: customer } = await supabase
     .from('brain_customers')
-    .select('id')
+    .select('id, is_internal_user')
     .eq('id', customerId)
     .eq('store_id', STORE_ID)
     .is('deleted_at', null)
     .single()
 
   if (!customer) return false
+
+  // PHASE SECURITY-H1: 内部ユーザーは共通ゲートで除外する(Rule A'/B'/Cより前段)。
+  if ((customer as { is_internal_user?: boolean }).is_internal_user) return false
 
   const { start, end } = todayRangeUtc()
 
@@ -115,13 +123,19 @@ export async function filterAccessibleCustomerIds(
 
   const { data: customers } = await supabase
     .from('brain_customers')
-    .select('id')
+    .select('id, is_internal_user')
     .in('id', customerIds)
     .eq('store_id', STORE_ID)
     .is('deleted_at', null)
 
   if (!customers || customers.length === 0) return new Set()
-  const validIds = customers.map(c => c.id)
+
+  // PHASE SECURITY-H1: 内部ユーザーは候補から除外する(canAccessCustomerと同じ共通ゲート)。
+  const validIds = customers
+    .filter(c => !(c as { is_internal_user?: boolean }).is_internal_user)
+    .map(c => c.id)
+
+  if (validIds.length === 0) return new Set()
 
   const { start, end } = todayRangeUtc()
 
