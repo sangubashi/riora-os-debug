@@ -11,7 +11,7 @@ import AppBottomNav   from '@/components/phase1/AppBottomNav'
 // ─── Broadcast tab ───────────────────────────────────────────────────────────
 
 function BroadcastTabContent() {
-  const { todayContacts, threads, openBroadcast, openThread } = useLineStore()
+  const { todayContacts, threads, openThread } = useLineStore()
 
   return (
     <div className="flex flex-col pb-24">
@@ -56,28 +56,18 @@ function BroadcastTabContent() {
         </div>
       </div>
 
+      {/* PHASE LINE-BROADCAST-SAFE-1: セグメント別人数は全てハードコードされた
+          架空値であり、実データ集計の仕組みが無いことが実機検証で判明したため、
+          数値表示ではなく準備中である旨のみを表示する(今回はセグメント集計を
+          実装しない)。 */}
       <div className="mx-4 mb-5">
         <div className="flex items-center gap-1.5 mb-3">
           <span className="text-[11px] font-semibold text-[#9F7E6C] tracking-wide">セグメント別状況</span>
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          {[
-            { label:'全顧客',         count:52, sub:'今月来店: 34名' },
-            { label:'1ヶ月以上未来店', count:18, sub:'失客リスク高', warn:true },
-            { label:'VIP顧客',         count: 8, sub:'次回予約率 88%' },
-            { label:'サブスク会員',    count:14, sub:'継続率 91%' },
-          ].map((seg, i) => (
-            <motion.button key={seg.label}
-              initial={{ opacity:0, y:6 }} animate={{ opacity:1, y:0 }} transition={{ delay:i*0.06 }}
-              whileTap={{ scale:0.96 }} onClick={openBroadcast}
-              className={`bg-white border rounded-2xl p-3.5 text-left shadow-card ${seg.warn?'border-rose-200':'border-[#F3E3E6]'}`}>
-              <p className={`text-[22px] font-light tabular-nums ${seg.warn?'text-rose-500':'text-[#5C4033]'}`}>
-                {seg.count}<span className="text-[12px]">名</span>
-              </p>
-              <p className="text-[11px] font-medium text-[#5C4033] mt-0.5">{seg.label}</p>
-              <p className="text-[10px] text-[#9F7E6C] mt-0.5">{seg.sub}</p>
-            </motion.button>
-          ))}
+        <div className="bg-white border border-[#F3E3E6] rounded-2xl p-4 text-center">
+          <p className="text-[12px] text-[#9F7E6C] leading-relaxed">
+            セグメント別の対象人数集計は現在準備中です。
+          </p>
         </div>
       </div>
     </div>
