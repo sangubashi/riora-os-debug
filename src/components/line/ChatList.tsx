@@ -1,6 +1,6 @@
 'use client'
 import { motion } from 'framer-motion'
-import { AlertTriangle, Clock } from 'lucide-react'
+import { AlertTriangle, Clock, MessageSquare } from 'lucide-react'
 import { useLineCrmStore } from '@/store/useLineStore'
 
 function timeAgo(iso: string): string {
@@ -63,6 +63,16 @@ export default function ChatList() {
         <div className="mx-4 mb-1 flex items-center gap-1.5">
           <Clock size={11} className="text-[#C8A58C]" />
           <span className="text-[11px] text-[#9F7E6C]">未返信 <strong className="text-[#D98292]">{totalUnread}件</strong></span>
+        </div>
+      )}
+
+      {/* ── 実データが無い場合の空状態(PHASE LINE-MOCK-HIDE-1) ──
+          threads/todayContactsは架空データではなく実データ(line_threads)のみを
+          反映するため、実顧客のLINE対応情報が無い場合はここが表示される。 */}
+      {threads.length === 0 && todayContacts.length === 0 && (
+        <div className="flex flex-col items-center justify-center gap-2 px-8 py-16 text-center">
+          <MessageSquare size={28} className="text-[#E0C4CA]" />
+          <p className="text-[13px] text-[#9F7E6C]">現在、表示できるLINE対応情報はありません</p>
         </div>
       )}
 

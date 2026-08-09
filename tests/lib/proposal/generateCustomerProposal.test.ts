@@ -133,7 +133,10 @@ describe('generateCustomerProposal', () => {
     expect(result.ok).toBe(true);
     if (result.ok && !('degraded' in result.proposal)) {
       expect(result.proposal.inStore.mandatory?.candidateCode).toBe('B1-step1');
-      expect(result.proposal.explanation.staffLine1).toContain('B1-step1');
+      // staffLine1(スタッフ向け「今日の接客ポイント」)はトークスクリプトそのものであり、
+      // パターンコード等の内部識別子を含まない(PHASE UX-SCORE-HIDE-1)。
+      expect(result.proposal.explanation.staffLine1).toBe('実際の台本');
+      expect(result.proposal.explanation.staffLine1).not.toContain('B1-step1');
     }
     expect(result.ok && result.lineHistoryContext.recentCount).toBe(0);
     expect(result.ok && result.voiceMemoContext.linkStatus).toBe('no_match'); // legacyClient未指定

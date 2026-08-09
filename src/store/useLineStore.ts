@@ -67,15 +67,11 @@ export interface LineTemplate {
   usedCount?: number
 }
 
-// ─── Mock data (フォールバック) ───────────────────────────────────────────────
-
-const MOCK_THREADS: LineThread[] = [
-  { id:'th-001', customerId:'c-001', customerName:'サンプル顧客A',customerType:'感情重視型', lastMessage:'キャンセルしたいのですが…',   lastMessageAt: new Date(Date.now()-1*3600000).toISOString(), unreadCount:1, isUrgent:true,  churnRisk:85, daysSinceVisit:15, tags:['キャンセル','フォロー必要'] },
-  { id:'th-002', customerId:'c-002', customerName:'サンプル顧客B',customerType:'慎重・不安型',lastMessage:'ご確認お願いします',          lastMessageAt: new Date(Date.now()-3*3600000).toISOString(), unreadCount:2, isUrgent:true,  churnRisk:72, daysSinceVisit:22, tags:['長期未来店'] },
-  { id:'th-003', customerId:'c-003', customerName:'サンプル顧客C',customerType:'VIP型',      lastMessage:'ありがとうございます！',       lastMessageAt: new Date(Date.now()-5*3600000).toISOString(), unreadCount:1, isUrgent:false, churnRisk:15, daysSinceVisit:5,  tags:['VIP','施術後フォロー'] },
-  { id:'th-004', customerId:'c-004', customerName:'サンプル顧客D',customerType:'効果重視型', lastMessage:'次回もよろしくお願いします',   lastMessageAt: new Date(Date.now()-1*86400000).toISOString(),unreadCount:0, isUrgent:false, churnRisk:20, daysSinceVisit:8,  tags:[] },
-  { id:'th-005', customerId:'c-005', customerName:'サンプル顧客E',customerType:'信頼構築型', lastMessage:'いつもありがとうございます', lastMessageAt: new Date(Date.now()-3*86400000).toISOString(),unreadCount:0, isUrgent:false, churnRisk:10, daysSinceVisit:3,  tags:[] },
-]
+// ─── Mock data (AI返信案フォールバックのみ。チャット一覧の初期表示には使わない) ──────
+// PHASE LINE-MOCK-HIDE-1: 実機検証で「サンプル顧客A/B/C」「今日の対応が必要」
+// 「未返信4件」等の架空データが、実際の緊急対応事項のようにスタッフ画面へ表示される
+// ことが判明したため、threads/todayContactsの初期値・フォールバックとしては
+// 一切使用しない(下記storeのthreads/todayContacts初期値を参照)。
 
 const MOCK_AI: Record<string, AiReplySuggestion[]> = {
   'th-001': [
@@ -87,12 +83,6 @@ const MOCK_AI: Record<string, AiReplySuggestion[]> = {
     { id:'ai6', type:'revisit', reason:'施術後5日フォロー', body:'サンプル顧客C様、先日はご来店ありがとうございました🌸 施術後のお肌の調子はいかがでしょうか？次回は1ヶ月後頃がおすすめです。' },
   ],
 }
-
-const MOCK_TODAY: TodayContact[] = [
-  { customerId:'c-001', customerName:'サンプル顧客A', reason:'キャンセルのフォローが必要です',   urgency:'high',   daysSinceVisit:15, threadId:'th-001' },
-  { customerId:'c-002', customerName:'サンプル顧客B', reason:'22日間未来店、失客リスクあり',      urgency:'high',   daysSinceVisit:22, threadId:'th-002' },
-  { customerId:'c-003', customerName:'サンプル顧客C', reason:'施術後5日 — フォローメッセージ推奨',urgency:'medium', daysSinceVisit:5,  threadId:'th-003' },
-]
 
 let msgCounter = 200
 
@@ -152,10 +142,10 @@ interface LineStore {
 }
 
 export const useLineStore = create<LineStore>((set, get) => ({
-  threads:       MOCK_THREADS,
+  threads:       [],
   messages:      [],
   aiSuggestions: [],
-  todayContacts: MOCK_TODAY,
+  todayContacts: [],
   templates:     [],
 
   activeTab:       'chat',

@@ -71,12 +71,21 @@ describe('explainResolution', () => {
     expect(result.managerQ3).toBe('該当なし。');
   });
 
-  it('mandatoryがある場合、実際のcode/fireScore/decisiveFactorを埋め込んだ説明文を返す', () => {
+  it('mandatoryがある場合、managerQ1には実際のcode/fireScore/decisiveFactorを埋め込む(管理者向け)', () => {
     const mandatory = scored();
     const result = explainResolution({ mandatory, secondary: null, resolution: resolution() });
-    expect(result.staffLine1).toContain('A1-step2');
-    expect(result.staffLine1).toContain('85');
     expect(result.managerQ1).toContain('A1-step2');
+    expect(result.managerQ1).toContain('85');
+  });
+
+  it('staffLine1(スタッフ向け「今日の接客ポイント」)は候補のトークスクリプトをそのまま返し、パターンコード・FireScore・寄与点数等の内部評価値を含まない', () => {
+    const mandatory = scored({ candidate: candidate({ baseScript: 'ホームケア商品の使い方をご案内しましょう' }) });
+    const result = explainResolution({ mandatory, secondary: null, resolution: resolution() });
+    expect(result.staffLine1).toBe('ホームケア商品の使い方をご案内しましょう');
+    expect(result.staffLine1).not.toContain('A1-step2');
+    expect(result.staffLine1).not.toContain('FireScore');
+    expect(result.staffLine1).not.toContain('寄与');
+    expect(result.staffLine1).not.toMatch(/\d+点/);
   });
 
   it('isSales=trueの場合、staffAvoidに販売重複の注意文を返す', () => {

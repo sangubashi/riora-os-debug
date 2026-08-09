@@ -88,7 +88,13 @@ export function explainResolution(input: ExplainInput): ExplainTexts {
   }
 
   const decisive = computeDecisiveFactor(mandatory);
-  const staffLine1 = `${mandatory.candidate.code}(${mandatory.candidate.proposalKind})を提案します。${decisive}・FireScore ${Math.round(mandatory.fireScore)}点。`;
+  // PHASE UX-SCORE-HIDE-1: staffLine1はCustomerBottomSheet「今日の接客ポイント」に
+  // そのまま表示される(AIProposalCard.tsx)。パターンコード・FireScore・寄与点数等の
+  // 内部評価値はスタッフUI方針(事実情報のみ表示、評価系UI禁止)に反するため、
+  // 候補のトークスクリプト(baseScript、brain_pattern_steps.base_script由来の
+  // 自然文)をそのまま採用する。決定打(decisive)はmanagerQ1/Q3(管理者向け)にのみ残し、
+  // スコアリング・fire log・decision_record等の内部データ構造は一切変更しない。
+  const staffLine1 = mandatory.candidate.baseScript;
 
   const staffAvoid = mandatory.candidate.isSales
     ? '販売提案は本日1件までです。重ねて勧めないでください。'

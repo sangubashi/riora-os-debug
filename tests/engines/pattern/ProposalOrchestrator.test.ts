@@ -203,9 +203,13 @@ describe('ProposalOrchestrator', () => {
 
     expect(result.inStore.mandatory?.decisiveFactor).not.toBeNull();
     expect(result.inStore.mandatory?.decisiveFactor).toContain('点');
-    expect(result.explanation.staffLine1).toContain('A1-step1');
     expect(result.explanation.staffAvoid).toContain('1件まで'); // isSales=trueのため
     expect(result.explanation.managerQ1).toContain('A1-step1');
+    // staffLine1(スタッフ向け「今日の接客ポイント」)はトークスクリプトそのものであり、
+    // パターンコード・FireScore等の内部評価値を含まない(PHASE UX-SCORE-HIDE-1)。
+    expect(result.explanation.staffLine1).toBe('base script');
+    expect(result.explanation.staffLine1).not.toContain('A1-step1');
+    expect(result.explanation.staffLine1).not.toContain('FireScore');
   });
 
   it('AI提案本物化: proposalKind=rebookingがmandatoryの場合、candidateDateを実データ(lastVisitDate+avgCycle)から算出する', async () => {
