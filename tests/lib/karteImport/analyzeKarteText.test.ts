@@ -130,4 +130,41 @@ describe('analyzeKarteText', () => {
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.extracted.treatments).toEqual([{ content: '有効な内容' }])
   })
+
+  // PHASE KARTE-PII-MINIMIZE-1: Claudeへ渡す直前のcontentのみマスクし、
+  // DB保存用の原文(呼び出し元がkarte_imports.raw_textへ保存する値)は
+  // 無加工のまま維持する、という設計を検証する。
+  it('電話番号・メール・郵便番号を含む原文は、Claudeへ渡すcontentのみマスクされる(呼び出し元の原文自体は書き換えない)', async () => {
+    const fetchSpy = vi.fn(async (_url: string, _init?: RequestInit) => ({
+      ok:   true,
+      json: async () => ({ content: [{ type: 'text', text: VALID_JSON }] }),
+    }))
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const rawTextWithPii =
+      'カルテ本文です。連絡先は090-1234-5678、メールはtest@example.com、住所は〒150-0001です。施術内容の記録。'
+    const originalCopy = String(rawTextWithPii)
+
+    const result = await analyzeKarteText(rawTextWithPii)
+
+    expect(result.ok).toBe(true)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+    const [, requestInit] = fetchSpy.mock.calls[0] ?? []
+    const sentBody    = JSON.parse((requestInit?.body ?? '{}') as string) as { messages: Array<{ content: string }> }
+    const sentContent = sentBody.messages[0].content
+
+    // マスク対象はClaudeへ渡らない
+    expect(sentContent).not.toContain('090-1234-5678')
+    expect(sentContent).not.toContain('test@example.com')
+    expect(sentContent).not.toContain('150-0001')
+    expect(sentContent).toContain('[削除済]')
+    // 抽出対象の本文自体はマスクの影響を受けず残る
+    expect(sentContent).toContain('施術内容の記録')
+
+    // DB保存に使われる呼び出し元の変数(rawText)自体はこの関数内で書き換えられない
+    // (analyzeKarteText.tsはDB非接触・commitKarteImport.tsとは完全に別経路のため、
+    // 呼び出し元が保持する原文の値がここでの変換の影響を受けないことを確認する)
+    expect(rawTextWithPii).toBe(originalCopy)
+  })
 })

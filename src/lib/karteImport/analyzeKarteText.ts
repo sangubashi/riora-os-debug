@@ -21,6 +21,30 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 
 const SEVERITIES: ContraindicationSeverity[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
 
+// ─── LLM送信直前のPIIマスク(カルテ原文専用・DB保存には一切影響しない) ─────────
+//
+// PHASE KARTE-PII-MINIMIZE-1: Salon Boardカルテのコピー&ペーストには、スタッフが
+// 画面をそのまま選択した場合、電話番号・メール・郵便番号が混入する可能性がある。
+// karte_imports.raw_text への保存は無加工のまま維持し(既存設計方針・commitKarteImport.ts
+// 経由の唯一の書込み経路は変更しない)、Claudeへ送信する直前のコピーにのみ適用する。
+//
+// パターンはsrc/lib/import/piiSanitizer.ts(CSV Import・会員番号ハッシュ化と同居)と
+// 同等だが、CSV側は氏名/カナ/スタッフ名という短い単一フィールドに1回だけ適用する設計
+// のためgフラグを使っていない。カルテ原文は自由記述の長文で複数箇所に出現しうるため、
+// ここでは全件マッチ(gフラグ)で置換する。CSV importのpiiSanitizer.tsはこのファイルから
+// 一切importせず、既存の挙動・テストには触れない(意図的な複製)。
+const KARTE_PHONE_RE  = /0\d{1,4}[-‐ー ]?\d{1,4}[-‐ー ]?\d{3,4}/g
+const KARTE_EMAIL_RE  = /[\w.+-]+@[\w-]+\.[\w.]+/g
+const KARTE_POSTAL_RE = /〒?\s?\d{3}[-‐ー]?\d{4}/g
+
+/** Claudeへ渡す直前のテキストにのみ適用する。DB保存用のrawTextには適用しないこと。 */
+function maskPiiForLlm(text: string): string {
+  return text
+    .replace(KARTE_PHONE_RE, '[削除済]')
+    .replace(KARTE_EMAIL_RE, '[削除済]')
+    .replace(KARTE_POSTAL_RE, '[削除済]')
+}
+
 const SYSTEM_PROMPT = `あなたは高級美容サロンのカルテ記録を整理するアシスタントです。
 スタッフが貼り付けたカルテ文章から、以下の6項目のみを抽出してください。
 
@@ -97,6 +121,10 @@ export async function analyzeKarteText(rawText: string): Promise<AnalyzeKarteTex
   }
 
   try {
+    // SECURITY: Claudeへ渡すのはマスク後のコピーのみ。DB保存(karte_imports.raw_text)
+    // には無加工のtrimmedを使う既存経路(commitKarteImport.ts)を一切変更しない。
+    const maskedForLlm = maskPiiForLlm(trimmed)
+
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method:  'POST',
       headers: {
@@ -108,7 +136,7 @@ export async function analyzeKarteText(rawText: string): Promise<AnalyzeKarteTex
         model:      'claude-haiku-4-5-20251001',
         max_tokens: 2048,
         system:     SYSTEM_PROMPT,
-        messages:   [{ role: 'user', content: `カルテ原文:\n${trimmed}` }],
+        messages:   [{ role: 'user', content: `カルテ原文:\n${maskedForLlm}` }],
       }),
     })
 
