@@ -136,17 +136,66 @@ describe('POST /api/line/approve', () => {
     expect(sendLineMessage).toHaveBeenCalledWith('Utest002', 'テスト送信')
   })
 
-  it('④ skip動作はcanAccessCustomerを呼ばず、従来どおり動作する', async () => {
-    queueRows.push({ id: 'q-5', customer_id: 'cust-other', line_user_id: 'Uxyz999', message_body: 'こんにちは' })
+  it('④ 担当顧客のskipはcanAccessCustomerを通過して成功する', async () => {
+    queueRows.push({ id: 'q-5', customer_id: 'cust-1', line_user_id: 'Uxyz999', message_body: 'こんにちは' })
 
     const { POST } = await import('../../app/api/line/approve/route')
     const res = await POST(buildReq({ id: 'q-5', action: 'skip' }))
     const json = await res.json()
 
+    expect(canAccessCustomer).toHaveBeenCalledWith('staff-1', 'cust-1', false)
     expect(res.status).toBe(200)
     expect(json).toMatchObject({ success: true, newStatus: 'skipped' })
-    expect(canAccessCustomer).not.toHaveBeenCalled()
     expect(sendLineMessage).not.toHaveBeenCalled()
+  })
+
+  it('④b 担当外顧客のskipは403を返し、キューは更新されない(canAccessCustomer適用漏れ修正)', async () => {
+    queueRows.push({ id: 'q-6', customer_id: 'cust-other', line_user_id: 'Uxyz999', message_body: 'こんにちは' })
+    vi.mocked(canAccessCustomer).mockResolvedValue(false)
+
+    const { POST } = await import('../../app/api/line/approve/route')
+    const res = await POST(buildReq({ id: 'q-6', action: 'skip' }))
+    const json = await res.json()
+
+    expect(canAccessCustomer).toHaveBeenCalledWith('staff-1', 'cust-other', false)
+    expect(res.status).toBe(403)
+    expect(json).toEqual({ success: false, error: 'forbidden' })
+    expect(updateCalls).toHaveLength(0)
+  })
+
+  it('④c customer_id === null のskipは、一般スタッフは403(approve側と同じadmin例外方針)', async () => {
+    queueRows.push({ id: 'q-7', customer_id: null, line_user_id: 'Uxyz999', message_body: 'こんにちは' })
+
+    const { POST } = await import('../../app/api/line/approve/route')
+    const res = await POST(buildReq({ id: 'q-7', action: 'skip' }))
+    const json = await res.json()
+
+    expect(res.status).toBe(403)
+    expect(json).toEqual({ success: false, error: 'forbidden' })
+    expect(canAccessCustomer).not.toHaveBeenCalled()
+    expect(updateCalls).toHaveLength(0)
+  })
+
+  it('④d customer_id === null のskipでもadminは許可される(approve側と同じadmin例外方針)', async () => {
+    queueRows.push({ id: 'q-8', customer_id: null, line_user_id: 'Uxyz999', message_body: 'こんにちは' })
+    vi.mocked(extractStaffFromRequest).mockResolvedValue(ADMIN as never)
+
+    const { POST } = await import('../../app/api/line/approve/route')
+    const res = await POST(buildReq({ id: 'q-8', action: 'skip' }))
+    const json = await res.json()
+
+    expect(canAccessCustomer).not.toHaveBeenCalled()
+    expect(res.status).toBe(200)
+    expect(json).toMatchObject({ success: true, newStatus: 'skipped' })
+  })
+
+  it('④e 存在しないキューidのskipは404を返す', async () => {
+    const { POST } = await import('../../app/api/line/approve/route')
+    const res = await POST(buildReq({ id: 'q-nonexistent', action: 'skip' }))
+
+    expect(res.status).toBe(404)
+    expect(canAccessCustomer).not.toHaveBeenCalled()
+    expect(updateCalls).toHaveLength(0)
   })
 
   it('未認証の場合は401を返す', async () => {
