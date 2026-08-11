@@ -101,10 +101,12 @@ export async function POST(req: NextRequest) {
     const settings = await repos.businessSettingsRepo.upsert(parsed.data);
 
     // 変更前後をbrain_ops_logsへ記録する(設計書§監査)。
+    // actorIdはbrain_ops_logs.actor_id(auth.users.id、20260621_csv_import_security_diff.sql
+    // のCOMMENT参照)に合わせ、requireAdminで解決済みのauthUserIdを使用する。
     await repos.opsLogRepo.insert({
       storeId: parsed.data.storeId,
       kind: 'business_settings_update',
-      actorId: null,
+      actorId: gate.authUserId,
       detail: {
         month: parsed.data.month,
         before: before

@@ -370,7 +370,13 @@ export async function POST(req: NextRequest) {
       throw new Error('OPENAI_API_KEY が未設定のため文字起こしできません')
     }
     const transcript = await transcribeWithWhisper(audioBuffer, mimeType)
-    console.log(`[pipeline] Whisper transcript (${transcript.length}文字): ${transcript.slice(0, 60)}…`)
+    // SECURITY: 音声文字起こし本文(顧客の発言内容そのもの)は本番ログへ出さない。
+    // 文字数のみ本番でも記録し、内容プレビューは開発時のみ出力する。
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[pipeline] Whisper transcript (${transcript.length}文字): ${transcript.slice(0, 60)}…`)
+    } else {
+      console.log(`[pipeline] Whisper transcript received (${transcript.length}文字)`)
+    }
 
     // ── 4. Claude 4 カテゴリ同時解析 ──
     const analysis = await analyzeWithClaude(transcript)

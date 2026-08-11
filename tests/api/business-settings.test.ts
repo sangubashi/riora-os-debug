@@ -125,6 +125,10 @@ describe('POST /api/admin/business-settings', () => {
     expect(body.success).toBe(true);
     expect(body.settings).toEqual(SETTINGS);
     expect(mockRepos.businessSettingsRepo.upsert).toHaveBeenCalledWith(payload);
+    // actor_id是正: brain_ops_logsには認証済みadminのauthUserIdを記録する(nullにしない)
+    expect(mockRepos.opsLogRepo.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId: 'admin-auth-uid' })
+    );
   });
 
   it('Repository factoryがエラーの場合は500を返す', async () => {

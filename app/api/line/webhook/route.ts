@@ -15,7 +15,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createHmac }                from 'crypto'
+import { createHmac, timingSafeEqual } from 'crypto'
 import { createClient }              from '@supabase/supabase-js'
 
 // ─── 型定義 ───────────────────────────────────────────────────────────────────
@@ -74,7 +74,14 @@ function verifySignature(rawBody: string, signature: string, secret: string): bo
   const hash = createHmac('sha256', secret)
     .update(rawBody)
     .digest('base64')
-  return hash === signature
+
+  // timingSafeEqualは長さが異なるBufferを渡すと例外を投げるため、
+  // 比較前に必ず長さを揃える(異なれば即falseとし、例外を発生させない)。
+  const hashBuffer      = Buffer.from(hash)
+  const signatureBuffer = Buffer.from(signature)
+  if (hashBuffer.length !== signatureBuffer.length) return false
+
+  return timingSafeEqual(hashBuffer, signatureBuffer)
 }
 
 // ─── LINE Profile 取得 ────────────────────────────────────────────────────────
@@ -259,7 +266,12 @@ export async function POST(req: NextRequest) {
   for (const event of body.events) {
     const userId  = event.source.userId ?? 'unknown'
     const eventId = event.webhookEventId
-    console.log(`[Webhook] event=${event.type} userId=${userId} eventId=${eventId ?? 'none'}`)
+    // SECURITY: LINE User ID(PII)は本番ログへ出さない。開発時のみ出力する。
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[Webhook] event=${event.type} userId=${userId} eventId=${eventId ?? 'none'}`)
+    } else {
+      console.log(`[Webhook] event=${event.type} eventId=${eventId ?? 'none'}`)
+    }
 
     // 重複検知：同じ webhookEventId を処理済みならスキップして次のイベントへ
     if (eventId && await isDuplicateEvent(eventId)) {

@@ -57,10 +57,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'staff_not_found' }, { status: 404 });
     }
 
+    // actorIdはbrain_ops_logs.actor_id(auth.users.id、20260621_csv_import_security_diff.sql
+    // のCOMMENT参照)に合わせ、requireAdminで解決済みのauthUserIdを使用する。
     const log = await repos.opsLogRepo.insert({
       storeId,
       kind: 'churn_instruction',
-      actorId: null,
+      actorId: gate.authUserId,
       detail: { customerId, staffId, note },
     });
 

@@ -44,12 +44,12 @@ describe('POST /api/admin/churn-risk/instruct (担当スタッフへ指示)', ()
     mockRepos.customerRepo.findById.mockResolvedValue(CUSTOMER);
     mockRepos.staffRepo.listByStore.mockResolvedValue([STAFF]);
     mockRepos.opsLogRepo.insert.mockResolvedValue({
-      id: 'log-1', storeId: 'store-1', kind: 'churn_instruction', actorId: null,
+      id: 'log-1', storeId: 'store-1', kind: 'churn_instruction', actorId: 'admin-auth-uid',
       detail: {}, createdAt: '2026-06-23T00:00:00.000Z',
     } satisfies OpsLog);
   });
 
-  it('brain_ops_logs(kind=churn_instruction)へ記録する(LINE送信・予約操作は行わない)', async () => {
+  it('brain_ops_logs(kind=churn_instruction)へ記録する(LINE送信・予約操作は行わない、actor_idは認証済みadminのauthUserId)', async () => {
     const res = await POST(buildReq({ storeId: 'store-1', customerId: 'c1', staffId: 'staff-1', note: '次回来店時にフォロー' }));
     const body = await res.json();
 
@@ -58,7 +58,7 @@ describe('POST /api/admin/churn-risk/instruct (担当スタッフへ指示)', ()
     expect(mockRepos.opsLogRepo.insert).toHaveBeenCalledWith({
       storeId: 'store-1',
       kind: 'churn_instruction',
-      actorId: null,
+      actorId: 'admin-auth-uid',
       detail: { customerId: 'c1', staffId: 'staff-1', note: '次回来店時にフォロー' },
     });
   });

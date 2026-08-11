@@ -218,11 +218,13 @@ export async function POST(req: NextRequest) {
       executedAt: new Date().toISOString(),
       executedBy: gate.email,
     }
+    // actorIdはbrain_ops_logs.actor_id(auth.users.id、20260621_csv_import_security_diff.sql
+    // のCOMMENT参照)に合わせ、requireAdminで解決済みのauthUserIdを使用する。
     const repos = getRepos()
     const rollbackLog = await repos.opsLogRepo.insert({
       storeId,
       kind: 'customer_merge_rollback',
-      actorId: null,
+      actorId: gate.authUserId,
       detail: rollbackDetail as unknown as Record<string, unknown>,
     })
 

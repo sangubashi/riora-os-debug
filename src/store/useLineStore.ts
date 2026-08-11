@@ -6,7 +6,9 @@
  * ・モックデータへのフォールバック対応
  */
 import { create } from 'zustand'
+import { toast } from 'sonner'
 import { supabase, DEMO_MODE } from '@/lib/supabase'
+import { authedFetch } from '@/lib/api/authedFetch'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import type { CustomerType } from '@/types'
 
@@ -285,39 +287,89 @@ export const useLineStore = create<LineStore>((set, get) => ({
   },
 
   // ── sendMessage ────────────────────────────────────────────────
+  // LINEへ実際にPush送信してから、成功した場合のみline_messagesへ記録する。
+  // 送信自体は/api/line/send(スタッフの明示操作による1件送信専用API)が行う。
   sendMessage: async (body) => {
     const { selectedThread } = get()
-    if (!selectedThread || !body.trim()) return
+    const trimmed = body.trim()
+    if (!selectedThread || !trimmed) return
 
-    const optimistic: LineMessage = {
+    // DEMO_MODEはLINE実送信を行わない従来通りのローカルechoのみ
+    if (DEMO_MODE) {
+      const optimistic: LineMessage = {
+        id:        `msg-${++msgCounter}`,
+        threadId:  selectedThread.id,
+        direction: 'sent',
+        body:      trimmed,
+        sentAt:    new Date().toISOString(),
+        status:    'delivered',
+      }
+      set(s => ({
+        messages: [...s.messages, optimistic],
+        threads:  s.threads.map(t => t.id === selectedThread.id
+          ? { ...t, lastMessage: trimmed, lastMessageAt: optimistic.sentAt, unreadCount: 0 }
+          : t),
+      }))
+      return
+    }
+
+    let sendResult: { success?: boolean; error?: string } | null = null
+    try {
+      const res = await authedFetch('/api/line/send', {
+        method: 'POST',
+        body:   JSON.stringify({ customerId: selectedThread.customerId, body: trimmed }),
+      })
+      sendResult = await res.json().catch(() => null) as { success?: boolean; error?: string } | null
+
+      if (!res.ok || !sendResult?.success) {
+        const reason = sendResult?.error
+        set({
+          error: reason ?? 'send_failed',
+        })
+        toast.error(
+          reason === 'line_user_id_not_found'
+            ? 'このお客様はLINE連携が確認できないため送信できません'
+            : 'LINE送信に失敗しました。もう一度お試しください。'
+        )
+        return
+      }
+    } catch {
+      set({ error: 'network_error' })
+      toast.error('LINE送信に失敗しました。もう一度お試しください。')
+      return
+    }
+
+    // ここに到達するのはLINE実送信が成功した場合のみ
+    const sentAt = new Date().toISOString()
+    const sent: LineMessage = {
       id:        `msg-${++msgCounter}`,
       threadId:  selectedThread.id,
       direction: 'sent',
-      body:      body.trim(),
-      sentAt:    new Date().toISOString(),
+      body:      trimmed,
+      sentAt,
       status:    'delivered',
     }
 
     set(s => ({
-      messages: [...s.messages, optimistic],
+      messages: [...s.messages, sent],
       threads:  s.threads.map(t => t.id === selectedThread.id
-        ? { ...t, lastMessage: body.trim(), lastMessageAt: optimistic.sentAt, unreadCount: 0 }
+        ? { ...t, lastMessage: trimmed, lastMessageAt: sentAt, unreadCount: 0 }
         : t),
     }))
-
-    if (DEMO_MODE) return
 
     const { error } = await supabase.from('line_messages').insert({
       thread_id:   selectedThread.id,
       customer_id: selectedThread.customerId,
       direction:   'sent',
-      body:        body.trim(),
+      body:        trimmed,
       status:      'delivered',
-      sent_at:     optimistic.sentAt,
+      sent_at:     sentAt,
     })
 
     if (error) {
-      set(s => ({ messages: s.messages.filter(m => m.id !== optimistic.id) }))
+      // LINEへの送信自体は既に成功しているため、ローカル表示はロールバックしない
+      // (line_messagesはチャット履歴の記録用途であり、真実はline_send_logs側にある)
+      console.error('[useLineStore] line_messages insert after successful LINE send failed:', error.message)
     }
   },
 

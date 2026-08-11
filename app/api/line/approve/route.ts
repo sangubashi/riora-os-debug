@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { sendLineMessage } from '../../../lib/line/sender'
 import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest'
+import { canAccessCustomer } from '@/lib/auth/canAccessCustomer'
 import { lineSendDuplicateLimiter } from '@/lib/rateLimit'
 
 function getSupabase(): SupabaseClient {
@@ -78,12 +79,23 @@ export async function POST(req: NextRequest) {
     // ─── approve: 承認 → 実送信 → 結果反映 ────────────────────────────────
     const { data: item, error: fetchError } = await supabase
       .from('line_send_queue')
-      .select('id, line_user_id, message_body')
+      .select('id, customer_id, line_user_id, message_body')
       .eq('id', body.id)
       .single()
 
     if (fetchError || !item) {
       return NextResponse.json({ error: fetchError?.message ?? 'queue item not found' }, { status: 404 })
+    }
+
+    // SECURITY: 担当外顧客への送信を防ぐ(既存のcanAccessCustomerルールに従う)。
+    // customer_idが無いキュー項目(顧客削除等で紐付けが失われた行)は担当判定ができないため、
+    // 既存のcanAccessCustomerが持つ「isAdmin=trueは常に許可」ルールをそのまま踏襲し、
+    // admin以外はデフォルト拒否とする(新しい権限仕様は作らない)。
+    const accessible = item.customer_id
+      ? await canAccessCustomer(staff.staffBrainId, item.customer_id, staff.isAdmin)
+      : staff.isAdmin
+    if (!accessible) {
+      return NextResponse.json({ success: false, error: 'forbidden' }, { status: 403 })
     }
 
     // STAFF_PERMISSION_AUDIT_1 STEP3: 二重送信事故防止(skipはカウント対象外・

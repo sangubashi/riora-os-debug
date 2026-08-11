@@ -248,11 +248,13 @@ export async function POST(req: NextRequest) {
       firstVisitDateBefore: plan.firstVisitDateBefore,
       firstVisitDateAfter: plan.firstVisitDateAfter,
     }
+    // actorIdはbrain_ops_logs.actor_id(auth.users.id、20260621_csv_import_security_diff.sql
+    // のCOMMENT参照)に合わせ、requireAdminで解決済みのauthUserIdを使用する。
     const repos = getRepos()
     const opsLog = await repos.opsLogRepo.insert({
       storeId,
       kind: 'customer_merge',
-      actorId: null,
+      actorId: gate.authUserId,
       detail: auditDetail as unknown as Record<string, unknown>,
     })
 

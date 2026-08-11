@@ -1133,8 +1133,10 @@ export default function CustomerBottomSheet({
   }, [visitHistory]);
 
   // [DEBUG] マウント時: customer.id を確認
+  // SECURITY: 顧客氏名(PII)を含むため、本番では出力しない(開発時のみ)。
   useEffect(() => {
     if (!c) return
+    if (process.env.NODE_ENV === 'production') return
     console.group('[BottomSheet] MOUNT')
     console.log('customer.id  :', c.id)
     console.log('customer.name:', c.name)
@@ -1143,8 +1145,10 @@ export default function CustomerBottomSheet({
   }, [c?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // [DEBUG] フェーズ切替時: 全セクションの visible を出力
+  // SECURITY: 開発時のみのデバッグ出力とする(本番では出力しない)。
   useEffect(() => {
     if (!c) return
+    if (process.env.NODE_ENV === 'production') return
     const sections = ['voiceMemo','homeCare','timeline','nextAction','aiInsight','lineDraft','storeLearning'] as const
     console.group(`[BottomSheet] PHASE: ${servicePhase}`)
     console.log('customer.id:', c.id)
@@ -1427,6 +1431,12 @@ export default function CustomerBottomSheet({
         </button>
         {open && (
           <div className="px-4 pb-3.5 flex flex-col gap-1.5">
+            {/* PHASE VOICE-LINE-AUDIT-1: 実送信ログではない旨をスタッフに明示する
+                (本番運用前総点検で「送信履歴」という見出しだけでは実送信と誤認しうると
+                判明。ロジック変更なし、注記の追加のみ)。 */}
+            <p className="text-[10px] text-[#C8A8B0] leading-relaxed">
+              文面をコピーした記録です。実際にLINEで送信されたかどうかは記録されません。
+            </p>
             {lineSendLogsLoading && <p className="text-xs text-[#C8A8B0]">読み込み中…</p>}
             {!lineSendLogsLoading && lineSendLogs.length === 0 && (
               <p className="text-xs text-[#C8A8B0]">送信履歴はまだありません</p>
@@ -2137,12 +2147,15 @@ export default function CustomerBottomSheet({
                           <span className="text-sm text-[#4878A8] transition-transform duration-200 inline-block"
                             style={{ transform: openSections.has('voice') ? 'rotate(180deg)' : 'none', opacity: isVoiceRecording ? 0.35 : 1 }}>▾</span>
                         </button>
-                        {console.log('VOICE_MEMO_RENDER', {
-                          openSections_has_voice: openSections.has('voice'),
-                          visible_voiceMemo: visible('voiceMemo'),
-                          servicePhase,
-                          will_render: openSections.has('voice') && visible('voiceMemo'),
-                        }) as unknown as null}
+                        {process.env.NODE_ENV !== 'production' && (() => {
+                          console.log('VOICE_MEMO_RENDER', {
+                            openSections_has_voice: openSections.has('voice'),
+                            visible_voiceMemo: visible('voiceMemo'),
+                            servicePhase,
+                            will_render: openSections.has('voice') && visible('voiceMemo'),
+                          })
+                          return null
+                        })()}
                         {openSections.has('voice') && visible('voiceMemo') && (
                           <div className="px-4 pb-4">
                             <VoiceMemoSection
