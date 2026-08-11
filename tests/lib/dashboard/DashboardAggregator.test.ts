@@ -7,7 +7,10 @@
 // オーケストレーション(取得→集計→upsertDaily呼び出し)のみをfakeで検証する。
 // ================================================================
 import { describe, expect, it, vi } from 'vitest';
-import { computeDashboardAggregate, runDashboardAggregator, type DashboardAggregatorRepos } from '../../../src/lib/dashboard/DashboardAggregator';
+import {
+  computeDashboardAggregate, runDashboardAggregator, refreshDashboardAfterImport,
+  type DashboardAggregatorRepos, type DashboardRebuildRepos,
+} from '../../../src/lib/dashboard/DashboardAggregator';
 import type { Visit, BusinessSettings, Customer, Staff, Subscription, DashboardSnapshot } from '../../../src/types/riora.types';
 
 let visitSeq = 0;
@@ -293,5 +296,56 @@ describe('runDashboardAggregator', () => {
 
     expect(result.repeat30).toBe(0); // 既存計算式そのまま(無変更であることの確認)
     expect(result.aiInsights?.some((i) => i.title === 'リピート率低下')).toBe(true);
+  });
+});
+
+describe('refreshDashboardAfterImport', () => {
+  // PHASE actor_id是正(dashboard_rebuild): brain_ops_logs.actor_idが常にnullで
+  // 記録されていた問題の是正確認。actorId引数がkind='dashboard_rebuild'のopsLogへ
+  // 正しく伝播すること(指定時はその値、省略時はnull)のみを検証する。
+  // KPI計算・upsertDaily自体の検証はrunDashboardAggregatorのテストで担保済み。
+  function createFakeRebuildRepos(
+    visits: Visit[]
+  ): DashboardRebuildRepos & { opsLogInsert: ReturnType<typeof vi.fn> } {
+    const opsLogInsert = vi.fn().mockResolvedValue({
+      id: 'log-1', storeId: 'store-1', kind: 'dashboard_rebuild', actorId: null,
+      detail: {}, createdAt: new Date().toISOString(),
+    });
+    return {
+      visitRepo: { listByStore: vi.fn().mockResolvedValue(visits) } as unknown as DashboardRebuildRepos['visitRepo'],
+      businessSettingsRepo: {
+        findByStoreAndMonth: vi.fn().mockResolvedValue(null),
+        findLatestBeforeOrAt: vi.fn().mockResolvedValue(null),
+      } as unknown as DashboardRebuildRepos['businessSettingsRepo'],
+      dashboardRepo: {
+        upsertDaily: vi.fn().mockResolvedValue(undefined),
+        listSinceDate: vi.fn().mockResolvedValue([]),
+        latestByStore: vi.fn().mockResolvedValue(null),
+      } as unknown as DashboardRebuildRepos['dashboardRepo'],
+      customerRepo: { listByStore: vi.fn().mockResolvedValue([]) } as unknown as DashboardRebuildRepos['customerRepo'],
+      staffRepo: { listByStore: vi.fn().mockResolvedValue([]) } as unknown as DashboardRebuildRepos['staffRepo'],
+      subscriptionRepo: { listByStore: vi.fn().mockResolvedValue([]) } as unknown as DashboardRebuildRepos['subscriptionRepo'],
+      opsLogRepo: { insert: opsLogInsert } as unknown as DashboardRebuildRepos['opsLogRepo'],
+      opsLogInsert,
+    };
+  }
+
+  it('actorIdを指定した場合、dashboard_rebuildのopsLog.actorIdに指定値が入る', async () => {
+    const repos = createFakeRebuildRepos([visit({ customerId: 'c1', visitDate: '2026-06-10', treatmentAmount: 10000 })]);
+
+    await refreshDashboardAfterImport(repos, 'store-1', 'auth-user-123');
+
+    expect(repos.opsLogInsert).toHaveBeenCalledTimes(1);
+    expect(repos.opsLogInsert.mock.calls[0][0].kind).toBe('dashboard_rebuild');
+    expect(repos.opsLogInsert.mock.calls[0][0].actorId).toBe('auth-user-123');
+  });
+
+  it('actorIdを省略した場合、opsLog.actorIdはnullになる', async () => {
+    const repos = createFakeRebuildRepos([visit({ customerId: 'c1', visitDate: '2026-06-10', treatmentAmount: 10000 })]);
+
+    await refreshDashboardAfterImport(repos, 'store-1');
+
+    expect(repos.opsLogInsert).toHaveBeenCalledTimes(1);
+    expect(repos.opsLogInsert.mock.calls[0][0].actorId).toBeNull();
   });
 });

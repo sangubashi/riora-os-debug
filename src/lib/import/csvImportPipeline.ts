@@ -514,6 +514,12 @@ export interface ImportInput {
   csvType?:        string
   /** rowNumber(=checkoutの代表行番号)→'merge'|'new'。未指定行は'new'扱い。 */
   reviewDecisions: Record<number, ReviewDecisionValue>
+  /**
+   * brain_ops_logs.actor_id記録用(auth.users.id)。呼び出し元(APIルート)が
+   * requireAdmin()等で解決済みのactorを渡す。認証コンテキストを持たない
+   * バッチ実行(scripts/配下の直接呼び出し)ではundefined→nullのまま(既存挙動維持)。
+   */
+  actorId?:        string | null
 }
 
 export type ImportResult =
@@ -709,7 +715,7 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
   await repos.opsLogRepo.insert({
     storeId: input.storeId,
     kind: 'csv_import',
-    actorId: null,
+    actorId: input.actorId ?? null,
     // menuResolution.entries(rawMenuName/resolvedMenuName)は施術メニュー名であり個人情報では
     // ないため記録してよい(PII方針はお客様氏名・連絡先等が対象。CSVImportSecurityArchitecture.md参照)。
     // qualityReport.duplicateCustomerNamesは氏名を含むため要注意だが、ops_logs(brain_ops_logs)は

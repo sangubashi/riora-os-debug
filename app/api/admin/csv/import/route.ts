@@ -66,7 +66,10 @@ export async function POST(req: NextRequest) {
     const headers = parseHeadersFromCsv(csvText);
     const { type: csvType } = detectCsvType(headers);
 
-    const result = await runImportPipeline({ storeId, fileName: file.name, csvType, csvText, reviewDecisions }, repos);
+    const result = await runImportPipeline(
+      { storeId, fileName: file.name, csvType, csvText, reviewDecisions, actorId: gate.authUserId },
+      repos
+    );
     if (!result.ok) {
       return NextResponse.json({ success: false, error: result.code, message: result.message }, { status: 400 });
     }
@@ -74,7 +77,7 @@ export async function POST(req: NextRequest) {
     // PHASE MD-4: 取込成功後にbrain_dashboard_dailyを自動再生成する。
     // 失敗してもCSV取込自体は成功のまま扱う(要件③・Warningログのみ)。
     try {
-      await refreshDashboardAfterImport(repos, storeId);
+      await refreshDashboardAfterImport(repos, storeId, gate.authUserId);
     } catch (e) {
       console.warn('[csv-import] dashboard rebuild failed (non-fatal):', e);
     }

@@ -219,6 +219,12 @@ export interface ReservationImportInput {
   fileName?:       string
   csvText:         string
   reviewDecisions: Record<number, 'merge' | 'new'>
+  /**
+   * brain_ops_logs.actor_id記録用(auth.users.id)。呼び出し元(APIルート)が
+   * requireAdmin()等で解決済みのactorを渡す。認証コンテキストを持たない
+   * バッチ実行では省略可(undefined→nullのまま・既存挙動維持)。
+   */
+  actorId?:        string | null
 }
 
 export type ReservationImportResult =
@@ -317,7 +323,7 @@ export async function runReservationImportPipeline(
   await repos.opsLogRepo.insert({
     storeId: input.storeId,
     kind:    'reservation_csv_import',
-    actorId: null,
+    actorId: input.actorId ?? null,
     detail:  { fileName: input.fileName ?? '', rows: parsed.totalLines, created, updated, skipped, needsReviewCount, durationMs, skippedDetail },
   })
 

@@ -376,6 +376,35 @@ describe('csvImportPipeline', () => {
       expect(repos.state.opsLogs[0].detail.menuResolution).toEqual(result.report.menuResolution);
     });
 
+    it('actorIdを指定した場合、brain_ops_logsのactorIdにその値が入る', async () => {
+      const repos = createFakeRepos();
+      const csv = buildCsv([
+        row({ checkoutId: 'A1', date: '2026-06-01', staff: '鈴木', customerName: '田中花子', customerNumber: 'C001' }),
+      ]);
+
+      const result = await runImportPipeline(
+        { storeId: STORE_ID, csvText: csv, reviewDecisions: {}, actorId: 'auth-user-123' },
+        repos
+      );
+
+      expect(result.ok).toBe(true);
+      expect(repos.state.opsLogs).toHaveLength(1);
+      expect(repos.state.opsLogs[0].actorId).toBe('auth-user-123');
+    });
+
+    it('actorIdを省略した場合、brain_ops_logsのactorIdはnullになる', async () => {
+      const repos = createFakeRepos();
+      const csv = buildCsv([
+        row({ checkoutId: 'A1', date: '2026-06-01', staff: '鈴木', customerName: '田中花子', customerNumber: 'C001' }),
+      ]);
+
+      const result = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+
+      expect(result.ok).toBe(true);
+      expect(repos.state.opsLogs).toHaveLength(1);
+      expect(repos.state.opsLogs[0].actorId).toBeNull();
+    });
+
     it('既存staff_input来店をCSVで突合してreconciledへ切り替える(会員番号で確定マッチ)', async () => {
       const repos = createFakeRepos();
       const hash = hashExternalKey('C001', 'fixed-test-salt');

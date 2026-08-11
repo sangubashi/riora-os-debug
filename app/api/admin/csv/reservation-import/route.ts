@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
     const csvText = decodeCsvBuffer(buf);
 
     const result = await runReservationImportPipeline(
-      { storeId, fileName: file.name, csvText, reviewDecisions },
+      { storeId, fileName: file.name, csvText, reviewDecisions, actorId: gate.authUserId },
       repos,
       getServiceClient()
     );
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
     // PHASE MD-4: 取込成功後にbrain_dashboard_dailyを自動再生成する。
     // 失敗してもCSV取込自体は成功のまま扱う(要件③・Warningログのみ)。
     try {
-      await refreshDashboardAfterImport(repos, storeId);
+      await refreshDashboardAfterImport(repos, storeId, gate.authUserId);
     } catch (e) {
       console.warn('[reservation-import] dashboard rebuild failed (non-fatal):', e);
     }

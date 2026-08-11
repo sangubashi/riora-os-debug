@@ -10,10 +10,12 @@ import { NextRequest } from 'next/server';
 import { POST } from '../../app/api/admin/csv/import/route';
 import { getRepos } from '../../app/lib/repos';
 import { runImportPipeline } from '../../src/lib/import/csvImportPipeline';
+import { refreshDashboardAfterImport } from '@/lib/dashboard/DashboardAggregator';
 import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
 
 vi.mock('../../app/lib/repos', () => ({ getRepos: vi.fn() }));
 vi.mock('../../src/lib/import/csvImportPipeline', () => ({ runImportPipeline: vi.fn() }));
+vi.mock('@/lib/dashboard/DashboardAggregator', () => ({ refreshDashboardAfterImport: vi.fn() }));
 vi.mock('@/lib/auth/extractStaffFromRequest', () => ({ extractStaffFromRequest: vi.fn() }));
 
 const ADMIN_STAFF = {
@@ -87,6 +89,25 @@ describe('POST /api/admin/csv/import', () => {
 
     expect(res.status).toBe(200);
     expect(vi.mocked(runImportPipeline).mock.calls[0][0].reviewDecisions).toEqual({});
+  });
+
+  it('認証済みadminのauthUserIdをactorIdとしてrunImportPipelineへ渡す', async () => {
+    vi.mocked(runImportPipeline).mockResolvedValue({
+      ok: true,
+      report: {
+        newCustomers: 1, updatedCustomers: 0, visitsImported: 1, piiFoundTotal: 0, failedChunks: 0, durationMs: 10,
+        menuResolution: { exactMatch: 1, normalizedMatch: 0, partialMatch: 0, fallbackOther: 0, unresolved: 0, entries: [] },
+        unresolvedStaffCount: 0, qualityReport: EMPTY_QUALITY_REPORT,
+      },
+    });
+    const file = new File(['x'], 'a.csv');
+
+    const res = await POST(buildFileReq({ file, storeId: 'store-1' }));
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(runImportPipeline).mock.calls[0][0].actorId).toBe('admin-auth-uid');
+    // dashboard_rebuildログ用にも同じauthUserIdが第3引数として渡ること(PHASE actor_id是正)
+    expect(vi.mocked(refreshDashboardAfterImport).mock.calls[0][2]).toBe('admin-auth-uid');
   });
 
   it('runImportPipelineがok:falseの場合は400で{code,message}を返す', async () => {

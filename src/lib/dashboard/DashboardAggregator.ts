@@ -228,7 +228,10 @@ export async function runDashboardAggregator(
  */
 export async function refreshDashboardAfterImport(
   repos: DashboardRebuildRepos,
-  storeId: string
+  storeId: string,
+  /** brain_ops_logs.actor_id記録用(auth.users.id)。呼び出し元(APIルート)が
+   *  requireAdmin()等で解決済みのactorを渡す。省略時はnullのまま(既存挙動維持)。 */
+  actorId?: string | null
 ): Promise<DashboardAggregate> {
   const snapshotDate = new Date().toISOString().slice(0, 10);
   const before = await repos.dashboardRepo.latestByStore(storeId);
@@ -238,7 +241,7 @@ export async function refreshDashboardAfterImport(
   await repos.opsLogRepo.insert({
     storeId,
     kind: 'dashboard_rebuild',
-    actorId: null,
+    actorId: actorId ?? null,
     detail: {
       snapshotDate,
       beforeMonthlySales: before?.monthlySales ?? null,
