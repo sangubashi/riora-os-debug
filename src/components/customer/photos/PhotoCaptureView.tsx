@@ -66,10 +66,14 @@ export default function PhotoCaptureView({ customerId, visitId, initialBodyPart,
       position: 'fixed', inset: 0, background: '#000', zIndex: 200,
       display: 'flex', flexDirection: 'column', color: '#fff',
     }}>
-      {/* ── A: ヘッダー(閉じる・現在の部位ラベル・Before/Afterトグル) ── */}
+      {/* ── A: ヘッダー(閉じる・現在の部位ラベル・Before/Afterトグル) ──
+            アプリ内の他の全画面ビュー(Phase1Screen.tsx等)と同じsafe-area規約に合わせ、
+            ノッチ付き端末(iPhone 11等)で✕ボタンが安全域外に配置されないようにする。 */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '12px 14px', flexShrink: 0,
+        paddingTop: 'max(48px, calc(env(safe-area-inset-top) + 12px))',
+        paddingLeft: '14px', paddingRight: '14px', paddingBottom: '12px',
+        flexShrink: 0,
       }}>
         <button type="button" onClick={onClose}
           style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '20px', cursor: 'pointer' }}>
