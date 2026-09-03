@@ -8,8 +8,21 @@
 /** Supabase Storage bucket名。bucket自体の作成はこのAPI実装のスコープ外(Dashboard操作)。 */
 export const PHOTO_BUCKET = 'customer-photos'
 
-/** アップロード許可MIME(クライアント側で必ずWebP変換済みの前提)。 */
-export const ALLOWED_PHOTO_MIME_TYPE = 'image/webp'
+/**
+ * アップロード許可MIME。WebPを優先するが、iOS Safari等canvas.toBlob('image/webp')が
+ * 非対応の環境(黙ってimage/png等へフォールバックする)向けに、クライアント側で
+ * image/jpegへ自動フォールバックすることを許容する(実機テストで判明、
+ * docs/PHOTO_KARTE_UX_WIREFRAME_1.md関連の実装前レビュー参照)。
+ * 拡張子はPHOTO_MIME_EXTENSIONSで対応付ける。
+ */
+export const ALLOWED_PHOTO_MIME_TYPES = ['image/webp', 'image/jpeg'] as const
+export type AllowedPhotoMimeType = typeof ALLOWED_PHOTO_MIME_TYPES[number]
+
+/** MIME種別ごとのStorage保存用拡張子。 */
+export const PHOTO_MIME_EXTENSIONS: Record<AllowedPhotoMimeType, string> = {
+  'image/webp': 'webp',
+  'image/jpeg': 'jpg',
+}
 
 /** アップロード上限バイト数(5MB案、PHOTO_KARTE_DB_DESIGN_1.md 8-1節)。 */
 export const MAX_PHOTO_UPLOAD_BYTES = 5 * 1024 * 1024

@@ -109,6 +109,17 @@ describe('uploadCustomerPhoto', () => {
     expect(form.get('storage_path')).toBeNull()
   })
 
+  it('blob.typeがimage/jpegの場合、FormDataのファイル名拡張子も.jpgになる(WebP/JPEGフォールバック対応)', async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ success: true, idempotent: false, photoId: 'p', storagePath: 's/c/req-jpg.jpg' }))
+    const blob = new Blob(['x'], { type: 'image/jpeg' })
+    await uploadCustomerPhoto('customer-1', {
+      blob, bodyPart: 'nose', photoType: 'before', visitId: null, clientRequestId: 'req-jpg',
+    })
+    const form = (mockFetch.mock.calls[0][1] as RequestInit).body as FormData
+    const file = form.get('file') as File
+    expect(file.name).toBe('req-jpg.jpg')
+  })
+
   it('visitId=nullの場合、FormDataにvisitIdフィールドを含めない', async () => {
     mockFetch.mockResolvedValue(jsonResponse({ success: true, idempotent: false, photoId: 'p', storagePath: 's' }))
     const blob = new Blob(['x'], { type: 'image/webp' })

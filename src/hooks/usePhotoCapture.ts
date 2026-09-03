@@ -216,9 +216,14 @@ export function usePhotoCapture(options: UsePhotoCaptureOptions) {
     return sessionRef.current
   }, [customerId, clearPreview])
 
-  /** unsupported_webp_encoding系のエラーかどうかを判定する(必須修正4)。 */
-  const isUnsupportedWebpError = (e: unknown): boolean =>
-    e instanceof Error && e.message.startsWith('unsupported_webp_encoding')
+  /**
+   * WebP・JPEGいずれのエンコードにも失敗した(=encodeCanvasWithFallbackが両方とも
+   * 失敗した)場合のエラーかどうかを判定する。JPEGは全ブラウザでネイティブ対応の
+   * ため、通常この経路にはほぼ到達しない(WebP実機テスト時のiPhone 11の問題は
+   * JPEGフォールバックで解消済み)。
+   */
+  const isUnsupportedImageEncodingError = (e: unknown): boolean =>
+    e instanceof Error && e.message.startsWith('unsupported_image_encoding')
 
   const beginReview = useCallback((blob: Blob) => {
     clearPreview()
@@ -254,11 +259,11 @@ export function usePhotoCapture(options: UsePhotoCaptureOptions) {
       )
       beginReview(blob)
     } catch (e) {
-      // 必須修正4: WebP非対応(canvasが黙って別形式にフォールバックした場合)は、
-      // サーバーの415を待たずクライアント側で分かりやすいメッセージを出す。
+      // 必須修正4(改訂): WebP→JPEGの順にフォールバックしても両方失敗した
+      // (通常ほぼ起こらない)場合のみ、クライアント側で分かりやすいメッセージを出す。
       setUploadError(
-        isUnsupportedWebpError(e)
-          ? 'この端末はWebP形式での撮影に対応していません。「写真を選択して記録する」からお試しください。'
+        isUnsupportedImageEncodingError(e)
+          ? 'この端末では撮影画像を保存可能な形式に変換できませんでした。「写真を選択して記録する」からお試しください。'
           : '撮影に失敗しました。もう一度お試しください。'
       )
     }
@@ -278,8 +283,8 @@ export function usePhotoCapture(options: UsePhotoCaptureOptions) {
       beginReview(blob)
     } catch (e) {
       setUploadError(
-        isUnsupportedWebpError(e)
-          ? 'この端末では選択した写真をWebP形式に変換できませんでした。'
+        isUnsupportedImageEncodingError(e)
+          ? 'この端末では選択した写真を保存可能な形式に変換できませんでした。'
           : '選択した写真を読み込めませんでした。もう一度お試しください。'
       )
     }

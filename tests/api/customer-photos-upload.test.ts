@@ -150,7 +150,7 @@ describe('POST /api/customers/[id]/photos', () => {
     expect(body.error).toBe('invalid_photo_type')
   })
 
-  it('image/webp以外のMIMEは415を返す', async () => {
+  it('image/webp・image/jpeg以外のMIMEは415を返す', async () => {
     mockExtractStaff.mockResolvedValue(STAFF)
 
     const res  = await callRoute({
@@ -161,6 +161,45 @@ describe('POST /api/customers/[id]/photos', () => {
 
     expect(res.status).toBe(415)
     expect(body.error).toBe('unsupported_media_type')
+  })
+
+  it('image/jpegは許可され200を返す(WebP非対応環境向けフォールバック)', async () => {
+    mockExtractStaff.mockResolvedValue(STAFF)
+    mockCanAccess.mockResolvedValue(true)
+    const { repo } = createFakeRepo()
+    mockCreateRepo.mockReturnValue(repo)
+
+    const res  = await callRoute({
+      file: new Blob(['dummy'], { type: 'image/jpeg' }),
+      clientRequestId: 'req-jpeg-ok',
+    })
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body.success).toBe(true)
+  })
+
+  it('MIMEとstorage_pathの拡張子が一致する(webp→.webp、jpeg→.jpg)', async () => {
+    mockExtractStaff.mockResolvedValue(STAFF)
+    mockCanAccess.mockResolvedValue(true)
+
+    const { repo: webpRepo } = createFakeRepo()
+    mockCreateRepo.mockReturnValueOnce(webpRepo)
+    const webpRes  = await callRoute({
+      file: new Blob(['dummy'], { type: 'image/webp' }),
+      clientRequestId: 'req-ext-webp',
+    })
+    const webpBody = await webpRes.json()
+    expect(webpBody.storagePath).toMatch(/\.webp$/)
+
+    const { repo: jpegRepo } = createFakeRepo()
+    mockCreateRepo.mockReturnValueOnce(jpegRepo)
+    const jpegRes  = await callRoute({
+      file: new Blob(['dummy'], { type: 'image/jpeg' }),
+      clientRequestId: 'req-ext-jpeg',
+    })
+    const jpegBody = await jpegRes.json()
+    expect(jpegBody.storagePath).toMatch(/\.jpg$/)
   })
 
   it('サイズ超過は400 file_too_largeを返す', async () => {

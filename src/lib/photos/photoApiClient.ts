@@ -13,6 +13,7 @@
 import { authedFetch } from '@/lib/api/authedFetch'
 import type { GhostCandidatePhoto, ListPhotosParams, PhotoListFetcher, PhotoType } from './ghostSelection'
 import type { CapturedPhotoPayload, UploadPhotoFn } from './captureConfirmFlow'
+import { PHOTO_MIME_EXTENSIONS, type AllowedPhotoMimeType } from './constants'
 
 interface PhotoListApiRow {
   id:        string
@@ -74,7 +75,10 @@ export async function uploadCustomerPhoto(
   payload: CapturedPhotoPayload & { clientRequestId: string }
 ): Promise<UploadPhotoApiResult> {
   const form = new FormData()
-  form.set('file', payload.blob, `${payload.clientRequestId}.webp`)
+  // ファイル名の拡張子は実際のBlob.typeに合わせる(サーバーはこの拡張子自体を
+  // 信用せず、file.typeで独自に再検証する。ここではログ・デバッグ時の一貫性のため)。
+  const extension = PHOTO_MIME_EXTENSIONS[payload.blob.type as AllowedPhotoMimeType] ?? 'webp'
+  form.set('file', payload.blob, `${payload.clientRequestId}.${extension}`)
   form.set('bodyPart', payload.bodyPart)
   form.set('photoType', payload.photoType)
   form.set('clientRequestId', payload.clientRequestId)

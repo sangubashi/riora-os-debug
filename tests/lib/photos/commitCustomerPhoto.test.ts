@@ -128,7 +128,7 @@ describe('commitCustomerPhoto', () => {
     const { repo, photos } = createFakeRepo()
 
     const payload = makePayload()
-    const storagePath = buildPhotoStoragePath(payload.storeId, payload.customerId, 'req-race')
+    const storagePath = buildPhotoStoragePath(payload.storeId, payload.customerId, 'req-race', 'webp')
     await repo.uploadPhoto(storagePath, payload.file, { upsert: false })
     const existing = await repo.insertPhoto({
       storeId: payload.storeId, customerId: payload.customerId, visitId: payload.visitId,
@@ -151,7 +151,7 @@ describe('commitCustomerPhoto', () => {
     const { repo, photos, getUploadCallCount } = createFakeRepo()
 
     const payload = makePayload()
-    const storagePath = buildPhotoStoragePath(payload.storeId, payload.customerId, 'req-orphan')
+    const storagePath = buildPhotoStoragePath(payload.storeId, payload.customerId, 'req-orphan', 'webp')
     // Storageにだけ先に存在させる(過去のDB INSERT失敗を模擬。DB行は作らない)
     await repo.uploadPhoto(storagePath, payload.file, { upsert: false })
 
@@ -222,13 +222,41 @@ describe('commitCustomerPhoto', () => {
     expect(photos).toHaveLength(0)
   })
 
-  it('buildPhotoStoragePath は storeId・customerId・clientRequestId から決定的に導出される', () => {
-    const p1 = buildPhotoStoragePath('store-a', 'customer-a', 'req-001')
-    const p2 = buildPhotoStoragePath('store-a', 'customer-a', 'req-001')
-    const p3 = buildPhotoStoragePath('store-a', 'customer-a', 'req-002')
+  it('buildPhotoStoragePath は storeId・customerId・clientRequestId・extension から決定的に導出される', () => {
+    const p1 = buildPhotoStoragePath('store-a', 'customer-a', 'req-001', 'webp')
+    const p2 = buildPhotoStoragePath('store-a', 'customer-a', 'req-001', 'webp')
+    const p3 = buildPhotoStoragePath('store-a', 'customer-a', 'req-002', 'webp')
+    const p4 = buildPhotoStoragePath('store-a', 'customer-a', 'req-001', 'jpg')
 
     expect(p1).toBe(p2)
     expect(p1).not.toBe(p3)
+    expect(p1).not.toBe(p4)
     expect(p1).toBe('store-a/customer-a/req-001.webp')
+    expect(p4).toBe('store-a/customer-a/req-001.jpg')
+  })
+
+  it('payload.file.typeがimage/jpegの場合、storage_pathの拡張子が.jpgになる', async () => {
+    const { repo, photos } = createFakeRepo()
+    const payload = makePayload({ file: new Blob(['dummy'], { type: 'image/jpeg' }) })
+
+    const result = await commitCustomerPhoto(repo, payload, 'req-jpeg')
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.photo.storagePath).toBe('store-a/customer-a/req-jpeg.jpg')
+    }
+    expect(photos).toHaveLength(1)
+  })
+
+  it('未知のfile.typeの場合はwebp拡張子にフォールバックする(型安全のための防御、通常は発生しない)', async () => {
+    const { repo } = createFakeRepo()
+    const payload = makePayload({ file: new Blob(['dummy'], { type: 'application/octet-stream' }) })
+
+    const result = await commitCustomerPhoto(repo, payload, 'req-unknown-type')
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.photo.storagePath).toBe('store-a/customer-a/req-unknown-type.webp')
+    }
   })
 })

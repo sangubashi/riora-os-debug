@@ -15,12 +15,13 @@ import { verifyVisitBelongsToCustomer } from '@/lib/photos/ownership'
 import { commitCustomerPhoto } from '@/lib/photos/commitCustomerPhoto'
 import { createSupabaseCommitCustomerPhotoRepo } from '@/lib/photos/commitCustomerPhotoRepo.supabase'
 import {
-  ALLOWED_PHOTO_MIME_TYPE,
+  ALLOWED_PHOTO_MIME_TYPES,
   MAX_PHOTO_UPLOAD_BYTES,
   PHOTO_LIST_DEFAULT_LIMIT,
   PHOTO_LIST_MAX_LIMIT,
   PHOTO_LIST_ORDERS,
   PHOTO_TYPES,
+  type AllowedPhotoMimeType,
   type PhotoListOrder,
   type PhotoType,
 } from '@/lib/photos/constants'
@@ -181,7 +182,9 @@ export async function POST(
     return NextResponse.json({ success: false, error: 'invalid_photo_type' }, { status: 400 })
   }
 
-  if (file.type !== ALLOWED_PHOTO_MIME_TYPE) {
+  // クライアントから受け取ったファイル名の拡張子は信用せず、実際のMIME(file.type)
+  // のみを検証する(WebP/JPEGフォールバック対応、iOS SafariのWebP非対応判明後の改訂)。
+  if (!ALLOWED_PHOTO_MIME_TYPES.includes(file.type as AllowedPhotoMimeType)) {
     return NextResponse.json({ success: false, error: 'unsupported_media_type' }, { status: 415 })
   }
 

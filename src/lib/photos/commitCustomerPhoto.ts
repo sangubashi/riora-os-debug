@@ -10,7 +10,13 @@
  *
  * DB/Storageアクセスは CommitCustomerPhotoRepo インターフェース経由に閉じ込め、
  * オーケストレーション本体は依存注入されたrepoのフェイクだけで純粋にテストできる。
+ *
+ * WebP/JPEGフォールバック対応(実機テストでiOS SafariのWebP非対応が判明後の改訂):
+ * storage_pathの拡張子は、クライアントから受け取ったファイル名ではなく、
+ * サーバー側で実際に検証済みの payload.file.type(呼び出し元route.tsが
+ * ALLOWED_PHOTO_MIME_TYPESで検証済み)から決定する。
  */
+import { PHOTO_MIME_EXTENSIONS, type AllowedPhotoMimeType } from './constants'
 
 // ─── 公開型 ──────────────────────────────────────────────────────────────────
 
@@ -76,12 +82,23 @@ export type CommitCustomerPhotoResult =
 //
 // PHOTO_KARTE_API_DESIGN_1.md 10節: photo_id(DB生成)ではなくclientRequestIdを
 // ファイル名に使う。アップロード時点ではDB行がまだ存在しないため。
+// extensionは実際のファイル形式(webp/jpg)に合わせる(WebP/JPEGフォールバック対応)。
 export function buildPhotoStoragePath(
   storeId:         string,
   customerId:      string,
   clientRequestId: string,
+  extension:       string,
 ): string {
-  return `${storeId}/${customerId}/${clientRequestId}.webp`
+  return `${storeId}/${customerId}/${clientRequestId}.${extension}`
+}
+
+/**
+ * payload.file.type(サーバーが検証済みの実際のMIME)から保存用拡張子を導出する。
+ * route.tsがALLOWED_PHOTO_MIME_TYPESで事前検証しているため、未知の値になることは
+ * 通常ないが、型安全のためのフォールバックとしてwebpを既定にする。
+ */
+function extensionForFile(file: Blob): string {
+  return PHOTO_MIME_EXTENSIONS[file.type as AllowedPhotoMimeType] ?? 'webp'
 }
 
 // ─── オーケストレーション本体 ─────────────────────────────────────────────────
@@ -91,7 +108,9 @@ export async function commitCustomerPhoto(
   payload:         CommitCustomerPhotoPayload,
   clientRequestId: string,
 ): Promise<CommitCustomerPhotoResult> {
-  const storagePath = buildPhotoStoragePath(payload.storeId, payload.customerId, clientRequestId)
+  const storagePath = buildPhotoStoragePath(
+    payload.storeId, payload.customerId, clientRequestId, extensionForFile(payload.file)
+  )
 
   // ── 冪等性チェック: 同一clientRequestIdで既にコミット済みなら何も書かず終える ──
   const existing = await repo.findPhotoByStoragePath(storagePath)
