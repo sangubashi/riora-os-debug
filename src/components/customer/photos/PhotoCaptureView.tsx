@@ -85,7 +85,7 @@ export default function PhotoCaptureView({ customerId, visitId, initialBodyPart,
             <button
               key={t}
               type="button"
-              onClick={() => cap.setPhotoType(t)}
+              onClick={() => { console.log('[PHOTO_KARTE] photoType click', t); cap.setPhotoType(t) }}
               style={{
                 padding: '6px 12px', fontSize: '12px', fontWeight: 600, border: 'none', cursor: 'pointer',
                 background: cap.photoType === t ? '#4878A8' : 'transparent',
@@ -226,7 +226,7 @@ export default function PhotoCaptureView({ customerId, visitId, initialBodyPart,
               <button
                 key={opt.id}
                 type="button"
-                onClick={() => cap.setBodyPart(opt.id)}
+                onClick={() => { console.log('[PHOTO_KARTE] bodyPart click', opt.id); cap.setBodyPart(opt.id) }}
                 style={{
                   flexShrink: 0, padding: '7px 14px', borderRadius: '999px', fontSize: '12px', fontWeight: 600,
                   whiteSpace: 'nowrap', cursor: 'pointer',
