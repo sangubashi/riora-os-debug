@@ -14,6 +14,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, ChevronLeft, X, Copy, Check, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -90,6 +91,7 @@ import CustomerRiskCard from '@/components/customer/CustomerRiskCard';
 import ServiceReplayCard from '@/components/customer/ServiceReplayCard';
 import VoiceMemoSection from '@/components/customer/VoiceMemoSection';
 import KarteImportSection from '@/components/customer/KarteImportSection';
+import PhotoCaptureView from '@/components/customer/photos/PhotoCaptureView';
 import CustomerNotesSection from '@/components/customer/CustomerNotesSection';
 import BookingPromptSection from '@/components/customer/BookingPromptSection';
 import HandoverSection from '@/components/customer/HandoverSection';
@@ -289,6 +291,9 @@ export default function CustomerBottomSheet({
   // ── ページ ──────────────────────────────────────────────────────────────────
   const [page, setPage] = useState<'overview' | 'log' | 'memory' | 'timeline'>('overview');
 
+  // ── 写真カルテ(PHOTO_KARTE Phase1・実機確認用の最小導線) ──────────────────────
+  const [showPhotoCapture, setShowPhotoCapture] = useState(false);
+
   // ── 接客ログ ────────────────────────────────────────────────────────────────
   const [logSelected,   setLogSelected]   = useState<Set<LogKey>>(new Set());
   const [logSaving,     setLogSaving]     = useState(false);
@@ -330,6 +335,16 @@ export default function CustomerBottomSheet({
   // ── 来店履歴（Phase UX-1） ────────────────────────────────────────────────────
   const [visitHistory,        setVisitHistory]        = useState<VisitHistoryEntry[]>([]);
   const [visitHistoryLoading, setVisitHistoryLoading] = useState(false);
+
+  // ── 写真カルテ用: 本日分のbrain_visits.id（PHOTO_KARTE Phase1・実機確認用の最小導線） ──
+  // visitHistory（brain_visits由来、visit_date DESC）の先頭が本日日付なら、それを
+  // 「現在の施術/来店」のvisitIdとして使う。本日分のbrain_visits行がまだ存在しない場合
+  // （施術開始〜接客ログ保存前は通常まだ存在しない、/api/visits/service-complete参照）は
+  // 安全側でnull（単発撮影扱い）にする。ダミーUUIDは使わない。
+  const todayVisitId = useMemo(() => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    return visitHistory.find(v => v.visitDate === todayStr)?.id ?? null;
+  }, [visitHistory]);
 
   // ── 今日気をつけること（PHASE UX-1: Focus / 触れない話題） ─────────────────────
   const [todayFocus, setTodayFocus] = useState<string | null>(null);
@@ -2227,7 +2242,31 @@ export default function CustomerBottomSheet({
                         )}
                       </div>
 
+                      {/* 写真カルテ（PHOTO_KARTE Phase1・実機確認用の最小導線）
+                          比較画面・タイムライン・Afterチェックリスト等は未実装。撮影画面のみ。 */}
+                      <div className="bg-[#F0F5FA] rounded-[22px] overflow-hidden flex-shrink-0">
+                        <button onClick={() => setShowPhotoCapture(true)}
+                          className="w-full flex items-center justify-between px-4 py-3.5 bg-transparent border-none cursor-pointer">
+                          <p className="text-[11px] tracking-[0.18em] text-[#4878A8] font-semibold">
+                            📷 写真カルテ（撮影）
+                          </p>
+                          <span className="text-sm text-[#4878A8]">›</span>
+                        </button>
+                      </div>
+
                     </div>
+
+                    {/* position:fixedのPhotoCaptureViewが祖先のmotion.div(transform)に
+                        containされないよう、document.body直下へportalする(既存の
+                        AnimatePresence/motion構造には一切手を入れない)。 */}
+                    {showPhotoCapture && typeof document !== 'undefined' && createPortal(
+                      <PhotoCaptureView
+                        customerId={c.id}
+                        visitId={todayVisitId}
+                        onClose={() => setShowPhotoCapture(false)}
+                      />,
+                      document.body
+                    )}
 
                     {/* 固定フッターボタン */}
                     <div className="flex-shrink-0 px-5 py-3 bg-white"
