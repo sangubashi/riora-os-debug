@@ -705,6 +705,7 @@ export default function CustomerBottomSheet({
   // ─── クローズ ──────────────────────────────────────────────────────────────
   const close = useCallback(() => {
     onClose?.();
+    setShowPhotoCapture(false);
     setSelectedCustomer(null);
     setSelectedReservation(null);
     setPage('overview');
