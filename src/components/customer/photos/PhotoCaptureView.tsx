@@ -29,6 +29,19 @@ const OPACITY_LEVELS: { level: GhostOpacityLevel; label: string }[] = [
   { level: 'strong', label: '50%' },
 ]
 
+/**
+ * 静的ガイド(輪郭目安楕円)の角度別パラメータ。face_front/face_left45/face_right45
+ * のみ定義し、他のbody_part(額・頬・鼻・顎・目周り・首・その他、いずれも正面固定)は
+ * DEFAULT_GUIDE_ELLIPSE(=face_frontと同一)にフォールバックする。
+ * face_left45/face_right45はcx=50を中心に左右対称(50±8)・rx同値(22)にしている。
+ */
+const GUIDE_ELLIPSE: Record<string, { cx: number; rx: number }> = {
+  face_front:   { cx: 50, rx: 26 },
+  face_left45:  { cx: 42, rx: 22 },
+  face_right45: { cx: 58, rx: 22 },
+}
+const DEFAULT_GUIDE_ELLIPSE = GUIDE_ELLIPSE.face_front
+
 function segButton(active: boolean): React.CSSProperties {
   return {
     padding:      '6px 14px',
@@ -60,6 +73,7 @@ export default function PhotoCaptureView({ customerId, visitId, initialBodyPart,
 
   const ghostOpacity = GHOST_OPACITY_VALUE[cap.ghostOpacityLevel]
   const hasGhost = !!cap.ghost && !!cap.ghostUrl
+  const guide = GUIDE_ELLIPSE[cap.bodyPart] ?? DEFAULT_GUIDE_ELLIPSE
 
   return (
     <div style={{
@@ -85,7 +99,7 @@ export default function PhotoCaptureView({ customerId, visitId, initialBodyPart,
             <button
               key={t}
               type="button"
-              onClick={() => { console.log('[PHOTO_KARTE] photoType click', t); cap.setPhotoType(t) }}
+              onClick={() => cap.setPhotoType(t)}
               style={{
                 padding: '6px 12px', fontSize: '12px', fontWeight: 600, border: 'none', cursor: 'pointer',
                 background: cap.photoType === t ? '#4878A8' : 'transparent',
@@ -142,7 +156,7 @@ export default function PhotoCaptureView({ customerId, visitId, initialBodyPart,
               preserveAspectRatio="none"
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
             >
-              <ellipse cx="50" cy="46" rx="26" ry="34" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="0.5" strokeDasharray="2 2" />
+              <ellipse cx={guide.cx} cy="46" rx={guide.rx} ry="34" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="0.5" strokeDasharray="2 2" />
               <line x1="50" y1="0" x2="50" y2="100" stroke="rgba(255,255,255,0.2)" strokeWidth="0.3" />
               <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(255,255,255,0.2)" strokeWidth="0.3" />
             </svg>
@@ -226,7 +240,7 @@ export default function PhotoCaptureView({ customerId, visitId, initialBodyPart,
               <button
                 key={opt.id}
                 type="button"
-                onClick={() => { console.log('[PHOTO_KARTE] bodyPart click', opt.id); cap.setBodyPart(opt.id) }}
+                onClick={() => cap.setBodyPart(opt.id)}
                 style={{
                   flexShrink: 0, padding: '7px 14px', borderRadius: '999px', fontSize: '12px', fontWeight: 600,
                   whiteSpace: 'nowrap', cursor: 'pointer',
