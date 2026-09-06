@@ -13,6 +13,7 @@ vi.mock('../../../src/lib/api/authedFetch', () => ({
 import { authedFetch } from '../../../src/lib/api/authedFetch'
 import {
   createPhotoListFetcher,
+  deletePhoto,
   getBatchSignedUrls,
   listCustomerPhotos,
   listCustomerPhotosTimeline,
@@ -209,5 +210,28 @@ describe('getBatchSignedUrls', () => {
     mockFetch.mockResolvedValue(jsonResponse({ success: false, error: 'forbidden' }, false, 403))
     const result = await getBatchSignedUrls('customer-1', ['p1'])
     expect(result).toEqual({})
+  })
+})
+
+describe('deletePhoto', () => {
+  it('DELETE .../photos/[photoId] を呼ぶ', async () => {
+    mockFetch.mockResolvedValue(jsonResponse(null, true, 204))
+
+    await deletePhoto('customer-1', 'photo-1')
+
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/customers/customer-1/photos/photo-1')
+    expect((init as RequestInit).method).toBe('DELETE')
+  })
+
+  it('204以外(失敗)の場合はレスポンスのerrorを含む例外を投げる', async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ success: false, error: 'forbidden' }, false, 403))
+    await expect(deletePhoto('customer-1', 'photo-of-other-customer')).rejects.toThrow('forbidden')
+  })
+
+  it('エラーボディが無い場合はステータスコードを含むメッセージで例外を投げる', async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 500, json: async () => { throw new Error('no body') } } as unknown as Response)
+    await expect(deletePhoto('customer-1', 'photo-1')).rejects.toThrow('delete_failed:500')
   })
 })

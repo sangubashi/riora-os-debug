@@ -1,17 +1,22 @@
 'use client'
 /**
  * PhotoTimelineView.tsx — 写真カルテ Phase3「顧客ごとの写真時系列一覧」+
- *   Phase4「Before/After左右比較(ショートカット: 前回↔今回・初回↔今回)」の入口
+ *   Phase4「Before/After左右比較(ショートカット: 前回↔今回・初回↔今回)」+
+ *   Phase5「拡大表示からの削除(誤タップ防止のため確認ステップあり)」の入口
  *
  * 設計方針:
  *   - 既存の GET /api/customers/[id]/photos・POST .../photos/signed-urls・
- *     GET .../photos/[photoId]/signed-url をそのまま利用する(新規API無し)。
- *     権限は各API側の extractStaffFromRequest + canAccessCustomer にそのまま委譲する。
+ *     GET .../photos/[photoId]/signed-url・DELETE .../photos/[photoId] をそのまま利用する
+ *     (新規API無し)。権限は各API側の extractStaffFromRequest + canAccessCustomer に
+ *     そのまま委譲する。
  *   - 「撮影する」「写真を選択して追加」は既存のPhotoCaptureView/PhotoLibraryPickerViewを
  *     そのまま使う。この画面はそれらを起動するトリガー(onOpenCapture/onOpenLibraryPicker)を
  *     呼ぶだけで、カメラ・アップロードのロジックには一切触れない。
  *   - 比較は「同一body_part内で前回↔今回・初回↔今回」のショートカットのみ(任意の2枚選択は
  *     未実装)。実際の左右表示はPhotoComparisonView.tsxに委譲する。
+ *   - 削除はPhase1設計どおり論理削除のみ(deleted_at更新、Storage実ファイルは削除しない。
+ *     ユーザー確定 2026-09-06)。拡大表示(ライトボックス)の中に削除導線を置き、誤タップ防止の
+ *     ため「本当に削除しますか？」の確認ステップを挟む。
  *   - スライダー比較・重ね比較・撮影ガイド改修・AI分析は今回のスコープ外(次フェーズ)。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -23,7 +28,13 @@ import {
   groupPhotosByBodyPart,
   type ComparisonPair,
 } from '@/lib/photos/comparisonSelection'
-import { getBatchSignedUrls, getPhotoSignedUrl, listCustomerPhotosTimeline, type TimelinePhoto } from '@/lib/photos/photoApiClient'
+import {
+  deletePhoto,
+  getBatchSignedUrls,
+  getPhotoSignedUrl,
+  listCustomerPhotosTimeline,
+  type TimelinePhoto,
+} from '@/lib/photos/photoApiClient'
 import { formatDateLabel, groupPhotosByDate } from '@/lib/photos/timelineGrouping'
 import PhotoComparisonView from './PhotoComparisonView'
 
@@ -48,6 +59,9 @@ export default function PhotoTimelineView({
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [lightboxLoading, setLightboxLoading] = useState(false)
   const [comparisonPair, setComparisonPair] = useState<ComparisonPair | null>(null)
+  const [deleteConfirming, setDeleteConfirming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -81,6 +95,8 @@ export default function PhotoTimelineView({
     setLightboxPhotoId(photoId)
     setLightboxUrl(null)
     setLightboxLoading(true)
+    setDeleteConfirming(false)
+    setDeleteError(null)
     void getPhotoSignedUrl(customerId, photoId, 'detail').then(url => {
       setLightboxUrl(url)
       setLightboxLoading(false)
@@ -90,7 +106,25 @@ export default function PhotoTimelineView({
   const closeLightbox = useCallback(() => {
     setLightboxPhotoId(null)
     setLightboxUrl(null)
+    setDeleteConfirming(false)
+    setDeleteError(null)
   }, [])
+
+  const confirmDelete = useCallback(async () => {
+    if (!lightboxPhotoId) return
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await deletePhoto(customerId, lightboxPhotoId)
+      setPhotos(prev => prev.filter(p => p.id !== lightboxPhotoId))
+      closeLightbox()
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'delete_failed')
+      setDeleteConfirming(false)
+    } finally {
+      setDeleting(false)
+    }
+  }, [customerId, lightboxPhotoId, closeLightbox])
 
   return (
     <div
@@ -303,10 +337,10 @@ export default function PhotoTimelineView({
         </div>
       </div>
 
-      {/* ── 拡大表示(簡易ライトボックス) ── */}
+      {/* ── 拡大表示(簡易ライトボックス)。誤タップしにくいよう削除導線もここに置く ── */}
       {lightboxPhotoId && (
         <div
-          onClick={closeLightbox}
+          onClick={deleting ? undefined : closeLightbox}
           style={{
             position: 'fixed', inset: 0, zIndex: 210,
             background: 'rgba(0,0,0,0.85)',
@@ -329,19 +363,98 @@ export default function PhotoTimelineView({
           {!lightboxLoading && !lightboxUrl && (
             <p style={{ color: '#fff', fontSize: '13px' }}>画像を表示できませんでした</p>
           )}
+
           <button
             type="button"
-            onClick={closeLightbox}
+            onClick={deleting ? undefined : closeLightbox}
+            disabled={deleting}
             aria-label="閉じる"
             style={{
               position: 'absolute', top: 'max(20px, env(safe-area-inset-top))', right: '20px',
               width: '40px', height: '40px', borderRadius: '50%',
               background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', fontSize: '16px',
-              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: deleting ? 'default' : 'pointer', opacity: deleting ? 0.5 : 1,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
           >
             ✕
           </button>
+
+          {/* 削除導線。誤タップ防止のため確認ステップを挟む(即削除しない)。
+              下部の状態(通常/確認中/エラー)は排他なので1つのコンテナにまとめ重なりを防ぐ。 */}
+          {!lightboxLoading && lightboxUrl && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'absolute', bottom: 'max(24px, env(safe-area-inset-bottom))',
+                left: '24px', right: '24px', display: 'flex', flexDirection: 'column',
+                alignItems: 'center', gap: '8px',
+              }}
+            >
+              {deleteError && !deleteConfirming && (
+                <p style={{
+                  fontSize: '11px', color: '#FFB4C0', background: 'rgba(0,0,0,0.5)',
+                  padding: '6px 12px', borderRadius: '999px', margin: 0,
+                }}>
+                  削除に失敗しました（{deleteError}）
+                </p>
+              )}
+
+              {!deleteConfirming && (
+                <button
+                  type="button"
+                  onClick={() => { setDeleteConfirming(true); setDeleteError(null) }}
+                  style={{
+                    padding: '10px 20px', borderRadius: '999px',
+                    background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff',
+                    fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                  }}
+                >
+                  🗑 削除
+                </button>
+              )}
+
+              {deleteConfirming && (
+                <div style={{
+                  width: '100%', maxWidth: '340px', background: '#fff', borderRadius: '16px', padding: '16px',
+                  display: 'flex', flexDirection: 'column', gap: '10px',
+                }}>
+                  <p style={{ fontSize: '13px', fontWeight: 600, color: '#3d4858', textAlign: 'center', margin: 0 }}>
+                    本当に削除しますか？
+                  </p>
+                  <p style={{ fontSize: '11px', color: '#8AAAC8', textAlign: 'center', margin: 0 }}>
+                    この操作は取り消せません
+                  </p>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setDeleteConfirming(false)}
+                      disabled={deleting}
+                      style={{
+                        flex: 1, padding: '11px', borderRadius: '999px', fontSize: '13px', fontWeight: 600,
+                        background: '#fff', color: '#688098', border: '1.5px solid #C8DCF0',
+                        cursor: deleting ? 'default' : 'pointer', opacity: deleting ? 0.5 : 1,
+                      }}
+                    >
+                      キャンセル
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void confirmDelete()}
+                      disabled={deleting}
+                      style={{
+                        flex: 1, padding: '11px', borderRadius: '999px', fontSize: '13px', fontWeight: 700,
+                        background: '#C05060', color: '#fff', border: 'none',
+                        cursor: deleting ? 'default' : 'pointer', opacity: deleting ? 0.6 : 1,
+                      }}
+                    >
+                      {deleting ? '削除中…' : '削除する'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

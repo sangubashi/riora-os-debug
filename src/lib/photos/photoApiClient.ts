@@ -210,3 +210,19 @@ export async function getBatchSignedUrls(
   for (const [id, entry] of Object.entries(body.urls)) result[id] = entry.url
   return result
 }
+
+/**
+ * 写真の論理削除(既存の DELETE /api/customers/[id]/photos/[photoId] をそのまま利用)。
+ * Storage実ファイルはPhase1設計どおり削除しない(docs/PHOTO_KARTE_API_DESIGN_1.md 3節、
+ * 復旧価値を優先する既存方針。ユーザー確定によりPhoto Timelineの削除UIでもこの方針を維持する)。
+ * 失敗時は例外を投げる(呼び出し側でエラー表示・一覧の状態は変更しない)。
+ */
+export async function deletePhoto(customerId: string, photoId: string): Promise<void> {
+  const res = await authedFetch(`/api/customers/${customerId}/photos/${photoId}`, {
+    method: 'DELETE',
+  })
+  if (res.ok) return
+
+  const body = await res.json().catch(() => null) as { error?: string } | null
+  throw new Error(body?.error ?? `delete_failed:${res.status}`)
+}
