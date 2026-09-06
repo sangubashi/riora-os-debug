@@ -1,6 +1,7 @@
 'use client'
 /**
- * PhotoTimelineView.tsx — 写真カルテ Phase3「顧客ごとの写真時系列一覧」
+ * PhotoTimelineView.tsx — 写真カルテ Phase3「顧客ごとの写真時系列一覧」+
+ *   Phase4「Before/After左右比較(ショートカット: 前回↔今回・初回↔今回)」の入口
  *
  * 設計方針:
  *   - 既存の GET /api/customers/[id]/photos・POST .../photos/signed-urls・
@@ -9,12 +10,22 @@
  *   - 「撮影する」「写真を選択して追加」は既存のPhotoCaptureView/PhotoLibraryPickerViewを
  *     そのまま使う。この画面はそれらを起動するトリガー(onOpenCapture/onOpenLibraryPicker)を
  *     呼ぶだけで、カメラ・アップロードのロジックには一切触れない。
- *   - Before/After比較UI・スライダー・ゴースト撮影・AI分析は今回のスコープ外(次フェーズ)。
+ *   - 比較は「同一body_part内で前回↔今回・初回↔今回」のショートカットのみ(任意の2枚選択は
+ *     未実装)。実際の左右表示はPhotoComparisonView.tsxに委譲する。
+ *   - スライダー比較・重ね比較・撮影ガイド改修・AI分析は今回のスコープ外(次フェーズ)。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { bodyPartLabel } from '@/lib/photos/bodyParts'
+import {
+  buildFirstComparison,
+  buildPreviousComparison,
+  comparableGroups,
+  groupPhotosByBodyPart,
+  type ComparisonPair,
+} from '@/lib/photos/comparisonSelection'
 import { getBatchSignedUrls, getPhotoSignedUrl, listCustomerPhotosTimeline, type TimelinePhoto } from '@/lib/photos/photoApiClient'
 import { formatDateLabel, groupPhotosByDate } from '@/lib/photos/timelineGrouping'
+import PhotoComparisonView from './PhotoComparisonView'
 
 interface Props {
   customerId:          string
@@ -36,6 +47,7 @@ export default function PhotoTimelineView({
   const [lightboxPhotoId, setLightboxPhotoId] = useState<string | null>(null)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [lightboxLoading, setLightboxLoading] = useState(false)
+  const [comparisonPair, setComparisonPair] = useState<ComparisonPair | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -60,6 +72,10 @@ export default function PhotoTimelineView({
   }, [customerId, refreshKey])
 
   const groups = useMemo(() => groupPhotosByDate(photos), [photos])
+  const comparisonGroups = useMemo(
+    () => comparableGroups(groupPhotosByBodyPart(photos)),
+    [photos]
+  )
 
   const openLightbox = useCallback((photoId: string) => {
     setLightboxPhotoId(photoId)
@@ -148,6 +164,63 @@ export default function PhotoTimelineView({
             🖼 選択して追加
           </button>
         </div>
+
+        {/* ── Before/After比較(同一部位の前回↔今回・初回↔今回ショートカット) ── */}
+        {loadState === 'ready' && (
+          <div style={{ flexShrink: 0, padding: '12px 16px 0' }}>
+            <p style={{ fontSize: '11px', fontWeight: 700, color: '#3d4858', marginBottom: '8px' }}>
+              ⇄ Before/After比較
+            </p>
+            {comparisonGroups.length === 0 ? (
+              <p style={{ fontSize: '11px', color: '#8AAAC8', lineHeight: 1.6 }}>
+                比較できる写真がありません（同じ部位の写真が2枚以上必要です）
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {comparisonGroups.map(group => (
+                  <div
+                    key={group.bodyPart}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px',
+                      background: '#fff', border: '1px solid #E4EEF8', borderRadius: '12px', padding: '8px 10px',
+                    }}
+                  >
+                    <span style={{
+                      fontSize: '12px', fontWeight: 600, color: '#3d4858',
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    }}>
+                      {bodyPartLabel(group.bodyPart)}
+                    </span>
+                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                      <button
+                        type="button"
+                        onClick={() => setComparisonPair(buildPreviousComparison(group))}
+                        style={{
+                          padding: '6px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600,
+                          background: '#F0F5FA', border: '1px solid #C8DCF0', color: '#4878A8', cursor: 'pointer',
+                        }}
+                      >
+                        前回↔今回
+                      </button>
+                      {group.photos.length > 2 && (
+                        <button
+                          type="button"
+                          onClick={() => setComparisonPair(buildFirstComparison(group))}
+                          style={{
+                            padding: '6px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600,
+                            background: '#F0F5FA', border: '1px solid #C8DCF0', color: '#4878A8', cursor: 'pointer',
+                          }}
+                        >
+                          初回↔今回
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── 一覧(スクロール領域) ── */}
         <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '12px 16px 24px' }}>
@@ -270,6 +343,15 @@ export default function PhotoTimelineView({
             ✕
           </button>
         </div>
+      )}
+
+      {/* ── Before/After左右比較 ── */}
+      {comparisonPair && (
+        <PhotoComparisonView
+          customerId={customerId}
+          pair={comparisonPair}
+          onClose={() => setComparisonPair(null)}
+        />
       )}
     </div>
   )
