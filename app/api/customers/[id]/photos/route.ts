@@ -113,10 +113,18 @@ export async function GET(
   // visit_id経由でvisit_date/visit_count_atを解決(既存visit-history.tsと同じ手動JOIN方式)
   const visitIds = Array.from(new Set(rows.map(r => r.visit_id).filter((v): v is string => !!v)))
   const { data: visits } = visitIds.length > 0
-    ? await supabase.from('brain_visits').select('id, visit_date, visit_count_at').in('id', visitIds)
-    : { data: [] as Array<{ id: string; visit_date: string; visit_count_at: number }> }
+    ? await supabase.from('brain_visits').select('id, visit_date, visit_count_at, menu_id').in('id', visitIds)
+    : { data: [] as Array<{ id: string; visit_date: string; visit_count_at: number; menu_id: string | null }> }
+
+  // menu_id経由でmenuNameを解決(Photo Timeline表示用、既存visit-history.tsと同じ手動JOIN方式)。
+  // 既存の visitId/visitDate/visitCountAt には影響しない純粋な追加フィールド。
+  const menuIds = Array.from(new Set((visits ?? []).map(v => v.menu_id).filter((v): v is string => !!v)))
+  const { data: menus } = menuIds.length > 0
+    ? await supabase.from('brain_menus').select('id, name').in('id', menuIds)
+    : { data: [] as Array<{ id: string; name: string }> }
 
   const visitMap = new Map((visits ?? []).map(v => [v.id, v]))
+  const menuMap  = new Map((menus ?? []).map(m => [m.id, m.name]))
 
   const result = rows.map(r => {
     const visit = r.visit_id ? visitMap.get(r.visit_id) : undefined
@@ -125,6 +133,7 @@ export async function GET(
       visitId:      r.visit_id,
       visitDate:    visit?.visit_date ?? null,
       visitCountAt: visit?.visit_count_at ?? null,
+      menuName:     visit?.menu_id ? menuMap.get(visit.menu_id) ?? null : null,
       bodyPart:     r.body_part,
       photoType:    r.photo_type,
       storagePath:  r.storage_path,

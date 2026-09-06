@@ -124,6 +124,55 @@ describe('GET /api/customers/[id]/photos', () => {
     expect(body.photos[0].url).toBeUndefined()
     expect(body.photos[0].signedUrl).toBeUndefined()
   })
+
+  it('Photo Timeline用: visit.menu_id経由でmenuNameを解決する(menu_id無しはnull)', async () => {
+    mockExtractStaff.mockResolvedValue(STAFF)
+    mockCanAccess.mockResolvedValue(true)
+    mockGetClient.mockReturnValue(createFakeSupabase({
+      brain_customer_photos: {
+        data: [
+          { id: 'photo-1', visit_id: 'visit-1', body_part: 'cheek_left', photo_type: 'after', storage_path: 's/c/photo-1.webp', taken_at: '2026-09-01T00:00:00Z', created_by: 'staff-1', created_at: '2026-09-01T00:00:00Z' },
+          { id: 'photo-2', visit_id: 'visit-2', body_part: 'nose', photo_type: 'before', storage_path: 's/c/photo-2.webp', taken_at: '2026-08-01T00:00:00Z', created_by: null, created_at: '2026-08-01T00:00:00Z' },
+        ],
+        error: null,
+      },
+      brain_visits: {
+        data: [
+          { id: 'visit-1', visit_date: '2026-09-01', visit_count_at: 3, menu_id: 'menu-1' },
+          { id: 'visit-2', visit_date: '2026-08-01', visit_count_at: 1, menu_id: null },
+        ],
+      },
+      brain_menus: {
+        data: [{ id: 'menu-1', name: 'フェイシャルコース' }],
+      },
+    }) as never)
+
+    const res  = await callRoute('customer-a')
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body.photos[0]).toMatchObject({ id: 'photo-1', menuName: 'フェイシャルコース' })
+    expect(body.photos[1]).toMatchObject({ id: 'photo-2', menuName: null })
+  })
+
+  it('menu_idを持つvisitが1件も無ければbrain_menusへ問い合わせない', async () => {
+    mockExtractStaff.mockResolvedValue(STAFF)
+    mockCanAccess.mockResolvedValue(true)
+    const fake = createFakeSupabase({
+      brain_customer_photos: {
+        data: [{ id: 'photo-1', visit_id: 'visit-1', body_part: 'nose', photo_type: 'before', storage_path: 's/c/photo-1.webp', taken_at: '2026-09-01T00:00:00Z', created_by: null, created_at: '2026-09-01T00:00:00Z' }],
+        error: null,
+      },
+      brain_visits: {
+        data: [{ id: 'visit-1', visit_date: '2026-09-01', visit_count_at: 1, menu_id: null }],
+      },
+    })
+    mockGetClient.mockReturnValue(fake as never)
+
+    const res = await callRoute('customer-a')
+    expect(res.status).toBe(200)
+    expect(fake.from).not.toHaveBeenCalledWith('brain_menus')
+  })
 })
 
 // ================================================================

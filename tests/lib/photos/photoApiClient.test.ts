@@ -13,7 +13,9 @@ vi.mock('../../../src/lib/api/authedFetch', () => ({
 import { authedFetch } from '../../../src/lib/api/authedFetch'
 import {
   createPhotoListFetcher,
+  getBatchSignedUrls,
   listCustomerPhotos,
+  listCustomerPhotosTimeline,
   uploadCustomerPhoto,
 } from '../../../src/lib/photos/photoApiClient'
 
@@ -138,5 +140,74 @@ describe('uploadCustomerPhoto', () => {
         blob, bodyPart: 'nose', photoType: 'before', visitId: null, clientRequestId: 'req-3',
       })
     ).rejects.toThrow('storage_upload_failed:x')
+  })
+})
+
+describe('listCustomerPhotosTimeline', () => {
+  it('既存の一覧APIをGETし、menuName/visitDateを含めて返す', async () => {
+    mockFetch.mockResolvedValue(jsonResponse({
+      success: true,
+      photos: [{
+        id: 'p1', visitId: 'v1', visitDate: '2026-09-01', menuName: 'フェイシャル',
+        bodyPart: 'face_front', photoType: 'progress', storagePath: 's/p1.webp', takenAt: '2026-09-01T00:00:00Z',
+      }],
+    }))
+
+    const result = await listCustomerPhotosTimeline('customer-1')
+
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    expect((mockFetch.mock.calls[0][0] as string)).toBe('/api/customers/customer-1/photos?limit=60')
+    expect(result).toEqual([{
+      id: 'p1', visitId: 'v1', visitDate: '2026-09-01', menuName: 'フェイシャル',
+      bodyPart: 'face_front', photoType: 'progress', storagePath: 's/p1.webp', takenAt: '2026-09-01T00:00:00Z',
+    }])
+  })
+
+  it('menuName/visitDateが無い写真はnullで補完する', async () => {
+    mockFetch.mockResolvedValue(jsonResponse({
+      success: true,
+      photos: [{ id: 'p1', visitId: null, bodyPart: 'nose', photoType: 'progress', storagePath: 's', takenAt: 't' }],
+    }))
+    const result = await listCustomerPhotosTimeline('customer-1')
+    expect(result[0]).toMatchObject({ visitDate: null, menuName: null })
+  })
+
+  it('APIがsuccess:falseの場合は空配列を返す', async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ success: false, error: 'forbidden' }))
+    const result = await listCustomerPhotosTimeline('customer-1')
+    expect(result).toEqual([])
+  })
+})
+
+describe('getBatchSignedUrls', () => {
+  it('photoIdsが空なら fetch を呼ばずに空オブジェクトを返す', async () => {
+    const result = await getBatchSignedUrls('customer-1', [])
+    expect(result).toEqual({})
+    expect(mockFetch).not.toHaveBeenCalled()
+  })
+
+  it('POST .../signed-urls を呼び、urlのみのマップに変換する', async () => {
+    mockFetch.mockResolvedValue(jsonResponse({
+      success: true,
+      urls: {
+        p1: { url: 'https://example.com/p1.webp', expiresAt: '2026-09-06T00:00:00Z' },
+        p2: { url: 'https://example.com/p2.webp', expiresAt: '2026-09-06T00:00:00Z' },
+      },
+    }))
+
+    const result = await getBatchSignedUrls('customer-1', ['p1', 'p2'], 'thumbnail')
+
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/customers/customer-1/photos/signed-urls')
+    expect((init as RequestInit).method).toBe('POST')
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ photoIds: ['p1', 'p2'], purpose: 'thumbnail' })
+    expect(result).toEqual({ p1: 'https://example.com/p1.webp', p2: 'https://example.com/p2.webp' })
+  })
+
+  it('APIがsuccess:falseの場合は空オブジェクトを返す', async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ success: false, error: 'forbidden' }, false, 403))
+    const result = await getBatchSignedUrls('customer-1', ['p1'])
+    expect(result).toEqual({})
   })
 })

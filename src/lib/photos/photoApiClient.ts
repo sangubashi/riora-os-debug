@@ -125,3 +125,88 @@ export async function getPhotoSignedUrl(
   if (!body?.success) return null
   return body.url as string
 }
+
+/** Photo Timeline(顧客ごとの写真時系列一覧)用の1件分の型。GhostCandidatePhotoより表示に必要な情報が多い。 */
+export interface TimelinePhoto {
+  id:           string
+  visitId:      string | null
+  visitDate:    string | null
+  menuName:     string | null
+  bodyPart:     string
+  photoType:    PhotoType
+  storagePath:  string
+  takenAt:      string
+}
+
+interface TimelinePhotoApiRow {
+  id:           string
+  visitId:      string | null
+  visitDate?:   string | null
+  menuName?:    string | null
+  bodyPart:     string
+  photoType:    PhotoType
+  storagePath:  string
+  takenAt:      string
+}
+
+interface TimelineListApiResponse {
+  success:    boolean
+  photos?:    TimelinePhotoApiRow[]
+  nextCursor?: string | null
+  error?:     string
+}
+
+/**
+ * Photo Timeline用の一覧取得。既存の GET /api/customers/[id]/photos をそのまま使う
+ * (新規APIは作らない)。order省略=既存どおりtaken_at DESC(新しい順)。
+ */
+export async function listCustomerPhotosTimeline(
+  customerId: string,
+  limit = 60
+): Promise<TimelinePhoto[]> {
+  const sp = new URLSearchParams()
+  sp.set('limit', String(limit))
+
+  const res = await authedFetch(`/api/customers/${customerId}/photos?${sp.toString()}`)
+  if (!res.ok) return []
+
+  const body = (await res.json()) as TimelineListApiResponse
+  if (!body.success || !body.photos) return []
+
+  return body.photos.map(p => ({
+    id:          p.id,
+    visitId:     p.visitId,
+    visitDate:   p.visitDate ?? null,
+    menuName:    p.menuName ?? null,
+    bodyPart:    p.bodyPart,
+    photoType:   p.photoType,
+    storagePath: p.storagePath,
+    takenAt:     p.takenAt,
+  }))
+}
+
+/**
+ * サムネイル表示用のsigned URLをまとめて取得する(既存の POST .../photos/signed-urls を利用)。
+ * 取得できなかったIDは結果に含めない(呼び出し側はurlの有無で表示を出し分ける)。
+ */
+export async function getBatchSignedUrls(
+  customerId: string,
+  photoIds:   string[],
+  purpose:    'thumbnail' | 'detail' = 'thumbnail'
+): Promise<Record<string, string>> {
+  if (photoIds.length === 0) return {}
+
+  const res = await authedFetch(`/api/customers/${customerId}/photos/signed-urls`, {
+    method: 'POST',
+    body:   JSON.stringify({ photoIds, purpose }),
+  })
+  if (!res.ok) return {}
+
+  const body = await res.json().catch(() => null) as
+    { success: boolean; urls?: Record<string, { url: string; expiresAt: string }> } | null
+  if (!body?.success || !body.urls) return {}
+
+  const result: Record<string, string> = {}
+  for (const [id, entry] of Object.entries(body.urls)) result[id] = entry.url
+  return result
+}

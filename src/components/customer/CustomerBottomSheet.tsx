@@ -93,6 +93,7 @@ import VoiceMemoSection from '@/components/customer/VoiceMemoSection';
 import KarteImportSection from '@/components/customer/KarteImportSection';
 import PhotoCaptureView from '@/components/customer/photos/PhotoCaptureView';
 import PhotoLibraryPickerView from '@/components/customer/photos/PhotoLibraryPickerView';
+import PhotoTimelineView from '@/components/customer/photos/PhotoTimelineView';
 import CustomerNotesSection from '@/components/customer/CustomerNotesSection';
 import BookingPromptSection from '@/components/customer/BookingPromptSection';
 import HandoverSection from '@/components/customer/HandoverSection';
@@ -310,6 +311,13 @@ export default function CustomerBottomSheet({
     setLibraryPickerFiles(Array.from(fileList));
     setShowPhotoLibraryPicker(true);
   }, []);
+
+  // ── 写真カルテ Phase3: 顧客ごとの写真時系列一覧(PhotoTimelineView) ─────────────
+  // 「写真カルテ」ブロック自体をTimelineの入口にする(タップで一覧を開く)。
+  // 撮影・ライブラリ追加はTimeline側のボタンから起動し、閉じたらphotoRefreshKeyを
+  // 増やしてTimelineに一覧を再取得させる。
+  const [showPhotoTimeline, setShowPhotoTimeline] = useState(false);
+  const [photoRefreshKey,   setPhotoRefreshKey]   = useState(0);
 
   // ── 接客ログ ────────────────────────────────────────────────────────────────
   const [logSelected,   setLogSelected]   = useState<Set<LogKey>>(new Set());
@@ -723,6 +731,7 @@ export default function CustomerBottomSheet({
   const close = useCallback(() => {
     onClose?.();
     setShowPhotoCapture(false);
+    setShowPhotoTimeline(false);
     setSelectedCustomer(null);
     setSelectedReservation(null);
     setPage('overview');
@@ -2262,42 +2271,57 @@ export default function CustomerBottomSheet({
                         )}
                       </div>
 
-                      {/* 写真カルテ（PHOTO_KARTE Phase1: 撮影 / Phase2: 写真ライブラリから複数選択）
-                          比較画面・タイムライン・Afterチェックリスト等は未実装。登録導線のみ。 */}
-                      <div className="bg-[#F0F5FA] rounded-[22px] overflow-hidden flex-shrink-0 px-3 py-3">
-                        <p className="text-[11px] tracking-[0.18em] text-[#4878A8] font-semibold px-1 pb-2">
-                          📷 写真カルテ
-                        </p>
-                        <div className="flex gap-2">
-                          <button onClick={() => setShowPhotoCapture(true)}
-                            className="flex-1 flex items-center justify-center gap-1.5 py-3.5 rounded-2xl bg-white border border-[#C8DCF0] text-[#4878A8] text-[13px] font-semibold cursor-pointer">
-                            📷 撮影する
-                          </button>
-                          <button onClick={() => libraryInputRef.current?.click()}
-                            className="flex-1 flex items-center justify-center gap-1.5 py-3.5 rounded-2xl bg-white border border-[#C8DCF0] text-[#4878A8] text-[13px] font-semibold cursor-pointer">
-                            🖼 写真を選択して追加
-                          </button>
-                          <input
-                            ref={libraryInputRef}
-                            type="file"
-                            accept="image/*"
-                            multiple
-                            style={{ display: 'none' }}
-                            onChange={handleLibraryFilesSelected}
-                          />
-                        </div>
+                      {/* 写真カルテ（PHOTO_KARTE Phase1: 撮影 / Phase2: 写真ライブラリから複数選択 /
+                          Phase3: 時系列一覧）。このブロック自体がPhotoTimelineViewの入口。
+                          Before/After比較UIは今回のスコープ外(未実装)。 */}
+                      <div className="bg-[#F0F5FA] rounded-[22px] overflow-hidden flex-shrink-0">
+                        <button onClick={() => setShowPhotoTimeline(true)}
+                          className="w-full flex items-center justify-between px-4 py-3.5 bg-transparent border-none cursor-pointer">
+                          <p className="text-[11px] tracking-[0.18em] text-[#4878A8] font-semibold">
+                            📷 写真カルテ
+                          </p>
+                          <span className="text-sm text-[#4878A8]">›</span>
+                        </button>
+                        {/* <input type="file" multiple>自体はここに置く(iOS Safariのファイル選択
+                            ダイアログはユーザークリックと同期して呼ばないと確実に開かないため)。
+                            起動はPhotoTimelineView側の「選択して追加」ボタン(onOpenLibraryPicker
+                            経由でlibraryInputRef.current?.click()を呼ぶ)から行う。 */}
+                        <input
+                          ref={libraryInputRef}
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          style={{ display: 'none' }}
+                          onChange={handleLibraryFilesSelected}
+                        />
                       </div>
 
                     </div>
 
-                    {/* position:fixedのPhotoCaptureViewが祖先のmotion.div(transform)に
-                        containされないよう、document.body直下へportalする(既存の
-                        AnimatePresence/motion構造には一切手を入れない)。 */}
+                    {/* position:fixedの各ビューが祖先のmotion.div(transform)にcontainされないよう、
+                        document.body直下へportalする(既存のAnimatePresence/motion構造には
+                        一切手を入れない)。PhotoTimelineViewを先に描画することで、そこから
+                        起動するPhotoCaptureView/PhotoLibraryPickerViewが後続のDOM順で
+                        上に重なる(いずれもzIndex:200)。 */}
+                    {showPhotoTimeline && typeof document !== 'undefined' && createPortal(
+                      <PhotoTimelineView
+                        customerId={c.id}
+                        refreshKey={photoRefreshKey}
+                        onClose={() => setShowPhotoTimeline(false)}
+                        onOpenCapture={() => setShowPhotoCapture(true)}
+                        onOpenLibraryPicker={() => libraryInputRef.current?.click()}
+                      />,
+                      document.body
+                    )}
+
                     {showPhotoCapture && typeof document !== 'undefined' && createPortal(
                       <PhotoCaptureView
                         customerId={c.id}
                         visitId={todayVisitId}
-                        onClose={() => setShowPhotoCapture(false)}
+                        onClose={() => {
+                          setShowPhotoCapture(false);
+                          setPhotoRefreshKey(k => k + 1);
+                        }}
                       />,
                       document.body
                     )}
@@ -2312,6 +2336,7 @@ export default function CustomerBottomSheet({
                         onClose={() => {
                           setShowPhotoLibraryPicker(false);
                           setLibraryPickerFiles([]);
+                          setPhotoRefreshKey(k => k + 1);
                         }}
                       />,
                       document.body
