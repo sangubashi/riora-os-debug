@@ -21,6 +21,12 @@ export interface CapturedPhotoPayload {
   bodyPart:  string
   photoType: CapturePhotoType
   visitId:   string | null
+  /**
+   * 任意。省略時は既存どおりサーバー側 now() にフォールバックする(カメラ撮影フローは
+   * 常に省略し、この挙動を変更しない)。写真ライブラリ選択(Phase2)のみ
+   * File.lastModified由来の暫定日時を渡す場合がある(batchUpload.ts参照)。
+   */
+  takenAt?:  string
 }
 
 /** clientRequestIdは自動確定のタイミングで初めて付与される(撮り直し時は一切生成されない)。 */

@@ -83,7 +83,10 @@ export async function uploadCustomerPhoto(
   form.set('photoType', payload.photoType)
   form.set('clientRequestId', payload.clientRequestId)
   if (payload.visitId) form.set('visitId', payload.visitId)
-  // takenAtは省略しサーバー側のnow()相当に委ねる(既存API仕様どおり)。
+  // takenAtは任意。省略時は既存どおりサーバー側のnow()相当に委ねる。カメラ撮影フローは
+  // 常に省略するため挙動は変わらない。写真ライブラリ選択(Phase2)のみFile.lastModified
+  // 由来の値をpayload.takenAtとして渡す場合がある(batchUpload.ts参照)。
+  if (payload.takenAt) form.set('takenAt', payload.takenAt)
   // createdBy/storeId/storagePathはクライアントから一切送らない
   // (サーバー側でJWTから解決したstaffBrainId・固定STORE_ID・決定的パスのみを使う)。
 

@@ -92,6 +92,7 @@ import ServiceReplayCard from '@/components/customer/ServiceReplayCard';
 import VoiceMemoSection from '@/components/customer/VoiceMemoSection';
 import KarteImportSection from '@/components/customer/KarteImportSection';
 import PhotoCaptureView from '@/components/customer/photos/PhotoCaptureView';
+import PhotoLibraryPickerView from '@/components/customer/photos/PhotoLibraryPickerView';
 import CustomerNotesSection from '@/components/customer/CustomerNotesSection';
 import BookingPromptSection from '@/components/customer/BookingPromptSection';
 import HandoverSection from '@/components/customer/HandoverSection';
@@ -293,6 +294,22 @@ export default function CustomerBottomSheet({
 
   // ── 写真カルテ(PHOTO_KARTE Phase1・実機確認用の最小導線) ──────────────────────
   const [showPhotoCapture, setShowPhotoCapture] = useState(false);
+
+  // ── 写真カルテ Phase2: 写真ライブラリから複数選択して登録 ──────────────────────
+  // <input type="file" multiple>自体はこのコンポーネント側に置く(iOS Safariの
+  // ファイル選択ダイアログはユーザークリックと同期して呼ばないと確実に開かないため)。
+  // 選択後の確認・仮分類・一括登録UIはPhotoLibraryPickerView.tsxに委譲する。
+  const libraryInputRef = useRef<HTMLInputElement | null>(null);
+  const [showPhotoLibraryPicker, setShowPhotoLibraryPicker] = useState(false);
+  const [libraryPickerFiles, setLibraryPickerFiles] = useState<File[]>([]);
+
+  const handleLibraryFilesSelected = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    e.target.value = ''; // 同じファイルを連続選択できるようリセット
+    if (!fileList || fileList.length === 0) return;
+    setLibraryPickerFiles(Array.from(fileList));
+    setShowPhotoLibraryPicker(true);
+  }, []);
 
   // ── 接客ログ ────────────────────────────────────────────────────────────────
   const [logSelected,   setLogSelected]   = useState<Set<LogKey>>(new Set());
@@ -2245,16 +2262,30 @@ export default function CustomerBottomSheet({
                         )}
                       </div>
 
-                      {/* 写真カルテ（PHOTO_KARTE Phase1・実機確認用の最小導線）
-                          比較画面・タイムライン・Afterチェックリスト等は未実装。撮影画面のみ。 */}
-                      <div className="bg-[#F0F5FA] rounded-[22px] overflow-hidden flex-shrink-0">
-                        <button onClick={() => setShowPhotoCapture(true)}
-                          className="w-full flex items-center justify-between px-4 py-3.5 bg-transparent border-none cursor-pointer">
-                          <p className="text-[11px] tracking-[0.18em] text-[#4878A8] font-semibold">
-                            📷 写真カルテ（撮影）
-                          </p>
-                          <span className="text-sm text-[#4878A8]">›</span>
-                        </button>
+                      {/* 写真カルテ（PHOTO_KARTE Phase1: 撮影 / Phase2: 写真ライブラリから複数選択）
+                          比較画面・タイムライン・Afterチェックリスト等は未実装。登録導線のみ。 */}
+                      <div className="bg-[#F0F5FA] rounded-[22px] overflow-hidden flex-shrink-0 px-3 py-3">
+                        <p className="text-[11px] tracking-[0.18em] text-[#4878A8] font-semibold px-1 pb-2">
+                          📷 写真カルテ
+                        </p>
+                        <div className="flex gap-2">
+                          <button onClick={() => setShowPhotoCapture(true)}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-3.5 rounded-2xl bg-white border border-[#C8DCF0] text-[#4878A8] text-[13px] font-semibold cursor-pointer">
+                            📷 撮影する
+                          </button>
+                          <button onClick={() => libraryInputRef.current?.click()}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-3.5 rounded-2xl bg-white border border-[#C8DCF0] text-[#4878A8] text-[13px] font-semibold cursor-pointer">
+                            🖼 写真を選択して追加
+                          </button>
+                          <input
+                            ref={libraryInputRef}
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            style={{ display: 'none' }}
+                            onChange={handleLibraryFilesSelected}
+                          />
+                        </div>
                       </div>
 
                     </div>
@@ -2267,6 +2298,21 @@ export default function CustomerBottomSheet({
                         customerId={c.id}
                         visitId={todayVisitId}
                         onClose={() => setShowPhotoCapture(false)}
+                      />,
+                      document.body
+                    )}
+
+                    {/* PHOTO_KARTE Phase2: 写真ライブラリから複数選択して登録する確認画面。
+                        PhotoCaptureViewと同じくdocument.body直下へportalする。 */}
+                    {showPhotoLibraryPicker && typeof document !== 'undefined' && createPortal(
+                      <PhotoLibraryPickerView
+                        customerId={c.id}
+                        visitId={todayVisitId}
+                        files={libraryPickerFiles}
+                        onClose={() => {
+                          setShowPhotoLibraryPicker(false);
+                          setLibraryPickerFiles([]);
+                        }}
                       />,
                       document.body
                     )}
