@@ -270,7 +270,9 @@ export default function Phase1Screen() {
       className="flex flex-col overflow-hidden relative"
       style={{
         width:       '100%',
-        maxWidth:    '430px',
+        // PHASE IPAD-1: 768px以上は共有CSS変数(app/globals.css)で680pxまで拡張。
+        // 767px以下は従来通り430px固定(挙動変更なし)。
+        maxWidth:    'var(--app-max-width, 430px)',
         marginLeft:  'auto',
         marginRight: 'auto',
         height:      '100dvh',

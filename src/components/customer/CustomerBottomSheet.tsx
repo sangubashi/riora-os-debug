@@ -1501,7 +1501,9 @@ export default function CustomerBottomSheet({
               key="sheet"
               initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 32, stiffness: 260 }}
-              className="w-full max-w-[430px] pointer-events-auto bg-white"
+              // PHASE IPAD-1: 768px以上は共有CSS変数(app/globals.css)で680pxまで拡張。
+              // 767px以下は従来通り430px固定(挙動変更なし)。
+              className="w-full max-w-[var(--app-max-width,430px)] pointer-events-auto bg-white"
               style={{
                 // visualViewport.height を使うことでキーボード表示時にシートが潰れない
                 height: 'calc(var(--vh, 1dvh) * 88)',

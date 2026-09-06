@@ -34,7 +34,9 @@ export default function AppBottomNav() {
         left: '50%',
         transform: 'translateX(-50%)',
         width: '100%',
-        maxWidth: '430px',
+        // PHASE IPAD-1: 768px以上は共有CSS変数(app/globals.css)で680pxまで拡張。
+        // 767px以下は従来通り430px固定(挙動変更なし)。
+        maxWidth: 'var(--app-max-width, 430px)',
         background: 'rgba(255,255,255,0.96)',
         backdropFilter: 'blur(24px)',
         WebkitBackdropFilter: 'blur(24px)',

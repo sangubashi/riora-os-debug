@@ -66,6 +66,20 @@
 
 /* ── CSS custom properties (unlayered — fine for variables) ── */
 :root {
+  /* PHASE IPAD-1: スマホ幅(430px)固定だった各画面ルート/シート幅を768px以上でだけ
+     広げるための共有値。768px未満は既存の430pxのまま(スマホ表示は完全維持)。
+     width:100% + max-width の組み合わせで使うこと(このtokenだけを固定幅として
+     divに直接指定しない)。 */
+  --app-max-width: 430px;
+}
+
+@media (min-width: 768px) {
+  :root {
+    --app-max-width: 680px;
+  }
+}
+
+:root {
   --bg:          #FFF8F7;
   --card:        #FFFFFF;
   --pink-main:   #F5D6DB;
