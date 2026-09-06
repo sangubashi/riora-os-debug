@@ -26,6 +26,7 @@ import {
   buildPreviousComparison,
   comparableGroups,
   groupPhotosByBodyPart,
+  hasDistinctFirstOccasion,
   type ComparisonPair,
 } from '@/lib/photos/comparisonSelection'
 import {
@@ -236,7 +237,7 @@ export default function PhotoTimelineView({
                       >
                         前回↔今回
                       </button>
-                      {group.photos.length > 2 && (
+                      {hasDistinctFirstOccasion(group) && (
                         <button
                           type="button"
                           onClick={() => setComparisonPair(buildFirstComparison(group))}

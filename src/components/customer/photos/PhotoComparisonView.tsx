@@ -63,26 +63,32 @@ export default function PhotoComparisonView({ customerId, pair, onClose }: Props
           onClick={() => state.url && setEnlargedUrl(state.url)}
           disabled={!state.url}
           style={{
-            aspectRatio: '1 / 1', borderRadius: '14px', overflow: 'hidden', background: '#EEE',
+            // 固定aspectRatio(1/1)+objectFit:'cover'は元画像をクロップしてしまう
+            // (portrait写真の額・顎が切れる)ため廃止。minHeightは画像読込前の
+            // プレースホルダー用の目安の高さで、画像自体を正方形に強制するものではない。
+            minHeight: '160px', borderRadius: '14px', overflow: 'hidden', background: '#EEE',
             border: '1px solid #E4EEF8', padding: 0, cursor: state.url ? 'pointer' : 'default', width: '100%',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}
         >
           {state.loading && (
             <div style={{
-              width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '11px', color: '#8AAAC8',
+              padding: '40px 0', fontSize: '11px', color: '#8AAAC8',
             }}>
               読み込み中…
             </div>
           )}
           {!state.loading && state.url && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={state.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            <img
+              src={state.url}
+              alt=""
+              style={{ width: '100%', height: 'auto', objectFit: 'contain', display: 'block' }}
+            />
           )}
           {!state.loading && !state.url && (
             <div style={{
-              width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '11px', color: '#C05060',
+              padding: '40px 0', fontSize: '11px', color: '#C05060',
             }}>
               表示できません
             </div>
@@ -133,7 +139,12 @@ export default function PhotoComparisonView({ customerId, pair, onClose }: Props
 
       {/* ── 左右比較 ── */}
       <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '16px' }}>
-        <div style={{ display: 'flex', gap: '12px', maxWidth: 'var(--app-max-width, 430px)', margin: '0 auto' }}>
+        <div style={{
+          display: 'flex', gap: '12px', maxWidth: 'var(--app-max-width, 430px)', margin: '0 auto',
+          // alignItems:'flex-start'で片側だけstretchして余白が伸びるのを防ぐ
+          // (portrait写真とlandscape写真が左右に並ぶと高さが変わるため)。
+          alignItems: 'flex-start',
+        }}>
           {renderSide(referenceLabel, pair.reference, referenceState)}
           {renderSide('今回', pair.current, currentState)}
         </div>
