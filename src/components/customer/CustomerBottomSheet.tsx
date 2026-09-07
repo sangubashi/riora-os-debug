@@ -1651,6 +1651,38 @@ export default function CustomerBottomSheet({
                         <StaffProposalSection customerId={c.id} />
                       </ErrorBoundary>
 
+                      {/* Phase 2-A: 情報構造整理。デジタル顧客カルテ Phase1-B③
+                          🛍前回の店販提案(brain_product_proposals)を上段(見る情報)へ移動。
+                          「前回の次回提案」の直後に置き、前回提案系をまとめて確認できる
+                          ようにする(コンポーネント内部のロジックは無変更・移動のみ)。 */}
+                      <ErrorBoundary label="ProductProposalSection" silentFail>
+                        <ProductProposalSection customerId={c.id} />
+                      </ErrorBoundary>
+
+                      {/* Phase 2-A: 情報構造整理。写真カルテ入口を上段(見る情報)へ移動。
+                          Before/After比較UIは今回のスコープ外(未実装、無変更)。 */}
+                      <div className="bg-[#F0F5FA] rounded-[22px] overflow-hidden flex-shrink-0">
+                        <button onClick={() => setShowPhotoTimeline(true)}
+                          className="w-full flex items-center justify-between px-4 py-3.5 bg-transparent border-none cursor-pointer">
+                          <p className="text-[11px] tracking-[0.18em] text-[#4878A8] font-semibold">
+                            📷 写真カルテ
+                          </p>
+                          <span className="text-sm text-[#4878A8]">›</span>
+                        </button>
+                        {/* <input type="file" multiple>自体はここに置く(iOS Safariのファイル選択
+                            ダイアログはユーザークリックと同期して呼ばないと確実に開かないため)。
+                            起動はPhotoTimelineView側の「選択して追加」ボタン(onOpenLibraryPicker
+                            経由でlibraryInputRef.current?.click()を呼ぶ)から行う。 */}
+                        <input
+                          ref={libraryInputRef}
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          style={{ display: 'none' }}
+                          onChange={handleLibraryFilesSelected}
+                        />
+                      </div>
+
                       {/* ════════════════════════════
                           PHASE UX-1: 5秒で接客準備できるブリーフィング
                       ════════════════════════════ */}
@@ -1907,13 +1939,6 @@ export default function CustomerBottomSheet({
                           </div>
                         )}
                       </div>
-
-                      {/* デジタル顧客カルテ Phase1-B③: 🛍前回の店販提案(brain_product_proposals)。
-                          直上の「🏠ホームケア使用商品」(実購入・brain_visits.retail_category由来)
-                          とはデータソース・意味とも別物であり、混同しないよう独立カードにする。 */}
-                      <ErrorBoundary label="ProductProposalSection" silentFail>
-                        <ProductProposalSection customerId={c.id} />
-                      </ErrorBoundary>
 
                       {/* 関連記事・接客ヒント（BLOG_CONTENT_PHASE2・接客ヒントはPHASE2-C-3でAI化）
                           既存の🏠ホームケア使用商品ブロックの直下に追加表示。記事本文・外部URLは
@@ -2318,31 +2343,6 @@ export default function CustomerBottomSheet({
                             />
                           </div>
                         )}
-                      </div>
-
-                      {/* 写真カルテ（PHOTO_KARTE Phase1: 撮影 / Phase2: 写真ライブラリから複数選択 /
-                          Phase3: 時系列一覧）。このブロック自体がPhotoTimelineViewの入口。
-                          Before/After比較UIは今回のスコープ外(未実装)。 */}
-                      <div className="bg-[#F0F5FA] rounded-[22px] overflow-hidden flex-shrink-0">
-                        <button onClick={() => setShowPhotoTimeline(true)}
-                          className="w-full flex items-center justify-between px-4 py-3.5 bg-transparent border-none cursor-pointer">
-                          <p className="text-[11px] tracking-[0.18em] text-[#4878A8] font-semibold">
-                            📷 写真カルテ
-                          </p>
-                          <span className="text-sm text-[#4878A8]">›</span>
-                        </button>
-                        {/* <input type="file" multiple>自体はここに置く(iOS Safariのファイル選択
-                            ダイアログはユーザークリックと同期して呼ばないと確実に開かないため)。
-                            起動はPhotoTimelineView側の「選択して追加」ボタン(onOpenLibraryPicker
-                            経由でlibraryInputRef.current?.click()を呼ぶ)から行う。 */}
-                        <input
-                          ref={libraryInputRef}
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          style={{ display: 'none' }}
-                          onChange={handleLibraryFilesSelected}
-                        />
                       </div>
 
                     </div>
