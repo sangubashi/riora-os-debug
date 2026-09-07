@@ -105,6 +105,7 @@ import StaffProposalSection from '@/components/customer/StaffProposalSection';
 import ProductProposalSection from '@/components/customer/ProductProposalSection';
 import SkinConditionSection from '@/components/customer/SkinConditionSection';
 import TreatmentRecordSection from '@/components/customer/TreatmentRecordSection';
+import ProductProposalInputSection from '@/components/customer/ProductProposalInputSection';
 import CustomerAITimelineTab from '@/components/customer/CustomerAITimelineTab';
 
 // ─── 定数 ────────────────────────────────────────────────────────────────────
@@ -2576,6 +2577,16 @@ export default function CustomerBottomSheet({
                           案内のみ表示する(saveLog()/service-completeは変更しない)。 */}
                       <ErrorBoundary label="TreatmentRecordSection" silentFail>
                         <TreatmentRecordSection customerId={c.id} todayVisitId={todayVisitId} />
+                      </ErrorBoundary>
+
+                      {/* デジタル顧客カルテ Phase1-B⑥: 🛍今日の店販提案・結果
+                          (brain_product_proposals)。「今日スタッフが実際に提案した商品」の
+                          追記専用ログ。過去の店販提案履歴(ProductProposalSection、見る側)・
+                          実購入(ホームケア使用商品)・staff_logs.retail_sold・AIホームケア
+                          提案とは完全に別物。todayVisitId(既存ロジック・無変更)がnullの間は
+                          入力UIを出さず案内のみ表示する(saveLog()/service-completeは変更しない)。 */}
+                      <ErrorBoundary label="ProductProposalInputSection" silentFail>
+                        <ProductProposalInputSection customerId={c.id} todayVisitId={todayVisitId} />
                       </ErrorBoundary>
 
                       {/* 接客メモ */}
