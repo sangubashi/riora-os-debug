@@ -100,6 +100,10 @@ import HandoverSection from '@/components/customer/HandoverSection';
 import ContraindicationSection from '@/components/customer/ContraindicationSection';
 import CustomerMemorySection from '@/components/customer/CustomerMemorySection';
 import CustomerMemoryTab from '@/components/customer/CustomerMemoryTab'
+import GoalSection from '@/components/customer/GoalSection';
+import StaffProposalSection from '@/components/customer/StaffProposalSection';
+import ProductProposalSection from '@/components/customer/ProductProposalSection';
+import SkinConditionSection from '@/components/customer/SkinConditionSection';
 import CustomerAITimelineTab from '@/components/customer/CustomerAITimelineTab';
 
 // ─── 定数 ────────────────────────────────────────────────────────────────────
@@ -1627,6 +1631,21 @@ export default function CustomerBottomSheet({
                         </button>
                       </div>
 
+                      {/* デジタル顧客カルテ Phase1-B①: 🎯顧客目標(brain_customers.goal_note)。
+                          「見る情報」の最上部(ContraindicationSectionの次)に配置する。
+                          自己完結コンポーネントのためCustomerBottomSheet本体のstate/
+                          useEffectには手を加えない(ErrorBoundaryで隔離)。 */}
+                      <ErrorBoundary label="GoalSection" silentFail>
+                        <GoalSection customerId={c.id} />
+                      </ErrorBoundary>
+
+                      {/* デジタル顧客カルテ Phase1-B②: 💡前回の次回提案(brain_staff_proposals)。
+                          AI提案候補(BookingPromptSection等、下方に別途表示)とは明確に別カード。
+                          AI候補をここへ自動転記する処理は無い(StaffProposalSection.tsx参照)。 */}
+                      <ErrorBoundary label="StaffProposalSection" silentFail>
+                        <StaffProposalSection customerId={c.id} />
+                      </ErrorBoundary>
+
                       {/* ════════════════════════════
                           PHASE UX-1: 5秒で接客準備できるブリーフィング
                       ════════════════════════════ */}
@@ -1865,6 +1884,13 @@ export default function CustomerBottomSheet({
                           </div>
                         )}
                       </div>
+
+                      {/* デジタル顧客カルテ Phase1-B③: 🛍前回の店販提案(brain_product_proposals)。
+                          直上の「🏠ホームケア使用商品」(実購入・brain_visits.retail_category由来)
+                          とはデータソース・意味とも別物であり、混同しないよう独立カードにする。 */}
+                      <ErrorBoundary label="ProductProposalSection" silentFail>
+                        <ProductProposalSection customerId={c.id} />
+                      </ErrorBoundary>
 
                       {/* 関連記事・接客ヒント（BLOG_CONTENT_PHASE2・接客ヒントはPHASE2-C-3でAI化）
                           既存の🏠ホームケア使用商品ブロックの直下に追加表示。記事本文・外部URLは
@@ -2531,6 +2557,14 @@ export default function CustomerBottomSheet({
                           })}
                         </div>
                       </div>
+
+                      {/* デジタル顧客カルテ Phase1-B④: 📝今日の肌状態(brain_skin_records)。
+                          「今日入力」エリア(接客ログ記録画面)専用。todayVisitId(既存ロジック・
+                          無変更)がnullの間は入力UIを出さず案内のみ表示する
+                          (saveLog()/service-completeを変更してvisitIdを作る処理は行わない)。 */}
+                      <ErrorBoundary label="SkinConditionSection" silentFail>
+                        <SkinConditionSection customerId={c.id} todayVisitId={todayVisitId} />
+                      </ErrorBoundary>
 
                       {/* 接客メモ */}
                       <div className="bg-[#F8F1F3] rounded-[22px] p-4">
