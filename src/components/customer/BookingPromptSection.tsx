@@ -8,7 +8,14 @@
  *   - 接客ポイント（recommended_topics）
  *   - 提案候補（recommended_proposals）
  *   - 注意事項（risk_flags）
+ *   - 引き継ぎ事項（openTasks。Phase2-B1でHandoverSectionから統合）
  *   - サマリー（summary）
+ *
+ * Phase2-B1: BookingPromptとHandoverは音声メモパイプライン(voice-pipeline/route.ts)
+ * の同一Claude呼び出しから生成される「1つの分析の2つの側面」であるため、
+ * Handover固有のopen_tasksのみをこのカード内のサブセクションとして統合表示する。
+ * handover_notesのrisk_flags/summary/customer_contextの統合は今回対象外(別フェーズ)。
+ * データ取得ロジック自体はCustomerBottomSheet側で無変更、openTasksはpropsで渡されるのみ。
  */
 
 import { memo } from 'react'
@@ -22,6 +29,8 @@ interface BookingPromptSectionProps {
   loading:    boolean
   collapsed?: boolean
   onToggle?:  () => void
+  /** Phase2-B1: handover_notes.open_tasks(未完了タスク/引き継ぎ事項)。空配列時はセクション非表示。 */
+  openTasks?: string[]
 }
 
 // ─── サブセクション ───────────────────────────────────────────────────────────
@@ -75,6 +84,7 @@ const BookingPromptSectionInner = memo(function BookingPromptSection({
   loading,
   collapsed = false,
   onToggle,
+  openTasks = [],
 }: BookingPromptSectionProps) {
 
   const hasData = !loading && prompt !== null
@@ -226,6 +236,15 @@ const BookingPromptSectionInner = memo(function BookingPromptSection({
                 items={prompt!.risk_flags}
                 color="#C05060"
                 bgColor="#FFF0F2"
+              />
+
+              {/* 引き継ぎ事項（Phase2-B1: handover_notes.open_tasksを統合表示。0件時は非表示） */}
+              <ItemRow
+                emoji="📋"
+                label="引き継ぎ事項"
+                items={openTasks}
+                color="#A07020"
+                bgColor="#FFFBF0"
               />
 
             </div>

@@ -1797,23 +1797,20 @@ export default function CustomerBottomSheet({
                         />
                       </ErrorBoundary>
 
-                      {/* Today's AI Brief */}
+                      {/* Today's AI Brief（Phase2-B1: BookingPromptとHandoverを表示上1枚に統合。
+                          両者は音声メモパイプライン(voice-pipeline/route.ts)の同一Claude呼び出し
+                          から生成される「1つの分析の2つの側面」であるため、Handover固有の
+                          open_tasks(未完了タスク/引き継ぎ事項)のみをこのカード内のサブ
+                          セクションとして追加表示する。HandoverSection自体の描画はやめるが、
+                          handoverデータのfetch/state/loading処理(下記)は無変更のまま維持し、
+                          open_tasksの値だけをpropsとして渡す。risk_flagsの統合は今回対象外。 */}
                       <ErrorBoundary label="BookingPromptSection" silentFail>
                         <BookingPromptSection
                           prompt={bookingPrompt}
                           loading={bookingPromptLoading}
                           collapsed={bookingPromptCollapsed}
                           onToggle={() => setBookingPromptCollapsed(p => !p)}
-                        />
-                      </ErrorBoundary>
-
-                      {/* AI Handover */}
-                      <ErrorBoundary label="HandoverSection" silentFail>
-                        <HandoverSection
-                          handover={handover}
-                          loading={handoverLoading}
-                          collapsed={handoverCollapsed}
-                          onToggle={() => setHandoverCollapsed(p => !p)}
+                          openTasks={handover?.open_tasks ?? []}
                         />
                       </ErrorBoundary>
 
