@@ -107,6 +107,8 @@ import SkinConditionSection from '@/components/customer/SkinConditionSection';
 import TreatmentRecordSection from '@/components/customer/TreatmentRecordSection';
 import ProductProposalInputSection from '@/components/customer/ProductProposalInputSection';
 import StaffProposalInputSection from '@/components/customer/StaffProposalInputSection';
+import SkinConditionViewSection from '@/components/customer/SkinConditionViewSection';
+import TreatmentRecordViewSection from '@/components/customer/TreatmentRecordViewSection';
 import CustomerAITimelineTab from '@/components/customer/CustomerAITimelineTab';
 
 // ─── 定数 ────────────────────────────────────────────────────────────────────
@@ -1701,6 +1703,24 @@ export default function CustomerBottomSheet({
                           </div>
                         </div>
                       )}
+
+                      {/* デジタル顧客カルテ Phase1-B⑧: 📝前回の肌状態／🧴前回の施術記録
+                          (見る側・読み取り専用)。B④/B⑤が今日入力側で保存した
+                          brain_skin_records/brain_visits新4列を次回来店時に表示する。
+                          既存の「前回施術」カード(日付/メニュー/金額)とは表示項目が
+                          重複しない。今日自身のvisitは各コンポーネント内で除外する
+                          (todayVisitId一致判定＋visitDateの本日判定の二重チェック)。 */}
+                      <ErrorBoundary label="SkinConditionViewSection" silentFail>
+                        <SkinConditionViewSection customerId={c.id} todayVisitId={todayVisitId} />
+                      </ErrorBoundary>
+
+                      <ErrorBoundary label="TreatmentRecordViewSection" silentFail>
+                        <TreatmentRecordViewSection
+                          customerId={c.id}
+                          visitHistory={visitHistory}
+                          todayVisitId={todayVisitId}
+                        />
+                      </ErrorBoundary>
 
                       {/* 来店履歴（直近4件） */}
                       <div className="bg-[#F8F1F3] rounded-[22px] p-4">
