@@ -104,6 +104,7 @@ import GoalSection from '@/components/customer/GoalSection';
 import StaffProposalSection from '@/components/customer/StaffProposalSection';
 import ProductProposalSection from '@/components/customer/ProductProposalSection';
 import SkinConditionSection from '@/components/customer/SkinConditionSection';
+import TreatmentRecordSection from '@/components/customer/TreatmentRecordSection';
 import CustomerAITimelineTab from '@/components/customer/CustomerAITimelineTab';
 
 // ─── 定数 ────────────────────────────────────────────────────────────────────
@@ -2564,6 +2565,17 @@ export default function CustomerBottomSheet({
                           (saveLog()/service-completeを変更してvisitIdを作る処理は行わない)。 */}
                       <ErrorBoundary label="SkinConditionSection" silentFail>
                         <SkinConditionSection customerId={c.id} todayVisitId={todayVisitId} />
+                      </ErrorBoundary>
+
+                      {/* デジタル顧客カルテ Phase1-B⑤: 🧴今日の施術記録(brain_visits.
+                          options/products_used/treatment_memo)。「スタッフが今日実際に
+                          行った施術」の記録であり、AI提案(AIProposalCard/NextActionPanel/
+                          CustomerRiskCard/BookingPrompt/Handover等)とは完全に分離する。
+                          machineSettingsは今回のUIに含めない(仕様未確定のため)。
+                          todayVisitId(既存ロジック・無変更)がnullの間は入力UIを出さず
+                          案内のみ表示する(saveLog()/service-completeは変更しない)。 */}
+                      <ErrorBoundary label="TreatmentRecordSection" silentFail>
+                        <TreatmentRecordSection customerId={c.id} todayVisitId={todayVisitId} />
                       </ErrorBoundary>
 
                       {/* 接客メモ */}
