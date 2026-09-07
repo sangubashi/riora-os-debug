@@ -106,6 +106,7 @@ import ProductProposalSection from '@/components/customer/ProductProposalSection
 import SkinConditionSection from '@/components/customer/SkinConditionSection';
 import TreatmentRecordSection from '@/components/customer/TreatmentRecordSection';
 import ProductProposalInputSection from '@/components/customer/ProductProposalInputSection';
+import StaffProposalInputSection from '@/components/customer/StaffProposalInputSection';
 import CustomerAITimelineTab from '@/components/customer/CustomerAITimelineTab';
 
 // ─── 定数 ────────────────────────────────────────────────────────────────────
@@ -2587,6 +2588,17 @@ export default function CustomerBottomSheet({
                           入力UIを出さず案内のみ表示する(saveLog()/service-completeは変更しない)。 */}
                       <ErrorBoundary label="ProductProposalInputSection" silentFail>
                         <ProductProposalInputSection customerId={c.id} todayVisitId={todayVisitId} />
+                      </ErrorBoundary>
+
+                      {/* デジタル顧客カルテ Phase1-B⑦: ➡️今日の次回提案
+                          (brain_staff_proposals)。「今日スタッフが実際に伝えた次回提案」の
+                          記録専用(POSTのみ、status変更ボタンは無し)。AI提案候補
+                          (BookingPromptSection/HandoverSection等)や「前回の次回提案」
+                          (B②・StaffProposalSection、見る側)とは完全に分離する。
+                          todayVisitId(既存ロジック・無変更)がnullの間は入力UIを出さず
+                          案内のみ表示する(saveLog()/service-completeは変更しない)。 */}
+                      <ErrorBoundary label="StaffProposalInputSection" silentFail>
+                        <StaffProposalInputSection customerId={c.id} todayVisitId={todayVisitId} />
                       </ErrorBoundary>
 
                       {/* 接客メモ */}
