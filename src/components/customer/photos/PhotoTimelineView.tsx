@@ -36,8 +36,20 @@ import {
   listCustomerPhotosTimeline,
   type TimelinePhoto,
 } from '@/lib/photos/photoApiClient'
-import { formatDateLabel, groupPhotosByDate } from '@/lib/photos/timelineGrouping'
+import { buildVisitTabs, formatDateLabel, groupPhotosByDate } from '@/lib/photos/timelineGrouping'
 import PhotoComparisonView from './PhotoComparisonView'
+
+/**
+ * 写真カルテ Phase2「角度フィルター」の固定選択肢。既存のbody_part語彙
+ * (face_front/face_left45/face_right45、src/lib/photos/bodyParts.ts)をそのまま使う
+ * (新しいangleカラムは追加しない)。表示はこのフィルター専用の短いラベルにする
+ * (BODY_PART_OPTIONSの「顔全体・正面」等は撮影画面向けの長いラベルのため流用しない)。
+ */
+const ANGLE_FILTER_OPTIONS: { id: string; label: string }[] = [
+  { id: 'face_front',   label: '正面' },
+  { id: 'face_left45',  label: '左45°' },
+  { id: 'face_right45', label: '右45°' },
+]
 
 interface Props {
   customerId:          string
@@ -64,6 +76,12 @@ export default function PhotoTimelineView({
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
+  // 写真カルテ Phase2「来店回数タイムライン」: 一覧表示のみを絞り込むフィルター状態。
+  // null = 「すべて」(既存の日付タイムライン表示を維持)。比較ショートカット
+  // (comparisonPair/comparableGroups等)には一切影響させない(常に全写真セットが対象)。
+  const [selectedVisitId,   setSelectedVisitId]   = useState<string | null>(null)
+  const [selectedBodyPart, setSelectedBodyPart] = useState<string | null>(null)
+
   useEffect(() => {
     let cancelled = false
     setLoadState('loading')
@@ -86,7 +104,22 @@ export default function PhotoTimelineView({
     return () => { cancelled = true }
   }, [customerId, refreshKey])
 
-  const groups = useMemo(() => groupPhotosByDate(photos), [photos])
+  // 写真カルテ Phase2: 来店タブは「visit_id/visitCountAtが両方揃っている写真」のみから
+  // 実データに存在する回数だけ組み立てる(欠番を埋めない、buildVisitTabs参照)。
+  const visitTabs = useMemo(() => buildVisitTabs(photos), [photos])
+
+  // 選択中の来店/角度で一覧表示のみを絞り込む(比較ショートカットには使わない)。
+  const displayedPhotos = useMemo(() => {
+    let result = photos
+    if (selectedVisitId)  result = result.filter(p => p.visitId === selectedVisitId)
+    if (selectedBodyPart) result = result.filter(p => p.bodyPart === selectedBodyPart)
+    return result
+  }, [photos, selectedVisitId, selectedBodyPart])
+
+  const groups = useMemo(() => groupPhotosByDate(displayedPhotos), [displayedPhotos])
+
+  // Before/After比較(前回↔今回・初回↔今回)は来店/角度フィルターと無関係に、
+  // 常に全写真セット(photos)を対象とする(既存仕様を維持、絞り込みの影響を受けない)。
   const comparisonGroups = useMemo(
     () => comparableGroups(groupPhotosByBodyPart(photos)),
     [photos]
@@ -257,6 +290,94 @@ export default function PhotoTimelineView({
           </div>
         )}
 
+        {/* ── 写真カルテ Phase2: 来店回数タブ(横スクロール・一覧表示のみを絞り込む) ──
+              画面幅に合わせた折り返しはしない(overflowX:'auto' + 各ボタンflexShrink:0で
+              PhotoCaptureView.tsxの部位選択チップと同じ横スクロールパターンを踏襲)。
+              visit_id/visitCountAtが無い写真(未紐付け写真)はここには現れない
+              (「すべて」選択時のみ、既存の日付タイムラインにこれまで通り表示される)。 */}
+        {loadState === 'ready' && visitTabs.length > 0 && (
+          <div style={{ flexShrink: 0, padding: '12px 16px 0' }}>
+            <p style={{ fontSize: '11px', fontWeight: 700, color: '#3d4858', marginBottom: '8px' }}>
+              📅 来店で絞り込み
+            </p>
+            <div style={{
+              display: 'flex', gap: '8px', overflowX: 'auto', WebkitOverflowScrolling: 'touch',
+              paddingBottom: '2px',
+            }}>
+              <button
+                type="button"
+                onClick={() => setSelectedVisitId(null)}
+                style={{
+                  flexShrink: 0, padding: '7px 14px', borderRadius: '999px', fontSize: '12px', fontWeight: 600,
+                  whiteSpace: 'nowrap', cursor: 'pointer',
+                  border:     selectedVisitId === null ? 'none' : '1px solid #C8DCF0',
+                  background: selectedVisitId === null ? '#4878A8' : '#fff',
+                  color:      selectedVisitId === null ? '#fff' : '#4878A8',
+                }}
+              >
+                すべて
+              </button>
+              {visitTabs.map(tab => (
+                <button
+                  key={tab.visitId}
+                  type="button"
+                  onClick={() => setSelectedVisitId(tab.visitId)}
+                  style={{
+                    flexShrink: 0, padding: '7px 14px', borderRadius: '999px', fontSize: '12px', fontWeight: 600,
+                    whiteSpace: 'nowrap', cursor: 'pointer',
+                    border:     selectedVisitId === tab.visitId ? 'none' : '1px solid #C8DCF0',
+                    background: selectedVisitId === tab.visitId ? '#4878A8' : '#fff',
+                    color:      selectedVisitId === tab.visitId ? '#fff' : '#4878A8',
+                  }}
+                >
+                  {tab.visitCountAt === 1 ? '初回' : `${tab.visitCountAt}回目`}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── 写真カルテ Phase2: 角度フィルター(横スクロール・一覧表示のみを絞り込む) ──
+              既存のbody_part(face_front/face_left45/face_right45)をそのまま使う。 */}
+        {loadState === 'ready' && photos.length > 0 && (
+          <div style={{ flexShrink: 0, padding: '10px 16px 0' }}>
+            <div style={{
+              display: 'flex', gap: '8px', overflowX: 'auto', WebkitOverflowScrolling: 'touch',
+              paddingBottom: '2px',
+            }}>
+              <button
+                type="button"
+                onClick={() => setSelectedBodyPart(null)}
+                style={{
+                  flexShrink: 0, padding: '7px 14px', borderRadius: '999px', fontSize: '12px', fontWeight: 600,
+                  whiteSpace: 'nowrap', cursor: 'pointer',
+                  border:     selectedBodyPart === null ? 'none' : '1px solid #C8DCF0',
+                  background: selectedBodyPart === null ? '#4878A8' : '#fff',
+                  color:      selectedBodyPart === null ? '#fff' : '#4878A8',
+                }}
+              >
+                すべての角度
+              </button>
+              {ANGLE_FILTER_OPTIONS.map(opt => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setSelectedBodyPart(opt.id)}
+                  style={{
+                    flexShrink: 0, padding: '7px 14px', borderRadius: '999px', fontSize: '12px', fontWeight: 600,
+                    whiteSpace: 'nowrap', cursor: 'pointer',
+                    border:     selectedBodyPart === opt.id ? 'none' : '1px solid #C8DCF0',
+                    background: selectedBodyPart === opt.id ? '#4878A8' : '#fff',
+                    color:      selectedBodyPart === opt.id ? '#fff' : '#4878A8',
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* ── 一覧(スクロール領域) ── */}
         <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '12px 16px 24px' }}>
           {loadState === 'loading' && (
@@ -269,12 +390,21 @@ export default function PhotoTimelineView({
               写真の読み込みに失敗しました
             </p>
           )}
-          {loadState === 'ready' && groups.length === 0 && (
+          {loadState === 'ready' && groups.length === 0 && photos.length === 0 && (
             <div style={{ textAlign: 'center', padding: '48px 16px', color: '#8AAAC8' }}>
               <p style={{ fontSize: '28px', marginBottom: '8px' }}>📷</p>
               <p style={{ fontSize: '12px', lineHeight: 1.7 }}>
                 まだ写真がありません。<br />
                 「撮影する」または「選択して追加」から登録できます。
+              </p>
+            </div>
+          )}
+          {/* 写真カルテ Phase2: 写真自体はあるが、来店/角度フィルターの結果が0件のケース。
+              上の「まだ写真がありません」(=写真自体が無い)とは文言を分ける。 */}
+          {loadState === 'ready' && groups.length === 0 && photos.length > 0 && (
+            <div style={{ textAlign: 'center', padding: '48px 16px', color: '#8AAAC8' }}>
+              <p style={{ fontSize: '12px', lineHeight: 1.7 }}>
+                選択した条件に一致する写真がありません。
               </p>
             </div>
           )}

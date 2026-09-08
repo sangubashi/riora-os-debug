@@ -18,7 +18,7 @@ import type { TimelinePhoto } from '../../../src/lib/photos/photoApiClient'
 
 function photo(overrides: Partial<TimelinePhoto>): TimelinePhoto {
   return {
-    id: 'p', visitId: null, visitDate: null, menuName: null,
+    id: 'p', visitId: null, visitDate: null, visitCountAt: null, menuName: null,
     bodyPart: 'nose', photoType: 'progress', storagePath: 's', takenAt: '2026-09-01T00:00:00Z',
     ...overrides,
   }

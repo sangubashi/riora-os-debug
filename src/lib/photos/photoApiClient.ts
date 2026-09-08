@@ -131,6 +131,8 @@ export interface TimelinePhoto {
   id:           string
   visitId:      string | null
   visitDate:    string | null
+  /** brain_visits.visit_count_at(来店回数)。visit_id未設定の写真はnull(写真カルテ Phase2)。 */
+  visitCountAt: number | null
   menuName:     string | null
   bodyPart:     string
   photoType:    PhotoType
@@ -142,6 +144,7 @@ interface TimelinePhotoApiRow {
   id:           string
   visitId:      string | null
   visitDate?:   string | null
+  visitCountAt?: number | null
   menuName?:    string | null
   bodyPart:     string
   photoType:    PhotoType
@@ -174,14 +177,15 @@ export async function listCustomerPhotosTimeline(
   if (!body.success || !body.photos) return []
 
   return body.photos.map(p => ({
-    id:          p.id,
-    visitId:     p.visitId,
-    visitDate:   p.visitDate ?? null,
-    menuName:    p.menuName ?? null,
-    bodyPart:    p.bodyPart,
-    photoType:   p.photoType,
-    storagePath: p.storagePath,
-    takenAt:     p.takenAt,
+    id:           p.id,
+    visitId:      p.visitId,
+    visitDate:    p.visitDate ?? null,
+    visitCountAt: p.visitCountAt ?? null,
+    menuName:     p.menuName ?? null,
+    bodyPart:     p.bodyPart,
+    photoType:    p.photoType,
+    storagePath:  p.storagePath,
+    takenAt:      p.takenAt,
   }))
 }
 

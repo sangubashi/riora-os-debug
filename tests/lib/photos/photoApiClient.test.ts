@@ -145,11 +145,11 @@ describe('uploadCustomerPhoto', () => {
 })
 
 describe('listCustomerPhotosTimeline', () => {
-  it('既存の一覧APIをGETし、menuName/visitDateを含めて返す', async () => {
+  it('既存の一覧APIをGETし、menuName/visitDate/visitCountAtを含めて返す', async () => {
     mockFetch.mockResolvedValue(jsonResponse({
       success: true,
       photos: [{
-        id: 'p1', visitId: 'v1', visitDate: '2026-09-01', menuName: 'フェイシャル',
+        id: 'p1', visitId: 'v1', visitDate: '2026-09-01', visitCountAt: 3, menuName: 'フェイシャル',
         bodyPart: 'face_front', photoType: 'progress', storagePath: 's/p1.webp', takenAt: '2026-09-01T00:00:00Z',
       }],
     }))
@@ -159,18 +159,18 @@ describe('listCustomerPhotosTimeline', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1)
     expect((mockFetch.mock.calls[0][0] as string)).toBe('/api/customers/customer-1/photos?limit=60')
     expect(result).toEqual([{
-      id: 'p1', visitId: 'v1', visitDate: '2026-09-01', menuName: 'フェイシャル',
+      id: 'p1', visitId: 'v1', visitDate: '2026-09-01', visitCountAt: 3, menuName: 'フェイシャル',
       bodyPart: 'face_front', photoType: 'progress', storagePath: 's/p1.webp', takenAt: '2026-09-01T00:00:00Z',
     }])
   })
 
-  it('menuName/visitDateが無い写真はnullで補完する', async () => {
+  it('menuName/visitDate/visitCountAtが無い写真はnullで補完する(写真カルテ Phase2)', async () => {
     mockFetch.mockResolvedValue(jsonResponse({
       success: true,
       photos: [{ id: 'p1', visitId: null, bodyPart: 'nose', photoType: 'progress', storagePath: 's', takenAt: 't' }],
     }))
     const result = await listCustomerPhotosTimeline('customer-1')
-    expect(result[0]).toMatchObject({ visitDate: null, menuName: null })
+    expect(result[0]).toMatchObject({ visitDate: null, visitCountAt: null, menuName: null })
   })
 
   it('APIがsuccess:falseの場合は空配列を返す', async () => {
