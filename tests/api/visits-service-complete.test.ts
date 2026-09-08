@@ -4,11 +4,13 @@ import { POST } from '../../app/api/visits/service-complete/route';
 import { getRepos } from '../../app/lib/repos';
 import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
 import { canAccessCustomer } from '@/lib/auth/canAccessCustomer';
+import { linkUnattachedPhotosToVisit } from '@/lib/photos/linkPhotosToVisit';
 import type { Customer, Menu, Visit } from '../../src/types/riora.types';
 
 vi.mock('../../app/lib/repos', () => ({ getRepos: vi.fn() }));
 vi.mock('@/lib/auth/extractStaffFromRequest', () => ({ extractStaffFromRequest: vi.fn() }));
 vi.mock('@/lib/auth/canAccessCustomer', () => ({ canAccessCustomer: vi.fn() }));
+vi.mock('@/lib/photos/linkPhotosToVisit', () => ({ linkUnattachedPhotosToVisit: vi.fn() }));
 
 const STAFF = {
   authUserId: 'auth-uid-1', staffBrainId: 'staff-1',
@@ -102,6 +104,7 @@ describe('POST /api/visits/service-complete (RecordServiceCompletion)', () => {
     mockRepos.menuRepo.listByStore.mockResolvedValue([MENU]);
     mockRepos.visitRepo.findByCustomerAndDate.mockResolvedValue(null);
     mockRepos.visitRepo.createSequenced.mockResolvedValue({ ...EXISTING_VISIT, id: 'visit-new' });
+    vi.mocked(linkUnattachedPhotosToVisit).mockResolvedValue({ ok: true, linkedCount: 0 });
   });
 
   it('当日分のvisitが無い場合はcreateSequenced()で新規作成する(created:true)', async () => {
@@ -237,5 +240,53 @@ describe('POST /api/visits/service-complete (RecordServiceCompletion)', () => {
     const res = await POST(buildRequest(VALID_PAYLOAD));
 
     expect(res.status).toBe(500);
+  });
+
+  describe('写真カルテ Phase 1: 写真→visit自動紐付け(非致命的)', () => {
+    it('新規作成時、customerId/visitId/visitDateを渡してlinkUnattachedPhotosToVisitを呼ぶ', async () => {
+      const res = await POST(buildRequest(VALID_PAYLOAD));
+
+      expect(res.status).toBe(201);
+      expect(linkUnattachedPhotosToVisit).toHaveBeenCalledWith({
+        customerId: 'cust-1',
+        visitId:    'visit-new',
+        visitDate:  EXISTING_VISIT.visitDate,
+      });
+    });
+
+    it('既存visit更新時、既存visitのid/visitDateを渡してlinkUnattachedPhotosToVisitを呼ぶ', async () => {
+      mockRepos.visitRepo.findByCustomerAndDate.mockResolvedValue(EXISTING_VISIT);
+
+      const res = await POST(buildRequest(VALID_PAYLOAD));
+
+      expect(res.status).toBe(200);
+      expect(linkUnattachedPhotosToVisit).toHaveBeenCalledWith({
+        customerId: 'cust-1',
+        visitId:    'visit-1',
+        visitDate:  EXISTING_VISIT.visitDate,
+      });
+    });
+
+    it('ケース5: 写真紐付けがok:falseを返しても、visit作成自体は201で成功する', async () => {
+      vi.mocked(linkUnattachedPhotosToVisit).mockResolvedValue({ ok: false, error: 'db down' });
+
+      const res = await POST(buildRequest(VALID_PAYLOAD));
+      const body = await res.json();
+
+      expect(res.status).toBe(201);
+      expect(body).toEqual({ success: true, visitId: 'visit-new', created: true });
+    });
+
+    it('ケース5: 写真紐付けが例外をthrowしても、visit更新自体は200で成功する', async () => {
+      mockRepos.visitRepo.findByCustomerAndDate.mockResolvedValue(EXISTING_VISIT);
+      vi.mocked(linkUnattachedPhotosToVisit).mockRejectedValue(new Error('network error'));
+
+      const res = await POST(buildRequest(VALID_PAYLOAD));
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(body).toEqual({ success: true, visitId: 'visit-1', created: false });
+      expect(mockRepos.visitRepo.updateNextBookingMade).toHaveBeenCalledWith('visit-1', true);
+    });
   });
 });

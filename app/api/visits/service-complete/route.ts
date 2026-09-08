@@ -15,6 +15,11 @@
  *   触らない)。無ければvisitRepo.createSequenced()で新規作成する(source既定値
  *   'staff_input'。CSV取込のreconcile()が後からstaffId/menuId/金額を正しい値に
  *   上書きする前提の設計。既存のcsvImportPipeline.ts/recordProposalOutcome.tsは無変更)。
+ * - 写真カルテ「写真→visit自動紐付け」Phase 1: visitが解決された直後(既存発見/新規作成の
+ *   いずれも)に、同一顧客・同一visit_date(JST暦日)でvisit_id未設定(NULL)の写真を
+ *   そのvisitへ紐付ける(linkUnattachedPhotosToVisit、src/lib/photos/linkPhotosToVisit.ts)。
+ *   brain_visitsの作成/採番ロジックには関与しない下流の非致命的処理で、失敗しても
+ *   本APIの成功レスポンス(接客ログ保存自体)には影響させない。
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getRepos } from '../../../lib/repos';
@@ -23,6 +28,7 @@ import { toValidationErrorResponse } from '../../_schemas/common';
 import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
 import { canAccessCustomer } from '@/lib/auth/canAccessCustomer';
 import { buildMenuLookup, resolveMenuId } from '@/lib/import/menuResolver';
+import { linkUnattachedPhotosToVisit } from '@/lib/photos/linkPhotosToVisit';
 
 function todayDateOnly(): string {
   return new Date().toISOString().slice(0, 10);
@@ -80,6 +86,22 @@ export async function POST(req: NextRequest) {
 
     if (existing) {
       await repos.visitRepo.updateNextBookingMade(existing.id, input.nextBookingMade);
+
+      // 写真カルテ Phase 1(非致命的・visit_count_at等には一切影響しない): 同一顧客・
+      // 同一visit_date(JST暦日)でvisit_id未設定の写真をこのvisitへ紐付ける。
+      try {
+        const linkResult = await linkUnattachedPhotosToVisit({
+          customerId: input.customerId,
+          visitId:    existing.id,
+          visitDate:  existing.visitDate,
+        });
+        if (!linkResult.ok) {
+          console.warn('[service-complete] photo link failed (non-fatal):', linkResult.error);
+        }
+      } catch (e) {
+        console.warn('[service-complete] photo link failed (non-fatal):', e);
+      }
+
       return NextResponse.json({ success: true, visitId: existing.id, created: false }, { status: 200 });
     }
 
@@ -100,6 +122,21 @@ export async function POST(req: NextRequest) {
       voiceMemoUrl: null,
       visitScore: 0,
     });
+
+    // 写真カルテ Phase 1(非致命的・visit_count_at等には一切影響しない): 同一顧客・
+    // 同一visit_date(JST暦日)でvisit_id未設定の写真をこのvisitへ紐付ける。
+    try {
+      const linkResult = await linkUnattachedPhotosToVisit({
+        customerId: input.customerId,
+        visitId:    visit.id,
+        visitDate:  visit.visitDate,
+      });
+      if (!linkResult.ok) {
+        console.warn('[service-complete] photo link failed (non-fatal):', linkResult.error);
+      }
+    } catch (e) {
+      console.warn('[service-complete] photo link failed (non-fatal):', e);
+    }
 
     return NextResponse.json({ success: true, visitId: visit.id, created: true }, { status: 201 });
   } catch (e) {
