@@ -167,16 +167,36 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
             <div style={{ marginTop: '36px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {data.homecareItems.length > 0 && (
                 <Card title="今回のホームケア">
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
                     {data.homecareItems.map(item => (
-                      <div key={item.productName}>
-                        <p style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: PALETTE.text }}>
-                          {item.productName}
-                        </p>
-                        {(item.frequency || item.timing) && (
-                          <p style={{ margin: '4px 0 0', fontSize: '12px', color: PALETTE.muted, lineHeight: 1.6 }}>
-                            {[item.frequency, item.timing].filter(Boolean).join(' ・ ')}
+                      <div key={item.productName} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div>
+                          <p style={{ margin: 0, fontSize: '11px', letterSpacing: '0.06em', color: PALETTE.muted }}>
+                            商品名
                           </p>
+                          <p style={{ margin: '2px 0 0', fontSize: '14px', fontWeight: 700, color: PALETTE.text }}>
+                            {item.productName}
+                          </p>
+                        </div>
+                        {item.timing && (
+                          <div>
+                            <p style={{ margin: 0, fontSize: '11px', letterSpacing: '0.06em', color: PALETTE.muted }}>
+                              使い方
+                            </p>
+                            <p style={{ margin: '2px 0 0', fontSize: '12px', color: PALETTE.text, lineHeight: 1.6 }}>
+                              {item.timing}
+                            </p>
+                          </div>
+                        )}
+                        {item.frequency && (
+                          <div>
+                            <p style={{ margin: 0, fontSize: '11px', letterSpacing: '0.06em', color: PALETTE.muted }}>
+                              タイミング
+                            </p>
+                            <p style={{ margin: '2px 0 0', fontSize: '12px', color: PALETTE.text, lineHeight: 1.6 }}>
+                              {item.frequency}
+                            </p>
+                          </div>
                         )}
                       </div>
                     ))}
