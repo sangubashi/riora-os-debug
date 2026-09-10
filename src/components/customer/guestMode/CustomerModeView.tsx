@@ -18,14 +18,33 @@
  * デザイン方針: アイボリー×ベージュ×ゴールド×ダークブラウン。大きな余白・細い境界線・
  * 控えめなシャドウ。業務アプリ感を避け、美容サロンらしい落ち着いた高級感を優先する。
  */
-import { useState, type ReactNode } from 'react'
-import { X } from 'lucide-react'
+import { useState, type ReactNode, type ComponentType } from 'react'
+import { Playfair_Display, Shippori_Mincho } from 'next/font/google'
+import {
+  X,
+  Leaf,
+  CalendarDays,
+  Flower2,
+  Maximize2,
+  Droplet,
+  Sparkles,
+  CircleDot,
+  Waves,
+  CloudFog,
+  type LucideProps,
+} from 'lucide-react'
 import {
   useCustomerModeData,
   CUSTOMER_MODE_ANGLES,
   type CustomerModeAngleId,
   type SkinTagChip,
 } from './customerModeData'
+
+// ロゴ用: エレガントな欧文セリフ体(イタリック)。高級サロンのブランドロゴらしい質感のため
+// システム標準フォントのitalic指定をやめ、専用フォントを読み込む(PHASE GUEST-MODE-1-DESIGN)。
+const logoFont = Playfair_Display({ subsets: ['latin'], weight: '600', style: 'italic', display: 'swap' })
+// 見出し・タブ・カードタイトル用: 上品な明朝体。本文の数値・説明文は可読性優先でシステム標準のまま。
+const headingFont = Shippori_Mincho({ subsets: ['latin'], weight: '600', display: 'swap' })
 
 const PALETTE = {
   bg: '#F7F2EA',
@@ -34,7 +53,19 @@ const PALETTE = {
   gold: '#AD8A54',
   text: '#3E3226',
   muted: '#8A7A65',
-  shadow: '0 4px 24px rgba(60,45,25,0.07)',
+  shadow: '0 4px 24px rgba(60,45,25,0.06)',
+}
+
+/** 肌状態タグの線画アイコン対応(絵文字・色ベタ塗りドットの代替、PHASE GUEST-MODE-1-DESIGN)。
+ *  未知のラベルはSparklesにフォールバックする。 */
+const SKIN_TAG_ICONS: Record<string, ComponentType<LucideProps>> = {
+  '乾燥': Droplet,
+  '毛穴': CircleDot,
+  '赤み': Flower2,
+  'ハリ': Sparkles,
+  'ニキビ': CircleDot,
+  'たるみ': Waves,
+  'くすみ': CloudFog,
 }
 
 interface Props {
@@ -67,14 +98,26 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
         }}
       >
         <div>
-          <p style={{ margin: 0, fontSize: '19px', fontStyle: 'italic', fontWeight: 600, color: PALETTE.gold }}>
-            ✿ Salon Riora
+          <p
+            style={{
+              margin: 0, display: 'flex', alignItems: 'center', gap: '6px',
+              fontSize: '20px', color: PALETTE.gold, letterSpacing: '0.01em',
+              fontFamily: logoFont.style.fontFamily,
+            }}
+          >
+            <Flower2 size={16} strokeWidth={1.4} color={PALETTE.gold} />
+            Salon Riora
           </p>
-          <p style={{ margin: '2px 0 0', fontSize: '10px', letterSpacing: '0.1em', color: PALETTE.muted }}>
+          <p style={{ margin: '2px 0 0', fontSize: '10px', letterSpacing: '0.14em', color: PALETTE.muted }}>
             {customerName}様
           </p>
         </div>
-        <p style={{ margin: 0, fontSize: '17px', fontWeight: 600, color: PALETTE.text, whiteSpace: 'nowrap' }}>
+        <p
+          style={{
+            margin: 0, fontSize: '18px', color: PALETTE.text, letterSpacing: '0.04em',
+            whiteSpace: 'nowrap', fontFamily: headingFont.style.fontFamily,
+          }}
+        >
           お肌の変化を一緒に確認しましょう
         </p>
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -95,7 +138,7 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
 
       {/* ── スクロール領域(「1画面目」+「スクロール部分」を1つの連続スクロールにまとめる) ── */}
       <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-        <div style={{ maxWidth: '980px', margin: '0 auto', padding: '24px 28px 48px' }}>
+        <div style={{ maxWidth: '1140px', margin: '0 auto', padding: '24px 24px 48px' }}>
 
           {/* 角度タブ */}
           <div style={{ display: 'flex', gap: '32px', borderBottom: `1px solid ${PALETTE.border}`, marginBottom: '20px' }}>
@@ -106,9 +149,10 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
                 onClick={() => setAngle(a.id)}
                 style={{
                   background: 'none', border: 'none', cursor: 'pointer',
-                  padding: '0 0 12px', fontSize: '15px', fontWeight: 600,
+                  padding: '0 0 12px', fontSize: '15px', letterSpacing: '0.06em',
                   color: angle === a.id ? PALETTE.text : PALETTE.muted,
                   borderBottom: angle === a.id ? `2px solid ${PALETTE.gold}` : '2px solid transparent',
+                  fontFamily: headingFont.style.fontFamily,
                 }}
               >
                 {a.label}
@@ -128,6 +172,7 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
                   label="前回"
                   url={referenceUrl}
                   visitCountAt={pair?.reference?.visitCountAt ?? null}
+                  visitDate={pair?.reference?.visitDate ?? pair?.reference?.takenAt ?? null}
                   emptyText="前回の写真はまだありません"
                   onExpand={referenceUrl ? () => setLightboxUrl(referenceUrl) : undefined}
                 />
@@ -135,6 +180,7 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
                   label="今回"
                   url={currentUrl}
                   visitCountAt={pair?.current?.visitCountAt ?? null}
+                  visitDate={pair?.current?.visitDate ?? pair?.current?.takenAt ?? null}
                   emptyText="まだ写真がありません"
                   onExpand={currentUrl ? () => setLightboxUrl(currentUrl) : undefined}
                 />
@@ -155,9 +201,9 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
                   borderRadius: '18px', boxShadow: PALETTE.shadow, display: 'flex', alignItems: 'stretch',
                 }}
               >
-                <InfoBarItem emoji="🌿" label="今回の施術" value={data.currentMenuName ?? '本日のメニューは準備中です'} />
+                <InfoBarItem icon={Leaf} label="今回の施術" value={data.currentMenuName ?? '本日のメニューは準備中です'} />
                 <div style={{ width: '1px', background: PALETTE.border }} />
-                <InfoBarItem emoji="🗓" label="次回の目安" value={data.nextVisitLabel ?? 'ご来店後にご案内します'} />
+                <InfoBarItem icon={CalendarDays} label="次回の目安" value={data.nextVisitLabel ?? 'ご来店後にご案内します'} />
               </div>
             </>
           )}
@@ -268,15 +314,30 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
   )
 }
 
+/** "2026-08-21"や完全なISO日時のどちらでも「8月21日」形式に整形する(表示専用の軽量ヘルパー)。 */
+function formatVisitDateLabel(dateStr: string | null): string | null {
+  if (!dateStr) return null
+  const d = new Date(dateStr)
+  if (Number.isNaN(d.getTime())) return null
+  return `${d.getMonth() + 1}月${d.getDate()}日`
+}
+
 function PhotoPanel({
-  label, url, visitCountAt, emptyText, onExpand,
+  label, url, visitCountAt, visitDate, emptyText, onExpand,
 }: {
   label: string
   url: string | undefined
   visitCountAt: number | null
+  visitDate: string | null
   emptyText: string
   onExpand?: () => void
 }) {
+  const dateLabel = formatVisitDateLabel(visitDate)
+  const captionParts = [
+    visitCountAt != null ? `来店${visitCountAt}回目` : null,
+    dateLabel,
+  ].filter(Boolean)
+
   return (
     <div>
       <div
@@ -287,7 +348,11 @@ function PhotoPanel({
       >
         {url ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          <img
+            src={url}
+            alt={`${label}の写真`}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+          />
         ) : (
           <div
             style={{
@@ -298,35 +363,26 @@ function PhotoPanel({
             {emptyText}
           </div>
         )}
-        <span
-          style={{
-            position: 'absolute', top: '12px', left: '12px',
-            background: 'rgba(255,255,255,0.9)', color: PALETTE.text,
-            fontSize: '12px', fontWeight: 700, padding: '4px 12px', borderRadius: '999px',
-          }}
-        >
-          {label}
-        </span>
         {onExpand && (
           <button
             type="button"
             onClick={onExpand}
-            aria-label="拡大"
+            aria-label={`${label}の写真を拡大`}
             style={{
               position: 'absolute', bottom: '12px', right: '12px',
               width: '36px', height: '36px', borderRadius: '50%',
               background: 'rgba(255,255,255,0.92)', border: 'none', color: PALETTE.text,
               display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-              fontSize: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
             }}
           >
-            ⤢
+            <Maximize2 size={15} strokeWidth={1.6} />
           </button>
         )}
       </div>
-      {visitCountAt != null && (
+      {captionParts.length > 0 && (
         <p style={{ textAlign: 'center', margin: '10px 0 0', fontSize: '12px', color: PALETTE.muted }}>
-          来店{visitCountAt}回目
+          {captionParts.join(' ・ ')}
         </p>
       )}
     </div>
@@ -337,30 +393,42 @@ function SkinTagRow({ tags }: { tags: SkinTagChip[] }) {
   if (tags.length === 0) return <div />
   return (
     <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
-      {tags.map(tag => (
-        <span
-          key={tag.label}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: '6px',
-            fontSize: '12px', fontWeight: 600, color: PALETTE.text,
-            background: PALETTE.card, border: `1px solid ${PALETTE.border}`,
-            borderRadius: '999px', padding: '6px 14px',
-          }}
-        >
-          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: tag.color, display: 'inline-block' }} />
-          {tag.label}
-        </span>
-      ))}
+      {tags.map(tag => {
+        const Icon = SKIN_TAG_ICONS[tag.label] ?? Sparkles
+        return (
+          <span
+            key={tag.label}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: '7px',
+              fontSize: '12px', fontWeight: 600, color: PALETTE.text, letterSpacing: '0.02em',
+              background: PALETTE.card, border: `1px solid ${PALETTE.border}`,
+              borderRadius: '999px', padding: '6px 15px',
+            }}
+          >
+            <Icon size={13} strokeWidth={1.6} color={tag.color} />
+            {tag.label}
+          </span>
+        )
+      })}
     </div>
   )
 }
 
-function InfoBarItem({ emoji, label, value }: { emoji: string; label: string; value: string }) {
+function InfoBarItem({
+  icon: Icon, label, value,
+}: { icon: ComponentType<LucideProps>; label: string; value: string }) {
   return (
-    <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '12px', padding: '18px 20px' }}>
-      <span style={{ fontSize: '20px' }}>{emoji}</span>
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '14px', padding: '18px 20px' }}>
+      <span
+        style={{
+          width: '34px', height: '34px', borderRadius: '50%', flexShrink: 0,
+          background: PALETTE.bg, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+      >
+        <Icon size={16} strokeWidth={1.4} color={PALETTE.gold} />
+      </span>
       <div>
-        <p style={{ margin: 0, fontSize: '11px', letterSpacing: '0.08em', color: PALETTE.muted }}>{label}</p>
+        <p style={{ margin: 0, fontSize: '11px', letterSpacing: '0.1em', color: PALETTE.muted }}>{label}</p>
         <p style={{ margin: '2px 0 0', fontSize: '14px', fontWeight: 700, color: PALETTE.text }}>{value}</p>
       </div>
     </div>
@@ -375,7 +443,12 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
         padding: '18px 20px', boxShadow: PALETTE.shadow,
       }}
     >
-      <p style={{ margin: '0 0 12px', fontSize: '11px', letterSpacing: '0.14em', color: PALETTE.gold, fontWeight: 700 }}>
+      <p
+        style={{
+          margin: '0 0 14px', fontSize: '13px', letterSpacing: '0.08em', color: PALETTE.gold,
+          fontFamily: headingFont.style.fontFamily,
+        }}
+      >
         {title}
       </p>
       {children}
