@@ -135,12 +135,12 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
             onClick={onClose}
             aria-label="お客様モードを終了"
             style={{
-              width: '40px', height: '40px', borderRadius: '50%', flexShrink: 0,
-              background: PALETTE.card, border: `1px solid ${PALETTE.border}`, color: PALETTE.muted,
+              width: '52px', height: '52px', borderRadius: '50%', flexShrink: 0,
+              background: PALETTE.card, border: `1.5px solid ${PALETTE.gold}`, color: PALETTE.text,
               display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
             }}
           >
-            <X size={16} strokeWidth={2} />
+            <X size={22} strokeWidth={2.2} />
           </button>
         </div>
       </div>
