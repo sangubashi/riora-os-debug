@@ -318,10 +318,17 @@ export default function CustomerBottomSheet({
   const [libraryPickerFiles, setLibraryPickerFiles] = useState<File[]>([]);
 
   const handleLibraryFilesSelected = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const fileList = e.target.files;
-    e.target.value = ''; // 同じファイルを連続選択できるようリセット
-    if (!fileList || fileList.length === 0) return;
-    setLibraryPickerFiles(Array.from(fileList));
+    const input = e.target;
+    // FileList → 通常配列への変換を、input.valueのリセットより先に行う。
+    // 順序を逆にする(先にvalue=''してからe.target.filesを見る)と、実機によっては
+    // 直前に取得したFileList参照そのものの長さが0になり、次のガード節で無言のまま
+    // returnしてしまう(「選択して追加」で写真を選んでも確認画面に進まない症状の原因)。
+    // filesを先にプレーン配列へコピーしておけば、その後input.valueを何度リセットしても
+    // 影響を受けない。
+    const files = input.files ? Array.from(input.files) : [];
+    input.value = ''; // 同じファイルを連続選択できるようリセット
+    if (files.length === 0) return;
+    setLibraryPickerFiles(files);
     setShowPhotoLibraryPicker(true);
   }, []);
 
@@ -1547,13 +1554,31 @@ export default function CustomerBottomSheet({
                         {/* <input type="file" multiple>自体はここに置く(iOS Safariのファイル選択
                             ダイアログはユーザークリックと同期して呼ばないと確実に開かないため)。
                             起動はPhotoTimelineView側の「選択して追加」ボタン(onOpenLibraryPicker
-                            経由でlibraryInputRef.current?.click()を呼ぶ)から行う。 */}
+                            経由でlibraryInputRef.current?.click()を呼ぶ)から行う。
+                            display:noneにはしない — iOS Safariはdisplay:noneのinput[type=file]に
+                            対してプログラム的な.click()を呼んでもネイティブの写真選択シートが
+                            開かないことがある既知の挙動があるため(実機で「選択して追加」を押しても
+                            無反応になる症状の原因)。レイアウトツリーには残しつつ視覚的にのみ隠す
+                            (いわゆるvisually-hiddenパターン)ことで、.click()経由の起動を確実にする。 */}
                         <input
                           ref={libraryInputRef}
                           type="file"
                           accept="image/*"
                           multiple
-                          style={{ display: 'none' }}
+                          style={{
+                            position: 'fixed',
+                            top: 0,
+                            left: 0,
+                            width: '1px',
+                            height: '1px',
+                            padding: 0,
+                            margin: '-1px',
+                            overflow: 'hidden',
+                            clip: 'rect(0, 0, 0, 0)',
+                            whiteSpace: 'nowrap',
+                            border: 0,
+                            opacity: 0,
+                          }}
                           onChange={handleLibraryFilesSelected}
                         />
                       </div>
