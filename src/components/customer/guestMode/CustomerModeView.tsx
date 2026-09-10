@@ -31,6 +31,7 @@ import {
   CircleDot,
   Waves,
   CloudFog,
+  ImageOff,
   type LucideProps,
 } from 'lucide-react'
 import {
@@ -93,7 +94,7 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
           gridTemplateColumns: '1fr auto 1fr',
           alignItems: 'center',
           padding: 'max(20px, calc(env(safe-area-inset-top) + 14px)) 28px 16px',
-          background: PALETTE.card,
+          background: PALETTE.bg,
           borderBottom: `1px solid ${PALETTE.border}`,
         }}
       >
@@ -108,8 +109,13 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
             <Flower2 size={16} strokeWidth={1.4} color={PALETTE.gold} />
             Salon Riora
           </p>
-          <p style={{ margin: '2px 0 0', fontSize: '10px', letterSpacing: '0.14em', color: PALETTE.muted }}>
-            {customerName}様
+          <p
+            style={{
+              margin: '4px 0 0', fontSize: '9px', letterSpacing: '0.2em', color: PALETTE.muted,
+              textTransform: 'uppercase',
+            }}
+          >
+            Japanese High-End Aesthetic Salon
           </p>
         </div>
         <p
@@ -120,14 +126,17 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
         >
           お肌の変化を一緒に確認しましょう
         </p>
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '14px' }}>
+          <p style={{ margin: 0, fontSize: '11px', letterSpacing: '0.06em', color: PALETTE.muted, whiteSpace: 'nowrap' }}>
+            {customerName}様
+          </p>
           <button
             type="button"
             onClick={onClose}
             aria-label="お客様モードを終了"
             style={{
-              width: '40px', height: '40px', borderRadius: '50%',
-              background: PALETTE.bg, border: `1px solid ${PALETTE.border}`, color: PALETTE.muted,
+              width: '40px', height: '40px', borderRadius: '50%', flexShrink: 0,
+              background: PALETTE.card, border: `1px solid ${PALETTE.border}`, color: PALETTE.muted,
               display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
             }}
           >
@@ -343,7 +352,8 @@ function PhotoPanel({
       <div
         style={{
           position: 'relative', aspectRatio: '5 / 4', borderRadius: '16px', overflow: 'hidden',
-          background: '#EFE8DA', border: `1px solid ${PALETTE.border}`,
+          background: '#EFE8DA',
+          border: url ? `1px solid ${PALETTE.border}` : `1.5px dashed ${PALETTE.border}`,
         }}
       >
         {url ? (
@@ -356,10 +366,12 @@ function PhotoPanel({
         ) : (
           <div
             style={{
-              width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '100%', height: '100%', display: 'flex', flexDirection: 'column', gap: '10px',
+              alignItems: 'center', justifyContent: 'center',
               color: PALETTE.muted, fontSize: '12px', textAlign: 'center', padding: '16px',
             }}
           >
+            <ImageOff size={26} strokeWidth={1.3} color={PALETTE.gold} />
             {emptyText}
           </div>
         )}
