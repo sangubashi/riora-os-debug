@@ -134,3 +134,33 @@ export async function uploadBatch(
     s.status === 'fulfilled' ? s.value : { itemId: items[i].id, ok: false, error: 'unexpected_failure' }
   )
 }
+
+export interface BatchUploadSummary {
+  successCount: number
+  failureCount: number
+  /** 呼び出し側(PhotoLibraryPickerView.tsx)がtoast等で表示するための文言。 */
+  message:      string
+  isError:      boolean
+}
+
+/**
+ * uploadBatch()の結果から、ユーザー向けの要約メッセージを組み立てる(純粋関数)。
+ * 「選択して追加」経路で失敗が既存の各サムネイル下の小さな赤文字のみに留まり
+ * 気づかれにくかった問題への対応(呼び出し側でtoast表示する際の文言をここで決定する)。
+ */
+export function summarizeUploadResults(results: UploadBatchItemResult[]): BatchUploadSummary {
+  const successCount = results.filter(r => r.ok).length
+  const failureCount = results.length - successCount
+
+  if (failureCount === 0) {
+    return { successCount, failureCount, message: `${successCount}枚登録しました`, isError: false }
+  }
+  if (successCount === 0) {
+    return { successCount, failureCount, message: `登録に失敗しました（${failureCount}枚）`, isError: true }
+  }
+  return {
+    successCount, failureCount,
+    message: `${successCount}枚登録しました（${failureCount}枚は失敗）`,
+    isError: true,
+  }
+}

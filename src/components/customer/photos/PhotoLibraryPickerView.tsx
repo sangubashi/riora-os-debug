@@ -14,10 +14,12 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { toast } from 'sonner'
 import { BODY_PART_OPTIONS, bodyPartLabel } from '@/lib/photos/bodyParts'
 import {
   buildBatchItems,
   revokeBatchItemPreviews,
+  summarizeUploadResults,
   uploadBatch,
   type BatchPhotoItem,
 } from '@/lib/photos/batchUpload'
@@ -71,23 +73,45 @@ export default function PhotoLibraryPickerView({ customerId, visitId, files, onC
     onClose()
   }
 
+  // 「選択して追加」経路で失敗しても画面が変化せず気づけない問題への対応
+  // (無言失敗を禁止する)。uploadBatch自体は現状Promise.allSettledで例外を投げない設計だが、
+  // 予期しない例外(将来の変更・環境依存の不具合等)でphaseが'uploading'のまま固まって
+  // 何も表示されない事態を避けるため、必ずtry/catchで受け止めてtoast表示までたどり着かせる。
   const runUpload = async (targets: BatchPhotoItem[]) => {
     if (targets.length === 0) return
     const targetIds = new Set(targets.map(t => t.id))
     setPhase('uploading')
     setItems(prev => prev.map(it => (targetIds.has(it.id) ? { ...it, status: 'uploading', error: undefined } : it)))
 
-    const results = await uploadBatch(customerId, visitId, targets)
-    const resultById = new Map(results.map(r => [r.itemId, r]))
+    try {
+      const results = await uploadBatch(customerId, visitId, targets)
+      const resultById = new Map(results.map(r => [r.itemId, r]))
 
-    setItems(prev =>
-      prev.map(it => {
-        const r = resultById.get(it.id)
-        if (!r) return it
-        return r.ok ? { ...it, status: 'success' } : { ...it, status: 'error', error: r.error }
-      })
-    )
-    setPhase('done')
+      setItems(prev =>
+        prev.map(it => {
+          const r = resultById.get(it.id)
+          if (!r) return it
+          return r.ok ? { ...it, status: 'success' } : { ...it, status: 'error', error: r.error }
+        })
+      )
+      setPhase('done')
+
+      const summary = summarizeUploadResults(results)
+      if (summary.isError) {
+        toast.error(summary.message)
+      } else {
+        toast.success(summary.message)
+      }
+    } catch (e) {
+      // uploadBatch自体が予期せず例外を投げた場合でも、対象アイテムをエラー状態にして
+      // 必ずtoastで知らせる(「押したのに何も起きない」状態を残さない)。
+      const message = e instanceof Error ? e.message : 'upload_failed'
+      setItems(prev =>
+        prev.map(it => (targetIds.has(it.id) ? { ...it, status: 'error', error: message } : it))
+      )
+      setPhase('done')
+      toast.error('登録に失敗しました。もう一度お試しください')
+    }
   }
 
   const handleRegister = () => { void runUpload(items) }
