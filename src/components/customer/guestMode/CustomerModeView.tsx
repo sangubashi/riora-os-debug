@@ -79,6 +79,12 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
   const data = useCustomerModeData(customerId)
   const [angle, setAngle] = useState<CustomerModeAngleId>('face_front')
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+  /**
+   * 「過去の写真・来店履歴」でタップされた来店回のid(PHASE GUEST-MODE-2)。
+   * 現時点では選択状態を保持するのみで、実際の比較表示切り替えは別Phaseで実装する
+   * (タップ→選択の導線とデータ取得までが今回のスコープ)。
+   */
+  const [selectedVisitId, setSelectedVisitId] = useState<string | null>(null)
 
   const pair = data.anglePairs[angle]
   const currentUrl = pair?.current ? data.photoUrls[pair.current.id] : undefined
@@ -233,23 +239,25 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
                             {item.productName}
                           </p>
                         </div>
-                        {item.timing && (
-                          <div>
-                            <p style={{ margin: 0, fontSize: '11px', letterSpacing: '0.06em', color: PALETTE.muted }}>
-                              使い方
-                            </p>
-                            <p style={{ margin: '2px 0 0', fontSize: '12px', color: PALETTE.text, lineHeight: 1.6 }}>
-                              {item.timing}
-                            </p>
-                          </div>
-                        )}
+                        {/* 2026-09-11: frequency/timingのラベルが入れ替わっていた表示バグを修正
+                            (frequency=使用頻度・timing=使用タイミング。値自体は無変更)。 */}
                         {item.frequency && (
                           <div>
                             <p style={{ margin: 0, fontSize: '11px', letterSpacing: '0.06em', color: PALETTE.muted }}>
-                              タイミング
+                              使用頻度
                             </p>
                             <p style={{ margin: '2px 0 0', fontSize: '12px', color: PALETTE.text, lineHeight: 1.6 }}>
                               {item.frequency}
+                            </p>
+                          </div>
+                        )}
+                        {item.timing && (
+                          <div>
+                            <p style={{ margin: 0, fontSize: '11px', letterSpacing: '0.06em', color: PALETTE.muted }}>
+                              使用タイミング
+                            </p>
+                            <p style={{ margin: '2px 0 0', fontSize: '12px', color: PALETTE.text, lineHeight: 1.6 }}>
+                              {item.timing}
                             </p>
                           </div>
                         )}
@@ -262,7 +270,7 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
               {!!data.goalNote?.trim() && (
                 <Card title="お客様の目標">
                   <p style={{ margin: 0, fontSize: '14px', color: PALETTE.text, lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>
-                    「{data.goalNote}」
+                    {customerName}様の目標：{data.goalNote}
                   </p>
                 </Card>
               )}
@@ -281,6 +289,51 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
                         {point}
                       </span>
                     ))}
+                  </div>
+                </Card>
+              )}
+
+              {/* 過去の写真・来店履歴 — 将来のPhase B(比較表示切り替え)への入り口(PHASE GUEST-MODE-2)。
+                  今回はタップ→選択の導線のみ。実際に比較対象を切り替える処理は別Phaseで実装する。 */}
+              {data.visits.length > 0 && (
+                <Card title="過去の写真・来店履歴">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {data.visits.map((visit, i) => {
+                      const visitNumber = data.visits.length - i
+                      const dateLabel = formatVisitDateLabel(visit.visitDate)
+                      const selected = selectedVisitId === visit.id
+                      return (
+                        <button
+                          key={visit.id}
+                          type="button"
+                          onClick={() => setSelectedVisitId(selected ? null : visit.id)}
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            width: '100%', textAlign: 'left', cursor: 'pointer',
+                            padding: '12px 14px', borderRadius: '12px',
+                            background: selected ? PALETTE.bg : 'transparent',
+                            border: `1px solid ${selected ? PALETTE.gold : PALETTE.border}`,
+                          }}
+                        >
+                          <span style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
+                            <span style={{ fontSize: '13px', fontWeight: 700, color: PALETTE.text }}>
+                              来店{visitNumber}回目
+                            </span>
+                            <span style={{ fontSize: '12px', color: PALETTE.muted }}>
+                              {[dateLabel, visit.menuName].filter(Boolean).join(' ・ ')}
+                            </span>
+                          </span>
+                          <span
+                            style={{
+                              fontSize: '11px', fontWeight: 600, color: selected ? PALETTE.gold : PALETTE.muted,
+                              flexShrink: 0, marginLeft: '12px',
+                            }}
+                          >
+                            {selected ? '選択中' : '比較に選ぶ'}
+                          </span>
+                        </button>
+                      )
+                    })}
                   </div>
                 </Card>
               )}

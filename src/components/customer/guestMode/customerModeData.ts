@@ -54,7 +54,7 @@ export interface AnglePhotoPair {
   reference: TimelinePhoto | null
 }
 
-interface VisitHistoryEntry {
+export interface VisitHistoryEntry {
   id: string
   visitDate: string
   menuName: string | null
@@ -153,6 +153,12 @@ export interface CustomerModeData {
   homecareItems: HomecareCardItem[]
   goalNote: string | null
   treatmentPoints: string[]
+  /**
+   * 来店履歴(最大30件、visit_date降順・既存API仕様のまま)。
+   * 「過去の写真・来店履歴」入り口用(PHASE GUEST-MODE-2)。amount/staffNameは
+   * お客様モードには一切表示しないため、この型(id/visitDate/menuNameのみ)で保持する。
+   */
+  visits: VisitHistoryEntry[]
 }
 
 const EMPTY_DATA: CustomerModeData = {
@@ -166,6 +172,7 @@ const EMPTY_DATA: CustomerModeData = {
   homecareItems: [],
   goalNote: null,
   treatmentPoints: [],
+  visits: [],
 }
 
 export function useCustomerModeData(customerId: string): CustomerModeData {
@@ -261,6 +268,7 @@ export function useCustomerModeData(customerId: string): CustomerModeData {
         homecareItems,
         goalNote,
         treatmentPoints,
+        visits,
       })
     })()
 
