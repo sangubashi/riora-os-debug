@@ -152,13 +152,20 @@ const LOG_ITEMS: Array<{
 ];
 type LogKey = (typeof LOG_ITEMS)[number]['key'];
 
-/** 実施済みアクションボタン */
+/**
+ * 実施済みアクションボタン
+ *
+ * 2026-09-11仕様変更: 「ホームケア説明した」「次回来店を提案した」「商品提案した」
+ * 「商品を購入した」の4項目を削除。次回提案・店販提案は既にStaffProposalSection/
+ * ProductProposalSection(brain_staff_proposals/brain_product_proposals、実際の提案文・
+ * 結果まで記録)と重複しており、こちらは単純なフラグのみで情報量が少ない
+ * (本番実測: customer_action_logsの該当4種は合計1件のみ、brain_staff_proposals/
+ * brain_product_proposalsは0件で、いずれもほぼ未使用と確認済み)。
+ * ActionType/ACTION_TYPE_LABELS(src/types/index.ts)自体は他機能と共有の型のため、
+ * この配列からのみ削除しラベル定義は残す。
+ */
 const ACTION_BUTTONS: Array<{ action: ActionType; emoji: string; label: string }> = [
   { action: 'line_sent',           emoji: '📱', label: 'LINE送信した' },
-  { action: 'homecare_explained',  emoji: '🧴', label: 'ホームケア説明した' },
-  { action: 'rebook_recommended',  emoji: '🗓️', label: '次回来店を提案した' },
-  { action: 'product_recommended', emoji: '🛍', label: '商品提案した' },
-  { action: 'product_purchased',   emoji: '✅', label: '商品を購入した' },
 ];
 
 type SectionKey = 'homecare' | 'line' | 'voice' | 'lineSendLog' | 'karteImport';
@@ -416,6 +423,9 @@ export default function CustomerBottomSheet({
   // ── ホームケア使い方カード（PHASE HC-4） ────────────────────────────────────────
   const [expandedUsageCards, setExpandedUsageCards] = useState<Set<string>>(new Set());
   const [copiedUsageProduct, setCopiedUsageProduct] = useState<string | null>(null);
+  /** 2026-09-11: 事実のみ(商品名・使い方・タイミング)のLINEコピー用。お客様名・来店情報・
+   *  内部メモは一切含めない別ボタン(既存のメッセージをコピー=staffMessage/AI生成文とは別物)。 */
+  const [copiedFactsProduct, setCopiedFactsProduct] = useState<string | null>(null);
 
   // ── ホームケアAIメッセージ生成（PHASE HC-6） ─────────────────────────────────
   const [aiHomecareMessages, setAiHomecareMessages] = useState<Record<string, string>>({});
@@ -730,11 +740,7 @@ export default function CustomerBottomSheet({
 
   // ─── Smart Completion Hint ────────────────────────────────────────────────
   const NEXT_HINT: Partial<Record<ActionType, string>> = {
-    line_sent:           '次は「再来提案」がおすすめです',
-    homecare_explained:  '次は「音声メモ」で肌状態を記録しましょう',
-    rebook_recommended:  '「次回提案」完了 — 次はLINEフォローを',
-    product_recommended: '提案完了 — 反応を音声メモで残しておきましょう',
-    product_purchased:   '🎉 購入確定！対応履歴に記録されました',
+    line_sent: '次は「再来提案」がおすすめです',
   };
 
   const showHint = useCallback((hint: string) => {
@@ -936,6 +942,25 @@ export default function CustomerBottomSheet({
       void recordLineSend('usage_card', productName);
     } catch { toast.error('コピーに失敗しました'); }
   }, [warnIfRecentlySent, recordLineSend]);
+
+  /**
+   * 2026-09-11: ホームケア情報(商品名・使い方・タイミング)のみをコピーする。
+   * copyUsageMessage()とは別物 — こちらはお客様名・来店情報・内部メモを一切含めない
+   * (staffMessage/AI生成メッセージは「○○様」から始まる個別宛メッセージのため対象外)。
+   * コピーを「LINE送信した」とみなし、実施済みチェックを自動でONにする(handleActionButton)。
+   */
+  const copyHomecareFacts = useCallback(async (productName: string, frequency: string, timing: string) => {
+    warnIfRecentlySent('usage_card');
+    const factText = `${productName}\n使用頻度：${frequency}\n使用タイミング：${timing}`;
+    try {
+      await navigator.clipboard.writeText(factText);
+      setCopiedFactsProduct(productName);
+      toast.success('LINEにコピーしました', { duration: 1500 });
+      setTimeout(() => setCopiedFactsProduct(null), 2500);
+      void recordLineSend('usage_card', productName);
+      void handleActionButton('line_sent');
+    } catch { toast.error('コピーに失敗しました'); }
+  }, [warnIfRecentlySent, recordLineSend, handleActionButton]);
 
   // ─── ホームケアAIメッセージ生成（PHASE HC-6・失敗時は辞書メッセージへフォールバック） ──
   const generateAiHomecareMessage = useCallback(async (
@@ -1932,6 +1957,19 @@ export default function CustomerBottomSheet({
                                           {copiedUsageProduct === p.productName ? '✓ コピーしました' : 'メッセージをコピー'}
                                         </button>
                                       </div>
+
+                                      {/* 2026-09-11: ホームケア情報のみ(商品名・使い方・タイミング)のLINEコピー。
+                                          お客様名・来店情報・内部メモは一切含めない。押すと「LINE送信した」を
+                                          自動でON(copyHomecareFacts内でhandleActionButton('line_sent')を呼ぶ)。 */}
+                                      <button
+                                        onClick={() => copyHomecareFacts(p.productName, guide.frequency, guide.timing)}
+                                        className={`w-full py-2 rounded-full text-xs font-bold border cursor-pointer transition-colors ${
+                                          copiedFactsProduct === p.productName
+                                            ? 'bg-[#34D399] text-white border-[#34D399]'
+                                            : 'bg-white text-[#34A070] border-[#34A070]'
+                                        }`}>
+                                        {copiedFactsProduct === p.productName ? '✓ コピーしました' : 'LINEにコピー'}
+                                      </button>
 
                                       {/* 接客ヒント（PHASE HC-7・ルールベースのみ・AI不使用） */}
                                       <div>
