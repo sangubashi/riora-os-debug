@@ -39,7 +39,6 @@ import {
   buildPreviousComparison,
 } from '@/lib/photos/comparisonSelection'
 import { getHomecareUsageGuide } from '@/lib/homecare/homecareUsageGuide'
-import { getMenuCycleDays } from '@/lib/homecare/generateHomecarePlan'
 
 export const CUSTOMER_MODE_ANGLES = [
   { id: 'face_front', label: '正面' },
@@ -147,7 +146,8 @@ export interface CustomerModeData {
   /** photoId → signed URL('detail'品質)。拡大表示にもそのまま流用する。 */
   photoUrls: Record<string, string>
   currentMenuName: string | null
-  nextVisitLabel: string | null
+  // 「次回の目安」は次回目安エンジン(PHASE NEXT-VISIT-1・src/lib/nextVisit/useNextVisit.ts)に
+  // 置き換えたため、このフックでは算出しない(CustomerModeView側でuseNextVisitを直接使う)。
   currentSkinTags: SkinTagChip[]
   previousSkinTags: SkinTagChip[]
   homecareItems: HomecareCardItem[]
@@ -166,7 +166,6 @@ const EMPTY_DATA: CustomerModeData = {
   anglePairs: {},
   photoUrls: {},
   currentMenuName: null,
-  nextVisitLabel: null,
   currentSkinTags: [],
   previousSkinTags: [],
   homecareItems: [],
@@ -251,18 +250,11 @@ export function useCustomerModeData(customerId: string): CustomerModeData {
       const photoUrls = await getBatchSignedUrls(customerId, photoIds, 'detail')
       if (cancelled) return
 
-      const cycleDays = currentMenuName ? getMenuCycleDays(currentMenuName) : null
-      const careHint = currentSkinTags[0]?.label ?? previousSkinTags[0]?.label ?? null
-      const nextVisitLabel = cycleDays
-        ? `約${Math.max(1, Math.round(cycleDays / 7))}週間後${careHint ? `、${careHint}ケア` : ''}`
-        : null
-
       setData({
         loading: false,
         anglePairs,
         photoUrls,
         currentMenuName,
-        nextVisitLabel,
         currentSkinTags,
         previousSkinTags,
         homecareItems,

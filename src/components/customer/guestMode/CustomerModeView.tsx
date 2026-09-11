@@ -35,6 +35,8 @@ import {
   InfoBarItem,
   formatVisitDateLabel,
 } from '@/components/customer/shared/PhotoCompareKit'
+import { useNextVisit } from '@/lib/nextVisit/useNextVisit'
+import { formatWeeksLabel, type NextVisitResult } from '@/lib/nextVisit/nextVisitEngine'
 
 // ロゴ用: エレガントな欧文セリフ体(イタリック)。高級サロンのブランドロゴらしい質感のため
 // システム標準フォントのitalic指定をやめ、専用フォントを読み込む(PHASE GUEST-MODE-1-DESIGN)。
@@ -56,6 +58,10 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
    * (タップ→選択の導線とデータ取得までが今回のスコープ)。
    */
   const [selectedVisitId, setSelectedVisitId] = useState<string | null>(null)
+
+  // 次回目安エンジン(PHASE NEXT-VISIT-1・2026-09-11)。お客様モードでは具体的な日付は出さず、
+  // 「約◯週間後」のみ表示する(次回予約が既にある場合のみ日付を表示)。
+  const nextVisit = useNextVisit(customerId)
 
   const pair = data.anglePairs[angle]
   const currentUrl = pair?.current ? data.photoUrls[pair.current.id] : undefined
@@ -189,7 +195,7 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
               >
                 <InfoBarItem icon={Leaf} label="今回の施術" value={data.currentMenuName ?? '本日のメニューは準備中です'} />
                 <div style={{ width: '1px', background: PALETTE.border }} />
-                <InfoBarItem icon={CalendarDays} label="次回の目安" value={data.nextVisitLabel ?? 'ご来店後にご案内します'} />
+                <NextVisitInfoCell result={nextVisit.result} />
               </div>
             </>
           )}
@@ -343,6 +349,54 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * 「次回の目安」セル(PHASE NEXT-VISIT-1・2026-09-11)。次回目安エンジンの結果を
+ * お客様向けに表示する。次回予約が既にある場合のみ具体的な日付(◯月◯日)を表示し、
+ * それ以外は「約◯週間後」のみ(具体的な日付は出さない)。手動上書きは次回予約と
+ * 同列には扱わない(あくまで目安のため、週数表示のまま)。
+ */
+function NextVisitInfoCell({ result }: { result: NextVisitResult | null }) {
+  if (!result || !result.estimatedDate) {
+    return <InfoBarItem icon={CalendarDays} label="次回の目安" value="ご来店後にご案内します" />
+  }
+
+  if (result.source === 'next_reservation') {
+    return (
+      <InfoBarItem
+        icon={CalendarDays}
+        label="次回のご予約"
+        value={formatVisitDateLabel(result.estimatedDate) ?? 'ご来店後にご案内します'}
+      />
+    )
+  }
+
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const target = new Date(`${result.estimatedDate}T00:00:00`)
+  const daysFromToday = Math.round((target.getTime() - today.getTime()) / 86_400_000)
+
+  return (
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '14px', padding: '18px 20px' }}>
+      <span
+        style={{
+          width: '34px', height: '34px', borderRadius: '50%', flexShrink: 0,
+          background: PALETTE.bg, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+      >
+        <CalendarDays size={16} strokeWidth={1.4} color={PALETTE.gold} />
+      </span>
+      <div>
+        <p style={{ margin: 0, fontSize: '11px', letterSpacing: '0.1em', color: PALETTE.muted }}>次回のお手入れ目安</p>
+        <p style={{ margin: '2px 0 0', fontSize: '14px', fontWeight: 700, color: PALETTE.text }}>
+          {formatWeeksLabel(daysFromToday)}
+        </p>
+        <p style={{ margin: '2px 0 0', fontSize: '9px', color: PALETTE.muted, lineHeight: 1.4 }}>
+          お肌の状態を見ながら、次回のお手入れ時期をご案内しています。
+        </p>
+      </div>
     </div>
   )
 }

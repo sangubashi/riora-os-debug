@@ -32,7 +32,6 @@ import {
   comparableGroups,
   buildPreviousComparison,
 } from '@/lib/photos/comparisonSelection'
-import { getReturnTiming, type ReturnTiming } from '@/lib/homecare/generateHomecarePlan'
 import { pickNotableSkinTags, type SkinTagChip } from '@/components/customer/guestMode/customerModeData'
 
 export const IPAD_KARTE_ANGLES = [
@@ -104,7 +103,8 @@ export interface IpadKarteData {
   currentSkinTags: SkinTagChip[]
   /** 当日visitのoptions/productsUsedをそのまま返す(手順テンプレート化はしない)。 */
   todayTreatmentPoints: string[]
-  returnTiming: ReturnTiming | null
+  // 「次回の目安」は次回目安エンジン(PHASE NEXT-VISIT-1・src/lib/nextVisit/useNextVisit.ts)に
+  // 置き換えたため、このフックでは算出しない(IpadStaffKarteView側でuseNextVisitを直接使う)。
 }
 
 const EMPTY_DATA: IpadKarteData = {
@@ -116,7 +116,6 @@ const EMPTY_DATA: IpadKarteData = {
   currentMenuName: null,
   currentSkinTags: [],
   todayTreatmentPoints: [],
-  returnTiming: null,
 }
 
 export function useIpadKarteData(customerId: string): IpadKarteData {
@@ -188,17 +187,6 @@ export function useIpadKarteData(customerId: string): IpadKarteData {
       const photoUrls = await getBatchSignedUrls(customerId, photoIds, 'detail')
       if (cancelled) return
 
-      // 次回の目安: 最終来店からの経過日数 + メニュー別推奨サイクル(getReturnTiming、
-      // 既存のReturnTimingBadgeと同一ロジック)。個客別サイクル(brain_customers側)は
-      // 本番DBに存在しないため使わない(2026-09-11のtoday-briefing調査で確認済み)。
-      let returnTiming: ReturnTiming | null = null
-      if (latestVisit) {
-        const daysSinceVisit = Math.floor(
-          (Date.now() - new Date(latestVisit.visitDate).getTime()) / 86_400_000
-        )
-        returnTiming = getReturnTiming(currentMenuName ?? '', daysSinceVisit)
-      }
-
       setData({
         loading: false,
         anglePairs,
@@ -208,7 +196,6 @@ export function useIpadKarteData(customerId: string): IpadKarteData {
         currentMenuName,
         currentSkinTags,
         todayTreatmentPoints,
-        returnTiming,
       })
     })()
 

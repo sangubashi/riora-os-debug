@@ -15,9 +15,201 @@
  * 写真比較UIはCustomerModeViewと共有(src/components/customer/shared/PhotoCompareKit.tsx)。
  */
 import { useState } from 'react'
-import { Flower2, CalendarDays, X } from 'lucide-react'
+import { Flower2, X, Pencil } from 'lucide-react'
 import { useIpadKarteData, IPAD_KARTE_ANGLES, type IpadKarteAngleId } from './ipadKarteData'
-import { PALETTE, headingFont, Card, PhotoPanel, SkinTagRow, InfoBarItem } from '@/components/customer/shared/PhotoCompareKit'
+import { PALETTE, headingFont, Card, PhotoPanel, SkinTagRow } from '@/components/customer/shared/PhotoCompareKit'
+import { useNextVisit } from '@/lib/nextVisit/useNextVisit'
+import { formatWeeksLabel, formatApproxDateLabel } from '@/lib/nextVisit/nextVisitEngine'
+
+const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
+/** クイック選択の候補(本日起点の週数)。 */
+const QUICK_WEEK_OPTIONS = [2, 4, 6, 8]
+
+function todayIsoUtc(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function addWeeksIso(weeks: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + weeks * 7)
+  return d.toISOString().slice(0, 10)
+}
+
+/** 対象日付を含む月のミニカレンダー(「カレンダー形式で視覚的に提示」の要件)。 */
+function MiniCalendar({ dateStr }: { dateStr: string }) {
+  const target = new Date(`${dateStr}T00:00:00`)
+  const year = target.getFullYear()
+  const month = target.getMonth()
+  const day = target.getDate()
+  const firstWeekday = new Date(year, month, 1).getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const cells: Array<number | null> = [
+    ...Array(firstWeekday).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ]
+
+  return (
+    <div>
+      <p style={{ margin: '0 0 8px', fontSize: '12px', fontWeight: 700, color: PALETTE.text, textAlign: 'center' }}>
+        {year}年{month + 1}月
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
+        {WEEKDAYS.map(w => (
+          <span key={w} style={{ fontSize: '10px', color: PALETTE.muted, textAlign: 'center' }}>{w}</span>
+        ))}
+        {cells.map((d, i) => (
+          <span
+            key={i}
+            style={{
+              textAlign: 'center', fontSize: '12px', padding: '6px 0', borderRadius: '8px',
+              background: d === day ? PALETTE.gold : 'transparent',
+              color: d === day ? '#FFFFFF' : d ? PALETTE.text : 'transparent',
+              fontWeight: d === day ? 700 : 400,
+            }}
+          >
+            {d ?? '·'}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 次回の目安カード。次回目安エンジン(useNextVisit)の結果表示と、担当スタッフによる
+ * 手動上書きの入力を担う。「次回提案(施術メニューの提案・StaffProposalSection)」とは
+ * 完全に別物であり、このカードでは一切扱わない。
+ */
+function NextVisitCard({ customerId }: { customerId: string }) {
+  const { loading, result, overrideDate, saving, setOverride } = useNextVisit(customerId)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+
+  if (loading) {
+    return (
+      <Card title="📅 次回の目安">
+        <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>読み込み中…</p>
+      </Card>
+    )
+  }
+  if (!result || !result.estimatedDate) {
+    return (
+      <Card title="📅 次回の目安">
+        <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>{result?.basisLabel ?? 'データがありません'}</p>
+      </Card>
+    )
+  }
+
+  const daysFromToday = Math.round(
+    (new Date(`${result.estimatedDate}T00:00:00`).getTime() - new Date(`${todayIsoUtc()}T00:00:00`).getTime()) / 86_400_000
+  )
+
+  const startEditing = () => {
+    setDraft(overrideDate ?? result.estimatedDate ?? todayIsoUtc())
+    setEditing(true)
+  }
+
+  return (
+    <Card title="📅 次回の目安">
+      {!editing ? (
+        <>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+            <div>
+              <p style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: PALETTE.text }}>
+                {formatWeeksLabel(daysFromToday)}（{formatApproxDateLabel(result.estimatedDate)}）
+              </p>
+              <p style={{ margin: '6px 0 0', fontSize: '11px', color: PALETTE.muted, lineHeight: 1.6 }}>
+                {result.basisLabel}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={startEditing}
+              aria-label="次回の目安を手動で設定する"
+              style={{
+                flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px',
+                fontSize: '11px', fontWeight: 600, color: PALETTE.gold,
+                background: PALETTE.bg, border: `1px solid ${PALETTE.border}`,
+                borderRadius: '999px', padding: '6px 12px', cursor: 'pointer', whiteSpace: 'nowrap',
+              }}
+            >
+              <Pencil size={12} strokeWidth={2} />
+              手動で設定
+            </button>
+          </div>
+          <div style={{ marginTop: '14px' }}>
+            <MiniCalendar dateStr={result.estimatedDate} />
+          </div>
+        </>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            {QUICK_WEEK_OPTIONS.map(w => (
+              <button
+                key={w}
+                type="button"
+                onClick={() => setDraft(addWeeksIso(w))}
+                style={{
+                  fontSize: '11px', fontWeight: 600, color: PALETTE.text,
+                  background: draft === addWeeksIso(w) ? PALETTE.gold : PALETTE.bg,
+                  border: `1px solid ${PALETTE.border}`, borderRadius: '999px', padding: '6px 12px', cursor: 'pointer',
+                }}
+              >
+                {w}週間後
+              </button>
+            ))}
+          </div>
+          <input
+            type="date"
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            style={{
+              padding: '8px 10px', borderRadius: '10px', border: `1px solid ${PALETTE.border}`,
+              fontSize: '13px', color: PALETTE.text,
+            }}
+          />
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              type="button"
+              disabled={saving || !draft}
+              onClick={async () => { const ok = await setOverride(draft); if (ok) setEditing(false) }}
+              style={{
+                flex: 1, padding: '10px', borderRadius: '999px', border: 'none', cursor: 'pointer',
+                background: PALETTE.gold, color: '#FFFFFF', fontSize: '12px', fontWeight: 700,
+                opacity: saving ? 0.6 : 1,
+              }}
+            >
+              {saving ? '保存中…' : 'この日付で設定'}
+            </button>
+            {overrideDate && (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={async () => { const ok = await setOverride(null); if (ok) setEditing(false) }}
+                style={{
+                  padding: '10px 14px', borderRadius: '999px', cursor: 'pointer',
+                  background: 'transparent', border: `1px solid ${PALETTE.border}`, color: PALETTE.muted, fontSize: '12px',
+                }}
+              >
+                自動算出に戻す
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              style={{
+                padding: '10px 14px', borderRadius: '999px', cursor: 'pointer',
+                background: 'transparent', border: 'none', color: PALETTE.muted, fontSize: '12px',
+              }}
+            >
+              キャンセル
+            </button>
+          </div>
+        </div>
+      )}
+    </Card>
+  )
+}
 
 interface Props {
   customerId: string
@@ -198,16 +390,8 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
                 </Card>
               )}
 
-              {data.returnTiming && (
-                <div
-                  style={{
-                    background: PALETTE.card, border: `1px solid ${PALETTE.border}`,
-                    borderRadius: '18px', boxShadow: PALETTE.shadow,
-                  }}
-                >
-                  <InfoBarItem icon={CalendarDays} label="次回の目安" value={data.returnTiming.label} />
-                </div>
-              )}
+              {/* 次回の目安(次回目安エンジン)。次回提案(施術メニューの提案)とは別項目 — 混同しない。 */}
+              <NextVisitCard customerId={customerId} />
             </div>
           </div>
         )}

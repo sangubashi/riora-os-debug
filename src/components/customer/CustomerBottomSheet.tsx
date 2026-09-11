@@ -49,11 +49,12 @@ import type { HomecarePlan, ServiceReplay } from '@/types';
 // ── ロジック層 ────────────────────────────────────────────────────────────────
 import {
   generateHomecarePlan,
-  getReturnTiming,
   type HomecarePlanInput,
 } from '@/lib/homecare/generateHomecarePlan';
 import { getHomecareUsageGuide } from '@/lib/homecare/homecareUsageGuide';
 import { getConversationHints } from '@/lib/homecare/homecareConversationHints';
+import { useNextVisit } from '@/lib/nextVisit/useNextVisit';
+import type { NextVisitResult } from '@/lib/nextVisit/nextVisitEngine';
 import { type MatchReason } from '@/lib/nextAction/knowledgeMatch';
 import { logAction, fetchRecentActions, type ActionLogRow } from '@/lib/actionLog';
 import { buildServiceReplay } from '@/lib/phase5/serviceReplay';
@@ -124,6 +125,45 @@ const TYPE_COPY: Record<string, { ng: string }> = {
   '信頼構築型':   { ng: '「今日だけの特別価格」などの圧力表現' },
   'VIP型':       { ng: '「他のお客様も使っています」などの一般化' },
 };
+
+/**
+ * 2026-09-11: ReturnTimingBadgeが表示するデータを、次回目安エンジン(NextVisitResult)から
+ * 組み立てる。バッジ自体の見た目(配色・アイコン・文言スタイル)は旧getReturnTiming()と
+ * 完全に同じ形に保つ(60日しきい値による危険表示等)。算出方法のみ差し替える
+ * (①手動上書き→②次回予約→③来店間隔の中央値→④メニュー別デフォルト)。
+ * isDanger/isOverdueは「最終来店からの経過日数」ではなく「算出済みの目安日からの
+ * 経過日数」で判定する(本人の来店パターンを踏まえた目安そのものが基準になるため、
+ * 旧ロジックより実態に即している)。
+ */
+function deriveReturnTimingFromNextVisit(result: NextVisitResult | null): {
+  label: string
+  cycleDays: number | null
+  isOverdue: boolean
+  isDanger: boolean
+} | null {
+  if (!result || !result.estimatedDate) return null
+
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const target = new Date(`${result.estimatedDate}T00:00:00`)
+  const daysUntil = Math.round((target.getTime() - today.getTime()) / 86_400_000)
+  const daysOverdue = -daysUntil
+
+  const isOverdue = daysOverdue > 0
+  const isDanger = daysOverdue >= 60
+
+  let label: string
+  if (isDanger) {
+    label = `⚠️ ${daysOverdue}日超過 — 失客リスク`
+  } else if (isOverdue) {
+    label = `再来時期超過 +${daysOverdue}日`
+  } else if (daysUntil <= 7) {
+    label = `再来推奨 あと${daysUntil}日`
+  } else {
+    label = `次回目安 あと${daysUntil}日`
+  }
+
+  return { label, cycleDays: result.cycleDays, isOverdue, isDanger }
+}
 
 /**
  * ホームケア使い方カードの customer_type別ワンポイント見出し（PHASE HOMECARE-V12-MVP-1）。
@@ -1200,7 +1240,11 @@ export default function CustomerBottomSheet({
   // ここで/api/proposals/by-nameを呼んで/api/proposals/fireを発火することはしない
   // (表示していない推奨文を「表示した」として学習パイプラインに記録するのを避けるため)。
   const aiNg = fallback?.ng ?? '';
-  const returnInfo = r ? getReturnTiming(r.menu, r.days_since_last_visit ?? 0) : null;
+  // 2026-09-11: ReturnTimingBadgeのデータソースを次回目安エンジンへ差し替え(凍結解除確認済み)。
+  // 見た目(バッジの形・配色・文言スタイル)は無変更、算出方法のみ差し替える
+  // (①手動上書き→②次回予約→③来店間隔の中央値→④メニュー別デフォルト、src/lib/nextVisit/参照)。
+  const nextVisit = useNextVisit(c?.id ?? '');
+  const returnInfo = deriveReturnTimingFromNextVisit(nextVisit.result);
 
   // ─── ─────────────────────────────────────────────────────────────────────────
   //  サブコンポーネント（state 共有のため関数内定義）
@@ -1270,7 +1314,9 @@ export default function CustomerBottomSheet({
         <div>
           <p className="text-[11px] font-semibold tracking-[0.08em]" style={{ color: col }}>再来推奨タイミング</p>
           <p className="text-sm font-bold mt-0.5" style={{ color: col }}>{returnInfo.label}</p>
-          <p className="text-[10px] text-[#9F7E6C] mt-0.5">推奨サイクル {returnInfo.cycleDays}日 / {r?.menu}</p>
+          <p className="text-[10px] text-[#9F7E6C] mt-0.5">
+            {returnInfo.cycleDays != null ? `推奨サイクル ${returnInfo.cycleDays}日 / ${r?.menu}` : nextVisit.result?.basisLabel}
+          </p>
         </div>
       </div>
     );
@@ -2270,18 +2316,22 @@ export default function CustomerBottomSheet({
                       <CustomerModeView
                         customerId={c.id}
                         customerName={c.name}
-                        onClose={() => setShowCustomerMode(false)}
+                        onClose={() => { setShowCustomerMode(false); void nextVisit.refetch(); }}
                       />,
                       document.body
                     )}
 
                     {/* iPadカルテ(PHASE IPAD-1)。お客様モードと同じくdocument.body直下へportal。
-                        並行稼働の試験画面のため、旧BottomSheet本体の表示・挙動には影響しない。 */}
+                        並行稼働の試験画面のため、旧BottomSheet本体の表示・挙動には影響しない。
+                        2026-09-11: 閉じたタイミングで次回目安のnextVisit.refetch()を呼ぶ
+                        (iPadカルテ側で手動上書きを設定/解除した場合、旧BottomSheet常時マウント側の
+                        useNextVisitは別インスタンスのため自動反映されない。実機確認で判明した
+                        表示ズレの修正)。 */}
                     {showIpadKarte && typeof document !== 'undefined' && createPortal(
                       <IpadStaffKarteView
                         customerId={c.id}
                         customerName={c.name}
-                        onClose={() => setShowIpadKarte(false)}
+                        onClose={() => { setShowIpadKarte(false); void nextVisit.refetch(); }}
                       />,
                       document.body
                     )}
