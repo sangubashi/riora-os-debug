@@ -19,6 +19,10 @@
  * Phase1-B③のスコープ外)。
  *
  * 使用API: GET /api/customers/[id]/product-proposals(Phase1-A実装済み・無変更)。
+ *
+ * 2026-09-11仕様変更: 単独カードではなく「前回のサマリー」カード内のサブセクションとして
+ * 埋め込む形に変更。外枠(背景色・角丸・padding)はCustomerBottomSheet側の親カードが持つため
+ * このコンポーネントは持たない(見出し・内容のみ)。
  */
 import { useState, useEffect, memo } from 'react'
 import { authedFetch } from '@/lib/api/authedFetch'
@@ -80,7 +84,7 @@ const ProductProposalSectionInner = memo(function ProductProposalSection({ custo
   const visible = proposals.slice(0, DISPLAY_LIMIT)
 
   return (
-    <div className="bg-[#F8F1F3] rounded-[22px] p-4">
+    <div>
       <p className="text-[11px] tracking-[0.18em] text-[#C8A58C] font-semibold mb-2.5">🛍 前回の店販提案</p>
 
       {loading ? (

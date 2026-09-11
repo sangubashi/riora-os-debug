@@ -85,8 +85,7 @@ import {
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import CustomerInsightPanel from '@/components/customer/CustomerInsightPanel';
 import NextActionPanel from '@/components/customer/NextActionPanel';
-import AIProposalCard from '@/components/customer/AIProposalCard';
-import CustomerRiskCard from '@/components/customer/CustomerRiskCard';
+import TodayFocusCard from '@/components/customer/TodayFocusCard';
 import ServiceReplayCard from '@/components/customer/ServiceReplayCard';
 import VoiceMemoSection from '@/components/customer/VoiceMemoSection';
 import KarteImportSection from '@/components/customer/KarteImportSection';
@@ -112,13 +111,17 @@ import CustomerModeView from '@/components/customer/guestMode/CustomerModeView';
 
 // ─── 定数 ────────────────────────────────────────────────────────────────────
 
-/** 顧客タイプ別: 接客ゴール + NG表現 */
-const TYPE_COPY: Record<string, { goal: string; ng: string }> = {
-  '慎重・不安型': { goal: '安心感を優先。強い提案は控えて信頼を積み上げる', ng: '「絶対に効果があります」などの断言表現' },
-  '感情重視型':   { goal: '感情的なつながりを強化。共感と温かい言葉を大切に', ng: '「データ上は〜」などの事務的・数値的な表現' },
-  '効果重視型':   { goal: '具体的な変化・数値を見せて次回予約につなげる', ng: '「効果には個人差があります」の多用' },
-  '信頼構築型':   { goal: '定期来店の習慣化を促進。焦らず丁寧に', ng: '「今日だけの特別価格」などの圧力表現' },
-  'VIP型':       { goal: '特別感を最大演出。他のお客様より一歩先のご案内', ng: '「他のお客様も使っています」などの一般化' },
+/**
+ * 顧客タイプ別: NG表現(ProposalOrchestrator由来の実データが無い場合のfallback)。
+ * 2026-09-11仕様変更: 接客ゴールの抽象的な推測文言(goal)は「今日の接客ポイント」から
+ * 廃止(事実ベースの表示に変更)したため削除。NGワードのfallbackとしてのみ残す。
+ */
+const TYPE_COPY: Record<string, { ng: string }> = {
+  '慎重・不安型': { ng: '「絶対に効果があります」などの断言表現' },
+  '感情重視型':   { ng: '「データ上は〜」などの事務的・数値的な表現' },
+  '効果重視型':   { ng: '「効果には個人差があります」の多用' },
+  '信頼構築型':   { ng: '「今日だけの特別価格」などの圧力表現' },
+  'VIP型':       { ng: '「他のお客様も使っています」などの一般化' },
 };
 
 /**
@@ -232,7 +235,6 @@ export default function CustomerBottomSheet({
   const {
     selectedCustomer:    storeCustomer,
     selectedReservation: storeReservation,
-    aiSuggestion,
     currentStaffId: currentStaffIdFromStore,
     setSelectedCustomer,
     setSelectedReservation,
@@ -1163,8 +1165,10 @@ export default function CustomerBottomSheet({
   // ─── 計算値 ────────────────────────────────────────────────────────────────
   const isDanger = !!c && (r?.days_since_last_visit ?? 0) >= 60;
   const fallback = c ? (TYPE_COPY[c.customer_type] ?? TYPE_COPY['慎重・不安型']) : null;
-  const aiAdvice = aiSuggestion?.strategy_logic?.adviceMessage
-    ?? (c && fallback ? `${c.name}様には「${fallback.goal}」を意識した接客を心がけましょう。` : '');
+  // 今日気をつけること固定ブロック用NGワード(2026-09-11: 顧客タイプ別の定型文のみを使用。
+  // 旧ProposalOrchestrator由来のavoidNoteは「今日の接客ポイント」ごと廃止したため、
+  // ここで/api/proposals/by-nameを呼んで/api/proposals/fireを発火することはしない
+  // (表示していない推奨文を「表示した」として学習パイプラインに記録するのを避けるため)。
   const aiNg = fallback?.ng ?? '';
   const returnInfo = r ? getReturnTiming(r.menu, r.days_since_last_visit ?? 0) : null;
 
@@ -1467,6 +1471,34 @@ export default function CustomerBottomSheet({
                 </div>
               )}
 
+              {/* 今日気をつけること + NGワード — 2026-09-11仕様変更: 禁忌事項と同じく
+                  最重要・常時表示（スクロールで隠れない・折りたたみ不可）の固定ブロックへ統合。
+                  NGワードは旧AIProposalCard.tsx(今日の接客ポイントカード内)にあった顧客タイプ別
+                  定型文(TYPE_COPY.ng)をそのまま移設したもの。 */}
+              {c && (
+                <div className="flex-shrink-0 px-5 pb-2">
+                  <div className="bg-[#FFF0F2] rounded-[22px] p-4 border border-[#F5D0D5]">
+                    <p className="text-[11px] tracking-[0.18em] text-[#C05060] font-semibold mb-2.5">
+                      ⚠️ 今日気をつけること
+                    </p>
+                    <div className="flex flex-col gap-2.5">
+                      {/* PHASE UX-3C: 今日のFocus(timeline_summary_cache.focus)は構造的に常にnullのため非表示化。
+                          取得ロジック自体は変更しない(ロジック変更禁止) */}
+                      {([
+                        { label: 'アレルギー',    value: allergyText },
+                        { label: '触れない話題',   value: ngTopics.length > 0 ? ngTopics.join('、') : null },
+                        { label: 'NGワード',      value: aiNg || null },
+                      ] as const).map(({ label, value }) => (
+                        <div key={label}>
+                          <p className="text-[10px] text-[#C8886E] tracking-[0.08em] mb-0.5">{label}</p>
+                          <p className="text-sm text-[#5C4033] leading-relaxed">{value || '登録なし'}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* SHEET コンテンツ（flex-1 で残り高さを埋める） */}
               <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               <AnimatePresence mode="wait">
@@ -1526,20 +1558,8 @@ export default function CustomerBottomSheet({
                         <GoalSection customerId={c.id} />
                       </ErrorBoundary>
 
-                      {/* デジタル顧客カルテ Phase1-B②: 💡前回の次回提案(brain_staff_proposals)。
-                          AI提案候補(BookingPromptSection等、下方に別途表示)とは明確に別カード。
-                          AI候補をここへ自動転記する処理は無い(StaffProposalSection.tsx参照)。 */}
-                      <ErrorBoundary label="StaffProposalSection" silentFail>
-                        <StaffProposalSection customerId={c.id} />
-                      </ErrorBoundary>
-
-                      {/* Phase 2-A: 情報構造整理。デジタル顧客カルテ Phase1-B③
-                          🛍前回の店販提案(brain_product_proposals)を上段(見る情報)へ移動。
-                          「前回の次回提案」の直後に置き、前回提案系をまとめて確認できる
-                          ようにする(コンポーネント内部のロジックは無変更・移動のみ)。 */}
-                      <ErrorBoundary label="ProductProposalSection" silentFail>
-                        <ProductProposalSection customerId={c.id} />
-                      </ErrorBoundary>
+                      {/* 前回の次回提案・前回の店販提案は2026-09-11仕様変更で「前回のサマリー」
+                          カード内(下方)へ移動済み(ロジック無変更・移動のみ)。 */}
 
                       {/* Phase 2-A: 情報構造整理。写真カルテ入口を上段(見る情報)へ移動。
                           Before/After比較UIは今回のスコープ外(未実装、無変更)。 */}
@@ -1586,73 +1606,80 @@ export default function CustomerBottomSheet({
                       {/* ════════════════════════════
                           PHASE UX-1: 5秒で接客準備できるブリーフィング
                       ════════════════════════════ */}
+                      {/* 「今日気をつけること」(アレルギー・触れない話題・NGワード)は
+                          2026-09-11仕様変更で画面最上部の固定ブロックへ統合済み(上記参照)。 */}
 
-                      {/* 今日気をつけること */}
-                      <div className="bg-[#FFF0F2] rounded-[22px] p-4 border border-[#F5D0D5]">
-                        <p className="text-[11px] tracking-[0.18em] text-[#C05060] font-semibold mb-2.5">
-                          ⚠️ 今日気をつけること
+                      {/* 🗂 前回のサマリー — 2026-09-11仕様変更: 前回施術・前回の肌状態・
+                          前回の施術記録・前回の次回提案・前回の店販提案の5項目を1枚のカードに
+                          統合。各サブセクションのfetch/更新ロジック自体は無変更で、外枠
+                          (背景色・角丸・padding)だけをこの親カードへ集約した。 */}
+                      <div className="bg-[#F8F1F3] rounded-[22px] p-4">
+                        <p className="text-[11px] tracking-[0.18em] text-[#C8A58C] font-semibold mb-3">
+                          🗂 前回のサマリー
                         </p>
-                        <div className="flex flex-col gap-2.5">
-                          {/* PHASE UX-3C: 今日のFocus(timeline_summary_cache.focus)は構造的に常にnullのため非表示化。
-                              取得ロジック自体は変更しない(ロジック変更禁止) */}
-                          {([
-                            { label: 'アレルギー',    value: allergyText },
-                            { label: '触れない話題',   value: ngTopics.length > 0 ? ngTopics.join('、') : null },
-                          ] as const).map(({ label, value }) => (
-                            <div key={label}>
-                              <p className="text-[10px] text-[#C8886E] tracking-[0.08em] mb-0.5">{label}</p>
-                              <p className="text-sm text-[#5C4033] leading-relaxed">{value || '登録なし'}</p>
+                        <div className="flex flex-col gap-4">
+                          {/* 前回施術 */}
+                          {visitHistory[0] && (
+                            <div>
+                              <p className="text-[11px] tracking-[0.18em] text-[#C8A58C] font-semibold mb-2.5">
+                                💆 前回施術
+                              </p>
+                              <div className="grid grid-cols-3 gap-2 text-center">
+                                <div>
+                                  <p className="text-[10px] text-[#9F7E6C] mb-1">来店日</p>
+                                  <p className="text-sm font-bold text-[#5C4033]">
+                                    {new Date(visitHistory[0].visitDate).toLocaleDateString('ja-JP', { month: 'long', day: 'numeric' })}
+                                  </p>
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-[10px] text-[#9F7E6C] mb-1">メニュー</p>
+                                  <p className="text-sm font-bold text-[#5C4033] truncate">
+                                    {visitHistory[0].menuName ?? '—'}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-[10px] text-[#9F7E6C] mb-1">金額</p>
+                                  <p className="text-sm font-bold text-[#5C4033]">
+                                    ¥{visitHistory[0].amount.toLocaleString()}
+                                  </p>
+                                </div>
+                              </div>
                             </div>
-                          ))}
+                          )}
+
+                          {/* デジタル顧客カルテ Phase1-B⑧: 📝前回の肌状態／🧴前回の施術記録
+                              (見る側・読み取り専用)。B④/B⑤が今日入力側で保存した
+                              brain_skin_records/brain_visits新4列を次回来店時に表示する。
+                              既存の「前回施術」カード(日付/メニュー/金額)とは表示項目が
+                              重複しない。今日自身のvisitは各コンポーネント内で除外する
+                              (todayVisitId一致判定＋visitDateの本日判定の二重チェック)。 */}
+                          <ErrorBoundary label="SkinConditionViewSection" silentFail>
+                            <SkinConditionViewSection customerId={c.id} todayVisitId={todayVisitId} />
+                          </ErrorBoundary>
+
+                          <ErrorBoundary label="TreatmentRecordViewSection" silentFail>
+                            <TreatmentRecordViewSection
+                              customerId={c.id}
+                              visitHistory={visitHistory}
+                              todayVisitId={todayVisitId}
+                            />
+                          </ErrorBoundary>
+
+                          {/* デジタル顧客カルテ Phase1-B②: 💡前回の次回提案(brain_staff_proposals)。
+                              AI提案候補(BookingPromptSection等)とは明確に別カード。AI候補を
+                              ここへ自動転記する処理は無い(StaffProposalSection.tsx参照)。
+                              2026-09-11: 画面上部から「前回のサマリー」カード内へ移動(ロジック無変更)。 */}
+                          <ErrorBoundary label="StaffProposalSection" silentFail>
+                            <StaffProposalSection customerId={c.id} />
+                          </ErrorBoundary>
+
+                          {/* 🛍前回の店販提案(brain_product_proposals)。
+                              2026-09-11: 画面上部から「前回のサマリー」カード内へ移動(ロジック無変更)。 */}
+                          <ErrorBoundary label="ProductProposalSection" silentFail>
+                            <ProductProposalSection customerId={c.id} />
+                          </ErrorBoundary>
                         </div>
                       </div>
-
-                      {/* 前回施術 */}
-                      {visitHistory[0] && (
-                        <div className="bg-[#F8F1F3] rounded-[22px] p-4">
-                          <p className="text-[11px] tracking-[0.18em] text-[#C8A58C] font-semibold mb-2.5">
-                            💆 前回施術
-                          </p>
-                          <div className="grid grid-cols-3 gap-2 text-center">
-                            <div>
-                              <p className="text-[10px] text-[#9F7E6C] mb-1">来店日</p>
-                              <p className="text-sm font-bold text-[#5C4033]">
-                                {new Date(visitHistory[0].visitDate).toLocaleDateString('ja-JP', { month: 'long', day: 'numeric' })}
-                              </p>
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-[10px] text-[#9F7E6C] mb-1">メニュー</p>
-                              <p className="text-sm font-bold text-[#5C4033] truncate">
-                                {visitHistory[0].menuName ?? '—'}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] text-[#9F7E6C] mb-1">金額</p>
-                              <p className="text-sm font-bold text-[#5C4033]">
-                                ¥{visitHistory[0].amount.toLocaleString()}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* デジタル顧客カルテ Phase1-B⑧: 📝前回の肌状態／🧴前回の施術記録
-                          (見る側・読み取り専用)。B④/B⑤が今日入力側で保存した
-                          brain_skin_records/brain_visits新4列を次回来店時に表示する。
-                          既存の「前回施術」カード(日付/メニュー/金額)とは表示項目が
-                          重複しない。今日自身のvisitは各コンポーネント内で除外する
-                          (todayVisitId一致判定＋visitDateの本日判定の二重チェック)。 */}
-                      <ErrorBoundary label="SkinConditionViewSection" silentFail>
-                        <SkinConditionViewSection customerId={c.id} todayVisitId={todayVisitId} />
-                      </ErrorBoundary>
-
-                      <ErrorBoundary label="TreatmentRecordViewSection" silentFail>
-                        <TreatmentRecordViewSection
-                          customerId={c.id}
-                          visitHistory={visitHistory}
-                          todayVisitId={todayVisitId}
-                        />
-                      </ErrorBoundary>
 
                       {/* 来店履歴（直近4件） */}
                       <div className="bg-[#F8F1F3] rounded-[22px] p-4">
@@ -1763,35 +1790,14 @@ export default function CustomerBottomSheet({
                         </ErrorBoundary>
                       )}
 
-                      {/* 接客コンテキスト（リスク・関係性・SmartFollow） */}
-                      {visible('storeLearning') && (
-                        <ErrorBoundary label="CustomerRiskCard" silentFail>
-                          <CustomerRiskCard
-                            customerId={c.id}
-                            customerName={c.name}
-                            visits={c.visits}
-                            totalSales={c.total_sales}
-                            lineResponseRate={c.line_response_rate}
-                            vipRank={c.vip_rank}
-                            churnRisk={c.churn_risk}
-                            daysSinceLastVisit={r.days_since_last_visit ?? 0}
-                            skinTags={skinTags}
-                            menuName={r.menu}
-                            avgPrice={c.avg_price}
-                            recommendedCycleDays={c.recommended_cycle_days}
-                          />
-                        </ErrorBoundary>
-                      )}
+                      {/* 「接客コンテキスト」(温度・関係性ステート等の抽象表示)は
+                          2026-09-11仕様変更で削除。 */}
 
-                      {/* 今日の接客ポイント(STAFF_PROPOSAL_LEARNING_PIPELINE: ProposalOrchestrator
-                          由来の実データへ差し替え。取得できない場合は従来のfallback文言(aiAdvice/
-                          aiNg、TYPE_COPYベース)をそのまま表示する。算出ロジック自体は無変更) */}
-                      <ErrorBoundary label="AIProposalCard" silentFail>
-                        <AIProposalCard
-                          customerId={c.id}
-                          fallbackAdvice={aiAdvice}
-                          fallbackNg={aiNg}
-                        />
+                      {/* 今日の接客ポイント — 2026-09-11仕様変更: customer_memories由来の
+                          事実(前回：〇〇)を表示する形に変更。NGワードは画面最上部の固定
+                          ブロックへ移設済み(TYPE_COPY.ng・上記参照)。 */}
+                      <ErrorBoundary label="TodayFocusCard" silentFail>
+                        <TodayFocusCard customerId={c.id} />
                       </ErrorBoundary>
 
                       {/* 再来推奨タイミング */}
@@ -2436,8 +2442,8 @@ export default function CustomerBottomSheet({
 
                       {/* デジタル顧客カルテ Phase1-B⑤: 🧴今日の施術記録(brain_visits.
                           options/products_used/treatment_memo)。「スタッフが今日実際に
-                          行った施術」の記録であり、AI提案(AIProposalCard/NextActionPanel/
-                          CustomerRiskCard/BookingPrompt/Handover等)とは完全に分離する。
+                          行った施術」の記録であり、AI提案(TodayFocusCard/NextActionPanel/
+                          BookingPrompt/Handover等)とは完全に分離する。
                           machineSettingsは今回のUIに含めない(仕様未確定のため)。
                           todayVisitId(既存ロジック・無変更)がnullの間は入力UIを出さず
                           案内のみ表示する(saveLog()/service-completeは変更しない)。 */}

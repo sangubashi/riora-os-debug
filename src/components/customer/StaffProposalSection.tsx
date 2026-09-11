@@ -18,6 +18,10 @@
  * 一覧取得(GET)は読み取り専用。取得した履歴を削除・上書きする処理は無い
  * (画面には最新1件のみ表示するが、APIレスポンス自体には一切手を加えない)。
  * PATCHは画面に表示中のproposal.idのみを対象にする(取り違え防止)。
+ *
+ * 2026-09-11仕様変更: 単独カードではなく「前回のサマリー」カード内のサブセクションとして
+ * 埋め込む形に変更。外枠(背景色・角丸・padding)はCustomerBottomSheet側の親カードが持つため
+ * このコンポーネントは持たない(見出し・内容のみ)。
  */
 import { useState, useEffect, useCallback, memo } from 'react'
 import { toast } from 'sonner'
@@ -102,7 +106,7 @@ const StaffProposalSectionInner = memo(function StaffProposalSection({ customerI
   }, [customerId, proposal, updating])
 
   return (
-    <div className="bg-[#F8F1F3] rounded-[22px] p-4">
+    <div>
       <p className="text-[11px] tracking-[0.18em] text-[#C8A58C] font-semibold mb-2.5">💡 前回の次回提案</p>
 
       {loading ? (
