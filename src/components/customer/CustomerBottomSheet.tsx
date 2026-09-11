@@ -110,6 +110,7 @@ import TreatmentRecordViewSection from '@/components/customer/TreatmentRecordVie
 import CustomerAITimelineTab from '@/components/customer/CustomerAITimelineTab';
 import CustomerModeView from '@/components/customer/guestMode/CustomerModeView';
 import IpadStaffKarteView from '@/components/customer/ipadKarte/IpadStaffKarteView';
+import IpadKarteSearchView from '@/components/customer/ipadKarte/IpadKarteSearchView';
 
 // ─── 定数 ────────────────────────────────────────────────────────────────────
 
@@ -362,6 +363,10 @@ export default function CustomerBottomSheet({
   // ── iPad専用スタッフカルテ(PHASE IPAD-1・2026-09-11)。お客様モードと同じ最小限の導線
   //    (ボタン1つ+この1state)。旧BottomSheet本体には一切触れない、並行稼働の試験画面。
   const [showIpadKarte, setShowIpadKarte] = useState(false);
+  // ── iPadカルテ検索(PHASE IPAD-2・2026-09-11)。現在開いている顧客とは無関係に、
+  //    名前・担当スタッフ名で別の顧客を検索してIpadStaffKarteViewへ直接遷移するための入口。
+  //    こちらもボタン1つ+この1stateのみの追加。
+  const [showIpadKarteSearch, setShowIpadKarteSearch] = useState(false);
 
   // ── 写真カルテ Phase2: 写真ライブラリから複数選択して登録 ──────────────────────
   // <input type="file" multiple>自体はこのコンポーネント側に置く(iOS Safariの
@@ -1499,8 +1504,8 @@ export default function CustomerBottomSheet({
                 <div className="absolute inset-x-0 flex justify-center" style={{ top: '12px' }}>
                   <div className="w-12 h-[5px] rounded-full bg-[#E8D5D8]" />
                 </div>
-                {/* お客様モード導線(PHASE GUEST-MODE-1)・iPadカルテ導線(PHASE IPAD-1)。
-                    既存レイアウトへの追加はこの2ボタンのみ。 */}
+                {/* お客様モード導線(PHASE GUEST-MODE-1)・iPadカルテ導線(PHASE IPAD-1)・
+                    iPadカルテ検索導線(PHASE IPAD-2)。既存レイアウトへの追加はこの3ボタンのみ。 */}
                 <div className="absolute flex items-center gap-1.5" style={{ top: '2px', left: '8px' }}>
                   <button
                     type="button"
@@ -1533,6 +1538,22 @@ export default function CustomerBottomSheet({
                     }}
                   >
                     🗂 iPadカルテ(β)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowIpadKarteSearch(true)}
+                    className="rounded-full flex items-center gap-1 whitespace-nowrap"
+                    style={{
+                      height: '36px', padding: '0 14px',
+                      background: '#FDF8EF',
+                      border: '1px solid #E8DFCF',
+                      color: '#AD8A54',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    🔍 カルテ検索
                   </button>
                 </div>
                 <button
@@ -2333,6 +2354,14 @@ export default function CustomerBottomSheet({
                         customerName={c.name}
                         onClose={() => { setShowIpadKarte(false); void nextVisit.refetch(); }}
                       />,
+                      document.body
+                    )}
+
+                    {/* iPadカルテ検索(PHASE IPAD-2)。現在開いている顧客(c)とは無関係に、
+                        別の顧客を検索して直接IpadStaffKarteViewへ遷移する入口。document.body直下へ
+                        portalする点・自己完結コンポーネントである点は他の2つの導線と同じ。 */}
+                    {showIpadKarteSearch && typeof document !== 'undefined' && createPortal(
+                      <IpadKarteSearchView onClose={() => setShowIpadKarteSearch(false)} />,
                       document.body
                     )}
 
