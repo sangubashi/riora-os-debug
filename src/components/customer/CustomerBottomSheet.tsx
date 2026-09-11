@@ -108,6 +108,7 @@ import SkinConditionViewSection from '@/components/customer/SkinConditionViewSec
 import TreatmentRecordViewSection from '@/components/customer/TreatmentRecordViewSection';
 import CustomerAITimelineTab from '@/components/customer/CustomerAITimelineTab';
 import CustomerModeView from '@/components/customer/guestMode/CustomerModeView';
+import IpadStaffKarteView from '@/components/customer/ipadKarte/IpadStaffKarteView';
 
 // ─── 定数 ────────────────────────────────────────────────────────────────────
 
@@ -317,6 +318,10 @@ export default function CustomerBottomSheet({
   //    起動状態を持つだけの最小限の導線(ボタン1つ+この1state)にとどめる。
   //    描画するCustomerModeView自体は完全に別コンポーネントツリー(自己完結fetch)。
   const [showCustomerMode, setShowCustomerMode] = useState(false);
+
+  // ── iPad専用スタッフカルテ(PHASE IPAD-1・2026-09-11)。お客様モードと同じ最小限の導線
+  //    (ボタン1つ+この1state)。旧BottomSheet本体には一切触れない、並行稼働の試験画面。
+  const [showIpadKarte, setShowIpadKarte] = useState(false);
 
   // ── 写真カルテ Phase2: 写真ライブラリから複数選択して登録 ──────────────────────
   // <input type="file" multiple>自体はこのコンポーネント側に置く(iOS Safariの
@@ -1448,24 +1453,42 @@ export default function CustomerBottomSheet({
                 <div className="absolute inset-x-0 flex justify-center" style={{ top: '12px' }}>
                   <div className="w-12 h-[5px] rounded-full bg-[#E8D5D8]" />
                 </div>
-                {/* お客様モード導線(PHASE GUEST-MODE-1)。既存レイアウトへの追加はこのボタン1つのみ。 */}
-                <button
-                  type="button"
-                  onClick={() => setShowCustomerMode(true)}
-                  className="absolute rounded-full flex items-center gap-1 whitespace-nowrap"
-                  style={{
-                    top: '2px', left: '8px',
-                    height: '36px', padding: '0 14px',
-                    background: '#FDF8EF',
-                    border: '1px solid #E8DFCF',
-                    color: '#AD8A54',
-                    fontSize: '12px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                >
-                  ✿ お客様モード
-                </button>
+                {/* お客様モード導線(PHASE GUEST-MODE-1)・iPadカルテ導線(PHASE IPAD-1)。
+                    既存レイアウトへの追加はこの2ボタンのみ。 */}
+                <div className="absolute flex items-center gap-1.5" style={{ top: '2px', left: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomerMode(true)}
+                    className="rounded-full flex items-center gap-1 whitespace-nowrap"
+                    style={{
+                      height: '36px', padding: '0 14px',
+                      background: '#FDF8EF',
+                      border: '1px solid #E8DFCF',
+                      color: '#AD8A54',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    ✿ お客様モード
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowIpadKarte(true)}
+                    className="rounded-full flex items-center gap-1 whitespace-nowrap"
+                    style={{
+                      height: '36px', padding: '0 14px',
+                      background: '#FDF8EF',
+                      border: '1px solid #E8DFCF',
+                      color: '#AD8A54',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    🗂 iPadカルテ(β)
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={close}
@@ -2248,6 +2271,17 @@ export default function CustomerBottomSheet({
                         customerId={c.id}
                         customerName={c.name}
                         onClose={() => setShowCustomerMode(false)}
+                      />,
+                      document.body
+                    )}
+
+                    {/* iPadカルテ(PHASE IPAD-1)。お客様モードと同じくdocument.body直下へportal。
+                        並行稼働の試験画面のため、旧BottomSheet本体の表示・挙動には影響しない。 */}
+                    {showIpadKarte && typeof document !== 'undefined' && createPortal(
+                      <IpadStaffKarteView
+                        customerId={c.id}
+                        customerName={c.name}
+                        onClose={() => setShowIpadKarte(false)}
                       />,
                       document.body
                     )}
