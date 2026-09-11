@@ -2,7 +2,8 @@
  * GET /api/today-briefing
  *
  * 今日タブ「来店前30秒ブリーフィング」画面用API。
- * 今日の予約（担当=ログイン中スタッフ、admin は全件）から「次のお客様」を特定し、
+ * 担当制撤廃(2026-09-11): 今日の予約は全スタッフ分を対象にする(旧: 担当=ログイン中
+ * スタッフのみ、admin は全件)。この中から「次のお客様」を特定し、
  * 禁忌 → 触れないこと → 今日の焦点 の優先順で最大3件の注意事項、詳細情報、
  * このあとの予約一覧を返す。
  *
@@ -39,7 +40,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '../../lib/repos'
-import { extractStaffFromRequest, type RequestingStaff } from '@/lib/auth/extractStaffFromRequest'
+import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest'
 import { resolveLegacyCustomerIds } from '@/lib/resolveLegacyCustomerIds'
 import { detectNotificationsForCustomer, type NotificationCustomerInput } from '@/lib/notifications/detectNotifications'
 import { countOverdueCustomers, type RosterCustomerInput, type DailyOverdueCounts } from '@/lib/todayBriefing/detectOverdueCustomers'
@@ -127,8 +128,8 @@ interface OverdueResult {
  * (再来推奨日超過・来店45日以上・店販60日以上・PHASE STAFF-NOTIFICATION-AI-2)。
  * 今日の予約の有無と無関係なデータのため、reservations.length===0の早期return
  * より前に呼び出せるよう独立した関数に切り出している(/api/notificationsの
- * 担当ロスター取得と同じ方針: is_internal_user除外・deleted_at除外・非管理者は
- * assigned_staff_idで絞る)。
+ * 担当ロスター取得と同じ方針: is_internal_user除外・deleted_at除外。担当制撤廃
+ * (2026-09-11)により、assigned_staff_idによる絞り込みは行わず全顧客を対象にする)。
  *
  * PHASE STAFF-NOTIFICATION-TAP-1(2026-08-01): 通知タップ→Customer Bottom Sheet
  * 遷移用に、該当した顧客のid・nameも合わせて返す(rosterクエリのselectにname追加のみ・
@@ -136,20 +137,14 @@ interface OverdueResult {
  */
 async function computeOverdueCounts(
   supabase: ReturnType<typeof getServiceClient>,
-  staff: RequestingStaff,
   /** 本日すでに予約が入っている顧客のbrain_customers.id。重複通知防止のため除外する。 */
   todayCustomerIds: string[]
 ): Promise<OverdueResult> {
-  let rosterQuery = supabase
+  const rosterQuery = supabase
     .from('brain_customers')
     .select('id, name, recommended_cycle_days')
     .eq('is_internal_user', false)
     .is('deleted_at', null)
-  if (!staff.isAdmin) {
-    rosterQuery = staff.staffBrainId
-      ? rosterQuery.eq('assigned_staff_id', staff.staffBrainId)
-      : rosterQuery.eq('id', '00000000-0000-0000-0000-000000000000') // 0件を保証するダミー条件
-  }
 
   const { data: rosterRows } = await rosterQuery
   const overdueRosterRows = (rosterRows ?? []).filter((r) => !todayCustomerIds.includes(r.id))
@@ -200,7 +195,7 @@ export async function GET(req: NextRequest) {
     const supabase = getServiceClient()
     const { start, end } = todayJst()
 
-    let query = supabase
+    const query = supabase
       .from('reservations')
       .select(`
         id,
@@ -229,10 +224,8 @@ export async function GET(req: NextRequest) {
       // 同一顧客の重複排除(直後)でcreated_at最新を優先するため、取得順はcreated_at降順にする。
       // 表示用の時系列順(scheduled_at昇順)への並び替えは重複排除の後に行う。
       .order('created_at', { ascending: false })
-
-    if (!staff.isAdmin) {
-      query = query.eq('staff_id', staff.authUserId)
-    }
+      // 担当制撤廃(2026-09-11): reservations.staff_idによる絞り込みは廃止し、全スタッフ分の
+      // 本日の予約を対象にする。
 
     const { data: rawData, error } = await query.limit(50)
     if (error) return NextResponse.json({ error: String(error) }, { status: 500 })
@@ -269,7 +262,7 @@ export async function GET(req: NextRequest) {
     // 再来推奨/来店45日/店販60日は今日の予約の有無と無関係な担当顧客ロスター起点の
     // データのため、reservations.length===0 の早期returnより前に計算する
     // (PHASE STAFF-NOTIFICATION-AI-2)。
-    const overdue = await computeOverdueCounts(supabase, staff, allCustomerIds)
+    const overdue = await computeOverdueCounts(supabase, allCustomerIds)
 
     if (reservations.length === 0) {
       return NextResponse.json<TodayBriefingResponse>({

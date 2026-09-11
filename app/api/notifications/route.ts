@@ -6,8 +6,8 @@
  * 都度計算するステートレス設計。既読/未読・7日expireはクライアント側の
  * 一時状態(useNotificationsStore)で扱う。
  *
- * AUTH-2準拠: スタッフは自分の担当顧客(assigned_staff_id=自分)の通知のみ。
- * 管理者は全顧客を対象にスキャンする。
+ * 担当制撤廃(2026-09-11): 全スタッフが全顧客を対象にスキャンする(旧AUTH-2の
+ * assigned_staff_id/reservations.staff_id によるスタッフ別絞り込みは廃止)。
  * 離脱予兆・売上・承認待ち等の管理者向け通知(設計書§1)はこのv1では未実装。
  *
  * 社内利用者除外(docs/NOTIFICATION_INTERNAL_USER_EXCLUSION.md): brain_customers.
@@ -47,21 +47,11 @@ export async function GET(req: NextRequest) {
     const supabase = getServiceClient()
     const internalUserIds = await getInternalUserIds(supabase)
 
-    // 注意: この customers は「担当顧客(assigned_staff_id)」の一覧であり、後段の
-    // 来店リマインドが対象とする「予約担当(reservations.staff_id)」とは範囲が異なる
-    // (代打・引き継ぎ等でassigned_staff_idと予約担当が食い違うケースがあるため)。
-    // customersが0件でも来店リマインドは独立して動く必要があるため、ここでは
-    // 早期returnしない。
-    let customerQuery = supabase
+    // 担当制撤廃(2026-09-11): 全顧客を対象にスキャンする(assigned_staff_idによる絞り込みは廃止)。
+    const customerQuery = supabase
       .from('brain_customers')
       .select('id, name, wedding_date, first_visit_date, assigned_staff_id')
       .is('deleted_at', null)
-
-    if (!staff.isAdmin) {
-      customerQuery = staff.staffBrainId
-        ? customerQuery.eq('assigned_staff_id', staff.staffBrainId)
-        : customerQuery.eq('id', '00000000-0000-0000-0000-000000000000') // 0件を保証するダミー条件
-    }
 
     const { data: customersData, error: customerError } = await customerQuery
     if (customerError) {
@@ -175,26 +165,21 @@ export async function GET(req: NextRequest) {
       notifications = detectNotifications(inputs)
     }
 
-    // ── 🔔 来店リマインド(§3-4): 前日〜当日の予約×担当本人 ──────────────────
-    // AUTH-2準拠: reservations.staff_id(auth.users.id空間)で絞る。
-    // today-briefingと同じ判定基準(staff_id一致)を使い、整合性を取る。
+    // ── 🔔 来店リマインド(§3-4): 前日〜当日の予約(全スタッフ分) ──────────────
+    // 担当制撤廃(2026-09-11): reservations.staff_idによる絞り込みは廃止し、全予約を対象にする。
     const { start: todayStart } = todayJst()
     const { end: tomorrowEnd } = tomorrowJst()
     // 「来店リマインド」は今後の来店予定のみを対象とする。completed(来店済み)・
     // cancelled・no_showまで含めてしまうと、既に来店済みの予約からも同じ文言の
     // 通知が生成され、同一顧客が同日に複数予約を持つ場合に重複表示される
     // (実例: LEE JAEHEON様、confirmed×1件+completed×1件で「本日ご来店」が2件表示)。
-    let reminderQuery = supabase
+    const reminderQuery = supabase
       .from('reservations')
       .select('id, brain_customer_id, staff_id, scheduled_at, created_at')
       .not('brain_customer_id', 'is', null)
       .in('status', ['confirmed', 'in_progress'])
       .gte('scheduled_at', todayStart)
       .lte('scheduled_at', tomorrowEnd)
-
-    if (!staff.isAdmin) {
-      reminderQuery = reminderQuery.eq('staff_id', staff.authUserId)
-    }
 
     const { data: upcomingReservations, error: reminderError } = await reminderQuery
     if (reminderError) {
@@ -310,16 +295,12 @@ export async function GET(req: NextRequest) {
       visitReminders = buildVisitReminders(reminderInputs)
     }
 
-    // ── 📋 新規予約(§1・§4): 週1CSV取込後の差分をcreated_atで近似 ─────────
-    // AUTH-2準拠: 来店リマインドと同じくreservations.staff_idで絞る。
-    let newReservationQuery = supabase
+    // ── 📋 新規予約(§1・§4): 週1CSV取込後の差分をcreated_atで近似(全スタッフ分) ──
+    // 担当制撤廃(2026-09-11): reservations.staff_idによる絞り込みは廃止。
+    const newReservationQuery = supabase
       .from('reservations')
       .select('id, brain_customer_id, staff_id, scheduled_at, created_at')
       .not('brain_customer_id', 'is', null)
-
-    if (!staff.isAdmin) {
-      newReservationQuery = newReservationQuery.eq('staff_id', staff.authUserId)
-    }
 
     const { data: allStaffReservations, error: newResvError } = await newReservationQuery
     if (newResvError) {
