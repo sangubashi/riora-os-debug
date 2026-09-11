@@ -1,21 +1,14 @@
 /**
- * canAccessCustomer.ts — AUTH-1 V2 共通アクセス判定
+ * canAccessCustomer.ts — 顧客カルテ閲覧アクセス判定
  *
- * ルール A': brain_visits の直近来店(visit_date最新)の staff_id = staffBrainId → 常時閲覧可
- * ルール B': 本日の予約担当（reservations.staff_id は auth.users.id 空間のため、
- *            brain_staff.user_id 経由で brain_staff.id へ変換した上で比較）      → 当日のみ閲覧可
- * ルール C : 来店履歴なし かつ 本日予約なし                                      → 全スタッフ閲覧可
- * 管理者(isAdmin=true)                                                          → 常時全件閲覧可
- *
- * 設計根拠: docs/AUTH1_V2_DESIGN.md
- *   旧Rule A(assigned_staff_id一致)は書き込み経路が存在せず54%しか埋まらないため廃止。
- *   旧Rule B(reservations.staff_idとstaffBrainIdの直接比較)はID空間不一致
- *   (reservations.staff_id=auth.users.id、staffBrainId=brain_staff.id)により
- *   常に不成立だったため、brain_staff.user_id を介した変換を追加。
+ * 2026-09-11 ユーザー承認により、担当制によるカルテ閲覧制限(旧Rule A'/B'/C、AUTH-1 V2)は撤廃。
+ * 全スタッフが全顧客のカルテを閲覧可能。「担当」表示自体(assignedStaffId/staffName等)は
+ * 各APIルート側で従来どおり直近来店の担当スタッフから算出しており、本関数の変更による
+ * 影響は受けない(閲覧可否と表示値の算出は元々独立している)。
  *
  * PHASE SECURITY-H1: is_internal_user=true(スタッフ本人の試用・検証購入等)の顧客は、
- * 管理者以外に対しては上記Rule A'/B'/Cの判定に関わらず常にアクセス不可とする
- * (Rule判定より前段の共通ゲート)。管理者はisAdmin分岐で従来通り常時アクセス可。
+ * 上記の撤廃とは無関係に、管理者以外に対しては常にアクセス不可のまま維持する
+ * (今回の担当制撤廃とは別目的の保護のため変更対象外)。
  * 設計根拠: docs/SECURITY_FINAL_AUDIT.md H-1。
  *
  * 注意: サーバーサイド専用（service role キー使用）
@@ -31,14 +24,9 @@ function getServerClient() {
   return createClient(url, key, { auth: { persistSession: false } })
 }
 
-function todayRangeUtc(): { start: string; end: string } {
-  const today = new Date().toISOString().split('T')[0]
-  return { start: `${today}T00:00:00.000Z`, end: `${today}T23:59:59.999Z` }
-}
-
 export async function canAccessCustomer(
-  staffBrainId: string | null,
-  customerId:   string,
+  _staffBrainId: string | null,
+  customerId:    string,
   isAdmin = false
 ): Promise<boolean> {
   if (isAdmin) return true
@@ -55,56 +43,11 @@ export async function canAccessCustomer(
 
   if (!customer) return false
 
-  // PHASE SECURITY-H1: 内部ユーザーは共通ゲートで除外する(Rule A'/B'/Cより前段)。
+  // PHASE SECURITY-H1: 内部ユーザーは常に除外する(担当制撤廃とは別目的の保護)。
   if ((customer as { is_internal_user?: boolean }).is_internal_user) return false
 
-  const { start, end } = todayRangeUtc()
-
-  const [visitRes, bookingsRes] = await Promise.all([
-    supabase
-      .from('brain_visits')
-      .select('staff_id')
-      .eq('customer_id', customerId)
-      .is('deleted_at', null)
-      .order('visit_date', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from('reservations')
-      .select('id, staff_id')
-      .eq('brain_customer_id', customerId)
-      .gte('scheduled_at', start)
-      .lte('scheduled_at', end)
-      .neq('status', 'cancelled'),
-  ])
-
-  const latestVisit    = visitRes.data
-  const todaysBookings = bookingsRes.data ?? []
-
-  // Rule A': 直近来店の担当が自分
-  if (latestVisit && staffBrainId && latestVisit.staff_id === staffBrainId) return true
-
-  // Rule B': 本日の予約担当（reservations.staff_id(auth.users.id) を
-  // brain_staff.user_id 経由で brain_staff.id に変換してから比較）
-  if (staffBrainId && todaysBookings.length > 0) {
-    const bookingStaffAuthIds = Array.from(
-      new Set(todaysBookings.map(b => b.staff_id).filter((v): v is string => !!v))
-    )
-    if (bookingStaffAuthIds.length > 0) {
-      const { data: matchedStaff } = await supabase
-        .from('brain_staff')
-        .select('id')
-        .eq('id', staffBrainId)
-        .in('user_id', bookingStaffAuthIds)
-        .maybeSingle()
-      if (matchedStaff) return true
-    }
-  }
-
-  // Rule C: 来店履歴なし かつ 本日予約なし → 店舗共有
-  if (!latestVisit && todaysBookings.length === 0) return true
-
-  return false
+  // 担当制撤廃(2026-09-11): 内部ユーザーでなければ全スタッフが閲覧可能。
+  return true
 }
 
 /**
@@ -113,7 +56,7 @@ export async function canAccessCustomer(
  */
 export async function filterAccessibleCustomerIds(
   customerIds: string[],
-  staffBrainId: string | null,
+  _staffBrainId: string | null,
   isAdmin: boolean
 ): Promise<Set<string>> {
   if (isAdmin) return new Set(customerIds)
@@ -131,72 +74,10 @@ export async function filterAccessibleCustomerIds(
   if (!customers || customers.length === 0) return new Set()
 
   // PHASE SECURITY-H1: 内部ユーザーは候補から除外する(canAccessCustomerと同じ共通ゲート)。
+  // 担当制撤廃(2026-09-11): 残りは全て閲覧可能(旧Rule A'/B'/Cによる絞り込みは行わない)。
   const validIds = customers
     .filter(c => !(c as { is_internal_user?: boolean }).is_internal_user)
     .map(c => c.id)
 
-  if (validIds.length === 0) return new Set()
-
-  const { start, end } = todayRangeUtc()
-
-  const [visitsRes, bookingsRes, meRes] = await Promise.all([
-    // 顧客ごとの直近来店を一括取得（visit_date降順。customer_idごとに最初の行が最新）
-    supabase
-      .from('brain_visits')
-      .select('customer_id, staff_id, visit_date')
-      .in('customer_id', validIds)
-      .is('deleted_at', null)
-      .order('visit_date', { ascending: false }),
-    // 本日の予約を一括取得
-    supabase
-      .from('reservations')
-      .select('brain_customer_id, staff_id')
-      .in('brain_customer_id', validIds)
-      .gte('scheduled_at', start)
-      .lte('scheduled_at', end)
-      .neq('status', 'cancelled'),
-    // 自分(staffBrainId)の auth.users.id を解決（Rule B'比較用。一度だけ変換すれば済む）
-    staffBrainId
-      ? supabase.from('brain_staff').select('user_id').eq('id', staffBrainId).maybeSingle()
-      : Promise.resolve({ data: null } as { data: { user_id: string } | null }),
-  ])
-
-  const latestStaffByCustomer = new Map<string, string>()
-  for (const v of (visitsRes.data ?? [])) {
-    if (!latestStaffByCustomer.has(v.customer_id)) {
-      latestStaffByCustomer.set(v.customer_id, v.staff_id)
-    }
-  }
-
-  const bookingsByCustomer = new Map<string, string[]>()
-  for (const b of (bookingsRes.data ?? [])) {
-    const list = bookingsByCustomer.get(b.brain_customer_id) ?? []
-    if (b.staff_id) list.push(b.staff_id)
-    bookingsByCustomer.set(b.brain_customer_id, list)
-  }
-
-  const myAuthUserId = meRes.data?.user_id ?? null
-
-  const accessible = new Set<string>()
-  for (const id of validIds) {
-    const latestStaff        = latestStaffByCustomer.get(id)
-    const todaysBookingStaff = bookingsByCustomer.get(id) ?? []
-
-    // Rule A'
-    if (latestStaff && staffBrainId && latestStaff === staffBrainId) {
-      accessible.add(id)
-      continue
-    }
-    // Rule B'
-    if (myAuthUserId && todaysBookingStaff.includes(myAuthUserId)) {
-      accessible.add(id)
-      continue
-    }
-    // Rule C
-    if (!latestStaff && todaysBookingStaff.length === 0) {
-      accessible.add(id)
-    }
-  }
-
-  return accessible
+  return new Set(validIds)
 }
