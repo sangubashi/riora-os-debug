@@ -140,9 +140,17 @@ async function computeOverdueCounts(
   /** 本日すでに予約が入っている顧客のbrain_customers.id。重複通知防止のため除外する。 */
   todayCustomerIds: string[]
 ): Promise<OverdueResult> {
+  // 2026-09-11修正: brain_customers.recommended_cycle_days列は本番DBに存在せず
+  // (顧客ごとの推奨サイクルを書き込む経路がアプリのどこにも無いため未実装)、
+  // これをSELECTしていた旧実装は常にクエリエラー→ロスター空という形で
+  // 「来店45日以上」「店販60日以上」を含む3種すべてを常に0件にしていた
+  // (READ ONLY調査2026-09-11で発覚)。存在しない列の参照をやめてロスター取得を
+  // 復旧する。個客別の推奨サイクル管理機能自体が無いため、recommendedCycleDaysは
+  // 常にnullとして扱う(=「再来推奨日超過」は判定対象外のまま。既存の固定45日
+  // しきい値(staleVisit)のみで判定する、意図した状態)。
   const rosterQuery = supabase
     .from('brain_customers')
-    .select('id, name, recommended_cycle_days')
+    .select('id, name')
     .eq('is_internal_user', false)
     .is('deleted_at', null)
 
@@ -170,7 +178,7 @@ async function computeOverdueCounts(
       id: r.id,
       lastVisitDate: lastVisitByRosterCustomer.get(r.id) ?? null,
       lastRetailPurchaseDate: lastRetailPurchaseByRosterCustomer.get(r.id) ?? null,
-      recommendedCycleDays: r.recommended_cycle_days ?? null,
+      recommendedCycleDays: null,
     }))
   )
 
