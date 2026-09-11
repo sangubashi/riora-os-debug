@@ -7,16 +7,21 @@
  * 受け取る自己完結コンポーネント(CustomerModeViewと同じ設計方針)。
  *
  * 今回のスコープ(🟢項目のみ・READ ONLY調査2026-09-11で合意):
- *   左カラム: 重要事項・目標
+ *   左カラム: 重要事項・目標・カルテメモ(PHASE IPAD-3で追加)
  *   右カラム: 写真カルテ(正面/左45/右45、前回|今回比較)・肌の特徴タグ(簡易版)・
  *             今日の施術(自由記述、手順テンプレート化はしない)・次回の目安
  * 前回の施術・AI接客ポイント・次回提案は次フェーズ(🟡項目)のため、この画面にはまだ無い。
+ *
+ * カルテメモ(customer_karte_memos)はcustomer_memories/customer_notesとは独立した
+ * 新規テーブル。AI(ProposalOrchestrator/FireScore/TodayFocusCard等)からは一切
+ * 参照・書き込みしない(KarteMemoSection.tsx・src/types/customerKarteMemo.tsの絶対ルール)。
  *
  * 写真比較UIはCustomerModeViewと共有(src/components/customer/shared/PhotoCompareKit.tsx)。
  */
 import { useState } from 'react'
 import { Flower2, X, Pencil } from 'lucide-react'
 import { useIpadKarteData, IPAD_KARTE_ANGLES, type IpadKarteAngleId } from './ipadKarteData'
+import KarteMemoSection from './KarteMemoSection'
 import { PALETTE, headingFont, Card, PhotoPanel, SkinTagRow } from '@/components/customer/shared/PhotoCompareKit'
 import { useNextVisit } from '@/lib/nextVisit/useNextVisit'
 import { formatWeeksLabel, formatApproxDateLabel } from '@/lib/nextVisit/nextVisitEngine'
@@ -323,6 +328,8 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
                   </p>
                 </Card>
               )}
+
+              <KarteMemoSection customerId={customerId} />
             </div>
 
             {/* ── 右カラム ── */}
