@@ -1806,6 +1806,28 @@ export default function CustomerBottomSheet({
                         <p className="text-[11px] tracking-[0.18em] text-[#C8A58C] font-semibold mb-2.5">
                           📅 来店履歴
                         </p>
+                        {/* 顧客ステータス要約(購買・来店周期データ管理 Phase1・2026-09-12)。
+                            詳細(来店周期・商品ごとの累計購入額/購入周期)はiPadスタッフカルテ側の
+                            「顧客ステータス」パネルで確認する想定のため、ここでは事実3点のみ。
+                            既存state(visitHistory/nextVisit/homecareProducts)を流用するだけで
+                            新規API・stateは追加していない。 */}
+                        {!visitHistoryLoading && visitHistory.length > 0 && (
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <span className="text-[10px] text-[#9F7E6C] whitespace-nowrap">
+                              最終来店 {new Date(visitHistory[0].visitDate).toLocaleDateString('ja-JP', { month: 'long', day: 'numeric' })}
+                            </span>
+                            <span className="text-[10px] text-[#9F7E6C] whitespace-nowrap">
+                              次回目安 {nextVisit.result?.estimatedDate
+                                ? new Date(nextVisit.result.estimatedDate).toLocaleDateString('ja-JP', { month: 'long', day: 'numeric' })
+                                : '算出データ不足'}
+                            </span>
+                            <span className="text-[10px] text-[#9F7E6C] whitespace-nowrap">
+                              店販最終購入 {homecareProducts.length > 0
+                                ? new Date(homecareProducts[0].lastPurchasedAt).toLocaleDateString('ja-JP', { month: 'long', day: 'numeric' })
+                                : 'なし'}
+                            </span>
+                          </div>
+                        )}
                         {visitHistoryLoading ? (
                           <p className="text-xs text-[#C8A58C] py-1">読み込み中…</p>
                         ) : visitHistory.length === 0 ? (
