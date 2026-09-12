@@ -38,6 +38,18 @@ export interface SalonBoardDetailRow {
   newOrRepeat:     string
 }
 
+/**
+ * 店販(区分='店販')明細1件分(PHASE RETAIL-ITEMS-1・2026-09-12・顧客ステータス機能)。
+ * brain_visit_retail_itemsへそのまま保存する形。retailNames(商品名のみの配列・既存)とは
+ * 別に、商品ごとの数量・単価・金額の対応関係を保持するために追加した。
+ */
+export interface SalonBoardRetailItem {
+  itemName:  string
+  quantity:  number
+  unitPrice: number
+  amount:    number
+}
+
 export interface SalonBoardCheckoutAggregate {
   checkoutId:      string
   /** 集約元の代表行番号(会計ID内の先頭行)。会計内整合性エラーが無ければ必ず付与される。 */
@@ -57,6 +69,9 @@ export interface SalonBoardCheckoutAggregate {
   discountTotal:   number
   optionNames:     string[]
   retailNames:     string[]
+  /** 店販明細(商品名・数量・単価・金額)。retailNamesと内容は重複するが、こちらは
+   *  brain_visit_retail_itemsへの保存用に数量・金額の対応関係を保った配列。 */
+  retailItems:     SalonBoardRetailItem[]
   serviceNames:    string[]
   lineItemCount:   number
 }
@@ -382,6 +397,12 @@ export function aggregateCheckouts(rows: SalonBoardDetailRow[]): AggregateChecko
       discountTotal,
       optionNames:  lines.filter(l => l.category === 'オプション').map(l => l.itemName),
       retailNames:  lines.filter(l => l.category === '店販').map(l => l.itemName),
+      retailItems:  lines.filter(l => l.category === '店販').map(l => ({
+        itemName:  l.itemName,
+        quantity:  l.quantity,
+        unitPrice: l.unitPrice,
+        amount:    l.amount,
+      })),
       serviceNames: lines.filter(l => l.category === 'サービス').map(l => l.itemName),
       lineItemCount: lines.length,
     })
