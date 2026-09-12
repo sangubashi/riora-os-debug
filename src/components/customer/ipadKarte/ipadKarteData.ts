@@ -81,6 +81,8 @@ export interface HomecareCardItem {
   productName: string
   frequency: string | null
   timing: string | null
+  /** 使用上の注意(homecareUsageGuide.tsの既存cautionをそのまま渡すだけ・辞書自体は無変更)。 */
+  caution: string | null
 }
 
 function toStringList(value: unknown): string[] {
@@ -188,7 +190,7 @@ export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
       const pickedProducts = (todaysProducts.length > 0 ? todaysProducts : homecareProducts).slice(0, 3)
       const homecareItems: HomecareCardItem[] = pickedProducts.map(p => {
         const guide = getHomecareUsageGuide(p.productName)
-        return { productName: p.productName, frequency: guide?.frequency ?? null, timing: guide?.timing ?? null }
+        return { productName: p.productName, frequency: guide?.frequency ?? null, timing: guide?.timing ?? null, caution: guide?.caution ?? null }
       })
 
       const sortedContraindications = [...contraindications].sort(

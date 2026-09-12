@@ -402,6 +402,16 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
                             </p>
                           </div>
                         )}
+                        {item.caution && (
+                          <div>
+                            <p style={{ margin: 0, fontSize: '11px', letterSpacing: '0.06em', color: PALETTE.muted }}>
+                              使用上の注意
+                            </p>
+                            <p style={{ margin: '2px 0 0', fontSize: '12px', color: PALETTE.text, lineHeight: 1.6 }}>
+                              {item.caution}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
