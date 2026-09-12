@@ -22,6 +22,7 @@ import { useState } from 'react'
 import { Flower2, X, Pencil } from 'lucide-react'
 import { useIpadKarteData, IPAD_KARTE_ANGLES, type IpadKarteAngleId } from './ipadKarteData'
 import KarteMemoSection from './KarteMemoSection'
+import GoalEditCard from './GoalEditCard'
 import KarteImportSection from '@/components/customer/KarteImportSection'
 import { PALETTE, headingFont, Card, PhotoPanel, SkinTagRow } from '@/components/customer/shared/PhotoCompareKit'
 import { useNextVisit } from '@/lib/nextVisit/useNextVisit'
@@ -314,32 +315,28 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
                 </Card>
               )}
 
-              {!!data.goalNote?.trim() && (
-                <Card title="🎯 目標">
-                  <p style={{ margin: 0, fontSize: '14px', color: PALETTE.text, lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>
-                    {data.goalNote}
-                  </p>
-                </Card>
-              )}
-
-              {data.contraindications.length === 0 && !data.goalNote?.trim() && (
-                <Card title="重要事項・目標">
-                  <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>
-                    登録されている情報はありません
-                  </p>
-                </Card>
-              )}
+              {/* 目標編集(PHASE IPAD-6・2026-09-12・READ ONLY調査に基づき追加)。
+                  goal_noteの編集UI(GoalSection.tsx)がCustomerBottomSheet.tsxにしか無く
+                  196人中0人と定着していなかったため、iPadスタッフカルテ側にも編集導線を
+                  追加する。保存先・API(GET/PATCH /api/customers/[id]/goal)は無変更、
+                  CustomerBottomSheet.tsxにも一切触れない。常時表示(お客様の目標カードと
+                  同じ方針)。保存後はcontraindications/goalNoteのみ軽量再取得する。 */}
+              <GoalEditCard
+                customerId={customerId}
+                goalNote={data.goalNote}
+                onSaved={() => { void data.refetchGoalAndContraindications() }}
+              />
 
               <KarteMemoSection customerId={customerId} />
 
               {/* Salon Boardカルテ取込(PHASE IPAD-5・2026-09-12・導線改善調査に基づき追加)。
                   KarteImportSection自体は無変更で移植(customerId/customerName/onSavedのみに
                   依存する自己完結コンポーネント)。保存後はcontraindications/goalNoteのみ
-                  軽量再取得する(data.refetchAfterKarteImport、写真等は再取得しない)。 */}
+                  軽量再取得する(data.refetchGoalAndContraindications、写真等は再取得しない)。 */}
               <KarteImportSection
                 customerId={customerId}
                 customerName={customerName}
-                onSaved={() => { void data.refetchAfterKarteImport() }}
+                onSaved={() => { void data.refetchGoalAndContraindications() }}
               />
             </div>
 

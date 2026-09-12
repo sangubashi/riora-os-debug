@@ -139,11 +139,11 @@ const EMPTY_DATA: IpadKarteData = {
 
 export interface UseIpadKarteDataResult extends IpadKarteData {
   /**
-   * カルテ取込(KarteImportSection)保存後に呼ぶ軽量な再取得(PHASE IPAD-5・2026-09-12)。
-   * 写真・スキンレコード等は再取得せず、取込結果が反映されうる重要事項・目標のみを
-   * 更新する(全項目再取得は写真の signed URL 再発行等が走り重いため)。
+   * カルテ取込(KarteImportSection)保存後・目標編集(GoalEditCard)保存後に呼ぶ軽量な
+   * 再取得(PHASE IPAD-5・IPAD-6・2026-09-12)。写真・スキンレコード等は再取得せず、
+   * 重要事項・目標のみを更新する(全項目再取得は写真の signed URL 再発行等が走り重いため)。
    */
-  refetchAfterKarteImport: () => Promise<void>
+  refetchGoalAndContraindications: () => Promise<void>
 }
 
 export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
@@ -245,7 +245,7 @@ export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
     }
   }, [customerId])
 
-  const refetchAfterKarteImport = useCallback(async () => {
+  const refetchGoalAndContraindications = useCallback(async () => {
     const [goalJson, contraindications] = await Promise.all([
       authedFetch(`/api/customers/${customerId}/goal`)
         .then(r => (r.ok ? r.json() : null)).catch(() => null),
@@ -258,5 +258,5 @@ export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
     setData(prev => ({ ...prev, goalNote, contraindications: sortedContraindications }))
   }, [customerId])
 
-  return { ...data, refetchAfterKarteImport }
+  return { ...data, refetchGoalAndContraindications }
 }
