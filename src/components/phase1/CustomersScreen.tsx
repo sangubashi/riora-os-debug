@@ -7,6 +7,7 @@ import AppBottomNav from './AppBottomNav'
 import { useCustomerStore, type CustomerRow, type CustomerType } from '@/store/useCustomerStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import CustomerBottomSheet from '@/components/customer/CustomerBottomSheet'
+import IpadKarteSearchView from '@/components/customer/ipadKarte/IpadKarteSearchView'
 import { authedFetch } from '@/lib/api/authedFetch'
 import type { Customer, Reservation } from '@/types'
 
@@ -143,6 +144,9 @@ export default function CustomersScreen() {
   const [sortKey,          setSortKey]         = useState<'lastVisit' | 'sales'>('lastVisit')
   const [scope,            setScope]           = useState<OwnerScope>('mine')
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerRow | null>(null)
+  // カルテ取込 導線改善(PHASE IPAD-5・2026-09-12)。CustomerBottomSheetを経由せず
+  // 顧客検索→IpadStaffKarteView(カルテ取込セクション含む)へ直接遷移する入口。
+  const [showKarteImportSearch, setShowKarteImportSearch] = useState(false)
 
   // ── 会話履歴検索（PHASE NOTES-SEARCH-1） ────────────────────────────────────
   const [noteQuery,         setNoteQuery]         = useState('')
@@ -250,10 +254,27 @@ export default function CustomersScreen() {
         <p className="text-[10px] font-medium tracking-[0.32em] mb-0.5" style={{ color: '#C8A8B0' }}>
           SALON RIORA
         </p>
-        <h1 className="text-[24px] font-light leading-tight" style={{ color: '#4A2C2A', fontFamily: 'Playfair Display, serif' }}>Customers</h1>
-        <p className="text-[13px] mt-0.5" style={{ color: '#9E8090' }}>
-          {isLoading ? '読み込み中…' : `${scope === 'mine' ? '私のお客様' : '全顧客'} ${scoped.length}名`}
-        </p>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h1 className="text-[24px] font-light leading-tight" style={{ color: '#4A2C2A', fontFamily: 'Playfair Display, serif' }}>Customers</h1>
+            <p className="text-[13px] mt-0.5" style={{ color: '#9E8090' }}>
+              {isLoading ? '読み込み中…' : `${scope === 'mine' ? '私のお客様' : '全顧客'} ${scoped.length}名`}
+            </p>
+          </div>
+          {/* カルテ取込 導線改善(PHASE IPAD-5)。CustomerBottomSheetを経由せず直接遷移する。 */}
+          <button
+            type="button"
+            onClick={() => setShowKarteImportSearch(true)}
+            className="flex-shrink-0 flex items-center gap-1 rounded-full whitespace-nowrap"
+            style={{
+              marginTop: '4px', height: '32px', padding: '0 12px',
+              background: '#F0F5FA', border: '1px solid #C8DCF0', color: '#4878A8',
+              fontSize: '11px', fontWeight: 700, cursor: 'pointer',
+            }}
+          >
+            📋 カルテ取込
+          </button>
+        </div>
 
         {/* 会話履歴検索（PHASE NOTES-SEARCH-1・要件①）: 会話メモ・音声メモ・AI要約・
             カルテメモを横断検索する。下の名前検索とは別の検索(検索対象が異なる)。 */}
@@ -521,6 +542,11 @@ export default function CustomersScreen() {
             onClose={() => setSelectedCustomer(null)}
           />
         </div>
+      )}
+
+      {/* カルテ取込 導線改善(PHASE IPAD-5)。IpadKarteSearchView自体は無変更で再利用。 */}
+      {showKarteImportSearch && (
+        <IpadKarteSearchView onClose={() => setShowKarteImportSearch(false)} />
       )}
     </div>
   )

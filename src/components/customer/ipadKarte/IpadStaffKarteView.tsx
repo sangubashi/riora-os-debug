@@ -22,6 +22,7 @@ import { useState } from 'react'
 import { Flower2, X, Pencil } from 'lucide-react'
 import { useIpadKarteData, IPAD_KARTE_ANGLES, type IpadKarteAngleId } from './ipadKarteData'
 import KarteMemoSection from './KarteMemoSection'
+import KarteImportSection from '@/components/customer/KarteImportSection'
 import { PALETTE, headingFont, Card, PhotoPanel, SkinTagRow } from '@/components/customer/shared/PhotoCompareKit'
 import { useNextVisit } from '@/lib/nextVisit/useNextVisit'
 import { formatWeeksLabel, formatApproxDateLabel } from '@/lib/nextVisit/nextVisitEngine'
@@ -330,6 +331,16 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
               )}
 
               <KarteMemoSection customerId={customerId} />
+
+              {/* Salon Boardカルテ取込(PHASE IPAD-5・2026-09-12・導線改善調査に基づき追加)。
+                  KarteImportSection自体は無変更で移植(customerId/customerName/onSavedのみに
+                  依存する自己完結コンポーネント)。保存後はcontraindications/goalNoteのみ
+                  軽量再取得する(data.refetchAfterKarteImport、写真等は再取得しない)。 */}
+              <KarteImportSection
+                customerId={customerId}
+                customerName={customerName}
+                onSaved={() => { void data.refetchAfterKarteImport() }}
+              />
             </div>
 
             {/* ── 右カラム ── */}

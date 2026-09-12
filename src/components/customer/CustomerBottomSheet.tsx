@@ -1516,7 +1516,7 @@ export default function CustomerBottomSheet({
                     cursor: 'pointer',
                   }}
                 >
-                  🔍 カルテ検索
+                  🔍 カルテ検索・取込
                 </button>
               </div>
 

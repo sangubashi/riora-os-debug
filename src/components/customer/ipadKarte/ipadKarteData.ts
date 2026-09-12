@@ -17,7 +17,7 @@
  * (🔴項目の手順テンプレートは今回見送り)。前回の施術・AI接客ポイント・次回提案は
  * 次フェーズ(🟡項目)のため、このフックには含めない。
  */
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { fetchContraindications } from '@/lib/contraindication'
 import type { Contraindication } from '@/types'
@@ -135,7 +135,16 @@ const EMPTY_DATA: IpadKarteData = {
   homecareItems: [],
 }
 
-export function useIpadKarteData(customerId: string): IpadKarteData {
+export interface UseIpadKarteDataResult extends IpadKarteData {
+  /**
+   * カルテ取込(KarteImportSection)保存後に呼ぶ軽量な再取得(PHASE IPAD-5・2026-09-12)。
+   * 写真・スキンレコード等は再取得せず、取込結果が反映されうる重要事項・目標のみを
+   * 更新する(全項目再取得は写真の signed URL 再発行等が走り重いため)。
+   */
+  refetchAfterKarteImport: () => Promise<void>
+}
+
+export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
   const [data, setData] = useState<IpadKarteData>(EMPTY_DATA)
 
   useEffect(() => {
@@ -234,5 +243,18 @@ export function useIpadKarteData(customerId: string): IpadKarteData {
     }
   }, [customerId])
 
-  return data
+  const refetchAfterKarteImport = useCallback(async () => {
+    const [goalJson, contraindications] = await Promise.all([
+      authedFetch(`/api/customers/${customerId}/goal`)
+        .then(r => (r.ok ? r.json() : null)).catch(() => null),
+      fetchContraindications(customerId),
+    ])
+    const goalNote: string | null = goalJson?.success ? (goalJson.goalNote ?? null) : null
+    const sortedContraindications = [...contraindications].sort(
+      (a, b) => CONTRAINDICATION_SEVERITY_ORDER.indexOf(a.severity) - CONTRAINDICATION_SEVERITY_ORDER.indexOf(b.severity)
+    )
+    setData(prev => ({ ...prev, goalNote, contraindications: sortedContraindications }))
+  }, [customerId])
+
+  return { ...data, refetchAfterKarteImport }
 }
