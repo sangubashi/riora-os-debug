@@ -33,7 +33,7 @@
  */
 import type {
   ICustomerRepo, IVisitRepo, IStaffRepo, IMenuRepo, IStoreRepo, IOpsLogRepo,
-  IBriefingRepo, IOutcomeRepo, IStatsRepo,
+  IBriefingRepo, IOutcomeRepo, IStatsRepo, RetailItemInput,
 } from '../../repositories/interfaces'
 import type { Customer } from '../../types/riora.types'
 import {
@@ -620,6 +620,18 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
     const visitDate = dateOnly(agg.visitDateTime)
     const existingVisit = await repos.visitRepo.findByCustomerAndDate(customerId, visitDate)
 
+    // 顧客ステータス機能(PHASE RETAIL-ITEMS-1): 店販明細をbrain_visit_retail_itemsへ
+    // 反映する入力に変換しておく。replaceRetailItems()は全削除→入れ直す冪等な置き換えのため、
+    // 同一visitへ何度呼んでも安全(reconcile/createSequenced/既存visitスキップの3分岐すべてで
+    // 呼ぶことで、過去分の明細遡及移行(同一CSVの再取込)も他フィールドの冪等スキップ条件に
+    // 触れずに実現できる)。
+    const retailItemsInput: RetailItemInput[] = agg.retailItems.map(item => ({
+      productName: item.itemName,
+      quantity:    item.quantity,
+      unitPrice:   item.unitPrice,
+      amount:      item.amount,
+    }))
+
     if (existingVisit && existingVisit.source !== 'reconciled' && existingVisit.source !== 'salonboard_import') {
       const reconciledVisit = await repos.visitRepo.reconcile(existingVisit.id, {
         staffId: staffRes.staffId,
@@ -632,6 +644,7 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
         retailAmount: agg.retailSales,
       })
       visitsImported += 1
+      await repos.visitRepo.replaceRetailItems(reconciledVisit.id, retailItemsInput)
 
       // PHASE 1-Bc: 会計確定(reconcile)直後にfire_logを逆引きしbrain_proposal_outcomes
       // へ記録を試みる(Phase 1-Aと同じnon-fatalパターン。失敗してもCSV取込自体は成功扱い)。
@@ -670,6 +683,7 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
         source: 'salonboard_import',
       })
       visitsImported += 1
+      await repos.visitRepo.replaceRetailItems(createdVisit.id, retailItemsInput)
 
       // PHASE 1-Bc: 新規visit作成直後にも同様にoutcomes記録を試みる(non-fatal)。
       try {
@@ -686,8 +700,13 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
       } catch (e) {
         console.warn('[proposal-outcome] record failed (non-fatal):', e)
       }
+    } else if (existingVisit) {
+      // 既存visitが既にreconciled/salonboard_import済み → 同一CSV再取込の冪等スキップ(増分ゼロ)。
+      // ただし店販明細(顧客ステータス機能)だけは、過去分の遡及移行(同一CSVの再取込)に
+      // 対応するため常に置き換える(replaceRetailItemsは冪等・visitsImported等の他の
+      // 冪等スキップ条件には一切影響しない)。
+      await repos.visitRepo.replaceRetailItems(existingVisit.id, retailItemsInput)
     }
-    // 既存visitが既にreconciled/salonboard_import済み → 同一CSV再取込の冪等スキップ(増分ゼロ)
   }
 
   // PHASE 1-Cc: この取込でoutcomeが1件以上記録された場合のみ、brain_pattern_step_stats

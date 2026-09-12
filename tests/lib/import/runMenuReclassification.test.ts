@@ -80,6 +80,7 @@ function createFakeRepos(opts: { menus: Menu[]; customers: Customer[]; visits: V
         if (v) v.menuId = menuId;
       },
       updateNextBookingMade: async () => {},
+      replaceRetailItems: async () => {},
     },
   };
 

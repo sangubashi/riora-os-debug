@@ -221,6 +221,21 @@ export interface IVisitRepo {
    * 全履歴が必要。
    */
   listByStore(storeId: UUID): Promise<Visit[]>;
+  /**
+   * brain_visit_retail_items(顧客ステータス機能・PHASE RETAIL-ITEMS-1)を
+   * 指定visitIdについて全削除→入れ直す(冪等な置き換え)。CSV再取込時に同一来店の
+   * 明細が重複蓄積しないようにするため、追記ではなく置き換えとする。
+   * items=[]の場合は削除のみ行う(店販が無い来店・削除確定)。
+   */
+  replaceRetailItems(visitId: UUID, items: RetailItemInput[]): Promise<void>;
+}
+
+/** brain_visit_retail_items 1行分の書込み入力(顧客ステータス機能)。 */
+export interface RetailItemInput {
+  productName: string;
+  quantity:    number;
+  unitPrice:   number | null;
+  amount:      number | null;
 }
 
 /**

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { UUID, Visit } from '../../types/riora.types';
-import type { IVisitRepo } from '../interfaces';
+import type { IVisitRepo, RetailItemInput } from '../interfaces';
 import { toBrainVisitInsert, toBrainVisitReconcileUpdate, toVisit, type BrainVisitRow } from './mappers';
 
 const VISIT_COLUMNS =
@@ -172,5 +172,38 @@ export class VisitRepo implements IVisitRepo {
       throw new Error(`VisitRepo.reconcile failed: ${error.message}`);
     }
     return toVisit(data as unknown as BrainVisitRow);
+  }
+
+  /**
+   * brain_visit_retail_items(顧客ステータス機能・PHASE RETAIL-ITEMS-1)を
+   * 指定visitIdについて全削除→入れ直す。CSV再取込(reconcile)時に同一来店の明細が
+   * 重複蓄積しないよう、追記ではなく置き換えとする(brain_visitsのretail_amount/
+   * retail_categoryが毎回上書きされる既存挙動と同じ考え方)。
+   */
+  async replaceRetailItems(visitId: UUID, items: RetailItemInput[]): Promise<void> {
+    const { error: deleteError } = await this.client
+      .from('brain_visit_retail_items')
+      .delete()
+      .eq('visit_id', visitId);
+
+    if (deleteError) {
+      throw new Error(`VisitRepo.replaceRetailItems delete failed: ${deleteError.message}`);
+    }
+
+    if (items.length === 0) return;
+
+    const { error: insertError } = await this.client
+      .from('brain_visit_retail_items')
+      .insert(items.map(item => ({
+        visit_id:     visitId,
+        product_name: item.productName,
+        quantity:     item.quantity,
+        unit_price:   item.unitPrice,
+        amount:       item.amount,
+      })));
+
+    if (insertError) {
+      throw new Error(`VisitRepo.replaceRetailItems insert failed: ${insertError.message}`);
+    }
   }
 }

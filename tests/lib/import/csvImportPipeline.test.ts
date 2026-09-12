@@ -79,6 +79,7 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
   customers: Customer[];
   visits: Visit[];
   opsLogs: OpsLog[];
+  retailItems: Array<{ visitId: string; productName: string; quantity: number; unitPrice: number | null; amount: number | null }>;
 } } {
   const store: Store = {
     id: STORE_ID, name: 'テスト店舗', anonId: 'anon-1', anonSalt: 'fixed-test-salt',
@@ -100,6 +101,7 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
     customers: [] as Customer[],
     visits: [] as Visit[],
     opsLogs: [] as OpsLog[],
+    retailItems: [] as Array<{ visitId: string; productName: string; quantity: number; unitPrice: number | null; amount: number | null }>,
   };
   let customerSeq = 0;
   let visitSeq = 0;
@@ -233,6 +235,10 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
       updateNextBookingMade: async (id, value) => {
         const v = state.visits.find(x => x.id === id)
         if (v) v.nextBookingMade = value
+      },
+      replaceRetailItems: async (visitId, items) => {
+        state.retailItems = state.retailItems.filter(r => r.visitId !== visitId);
+        state.retailItems.push(...items.map(item => ({ visitId, ...item })));
       },
     },
     opsLogRepo: {
@@ -449,6 +455,38 @@ describe('csvImportPipeline', () => {
       expect(repos.state.visits[0].treatmentAmount).toBe(5300);
       expect(repos.state.visits[0].retailAmount).toBe(11000);
       expect(repos.state.visits[0].isNomination).toBe(true);
+
+      // 顧客ステータス機能(PHASE RETAIL-ITEMS-1): 店販明細がbrain_visit_retail_itemsに
+      // 商品名・数量・単価・金額の対応を保ったまま保存されること。
+      expect(repos.state.retailItems).toHaveLength(1);
+      expect(repos.state.retailItems[0]).toMatchObject({
+        visitId:     repos.state.visits[0].id,
+        productName: 'CELCOSクリーム',
+        quantity:    1,
+        unitPrice:   11000,
+        amount:      11000,
+      });
+    });
+
+    it('店販明細(PHASE RETAIL-ITEMS-1): 同一CSVを再投入しても明細が重複せず置き換わる(既存visitスキップ分岐でも反映される)', async () => {
+      const repos = createFakeRepos();
+      const csv = buildCsv([
+        detailRow({ checkoutId: 'B1', date: '2026/06/01', category: '店販', itemName: 'CELCOSクリーム', amount: 11000, customerName: '田中花子', customerNumber: 'C001' }),
+      ]);
+
+      const first = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+      expect(first.ok).toBe(true);
+      expect(repos.state.retailItems).toHaveLength(1);
+
+      // 2回目の投入は既存visit(source='salonboard_import')のためreconcile/createSequencedの
+      // どちらも通らない「冪等スキップ」分岐に入るが、retailItemsだけは置き換えられる想定。
+      const second = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+      expect(second.ok).toBe(true);
+      if (second.ok) {
+        expect(second.report.visitsImported).toBe(0); // 他フィールドの冪等スキップは維持される
+      }
+      expect(repos.state.visits).toHaveLength(1);
+      expect(repos.state.retailItems).toHaveLength(1); // 重複蓄積されず1件のまま
     });
 
     it('冪等性: 会員番号ありの同一CSVを複数回投入しても顧客・来店が重複しない', async () => {
