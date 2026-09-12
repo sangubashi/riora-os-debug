@@ -33,6 +33,7 @@ import {
   buildPreviousComparison,
 } from '@/lib/photos/comparisonSelection'
 import { pickNotableSkinTags, type SkinTagChip } from '@/components/customer/guestMode/customerModeData'
+import { getHomecareUsageGuide } from '@/lib/homecare/homecareUsageGuide'
 
 export const IPAD_KARTE_ANGLES = [
   { id: 'face_front', label: '正面' },
@@ -67,6 +68,19 @@ interface SkinRecord {
 interface TreatmentDetail {
   options: unknown
   productsUsed: unknown
+}
+
+interface HomecareProductEntry {
+  productName: string
+  purchaseCount: number
+  lastPurchasedAt: string
+}
+
+/** 「今回のホームケア」カード用の1商品分(customerModeData.tsのHomecareCardItemと同じ形)。 */
+export interface HomecareCardItem {
+  productName: string
+  frequency: string | null
+  timing: string | null
 }
 
 function toStringList(value: unknown): string[] {
@@ -105,6 +119,8 @@ export interface IpadKarteData {
   todayTreatmentPoints: string[]
   // 「次回の目安」は次回目安エンジン(PHASE NEXT-VISIT-1・src/lib/nextVisit/useNextVisit.ts)に
   // 置き換えたため、このフックでは算出しない(IpadStaffKarteView側でuseNextVisitを直接使う)。
+  /** 「今回のホームケア」カード(customerModeData.tsと同じ取得ロジックの流用)。 */
+  homecareItems: HomecareCardItem[]
 }
 
 const EMPTY_DATA: IpadKarteData = {
@@ -116,6 +132,7 @@ const EMPTY_DATA: IpadKarteData = {
   currentMenuName: null,
   currentSkinTags: [],
   todayTreatmentPoints: [],
+  homecareItems: [],
 }
 
 export function useIpadKarteData(customerId: string): IpadKarteData {
@@ -128,7 +145,7 @@ export function useIpadKarteData(customerId: string): IpadKarteData {
     void (async () => {
       const todayStr = todayDateStr()
 
-      const [photos, visitsJson, skinJson, goalJson, contraindications] = await Promise.all([
+      const [photos, visitsJson, skinJson, goalJson, contraindications, homecareJson] = await Promise.all([
         listCustomerPhotosTimeline(customerId),
         authedFetch(`/api/customers/${customerId}/visit-history`)
           .then(r => (r.ok ? r.json() : null)).catch(() => null),
@@ -137,6 +154,8 @@ export function useIpadKarteData(customerId: string): IpadKarteData {
         authedFetch(`/api/customers/${customerId}/goal`)
           .then(r => (r.ok ? r.json() : null)).catch(() => null),
         fetchContraindications(customerId),
+        authedFetch(`/api/customers/${customerId}/homecare-products`)
+          .then(r => (r.ok ? r.json() : null)).catch(() => null),
       ])
       if (cancelled) return
 
@@ -152,6 +171,16 @@ export function useIpadKarteData(customerId: string): IpadKarteData {
       const currentSkinTags = pickNotableSkinTags(currentRecord, 5)
 
       const goalNote: string | null = goalJson?.success ? (goalJson.goalNote ?? null) : null
+
+      // 「今回のホームケア」(customerModeData.tsのuseCustomerModeDataと同じロジック)。
+      const homecareProducts: HomecareProductEntry[] =
+        (homecareJson?.success ? homecareJson.products : []) ?? []
+      const todaysProducts = homecareProducts.filter(p => p.lastPurchasedAt === todayStr)
+      const pickedProducts = (todaysProducts.length > 0 ? todaysProducts : homecareProducts).slice(0, 3)
+      const homecareItems: HomecareCardItem[] = pickedProducts.map(p => {
+        const guide = getHomecareUsageGuide(p.productName)
+        return { productName: p.productName, frequency: guide?.frequency ?? null, timing: guide?.timing ?? null }
+      })
 
       const sortedContraindications = [...contraindications].sort(
         (a, b) => CONTRAINDICATION_SEVERITY_ORDER.indexOf(a.severity) - CONTRAINDICATION_SEVERITY_ORDER.indexOf(b.severity)
@@ -196,6 +225,7 @@ export function useIpadKarteData(customerId: string): IpadKarteData {
         currentMenuName,
         currentSkinTags,
         todayTreatmentPoints,
+        homecareItems,
       })
     })()
 

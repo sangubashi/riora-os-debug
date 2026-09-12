@@ -397,6 +397,48 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
                 </Card>
               )}
 
+              {/* 今回のホームケア(PHASE IPAD-4・2026-09-12・READ ONLY調査に基づき追加)。
+                  CustomerModeView.tsxの同カードと同じ表示構造・データ取得ロジック(ipadKarteData.ts)。
+                  LINE下書き生成への接続は今回のスコープ外(表示のみ)。 */}
+              {data.homecareItems.length > 0 && (
+                <Card title="🏠 今回のホームケア">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                    {data.homecareItems.map(item => (
+                      <div key={item.productName} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div>
+                          <p style={{ margin: 0, fontSize: '11px', letterSpacing: '0.06em', color: PALETTE.muted }}>
+                            商品名
+                          </p>
+                          <p style={{ margin: '2px 0 0', fontSize: '14px', fontWeight: 700, color: PALETTE.text }}>
+                            {item.productName}
+                          </p>
+                        </div>
+                        {item.frequency && (
+                          <div>
+                            <p style={{ margin: 0, fontSize: '11px', letterSpacing: '0.06em', color: PALETTE.muted }}>
+                              使用頻度
+                            </p>
+                            <p style={{ margin: '2px 0 0', fontSize: '12px', color: PALETTE.text, lineHeight: 1.6 }}>
+                              {item.frequency}
+                            </p>
+                          </div>
+                        )}
+                        {item.timing && (
+                          <div>
+                            <p style={{ margin: 0, fontSize: '11px', letterSpacing: '0.06em', color: PALETTE.muted }}>
+                              使用タイミング
+                            </p>
+                            <p style={{ margin: '2px 0 0', fontSize: '12px', color: PALETTE.text, lineHeight: 1.6 }}>
+                              {item.timing}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+
               {/* 次回の目安(次回目安エンジン)。次回提案(施術メニューの提案)とは別項目 — 混同しない。 */}
               <NextVisitCard customerId={customerId} />
             </div>
