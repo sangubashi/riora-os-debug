@@ -37,7 +37,9 @@ import {
   groupPhotosByBodyPart,
   comparableGroups,
   buildPreviousComparison,
+  buildFirstComparison,
 } from '@/lib/photos/comparisonSelection'
+import { buildVisitTabs, type VisitTab } from '@/lib/photos/timelineGrouping'
 import { getHomecareUsageGuide } from '@/lib/homecare/homecareUsageGuide'
 
 export const CUSTOMER_MODE_ANGLES = [
@@ -47,11 +49,6 @@ export const CUSTOMER_MODE_ANGLES = [
 ] as const
 
 export type CustomerModeAngleId = (typeof CUSTOMER_MODE_ANGLES)[number]['id']
-
-export interface AnglePhotoPair {
-  current: TimelinePhoto | null
-  reference: TimelinePhoto | null
-}
 
 export interface VisitHistoryEntry {
   id: string
@@ -122,29 +119,29 @@ function todayDateStr(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-/**
- * 指定body_partの「前回↔今回」ペアを組み立てる。撮影機会が1つしかない場合は
- * 「今回」のみ(前回なし)、写真が無ければ両方nullを返す。
- * 既存のcomparisonSelection.tsの公開関数のみを使い、比較ロジック自体は変更しない。
- */
-function buildAngleComparison(photos: TimelinePhoto[], bodyPart: string): AnglePhotoPair {
-  const groups = groupPhotosByBodyPart(photos)
-  const group = groups.find(g => g.bodyPart === bodyPart)
-  if (!group || group.photos.length === 0) return { current: null, reference: null }
-
-  const comparable = comparableGroups([group])
-  if (comparable.length > 0) {
-    const pair = buildPreviousComparison(comparable[0])
-    return { current: pair.current, reference: pair.reference }
-  }
-  return { current: group.photos[0], reference: null }
-}
-
 export interface CustomerModeData {
   loading: boolean
-  anglePairs: Record<string, AnglePhotoPair>
-  /** photoId → signed URL('detail'品質)。拡大表示にもそのまま流用する。 */
+  /**
+   * 角度(body_part)ごとの生の写真配列(taken_at DESC・既存API順そのまま)。
+   * 比較ペア(前回↔今回・初回↔今回)や拡大モードの回選択は、CustomerModeView側で
+   * comparisonSelection.tsの公開関数(groupByOccasion/representativePhoto/
+   * buildPreviousComparison/buildFirstComparison/hasDistinctFirstOccasion)を使って
+   * ここから都度組み立てる(PHASE GUEST-MODE-3・2026-09-12・比較｜拡大モード切替)。
+   */
+  photosByAngle: Record<string, TimelinePhoto[]>
+  /**
+   * photoId → signed URL('detail'品質)。角度ごとの「今回・前回・初回」代表写真のみ
+   * 事前取得済み(比較モードのショートカット切替・拡大モードの初期表示/初回/前回
+   * ショートカットが即座に表示できるようにするため)。それ以外の来店回を拡大モードの
+   * 全来店日リストから選んだ場合は、CustomerModeView側でgetPhotoSignedUrlを都度呼ぶ
+   * (来店回数が多い顧客で全件事前取得すると無駄なsigned URL発行が増えるため)。
+   */
   photoUrls: Record<string, string>
+  /**
+   * 全来店日リスト(角度非依存・visit_id/visit_count_atが揃っている写真のみが対象、
+   * 既存のbuildVisitTabsと同じ制約)。拡大モードの「全来店日リストから選択」に使う。
+   */
+  visitTabs: VisitTab[]
   currentMenuName: string | null
   // 「次回の目安」は次回目安エンジン(PHASE NEXT-VISIT-1・src/lib/nextVisit/useNextVisit.ts)に
   // 置き換えたため、このフックでは算出しない(CustomerModeView側でuseNextVisitを直接使う)。
@@ -163,8 +160,9 @@ export interface CustomerModeData {
 
 const EMPTY_DATA: CustomerModeData = {
   loading: true,
-  anglePairs: {},
+  photosByAngle: {},
   photoUrls: {},
+  visitTabs: [],
   currentMenuName: null,
   currentSkinTags: [],
   previousSkinTags: [],
@@ -239,21 +237,32 @@ export function useCustomerModeData(customerId: string): CustomerModeData {
       }
       if (cancelled) return
 
-      const anglePairs: Record<string, AnglePhotoPair> = {}
+      const bodyPartGroups = groupPhotosByBodyPart(photos)
+      const photosByAngle: Record<string, TimelinePhoto[]> = {}
+      const photoIdSet = new Set<string>()
       for (const angle of CUSTOMER_MODE_ANGLES) {
-        anglePairs[angle.id] = buildAngleComparison(photos, angle.id)
+        const group = bodyPartGroups.find(g => g.bodyPart === angle.id) ?? { bodyPart: angle.id, photos: [] }
+        photosByAngle[angle.id] = group.photos
+        if (comparableGroups([group]).length > 0) {
+          const previousPair = buildPreviousComparison(group)
+          const firstPair = buildFirstComparison(group)
+          photoIdSet.add(previousPair.current.id)
+          photoIdSet.add(previousPair.reference.id)
+          photoIdSet.add(firstPair.reference.id)
+        } else if (group.photos.length > 0) {
+          photoIdSet.add(group.photos[0].id)
+        }
       }
-
-      const photoIds = Object.values(anglePairs)
-        .flatMap(p => [p.current?.id, p.reference?.id])
-        .filter((id): id is string => !!id)
-      const photoUrls = await getBatchSignedUrls(customerId, photoIds, 'detail')
+      const photoUrls = await getBatchSignedUrls(customerId, Array.from(photoIdSet), 'detail')
       if (cancelled) return
+
+      const visitTabs = buildVisitTabs(photos)
 
       setData({
         loading: false,
-        anglePairs,
+        photosByAngle,
         photoUrls,
+        visitTabs,
         currentMenuName,
         currentSkinTags,
         previousSkinTags,

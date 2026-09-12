@@ -54,7 +54,7 @@ function occasionKey(photo: TimelinePhoto): string {
   return photo.visitId ? `visit:${photo.visitId}` : `date:${photo.takenAt.slice(0, 10)}`
 }
 
-interface PhotoOccasion {
+export interface PhotoOccasion {
   key:    string
   /** taken_at DESC(新しい順)。この撮影機会に属する全写真。 */
   photos: TimelinePhoto[]
@@ -65,8 +65,11 @@ interface PhotoOccasion {
  * 入力(desc順)を維持したまま走査するため、各撮影機会が最初に現れる位置は
  * その撮影機会内で最も新しい写真の位置と一致する。Mapは挿入順を保持するため、
  * 返り値の配列も「最新の撮影機会が先頭」の順になる(追加のソート処理は不要)。
+ *
+ * 2026-09-12: お客様モード拡大モード(PHASE GUEST-MODE-3)の「全来店日リストから
+ * 任意の回を選ぶ」実装のためexportに変更(ロジック自体は無変更)。
  */
-function groupByOccasion(photos: TimelinePhoto[]): PhotoOccasion[] {
+export function groupByOccasion(photos: TimelinePhoto[]): PhotoOccasion[] {
   const map = new Map<string, TimelinePhoto[]>()
   for (const photo of photos) {
     const key = occasionKey(photo)
@@ -80,8 +83,8 @@ function groupByOccasion(photos: TimelinePhoto[]): PhotoOccasion[] {
   return Array.from(map.entries()).map(([key, occasionPhotos]) => ({ key, photos: occasionPhotos }))
 }
 
-/** 撮影機会の代表写真(その機会内でtaken_atが最も新しい1枚)。 */
-function representativePhoto(occasion: PhotoOccasion): TimelinePhoto {
+/** 撮影機会の代表写真(その機会内でtaken_atが最も新しい1枚)。2026-09-12にexport化(ロジック無変更)。 */
+export function representativePhoto(occasion: PhotoOccasion): TimelinePhoto {
   return occasion.photos[0]
 }
 

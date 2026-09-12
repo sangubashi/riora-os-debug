@@ -18,14 +18,25 @@
  * デザイン方針: アイボリー×ベージュ×ゴールド×ダークブラウン。大きな余白・細い境界線・
  * 控えめなシャドウ。業務アプリ感を避け、美容サロンらしい落ち着いた高級感を優先する。
  */
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Playfair_Display } from 'next/font/google'
-import { X, Leaf, CalendarDays, Flower2 } from 'lucide-react'
+import { X, Leaf, CalendarDays, Flower2, ImageOff } from 'lucide-react'
 import {
   useCustomerModeData,
   CUSTOMER_MODE_ANGLES,
   type CustomerModeAngleId,
 } from './customerModeData'
+import {
+  groupByOccasion,
+  representativePhoto,
+  buildPreviousComparison,
+  buildFirstComparison,
+  hasDistinctFirstOccasion,
+  type BodyPartPhotoGroup,
+  type ComparisonBasis,
+} from '@/lib/photos/comparisonSelection'
+import { getPhotoSignedUrl, type TimelinePhoto } from '@/lib/photos/photoApiClient'
+import { usePinchZoom } from './usePinchZoom'
 import {
   PALETTE,
   headingFont,
@@ -63,9 +74,71 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
   // 「約◯週間後」のみ表示する(次回予約が既にある場合のみ日付を表示)。
   const nextVisit = useNextVisit(customerId)
 
-  const pair = data.anglePairs[angle]
-  const currentUrl = pair?.current ? data.photoUrls[pair.current.id] : undefined
-  const referenceUrl = pair?.reference ? data.photoUrls[pair.reference.id] : undefined
+  // 写真カルテ 比較｜拡大モード切替(PHASE GUEST-MODE-3・2026-09-12)。
+  const [photoMode, setPhotoMode] = useState<'compare' | 'enlarge'>('compare')
+  const [compareBasis, setCompareBasis] = useState<ComparisonBasis>('previous')
+  // 拡大モードで選択中の撮影機会key(comparisonSelection.tsのoccasionKey形式と同じ)。
+  // null = 「今回」(最新の撮影機会)を表す。全来店日リストから選ぶと`visit:${visitId}`になる。
+  const [enlargeOccasionKey, setEnlargeOccasionKey] = useState<string | null>(null)
+  // 全来店日リストで選んだ回のメタ情報。選んだ回にこの角度の写真が無い場合の
+  // 空状態表示に使う(ショートカット/デフォルト選択時はnullのまま、写真自身から情報を出す)。
+  const [enlargeFallbackTab, setEnlargeFallbackTab] = useState<{ visitCountAt: number; visitDate: string | null } | null>(null)
+  // 事前取得(photoUrls)に無い写真のsigned URL。全来店日リストから任意の回を選んだ場合のみ
+  // 都度取得する(来店回数が多い顧客で全件事前取得すると無駄なsigned URL発行が増えるため)。
+  const [extraPhotoUrls, setExtraPhotoUrls] = useState<Record<string, string>>({})
+
+  // 角度切替時は比較・拡大の選択状態をリセットする(別の角度の撮影機会を参照し続けるのを防ぐ)。
+  useEffect(() => {
+    setCompareBasis('previous')
+    setEnlargeOccasionKey(null)
+    setEnlargeFallbackTab(null)
+  }, [angle])
+
+  const angleGroup: BodyPartPhotoGroup = useMemo(
+    () => ({ bodyPart: angle, photos: data.photosByAngle[angle] ?? [] }),
+    [angle, data.photosByAngle]
+  )
+  const occasions = useMemo(() => groupByOccasion(angleGroup.photos), [angleGroup])
+  const isComparable = occasions.length >= 2
+  const showFirstShortcut = hasDistinctFirstOccasion(angleGroup)
+
+  // 比較モード: 「前回↔今回」「初回↔今回」ショートカット切替。既存のcomparisonSelection.ts
+  // 公開関数のみを使い、比較ロジック自体は変更しない。
+  const comparePair = useMemo(() => {
+    if (!isComparable) return null
+    return compareBasis === 'previous' ? buildPreviousComparison(angleGroup) : buildFirstComparison(angleGroup)
+  }, [angleGroup, isComparable, compareBasis])
+  const compareCurrentPhoto = comparePair?.current ?? (occasions[0] ? representativePhoto(occasions[0]) : null)
+  const compareReferencePhoto = comparePair?.reference ?? null
+  const compareCurrentUrl = compareCurrentPhoto ? data.photoUrls[compareCurrentPhoto.id] : undefined
+  const compareReferenceUrl = compareReferencePhoto ? data.photoUrls[compareReferencePhoto.id] : undefined
+
+  // 拡大モード: 「初回」「前回」ショートカット＋全来店日リストから選んだ1枚を単独表示。
+  const enlargedOccasion = useMemo(() => {
+    if (occasions.length === 0) return null
+    if (enlargeOccasionKey === null) return occasions[0]
+    return occasions.find(o => o.key === enlargeOccasionKey) ?? null
+  }, [occasions, enlargeOccasionKey])
+  const enlargedPhoto = enlargedOccasion ? representativePhoto(enlargedOccasion) : null
+  const enlargedUrl = enlargedPhoto
+    ? (data.photoUrls[enlargedPhoto.id] ?? extraPhotoUrls[enlargedPhoto.id])
+    : undefined
+  const enlargedLoading = !!enlargedPhoto && !enlargedUrl
+  // ハイライト対象のvisitId。写真が見つかった場合は写真自身のvisitId、
+  // 「選んだ回にこの角度の写真が無い」空状態の場合はkeyから逆算する。
+  const enlargedActiveVisitId = enlargedPhoto?.visitId
+    ?? (enlargeOccasionKey?.startsWith('visit:') ? enlargeOccasionKey.slice('visit:'.length) : null)
+
+  useEffect(() => {
+    if (!enlargedPhoto) return
+    if (data.photoUrls[enlargedPhoto.id] || extraPhotoUrls[enlargedPhoto.id]) return
+    let cancelled = false
+    void getPhotoSignedUrl(customerId, enlargedPhoto.id, 'detail').then(url => {
+      if (!cancelled && url) setExtraPhotoUrls(prev => ({ ...prev, [enlargedPhoto.id]: url }))
+    })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enlargedPhoto?.id, customerId])
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: PALETTE.bg, display: 'flex', flexDirection: 'column' }}>
@@ -158,25 +231,116 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
             </p>
           ) : (
             <>
-              {/* 写真比較 */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <PhotoPanel
-                  label="前回"
-                  url={referenceUrl}
-                  visitCountAt={pair?.reference?.visitCountAt ?? null}
-                  visitDate={pair?.reference?.visitDate ?? pair?.reference?.takenAt ?? null}
-                  emptyText="前回の写真はまだありません"
-                  onExpand={referenceUrl ? () => setLightboxUrl(referenceUrl) : undefined}
-                />
-                <PhotoPanel
-                  label="今回"
-                  url={currentUrl}
-                  visitCountAt={pair?.current?.visitCountAt ?? null}
-                  visitDate={pair?.current?.visitDate ?? pair?.current?.takenAt ?? null}
-                  emptyText="まだ写真がありません"
-                  onExpand={currentUrl ? () => setLightboxUrl(currentUrl) : undefined}
-                />
+              {/* 比較｜拡大 モード切替 + ショートカット(PHASE GUEST-MODE-3) */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
+                <div style={{ display: 'inline-flex', background: PALETTE.bg, border: `1px solid ${PALETTE.border}`, borderRadius: '999px', padding: '3px' }}>
+                  {(['compare', 'enlarge'] as const).map(m => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setPhotoMode(m)}
+                      style={{
+                        padding: '7px 18px', borderRadius: '999px', border: 'none', cursor: 'pointer',
+                        fontSize: '12px', fontWeight: 700, letterSpacing: '0.04em',
+                        background: photoMode === m ? PALETTE.gold : 'transparent',
+                        color: photoMode === m ? '#FFFFFF' : PALETTE.muted,
+                      }}
+                    >
+                      {m === 'compare' ? '比較' : '拡大'}
+                    </button>
+                  ))}
+                </div>
+
+                {photoMode === 'compare' && isComparable && (
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <ShortcutButton active={compareBasis === 'previous'} onClick={() => setCompareBasis('previous')}>
+                      前回↔今回
+                    </ShortcutButton>
+                    {showFirstShortcut && (
+                      <ShortcutButton active={compareBasis === 'first'} onClick={() => setCompareBasis('first')}>
+                        初回↔今回
+                      </ShortcutButton>
+                    )}
+                  </div>
+                )}
+
+                {photoMode === 'enlarge' && occasions.length >= 2 && (
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {showFirstShortcut && (
+                      <ShortcutButton
+                        active={enlargedOccasion?.key === occasions[occasions.length - 1].key}
+                        onClick={() => { setEnlargeOccasionKey(occasions[occasions.length - 1].key); setEnlargeFallbackTab(null) }}
+                      >
+                        初回
+                      </ShortcutButton>
+                    )}
+                    <ShortcutButton
+                      active={enlargedOccasion?.key === occasions[1]?.key}
+                      onClick={() => { setEnlargeOccasionKey(occasions[1].key); setEnlargeFallbackTab(null) }}
+                    >
+                      前回
+                    </ShortcutButton>
+                  </div>
+                )}
               </div>
+
+              {/* 写真表示: 比較モード(2枚並び・既存動作)｜拡大モード(1枚・ピンチズーム) */}
+              {photoMode === 'compare' ? (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <PhotoPanel
+                    label={compareBasis === 'previous' ? '前回' : '初回'}
+                    url={compareReferenceUrl}
+                    visitCountAt={compareReferencePhoto?.visitCountAt ?? null}
+                    visitDate={compareReferencePhoto?.visitDate ?? compareReferencePhoto?.takenAt ?? null}
+                    emptyText={compareBasis === 'previous' ? '前回の写真はまだありません' : '初回の写真はまだありません'}
+                    onExpand={compareReferenceUrl ? () => setLightboxUrl(compareReferenceUrl) : undefined}
+                  />
+                  <PhotoPanel
+                    label="今回"
+                    url={compareCurrentUrl}
+                    visitCountAt={compareCurrentPhoto?.visitCountAt ?? null}
+                    visitDate={compareCurrentPhoto?.visitDate ?? compareCurrentPhoto?.takenAt ?? null}
+                    emptyText="まだ写真がありません"
+                    onExpand={compareCurrentUrl ? () => setLightboxUrl(compareCurrentUrl) : undefined}
+                  />
+                </div>
+              ) : (
+                <>
+                  <EnlargedPhotoPanel
+                    url={enlargedUrl}
+                    loading={enlargedLoading}
+                    photo={enlargedPhoto}
+                    fallbackTab={enlargeFallbackTab}
+                  />
+                  {data.visitTabs.length > 0 && (
+                    <div style={{ marginTop: '14px', display: 'flex', gap: '8px', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: '2px' }}>
+                      {data.visitTabs.map(tab => {
+                        const key = `visit:${tab.visitId}`
+                        const selected = enlargedActiveVisitId === tab.visitId
+                        return (
+                          <button
+                            key={tab.visitId}
+                            type="button"
+                            onClick={() => {
+                              setEnlargeOccasionKey(key)
+                              setEnlargeFallbackTab({ visitCountAt: tab.visitCountAt, visitDate: tab.visitDate })
+                            }}
+                            style={{
+                              flexShrink: 0, padding: '7px 14px', borderRadius: '999px', fontSize: '12px', fontWeight: 600,
+                              whiteSpace: 'nowrap', cursor: 'pointer',
+                              border: selected ? 'none' : `1px solid ${PALETTE.border}`,
+                              background: selected ? PALETTE.gold : PALETTE.card,
+                              color: selected ? '#FFFFFF' : PALETTE.muted,
+                            }}
+                          >
+                            {tab.visitCountAt === 1 ? '初回' : `${tab.visitCountAt}回目`}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
 
               {/* 肌状態タグ(前回/今回それぞれの上位2項目) */}
               {(data.previousSkinTags.length > 0 || data.currentSkinTags.length > 0) && (
@@ -408,6 +572,115 @@ function NextVisitInfoCell({ result }: { result: NextVisitResult | null }) {
           お肌の状態を見ながら、次回のお手入れ時期をご案内しています。
         </p>
       </div>
+    </div>
+  )
+}
+
+/** 比較｜拡大モードのショートカット切替ボタン(PHASE GUEST-MODE-3)。 */
+function ShortcutButton({
+  active, onClick, children,
+}: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding: '6px 12px', borderRadius: '999px', fontSize: '11px', fontWeight: 600,
+        cursor: 'pointer', whiteSpace: 'nowrap',
+        border: active ? 'none' : `1px solid ${PALETTE.border}`,
+        background: active ? PALETTE.gold : PALETTE.card,
+        color: active ? '#FFFFFF' : PALETTE.muted,
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+/**
+ * 拡大モードの単独写真表示(PHASE GUEST-MODE-3・2026-09-12)。二指ピンチでズーム、
+ * ズーム中は一指ドラッグでpan、ダブルタップでリセットできる(usePinchZoom.ts参照)。
+ *
+ * 【重要】保留中の「比較エンジン(スライダー+連動ズーム)」とは別実装。ここでは1枚の
+ * 写真を単独で拡大するだけで、2枚の写真を連動させてズーム・スライドする機能ではない。
+ *
+ * PhotoPanel(比較モードで使用・IpadStaffKarteViewとも共有)とは別コンポーネントとして
+ * 新設する。PhotoPanelの見た目・挙動には一切手を入れない(iPadカルテ側への影響を避けるため)。
+ */
+function EnlargedPhotoPanel({
+  url, loading, photo, fallbackTab,
+}: {
+  url: string | undefined
+  loading: boolean
+  photo: TimelinePhoto | null
+  fallbackTab: { visitCountAt: number; visitDate: string | null } | null
+}) {
+  const zoom = usePinchZoom()
+
+  useEffect(() => {
+    zoom.reset()
+    // urlが切り替わるたび(=表示中の回・角度が変わるたび)にズーム状態をリセットする。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url])
+
+  const visitCountAt = photo?.visitCountAt ?? fallbackTab?.visitCountAt ?? null
+  const dateLabel = formatVisitDateLabel(photo?.visitDate ?? photo?.takenAt ?? fallbackTab?.visitDate ?? null)
+  const captionParts = [
+    visitCountAt != null ? `来店${visitCountAt}回目` : null,
+    dateLabel,
+  ].filter(Boolean)
+
+  return (
+    <div>
+      <div
+        style={{
+          position: 'relative', aspectRatio: '4 / 5', borderRadius: '16px', overflow: 'hidden',
+          background: '#EFE8DA', touchAction: 'none',
+          border: url ? `1px solid ${PALETTE.border}` : `1.5px dashed ${PALETTE.border}`,
+        }}
+        onTouchStart={zoom.handlers.onTouchStart}
+        onTouchMove={zoom.handlers.onTouchMove}
+        onTouchEnd={zoom.handlers.onTouchEnd}
+      >
+        {loading && (
+          <div style={{
+            width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: PALETTE.muted, fontSize: '12px',
+          }}>
+            読み込み中…
+          </div>
+        )}
+        {!loading && url && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={url}
+            alt="拡大写真"
+            style={{
+              width: '100%', height: '100%', objectFit: 'contain', display: 'block',
+              transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})`,
+              transformOrigin: 'center',
+              transition: zoom.scale === 1 ? 'transform 0.2s ease' : 'none',
+            }}
+          />
+        )}
+        {!loading && !url && (
+          <div
+            style={{
+              width: '100%', height: '100%', display: 'flex', flexDirection: 'column', gap: '10px',
+              alignItems: 'center', justifyContent: 'center',
+              color: PALETTE.muted, fontSize: '12px', textAlign: 'center', padding: '16px',
+            }}
+          >
+            <ImageOff size={26} strokeWidth={1.3} color={PALETTE.gold} />
+            この回のこの角度の写真はありません
+          </div>
+        )}
+      </div>
+      {captionParts.length > 0 && (
+        <p style={{ textAlign: 'center', margin: '10px 0 0', fontSize: '12px', color: PALETTE.muted }}>
+          {captionParts.join(' ・ ')}{url ? '（ピンチで拡大できます）' : ''}
+        </p>
+      )}
     </div>
   )
 }
