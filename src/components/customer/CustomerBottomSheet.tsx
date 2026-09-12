@@ -1499,13 +1499,34 @@ export default function CustomerBottomSheet({
                 overflow: 'hidden',
               }}
             >
+              {/* iPadカルテ検索導線(PHASE IPAD-2)専用行。シート最上端(角丸の直下)に単独配置
+                  (2026-09-12・ユーザー指示で他ボタンとの横並びから分離)。 */}
+              <div className="flex-shrink-0" style={{ padding: '10px 8px 0' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowIpadKarteSearch(true)}
+                  className="rounded-full flex items-center gap-1 whitespace-nowrap"
+                  style={{
+                    height: '36px', padding: '0 14px',
+                    background: '#FDF8EF',
+                    border: '1px solid #E8DFCF',
+                    color: '#AD8A54',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  🔍 カルテ検索
+                </button>
+              </div>
+
               {/* ドラッグハンドル(表示のみ・スワイプでは閉じない) + 右上Closeボタン(常時固定・44px以上のタップ領域) */}
               <div className="flex-shrink-0 relative" style={{ minHeight: '44px' }}>
                 <div className="absolute inset-x-0 flex justify-center" style={{ top: '12px' }}>
                   <div className="w-12 h-[5px] rounded-full bg-[#E8D5D8]" />
                 </div>
-                {/* お客様モード導線(PHASE GUEST-MODE-1)・iPadカルテ導線(PHASE IPAD-1)・
-                    iPadカルテ検索導線(PHASE IPAD-2)。既存レイアウトへの追加はこの3ボタンのみ。 */}
+                {/* お客様モード導線(PHASE GUEST-MODE-1)・iPadカルテ導線(PHASE IPAD-1)。
+                    既存レイアウトへの追加はこの2ボタンのみ(カルテ検索は上の専用行へ移動済み)。 */}
                 <div className="absolute flex items-center gap-1.5" style={{ top: '2px', left: '8px' }}>
                   <button
                     type="button"
@@ -1538,22 +1559,6 @@ export default function CustomerBottomSheet({
                     }}
                   >
                     🗂 iPadカルテ(β)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowIpadKarteSearch(true)}
-                    className="rounded-full flex items-center gap-1 whitespace-nowrap"
-                    style={{
-                      height: '36px', padding: '0 14px',
-                      background: '#FDF8EF',
-                      border: '1px solid #E8DFCF',
-                      color: '#AD8A54',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    🔍 カルテ検索
                   </button>
                 </div>
                 <button

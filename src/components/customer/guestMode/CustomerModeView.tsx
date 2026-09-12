@@ -244,16 +244,23 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
                 </Card>
               )}
 
-              {!!data.goalNote?.trim() && (
-                <Card title="お客様の目標">
+              {/* 2026-09-12仕様変更: データが無くても枠自体は常に表示し、「まだ登録されていません」の
+                  控えめな表示にする(以前は項目ごと非表示にしていた)。利用データを蓄積してから
+                  必要性を判断する方針のため(ユーザー指示)。 */}
+              <Card title="お客様の目標">
+                {data.goalNote?.trim() ? (
                   <p style={{ margin: 0, fontSize: '14px', color: PALETTE.text, lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>
                     {customerName}様の目標：{data.goalNote}
                   </p>
-                </Card>
-              )}
+                ) : (
+                  <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>
+                    まだ登録されていません
+                  </p>
+                )}
+              </Card>
 
-              {data.treatmentPoints.length > 0 && (
-                <Card title="今回の施術ポイント">
+              <Card title="今回の施術ポイント">
+                {data.treatmentPoints.length > 0 ? (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                     {data.treatmentPoints.map((point, i) => (
                       <span
@@ -267,8 +274,12 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
                       </span>
                     ))}
                   </div>
-                </Card>
-              )}
+                ) : (
+                  <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>
+                    まだ登録されていません
+                  </p>
+                )}
+              </Card>
 
               {/* 過去の写真・来店履歴 — 将来のPhase B(比較表示切り替え)への入り口(PHASE GUEST-MODE-2)。
                   今回はタップ→選択の導線のみ。実際に比較対象を切り替える処理は別Phaseで実装する。 */}
