@@ -20,7 +20,7 @@
  */
 import { useState } from 'react'
 import { Flower2, X, Pencil } from 'lucide-react'
-import { useIpadKarteData, IPAD_KARTE_ANGLES, type IpadKarteAngleId } from './ipadKarteData'
+import { useIpadKarteData, IPAD_KARTE_ANGLES, type IpadKarteAngleId, type RetailProductStatus } from './ipadKarteData'
 import KarteMemoSection from './KarteMemoSection'
 import GoalEditCard from './GoalEditCard'
 import KarteImportSection from '@/components/customer/KarteImportSection'
@@ -40,6 +40,13 @@ function addWeeksIso(weeks: number): string {
   const d = new Date()
   d.setDate(d.getDate() + weeks * 7)
   return d.toISOString().slice(0, 10)
+}
+
+/** "YYYY-MM-DD"同士の日数差(UTC基準)。顧客ステータスパネルの経過日数表示に使う。 */
+function daysBetweenIso(fromStr: string, toStr: string): number {
+  const from = new Date(`${fromStr}T00:00:00Z`).getTime()
+  const to = new Date(`${toStr}T00:00:00Z`).getTime()
+  return Math.round((to - from) / 86_400_000)
 }
 
 /** 対象日付を含む月のミニカレンダー(「カレンダー形式で視覚的に提示」の要件)。 */
@@ -79,6 +86,83 @@ function MiniCalendar({ dateStr }: { dateStr: string }) {
         ))}
       </div>
     </div>
+  )
+}
+
+/** 数値のみの簡易表示行(顧客ステータスパネル用)。 */
+function StatusRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '10px' }}>
+      <span style={{ fontSize: '11px', color: PALETTE.muted }}>{label}</span>
+      <span style={{ fontSize: '13px', fontWeight: 700, color: PALETTE.text, textAlign: 'right' }}>{value}</span>
+    </div>
+  )
+}
+
+/**
+ * 顧客ステータスパネル(PHASE RETAIL-ITEMS-1・2026-09-12・購買・来店周期データ管理 Phase1)。
+ * 最終来店日・来店周期・経過日数・次回来店目安(既存next-visitエンジンをそのまま使う。
+ * 次回の目安の編集操作自体は下のNextVisitCardが担うため、ここでは事実の一覧表示のみ)と、
+ * 店販商品ごとの最終購入日・累計購入額・購入周期(homecare-products APIの拡張分)を表示する。
+ * すべて自動計算・スタッフ入力は一切不要(Phase1確定方針どおり)。
+ */
+function CustomerStatusPanel({
+  customerId, lastVisitDate, visitCount, retailProducts,
+}: {
+  customerId: string
+  lastVisitDate: string | null
+  visitCount: number
+  retailProducts: RetailProductStatus[]
+}) {
+  const nextVisit = useNextVisit(customerId)
+  const today = todayIsoUtc()
+  const daysSinceLastVisit = lastVisitDate ? daysBetweenIso(lastVisitDate, today) : null
+
+  return (
+    <Card title="📊 顧客ステータス">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <StatusRow label="最終来店日" value={lastVisitDate ? formatApproxDateLabel(lastVisitDate) : '来店履歴なし'} />
+        <StatusRow label="来店回数" value={`${visitCount}回`} />
+        <StatusRow
+          label="来店周期の目安"
+          value={nextVisit.result?.cycleDays != null ? `約${nextVisit.result.cycleDays}日ごと` : '算出データ不足'}
+        />
+        <StatusRow
+          label="前回来店から経過"
+          value={daysSinceLastVisit != null ? `${daysSinceLastVisit}日` : '—'}
+        />
+        <StatusRow
+          label="次回来店目安"
+          value={nextVisit.result?.estimatedDate ? formatApproxDateLabel(nextVisit.result.estimatedDate) : '算出データ不足'}
+        />
+      </div>
+
+      {retailProducts.length > 0 && (
+        <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: `1px solid ${PALETTE.border}` }}>
+          <p style={{ margin: '0 0 10px', fontSize: '11px', letterSpacing: '0.08em', color: PALETTE.gold, fontFamily: headingFont.style.fontFamily }}>
+            店販購入ステータス(商品ごと)
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {retailProducts.map(p => (
+              <div key={p.productName} style={{ background: PALETTE.bg, borderRadius: '12px', padding: '10px 12px' }}>
+                <p style={{ margin: '0 0 4px', fontSize: '13px', fontWeight: 700, color: PALETTE.text }}>{p.productName}</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <StatusRow label="最終購入日" value={formatApproxDateLabel(p.lastPurchasedAt)} />
+                  <StatusRow
+                    label="累計購入額"
+                    value={p.totalAmount != null ? `¥${p.totalAmount.toLocaleString('ja-JP')}` : '集計データなし'}
+                  />
+                  <StatusRow
+                    label="購入周期"
+                    value={p.averageIntervalDays != null ? `約${p.averageIntervalDays}日ごと` : '算出データ不足(購入1回のみ)'}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </Card>
   )
 }
 
@@ -342,6 +426,15 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
 
             {/* ── 右カラム ── */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* 顧客ステータス(購買・来店周期データ管理 Phase1・2026-09-12)。すべて自動計算・
+                  スタッフ入力不要。次回目安の編集操作自体は下のNextVisitCardが担う。 */}
+              <CustomerStatusPanel
+                customerId={customerId}
+                lastVisitDate={data.lastVisitDate}
+                visitCount={data.visitCount}
+                retailProducts={data.retailProducts}
+              />
+
               <Card title="📷 写真カルテ（前回｜今回）">
                 <div style={{ display: 'flex', gap: '24px', borderBottom: `1px solid ${PALETTE.border}`, marginBottom: '16px' }}>
                   {IPAD_KARTE_ANGLES.map(a => (

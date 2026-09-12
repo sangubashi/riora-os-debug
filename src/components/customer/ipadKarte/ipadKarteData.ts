@@ -74,6 +74,21 @@ interface HomecareProductEntry {
   productName: string
   purchaseCount: number
   lastPurchasedAt: string
+  totalAmount: number | null
+  averageIntervalDays: number | null
+}
+
+/**
+ * 「顧客ステータス」パネル(PHASE RETAIL-ITEMS-1・2026-09-12)の店販商品1件分。
+ * homecare-products APIのレスポンスをそのまま画面表示用に整形しただけ(集計ロジックは
+ * サーバー側のまま・このフックでは加工しない)。「今回のホームケア」カード用の
+ * HomecareCardItem(使い方ガイド付き・件数を絞る)とは別物。
+ */
+export interface RetailProductStatus {
+  productName:         string
+  lastPurchasedAt:      string
+  totalAmount:          number | null
+  averageIntervalDays:  number | null
 }
 
 /** 「今回のホームケア」カード用の1商品分(customerModeData.tsのHomecareCardItemと同じ形)。 */
@@ -123,6 +138,12 @@ export interface IpadKarteData {
   // 置き換えたため、このフックでは算出しない(IpadStaffKarteView側でuseNextVisitを直接使う)。
   /** 「今回のホームケア」カード(customerModeData.tsと同じ取得ロジックの流用)。 */
   homecareItems: HomecareCardItem[]
+  /** 顧客ステータスパネル用: 最終来店日(visit-history先頭・visit_date DESC)。来店履歴が無ければnull。 */
+  lastVisitDate: string | null
+  /** 顧客ステータスパネル用: 来店回数(visit-historyの件数、最大30件・既存API仕様のまま)。 */
+  visitCount: number
+  /** 顧客ステータスパネル用: 店販商品ごとの最終購入日・累計購入額・平均購入周期(全件)。 */
+  retailProducts: RetailProductStatus[]
 }
 
 const EMPTY_DATA: IpadKarteData = {
@@ -135,6 +156,9 @@ const EMPTY_DATA: IpadKarteData = {
   currentSkinTags: [],
   todayTreatmentPoints: [],
   homecareItems: [],
+  lastVisitDate: null,
+  visitCount: 0,
+  retailProducts: [],
 }
 
 export interface UseIpadKarteDataResult extends IpadKarteData {
@@ -176,6 +200,9 @@ export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
       const todayVisitId = todayVisit?.id ?? null
       const latestVisit = todayVisit ?? visits[0] ?? null
       const currentMenuName = latestVisit?.menuName ?? null
+      // 顧客ステータスパネル用。visit-history自体は既にvisit_date DESCで返るため先頭が最終来店。
+      const lastVisitDate = visits[0]?.visitDate ?? null
+      const visitCount = visits.length
 
       const records: SkinRecord[] = (skinJson?.success ? skinJson.records : []) ?? []
       const currentRecord = records.find(r => r.visitId === todayVisitId) ?? records[0] ?? null
@@ -192,6 +219,15 @@ export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
         const guide = getHomecareUsageGuide(p.productName)
         return { productName: p.productName, frequency: guide?.frequency ?? null, timing: guide?.timing ?? null, caution: guide?.caution ?? null }
       })
+
+      // 顧客ステータスパネル用: 全店販商品(件数を絞らない)。homecare-products APIが
+      // lastPurchasedAt DESCで返す順をそのまま使う。
+      const retailProducts: RetailProductStatus[] = homecareProducts.map(p => ({
+        productName:         p.productName,
+        lastPurchasedAt:     p.lastPurchasedAt,
+        totalAmount:         p.totalAmount ?? null,
+        averageIntervalDays: p.averageIntervalDays ?? null,
+      }))
 
       const sortedContraindications = [...contraindications].sort(
         (a, b) => CONTRAINDICATION_SEVERITY_ORDER.indexOf(a.severity) - CONTRAINDICATION_SEVERITY_ORDER.indexOf(b.severity)
@@ -237,6 +273,9 @@ export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
         currentSkinTags,
         todayTreatmentPoints,
         homecareItems,
+        lastVisitDate,
+        visitCount,
+        retailProducts,
       })
     })()
 
