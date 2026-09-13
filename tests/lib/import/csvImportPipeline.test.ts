@@ -80,6 +80,7 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
   visits: Visit[];
   opsLogs: OpsLog[];
   retailItems: Array<{ visitId: string; productName: string; quantity: number; unitPrice: number | null; amount: number | null }>;
+  subscriptionPayments: Array<{ checkoutId: string; customerId: string; visitId: string | null; staffId: string | null; itemName: string; amount: number; paymentDate: string }>;
 } } {
   const store: Store = {
     id: STORE_ID, name: 'テスト店舗', anonId: 'anon-1', anonSalt: 'fixed-test-salt',
@@ -102,6 +103,7 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
     visits: [] as Visit[],
     opsLogs: [] as OpsLog[],
     retailItems: [] as Array<{ visitId: string; productName: string; quantity: number; unitPrice: number | null; amount: number | null }>,
+    subscriptionPayments: [] as Array<{ checkoutId: string; customerId: string; visitId: string | null; staffId: string | null; itemName: string; amount: number; paymentDate: string }>,
   };
   let customerSeq = 0;
   let visitSeq = 0;
@@ -280,6 +282,20 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
       loadCells: async () => new Map(),
       refreshStepStats: async () => {},
       listAllStepStats: async () => [],
+    },
+    subscriptionPaymentRepo: {
+      replaceForCheckout: async (checkoutId, payments) => {
+        state.subscriptionPayments = state.subscriptionPayments.filter(p => p.checkoutId !== checkoutId);
+        state.subscriptionPayments.push(...payments.map(p => ({
+          checkoutId,
+          customerId: p.customerId,
+          visitId: p.visitId,
+          staffId: p.staffId,
+          itemName: p.itemName,
+          amount: p.amount,
+          paymentDate: p.paymentDate,
+        })));
+      },
     },
   };
 
@@ -1032,6 +1048,108 @@ describe('csvImportPipeline', () => {
       expect(result.report.qualityReport.sameDayDifferentCheckoutCount).toBe(0);
       expect(repos.state.visits).toHaveLength(1);
       expect(repos.state.visits[0].treatmentAmount).toBe(5000); // 上書きされない(既存挙動維持)
+    });
+  });
+
+  describe('runImportPipeline(SUBSCRIPTION_VISIT_SPLIT_PHASE1: サブスク決済／実来店データモデル分離)', () => {
+    const SUBSCRIPTION_ITEM_NAME = '【サブスク決済日】※金額入力してお会計';
+
+    it('純粋サブスク会計(実施術・店販を伴わない決済のみ)はbrain_visitsの行を作らずbrain_subscription_paymentsのみに記録する', async () => {
+      const repos = createFakeRepos();
+      const csv = buildCsv([
+        row({
+          checkoutId: 'S1', date: '2026-06-01', staff: '鈴木', customerName: '田中花子',
+          customerNumber: 'C001', menu: SUBSCRIPTION_ITEM_NAME, amount: 16000,
+        }),
+      ]);
+
+      const result = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(repos.state.visits).toHaveLength(0);
+      expect(result.report.visitsImported).toBe(0);
+      expect(result.report.newCustomers).toBe(1); // 顧客レコード自体は作成される
+      expect(repos.state.subscriptionPayments).toEqual([
+        expect.objectContaining({
+          checkoutId: 'S1', visitId: null, itemName: SUBSCRIPTION_ITEM_NAME, amount: 16000,
+        }),
+      ]);
+      expect(repos.state.opsLogs[0].detail.subscriptionSplitAudit).toEqual({
+        reason: 'pure_subscription_checkout',
+        pureSubscriptionCheckoutCount: 1,
+      });
+    });
+
+    it('混在会計(実施術+サブスク課金)は施術分のみtreatmentAmountに計上し、サブスク分をvisit_id付きでbrain_subscription_paymentsへ分離する', async () => {
+      const repos = createFakeRepos();
+      const csv = buildCsv([
+        row({
+          checkoutId: 'M1', date: '2026-06-01', staff: '鈴木', customerName: '松下直樹',
+          customerNumber: 'C002', menu: 'カット', amount: 9800,
+        }),
+        row({
+          checkoutId: 'M1', date: '2026-06-01', staff: '鈴木', customerName: '松下直樹',
+          customerNumber: 'C002', menu: SUBSCRIPTION_ITEM_NAME, amount: 16000,
+        }),
+      ]);
+
+      const result = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(repos.state.visits).toHaveLength(1);
+      // サブスク分(16000)は治療費に混入せず、実施術分(9800)のみが計上される
+      expect(repos.state.visits[0].treatmentAmount).toBe(9800);
+      expect(repos.state.subscriptionPayments).toEqual([
+        expect.objectContaining({
+          checkoutId: 'M1', visitId: repos.state.visits[0].id, itemName: SUBSCRIPTION_ITEM_NAME, amount: 16000,
+        }),
+      ]);
+    });
+
+    it('同一会計IDの再取込(同一CSVの再投入)はbrain_subscription_paymentsを重複蓄積しない(冪等)', async () => {
+      const repos = createFakeRepos();
+      const csv = buildCsv([
+        row({
+          checkoutId: 'S1', date: '2026-06-01', staff: '鈴木', customerName: '田中花子',
+          customerNumber: 'C001', menu: SUBSCRIPTION_ITEM_NAME, amount: 16000,
+        }),
+      ]);
+
+      await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+      await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+
+      expect(repos.state.subscriptionPayments).toHaveLength(1);
+    });
+
+    it('サブスク課金を含まない通常会計はbrain_subscription_paymentsに何も記録しない(既存挙動への影響なし)', async () => {
+      const repos = createFakeRepos();
+      const csv = buildCsv([
+        row({ checkoutId: 'A1', date: '2026-06-01', staff: '鈴木', customerName: '田中花子', customerNumber: 'C001' }),
+      ]);
+
+      const result = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+
+      expect(result.ok).toBe(true);
+      expect(repos.state.subscriptionPayments).toEqual([]);
+      expect(repos.state.visits).toHaveLength(1);
+    });
+
+    it('Dry Runでは純粋サブスク会計をcheckout_integrity_errorとしてスキップ表示しない', async () => {
+      const repos = createFakeRepos();
+      const csv = buildCsv([
+        row({
+          checkoutId: 'S1', date: '2026-06-01', staff: '鈴木', customerName: '田中花子',
+          customerNumber: 'C001', menu: SUBSCRIPTION_ITEM_NAME, amount: 16000,
+        }),
+      ]);
+
+      const result = await buildDryRunResult({ storeId: STORE_ID, fileName: 'test.csv', csvText: csv }, repos);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.result.skipped).toEqual([]);
     });
   });
 });

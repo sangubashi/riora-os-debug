@@ -50,6 +50,17 @@ export interface SalonBoardRetailItem {
   amount:    number
 }
 
+/**
+ * サブスク月額課金明細1件分(SUBSCRIPTION_VISIT_SPLIT_PHASE1・2026-09-13)。
+ * 実データ調査で確認済みの12パターン全てが区分='施術'かつ品目名に「サブスク」を
+ * 含む(表記ゆれのため部分一致で判定する。SUBSCRIPTION_NAME_PATTERN参照)。
+ * brain_visits.treatment_amountには含めず、brain_subscription_paymentsへ分離する。
+ */
+export interface SalonBoardSubscriptionPayment {
+  itemName: string
+  amount:   number
+}
+
 export interface SalonBoardCheckoutAggregate {
   checkoutId:      string
   /** 集約元の代表行番号(会計ID内の先頭行)。会計内整合性エラーが無ければ必ず付与される。 */
@@ -74,6 +85,19 @@ export interface SalonBoardCheckoutAggregate {
   retailItems:     SalonBoardRetailItem[]
   serviceNames:    string[]
   lineItemCount:   number
+  /**
+   * 実施術行の件数(区分='施術'相当。サブスク課金行は除く。SUBSCRIPTION_VISIT_SPLIT_PHASE1)。
+   * netServiceSales===0は「実施術が無い」ことと「実施術が0円(無料施術)だった」ことを
+   * 区別できないため、csvImportPipeline.ts側で「純粋サブスク会計」(brain_visitsの行を
+   * 作らない)かどうかを判定する際は、この値とretailSalesが両方0であることを見る。
+   */
+  treatmentLineCount: number
+  /**
+   * サブスク月額課金の明細行(SUBSCRIPTION_VISIT_SPLIT_PHASE1)。treatmentAmount/menuNameの
+   * 算出からは除外済み。csvImportPipeline.ts側でbrain_subscription_paymentsへ書き込む。
+   * 空配列 = この会計にサブスク課金は含まれない(通常のケース)。
+   */
+  subscriptionPayments: SalonBoardSubscriptionPayment[]
 }
 
 export interface CheckoutIssue {
@@ -132,6 +156,16 @@ const TREATMENT_CATEGORIES = new Set(['施術', 'メニュー', 'オプション
 // 実SalonBoard売上明細は会計区分="会計"で出力される(デモ生成CSVは"通常")。
 // いずれも正常値として扱い、それ以外(取消等)のみ警告対象にする。
 const NORMAL_CHECKOUT_TYPES = new Set(['通常', '会計'])
+
+/**
+ * サブスク月額課金の明細行を検出する判定(SUBSCRIPTION_VISIT_SPLIT_PHASE1)。
+ * 実データ調査(2026-09-13)で確認済みの表記ゆれ12パターン全てに「サブスク」という
+ * 文字列が例外なく含まれていた一方、区分(施術/店販/その他)・カテゴリだけでは
+ * 通常の施術行と区別できなかった(区分='施術'は通常の施術でも136件中136件が該当)。
+ * そのため品目名の部分一致判定のみを信頼できる手がかりとして採用する。
+ * 将来新しい表記が増えても、この文字列を含む限り自動的に拾える。
+ */
+const SUBSCRIPTION_NAME_PATTERN = /サブスク/
 
 /**
  * CSVImportSecurityArchitecture.md §1のDROP分類列(別名含む)。HEADER_MAPに無いCSV列のうち
@@ -345,19 +379,28 @@ export function aggregateCheckouts(rows: SalonBoardDetailRow[]): AggregateChecko
         message: `会計区分が想定外です: "${head.checkoutType}"` })
     }
 
+    // サブスク月額課金行(SUBSCRIPTION_VISIT_SPLIT_PHASE1)を切り出す。区分='施術'の中に
+    // 実施術行とサブスク課金行が同一会計で混在するケースがあるため、以降の
+    // treatment_amount/menuName算出は全てこのサブスク行を除いたnonSubscriptionLinesに
+    // 対して行う(混在会計で治療費にサブスク課金が無自覚に合算されるのを防ぐ)。
+    const isSubscriptionLine = (l: SalonBoardDetailRow) =>
+      TREATMENT_CATEGORIES.has(l.category) && SUBSCRIPTION_NAME_PATTERN.test(l.itemName)
+    const subscriptionLines = lines.filter(isSubscriptionLine)
+    const nonSubscriptionLines = lines.filter(l => !isSubscriptionLine(l))
+
     // 施術行(実フォーマット)に加え、メニュー/オプション/サービス(デモ生成CSVの旧区分)も
     // 「実質的な施術行」として扱う。店販のみ+割引(区分=その他)の会計を判別するための
     // カウントであり、区分='施術'だけに限定すると後方互換の旧フォーマットで誤判定する。
-    const shijutsuLineCount = lines.filter(l => TREATMENT_CATEGORIES.has(l.category)).length
-    const rawNetServiceSales = lines
+    const shijutsuLineCount = nonSubscriptionLines.filter(l => TREATMENT_CATEGORIES.has(l.category)).length
+    const rawNetServiceSales = nonSubscriptionLines
       .filter(l => SERVICE_CATEGORIES.has(l.category))
       .reduce((sum, l) => sum + l.amount, 0)
-    const rawRetailSales = lines
+    const rawRetailSales = nonSubscriptionLines
       .filter(l => l.category === '店販')
       .reduce((sum, l) => sum + l.amount, 0)
     // 実SalonBoard売上明細の割引行は区分='割引'ではなく区分='その他'+カテゴリ='割引'で
     // 出力される(デモ生成CSVの区分='割引'も後方互換のため両対応する)。
-    const discountTotal = lines
+    const discountTotal = nonSubscriptionLines
       .filter(l => l.category === '割引' || (l.category === 'その他' && l.subCategory === '割引'))
       .reduce((sum, l) => sum + l.amount, 0)
 
@@ -367,12 +410,14 @@ export function aggregateCheckouts(rows: SalonBoardDetailRow[]): AggregateChecko
     const netServiceSales = shijutsuLineCount === 0 ? 0 : rawNetServiceSales
     const retailSales = shijutsuLineCount === 0 ? rawRetailSales + rawNetServiceSales : rawRetailSales
 
-    // メニュー名解決用の代表行を選ぶ(Pass C: 名寄せ精度改善)。
+    // メニュー名解決用の代表行を選ぶ(Pass C: 名寄せ精度改善)。サブスク課金行は除外済みの
+    // nonSubscriptionLinesから選ぶため、混在会計でサブスク課金の方が金額が大きくても
+    // 実施術名がメニュー名として正しく採用される。
     // 実SalonBoard売上明細は区分=施術/メニュー/オプション/サービスの行が0件/複数件ありうるため、
-    // 安定して1件に決まらない。0件(店販・割引のみの会計)はmenuNameを空文字のままとし
-    // (menuResolver.resolveMenuId()がフォールバック/unresolvedとして扱う)、複数件ある場合は
-    // 金額が最も大きい行(=会計の主たる施術と推定できる)の品目名を代表値として使う。
-    const treatmentLines = lines.filter(l => TREATMENT_CATEGORIES.has(l.category))
+    // 安定して1件に決まらない。0件(店販・割引・サブスク課金のみの会計)はmenuNameを空文字の
+    // ままとし(menuResolver.resolveMenuId()がフォールバック/unresolvedとして扱う)、複数件
+    // ある場合は金額が最も大きい行(=会計の主たる施術と推定できる)の品目名を代表値として使う。
+    const treatmentLines = nonSubscriptionLines.filter(l => TREATMENT_CATEGORIES.has(l.category))
     const representativeMenuName = treatmentLines.length > 0
       ? treatmentLines.reduce((best, l) => (l.amount > best.amount ? l : best)).itemName
       : ''
@@ -395,16 +440,18 @@ export function aggregateCheckouts(rows: SalonBoardDetailRow[]): AggregateChecko
       netServiceSales,
       retailSales,
       discountTotal,
-      optionNames:  lines.filter(l => l.category === 'オプション').map(l => l.itemName),
-      retailNames:  lines.filter(l => l.category === '店販').map(l => l.itemName),
-      retailItems:  lines.filter(l => l.category === '店販').map(l => ({
+      optionNames:  nonSubscriptionLines.filter(l => l.category === 'オプション').map(l => l.itemName),
+      retailNames:  nonSubscriptionLines.filter(l => l.category === '店販').map(l => l.itemName),
+      retailItems:  nonSubscriptionLines.filter(l => l.category === '店販').map(l => ({
         itemName:  l.itemName,
         quantity:  l.quantity,
         unitPrice: l.unitPrice,
         amount:    l.amount,
       })),
-      serviceNames: lines.filter(l => l.category === 'サービス').map(l => l.itemName),
+      serviceNames: nonSubscriptionLines.filter(l => l.category === 'サービス').map(l => l.itemName),
       lineItemCount: lines.length,
+      treatmentLineCount: shijutsuLineCount,
+      subscriptionPayments: subscriptionLines.map(l => ({ itemName: l.itemName, amount: l.amount })),
     })
   })
 

@@ -241,6 +241,35 @@ export interface RetailItemInput {
 }
 
 /**
+ * brain_subscription_payments 1行分の書込み入力(サブスク決済／実来店データモデル
+ * 分離 Phase 1)。visitIdは実施術・店販と同一会計だった場合のみ設定し、
+ * 純粋サブスク会計(決済のみ)ではnullを渡す。
+ */
+export interface SubscriptionPaymentInput {
+  storeId:     UUID;
+  customerId:  UUID;
+  visitId:     UUID | null;
+  staffId:     UUID | null;
+  itemName:    string;
+  amount:      number;
+  paymentDate: string;
+}
+
+/**
+ * brain_subscription_payments(サブスク決済／実来店データモデル分離 Phase 1)への
+ * 書込み専用リポジトリ。brain_visit_retail_itemsと同じ「明細単位で分離して保持する」
+ * パターンを踏襲し、checkout_id単位で全削除→入れ直す(冪等な置き換え)。
+ */
+export interface ISubscriptionPaymentRepo {
+  /**
+   * brain_subscription_paymentsをcheckout_id単位で全削除→入れ直す(冪等な置き換え)。
+   * CSV再取込時に同一会計の明細が重複蓄積しないようにするため、追記ではなく置き換えとする。
+   * payments=[]の場合は削除のみ行う(この会計にサブスク課金が無い・削除確定)。
+   */
+  replaceForCheckout(checkoutId: string, payments: SubscriptionPaymentInput[]): Promise<void>;
+}
+
+/**
  * 招待経由の新規スタッフ作成入力(STAFF_MANAGEMENT_PHASE2_1)。
  * docs/STAFF_MANAGEMENT_PHASE2_DESIGN_2.md 8章準拠。
  */

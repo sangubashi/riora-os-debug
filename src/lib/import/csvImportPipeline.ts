@@ -34,6 +34,7 @@
 import type {
   ICustomerRepo, IVisitRepo, IStaffRepo, IMenuRepo, IStoreRepo, IOpsLogRepo,
   IBriefingRepo, IOutcomeRepo, IStatsRepo, RetailItemInput,
+  ISubscriptionPaymentRepo, SubscriptionPaymentInput,
 } from '../../repositories/interfaces'
 import type { Customer } from '../../types/riora.types'
 import {
@@ -62,6 +63,8 @@ export interface PipelineRepos {
   briefingRepo: IBriefingRepo
   outcomeRepo:  IOutcomeRepo
   statsRepo:    IStatsRepo
+  /** サブスク決済明細(SUBSCRIPTION_VISIT_SPLIT_PHASE1)。 */
+  subscriptionPaymentRepo: ISubscriptionPaymentRepo
 }
 
 const FATAL_ISSUE_CODES = new Set(['empty_csv', 'missing_required_columns'])
@@ -104,6 +107,32 @@ function hasPackKeyword(agg: SalonBoardCheckoutAggregate): boolean {
   if (agg.serviceNames.some((name) => name.includes(KEYWORD))) return true
   if (agg.retailNames.some((name) => name.includes(KEYWORD))) return true
   return false
+}
+
+/**
+ * 「純粋サブスク会計」判定(SUBSCRIPTION_VISIT_SPLIT_PHASE1)。実施術行
+ * (agg.treatmentLineCount)・店販売上(agg.retailSales)のいずれも無く、サブスク課金行
+ * だけの会計はbrain_visitsの行を作らずbrain_subscription_paymentsのみに記録する。
+ * netServiceSales===0だけでは判定しない(0円の無料施術とサブスクのみのケースを
+ * 区別できないため、実施術の「行数」であるtreatmentLineCountを見る)。
+ */
+function isPureSubscriptionCheckout(agg: SalonBoardCheckoutAggregate): boolean {
+  return agg.subscriptionPayments.length > 0 && agg.treatmentLineCount === 0 && agg.retailSales === 0
+}
+
+/** brain_subscription_payments書込み入力への変換(混在会計はvisitId有り、純粋サブスク会計はnull)。 */
+function buildSubscriptionPaymentInputs(
+  agg: SalonBoardCheckoutAggregate,
+  storeId: string,
+  customerId: string,
+  staffId: string,
+  visitId: string | null,
+  paymentDate: string
+): SubscriptionPaymentInput[] {
+  return agg.subscriptionPayments.map(p => ({
+    storeId, customerId, visitId, staffId,
+    itemName: p.itemName, amount: p.amount, paymentDate,
+  }))
 }
 
 interface ParsedAndAggregated {
@@ -437,8 +466,12 @@ export async function buildDryRunResult(input: DryRunInput, repos: PipelineRepos
       }
     }
 
+    // 純粋サブスク会計(SUBSCRIPTION_VISIT_SPLIT_PHASE1)はmenuName=''(実施術行が無いため)
+    // となりresolveMenuId()が必ずunresolvedを返すが、これは実取込では
+    // brain_subscription_paymentsへ記録されるだけで「スキップ」ではないため、
+    // Dry Runでcheckout_integrity_errorとして誤表示しないよう除外する。
     const menuRes = resolveMenuId(agg.menuName, ctx.menuLookup)
-    if (menuRes.status === 'unresolved') {
+    if (menuRes.status === 'unresolved' && !isPureSubscriptionCheckout(agg)) {
       additionalSkipped.push({ rowNumber: agg.lineNumber, reasonCode: 'checkout_integrity_error' })
       continue
     }
@@ -551,6 +584,9 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
   // CHECKOUT_ID_FOUNDATION_1: 同日に既存visitと異なる会計IDが検出された件数
   // (同日複数会計による会計欠落の実態を可視化するためのカウンタ。加算等の対応はまだしない)。
   let sameDayDifferentCheckoutCount = 0
+  // SUBSCRIPTION_VISIT_SPLIT_PHASE1: 純粋サブスク会計(brain_visitsの行を作らず
+  // brain_subscription_paymentsのみに記録した会計)の件数。
+  let pureSubscriptionCheckoutCount = 0
   // PHASE 1-Cc: この取込でbrain_proposal_outcomesへ実際に書き込まれた件数。
   // 1件以上ある場合のみ、ループ完了後にbrain_pattern_step_statsを1回だけrefreshする。
   let proposalOutcomesRecorded = 0
@@ -563,14 +599,23 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
       continue // allStaffResolvedゲートで通常発生しない(競合時のみ)
     }
 
+    // SUBSCRIPTION_VISIT_SPLIT_PHASE1: 純粋サブスク会計はbrain_visitsの行を作らないため
+    // menu解決自体が不要(menuName=''で必ずunresolvedになり、実施術が無いのに
+    // menuUnresolvedSkippedCountとしてスキップ扱いされてしまう)。この分岐でのみ
+    // resolveOrCreateFallbackMenu()を呼ばずに済ませる。
+    const pureSubscription = isPureSubscriptionCheckout(agg)
+
     // PHASE CSV-MENU-FALLBACK-IMPROVE: 未マッチのCSVメニュー名ごとにimported_other行を
     // 検索/新規作成する(resolveMenuId()の4つの一致方式自体は無変更)。DBへ書き込む
     // この実取込経路でのみ使う(Dry Run/品質レポート/再分類は従来のresolveMenuId()のまま)。
-    const menuRes = await resolveOrCreateFallbackMenu(agg.menuName, ctx.menuLookup, input.storeId, repos.menuRepo)
-    recordMenuResolution(agg.menuName, menuRes, menuResolutionByRawName)
-    if (menuRes.status === 'unresolved') {
-      menuUnresolvedSkippedCount += 1
-      continue
+    let menuRes: Awaited<ReturnType<typeof resolveOrCreateFallbackMenu>> | null = null
+    if (!pureSubscription) {
+      menuRes = await resolveOrCreateFallbackMenu(agg.menuName, ctx.menuLookup, input.storeId, repos.menuRepo)
+      recordMenuResolution(agg.menuName, menuRes, menuResolutionByRawName)
+      if (menuRes.status === 'unresolved') {
+        menuUnresolvedSkippedCount += 1
+        continue
+      }
     }
 
     const { hash, decision, isHashMatch, matchMethod, proximityDeclined } = await matchCustomer(agg, ctx, repos)
@@ -624,6 +669,22 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
     }
 
     const visitDate = dateOnly(agg.visitDateTime)
+
+    // SUBSCRIPTION_VISIT_SPLIT_PHASE1: 純粋サブスク会計(実施術・店販を伴わない決済のみの
+    // 会計)はbrain_visitsの行を一切作らず、brain_subscription_paymentsのみに記録する。
+    // checkout_id単位のreplaceForCheckout()は再取込時も冪等(delete→insert)。
+    if (pureSubscription) {
+      pureSubscriptionCheckoutCount += 1
+      await repos.subscriptionPaymentRepo.replaceForCheckout(
+        agg.checkoutId,
+        buildSubscriptionPaymentInputs(agg, input.storeId, customerId, staffRes.staffId, null, visitDate)
+      )
+      continue
+    }
+
+    // pureSubscription===falseの場合、menuResは必ず解決済み(unresolvedは既にcontinue済み)。
+    // 型上はnullを許容しているためTypeScriptの絞り込み用にガードする(到達しない分岐)。
+    if (!menuRes) continue
     const existingVisit = await repos.visitRepo.findByCustomerAndDate(customerId, visitDate)
 
     // 顧客ステータス機能(PHASE RETAIL-ITEMS-1): 店販明細をbrain_visit_retail_itemsへ
@@ -652,6 +713,12 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
       })
       visitsImported += 1
       await repos.visitRepo.replaceRetailItems(reconciledVisit.id, retailItemsInput)
+      // SUBSCRIPTION_VISIT_SPLIT_PHASE1: 混在会計(実施術+サブスク課金)はvisit_idを
+      // 紐付けて記録する。subscriptionPayments=[]の場合は削除のみ(冪等)。
+      await repos.subscriptionPaymentRepo.replaceForCheckout(
+        agg.checkoutId,
+        buildSubscriptionPaymentInputs(agg, input.storeId, customerId, staffRes.staffId, reconciledVisit.id, visitDate)
+      )
 
       // PHASE 1-Bc: 会計確定(reconcile)直後にfire_logを逆引きしbrain_proposal_outcomes
       // へ記録を試みる(Phase 1-Aと同じnon-fatalパターン。失敗してもCSV取込自体は成功扱い)。
@@ -692,6 +759,10 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
       })
       visitsImported += 1
       await repos.visitRepo.replaceRetailItems(createdVisit.id, retailItemsInput)
+      await repos.subscriptionPaymentRepo.replaceForCheckout(
+        agg.checkoutId,
+        buildSubscriptionPaymentInputs(agg, input.storeId, customerId, staffRes.staffId, createdVisit.id, visitDate)
+      )
 
       // PHASE 1-Bc: 新規visit作成直後にも同様にoutcomes記録を試みる(non-fatal)。
       try {
@@ -727,6 +798,10 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
         sameDayDifferentCheckoutCount += 1
       }
       await repos.visitRepo.replaceRetailItems(existingVisit.id, retailItemsInput)
+      await repos.subscriptionPaymentRepo.replaceForCheckout(
+        agg.checkoutId,
+        buildSubscriptionPaymentInputs(agg, input.storeId, customerId, staffRes.staffId, existingVisit.id, visitDate)
+      )
     }
   }
 
@@ -788,6 +863,12 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
       sameDayCheckoutAudit: {
         reason: 'same_day_different_checkout_id',
         sameDayDifferentCheckoutCount,
+      },
+      // SUBSCRIPTION_VISIT_SPLIT_PHASE1監査ログ: brain_visitsの行を作らず
+      // brain_subscription_paymentsのみに記録した「純粋サブスク会計」の件数。
+      subscriptionSplitAudit: {
+        reason: 'pure_subscription_checkout',
+        pureSubscriptionCheckoutCount,
       },
     },
   })

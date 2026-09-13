@@ -26,6 +26,7 @@ import type {
   IStaffRepo,
   IStatsRepo,
   IStoreRepo,
+  ISubscriptionPaymentRepo,
   ISubscriptionRepo,
   IVisitRepo,
 } from '@/repositories/interfaces';
@@ -47,6 +48,7 @@ import { RevisionRepo } from '@/repositories/supabase/RevisionRepo';
 import { StaffRepo } from '@/repositories/supabase/StaffRepo';
 import { StatsRepo } from '@/repositories/supabase/StatsRepo';
 import { StoreRepo } from '@/repositories/supabase/StoreRepo';
+import { SubscriptionPaymentRepo } from '@/repositories/supabase/SubscriptionPaymentRepo';
 import { SubscriptionRepo } from '@/repositories/supabase/SubscriptionRepo';
 import { VisitRepo } from '@/repositories/supabase/VisitRepo';
 
@@ -75,6 +77,8 @@ export interface Repos {
   blogArticleRepo: IBlogArticleRepo;
   /** スタッフ招待トークン(STAFF_MANAGEMENT_PHASE2_2)。 */
   inviteRepo: IInviteRepo;
+  /** サブスク決済明細(SUBSCRIPTION_VISIT_SPLIT_PHASE1)。 */
+  subscriptionPaymentRepo: ISubscriptionPaymentRepo;
 }
 
 let client: SupabaseClient | null = null;
@@ -126,5 +130,6 @@ export function getRepos(): Repos {
     reservationRepo: new ReservationRepo(supabase),
     blogArticleRepo: new BlogArticleRepo(supabase),
     inviteRepo: new InviteRepo(supabase),
+    subscriptionPaymentRepo: new SubscriptionPaymentRepo(supabase),
   };
 }
