@@ -88,6 +88,11 @@ export interface ComputeCsvQualityReportInput {
   parseLevelErrorCount: number
   /** メニュー名がフォールバック行も無く未解決のままスキップされた件数。 */
   menuUnresolvedSkippedCount: number
+  /**
+   * CHECKOUT_ID_FOUNDATION_1: 同日に既存visitと異なる会計ID(=本当に別の新規会計)が
+   * 検出された件数。Dry Runでは常に0(実際のvisit突合を行わないため測定不能)。
+   */
+  sameDayDifferentCheckoutCount: number
 }
 
 /** DB/Supabaseに依存しない純粋関数。aggregateCheckouts()の結果から品質レポートを算出する。 */
@@ -95,7 +100,7 @@ export function computeCsvQualityReport(input: ComputeCsvQualityReportInput): Cs
   const {
     aggregates, menuLookup, unresolvedStaffCount, needsReviewCount,
     hashMatchedCount, nameProximityMatchedCount, visitProximityClosestCount, proximityReviewCount,
-    parseLevelErrorCount, menuUnresolvedSkippedCount,
+    parseLevelErrorCount, menuUnresolvedSkippedCount, sameDayDifferentCheckoutCount,
   } = input
 
   const menuResolutionByRawName = new Map<string, MenuResolutionLogEntry>()
@@ -146,6 +151,16 @@ export function computeCsvQualityReport(input: ComputeCsvQualityReportInput): Cs
     })
   }
 
+  if (sameDayDifferentCheckoutCount > 0) {
+    deduction += Math.min(10, sameDayDifferentCheckoutCount * 5)
+    warnings.push({
+      type: 'same_day_new_checkout',
+      message: `同一顧客・同一来店日で、既に取り込み済みの会計とは異なる会計IDが${sameDayDifferentCheckoutCount}件検出されました。同日複数会計時は現状、2件目以降の治療費・店販金額がbrain_visitsに反映されません(既知の制約・docs/architecture/Riora_Management_Dashboard_Architecture_v2.1.md §6-1参照)`,
+      count: sameDayDifferentCheckoutCount,
+      severity: 'warn',
+    })
+  }
+
   const menuFallbackCount = menuResolution.fallbackOther + menuResolution.unresolved
   if (menuFallbackCount > 0) {
     deduction += Math.min(10, Math.round((menuFallbackCount / Math.max(1, aggregates.length)) * 10))
@@ -176,6 +191,7 @@ export function computeCsvQualityReport(input: ComputeCsvQualityReportInput): Cs
     proximityMatchCount: nameProximityMatchedCount,
     proximityReviewCount,
     visitProximityClosestCount,
+    sameDayDifferentCheckoutCount,
     rates: {
       customerResolutionRate: rate(hashMatchedCount),
       nameProximityResolutionRate: rate(nameProximityMatchedCount),

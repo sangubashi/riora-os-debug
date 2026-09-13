@@ -481,6 +481,9 @@ export async function buildDryRunResult(input: DryRunInput, repos: PipelineRepos
     aggregates, menuLookup: ctx.menuLookup, unresolvedStaffCount, needsReviewCount: needsReview.length,
     hashMatchedCount, nameProximityMatchedCount, visitProximityClosestCount, proximityReviewCount,
     parseLevelErrorCount: skipped.length, menuUnresolvedSkippedCount: additionalSkipped.length,
+    // Dry Runは実際のvisit書き込み・既存visit突合を行わないため、同日会計ID不一致は
+    // 検出できない(常に0。実取込時のみrunImportPipeline()が実測する)。
+    sameDayDifferentCheckoutCount: 0,
   })
 
   return {
@@ -545,6 +548,9 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
   let proximityReviewCount = 0
   let stubZeroVisitMatchedCount = 0
   let menuUnresolvedSkippedCount = 0
+  // CHECKOUT_ID_FOUNDATION_1: 同日に既存visitと異なる会計IDが検出された件数
+  // (同日複数会計による会計欠落の実態を可視化するためのカウンタ。加算等の対応はまだしない)。
+  let sameDayDifferentCheckoutCount = 0
   // PHASE 1-Cc: この取込でbrain_proposal_outcomesへ実際に書き込まれた件数。
   // 1件以上ある場合のみ、ループ完了後にbrain_pattern_step_statsを1回だけrefreshする。
   let proposalOutcomesRecorded = 0
@@ -642,6 +648,7 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
         // 0未満は0にクランプする(TREATMENT_AMOUNT_NEGATIVE_FIX_1)。
         treatmentAmount: Math.max(0, agg.netServiceSales),
         retailAmount: agg.retailSales,
+        checkoutId: agg.checkoutId,
       })
       visitsImported += 1
       await repos.visitRepo.replaceRetailItems(reconciledVisit.id, retailItemsInput)
@@ -681,6 +688,7 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
         voiceMemoUrl: null,
         visitScore: 0,
         source: 'salonboard_import',
+        checkoutId: agg.checkoutId,
       })
       visitsImported += 1
       await repos.visitRepo.replaceRetailItems(createdVisit.id, retailItemsInput)
@@ -705,6 +713,19 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
       // ただし店販明細(顧客ステータス機能)だけは、過去分の遡及移行(同一CSVの再取込)に
       // 対応するため常に置き換える(replaceRetailItemsは冪等・visitsImported等の他の
       // 冪等スキップ条件には一切影響しない)。
+      //
+      // CHECKOUT_ID_FOUNDATION_1(2026-09-13): 同日複数会計時、この分岐は「同一会計の
+      // 再取込(冪等)」と「本当に別の新規会計」を区別できず、後者も無条件でスキップして
+      // いた(docs/architecture/Riora_Management_Dashboard_Architecture_v2.1.md §6-1の
+      // 既知の制約)。両者とも会計IDが分かっている場合に限り不一致を検知し件数を記録する
+      // (加算等の挙動変更はスコープ外・このフェーズは検知・可視化のみ)。
+      if (
+        existingVisit.checkoutId != null &&
+        agg.checkoutId != null &&
+        existingVisit.checkoutId !== agg.checkoutId
+      ) {
+        sameDayDifferentCheckoutCount += 1
+      }
       await repos.visitRepo.replaceRetailItems(existingVisit.id, retailItemsInput)
     }
   }
@@ -728,7 +749,7 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
   const qualityReport = computeCsvQualityReport({
     aggregates, menuLookup: ctx.menuLookup, unresolvedStaffCount, needsReviewCount,
     hashMatchedCount, nameProximityMatchedCount, visitProximityClosestCount, proximityReviewCount,
-    parseLevelErrorCount: skipped.length, menuUnresolvedSkippedCount,
+    parseLevelErrorCount: skipped.length, menuUnresolvedSkippedCount, sameDayDifferentCheckoutCount,
   })
 
   await repos.opsLogRepo.insert({
@@ -759,6 +780,14 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
       stubResolutionAudit: {
         reason: 'stub_zero_visit_single_candidate',
         stubZeroVisitMatchedCount,
+      },
+      // CHECKOUT_ID_FOUNDATION_1監査ログ(docs/architecture/Riora_Management_Dashboard_
+      // Architecture_v2.1.md §6-1再発防止の土台)。同日に既存visitと異なる会計IDが
+      // 検出された件数(=同日複数会計による欠落が実際に何件起きているかを事後確認できる
+      // ようにする)。この時点ではまだ検知のみで、加算等の挙動変更は行わない。
+      sameDayCheckoutAudit: {
+        reason: 'same_day_different_checkout_id',
+        sameDayDifferentCheckoutCount,
       },
     },
   })

@@ -63,6 +63,7 @@ describe('VisitRepo', () => {
           noBookingReason: null,
           voiceMemoUrl: null,
           visitScore: 0.75,
+          checkoutId: null,
         },
       ]);
     });
@@ -161,6 +162,7 @@ describe('VisitRepo', () => {
         no_booking_reason: null,
         voice_memo_url: null,
         visit_score: 0.75,
+        checkout_id: null,
       });
     });
   });
@@ -218,6 +220,7 @@ describe('VisitRepo', () => {
         p_voice_memo_url: null,
         p_visit_score: 0.75,
         p_source: 'salonboard_import',
+        p_checkout_id: null,
       });
     });
 

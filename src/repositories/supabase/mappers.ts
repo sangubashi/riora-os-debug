@@ -289,6 +289,7 @@ export interface BrainVisitRow {
   voice_memo_url: string | null;
   visit_score: number;
   source?: VisitSource;
+  checkout_id?: string | null;
 }
 
 export function toVisit(row: BrainVisitRow): Visit {
@@ -311,6 +312,7 @@ export function toVisit(row: BrainVisitRow): Visit {
     voiceMemoUrl: row.voice_memo_url,
     visitScore: row.visit_score,
     ...(row.source !== undefined ? { source: row.source } : {}),
+    checkoutId: row.checkout_id ?? null,
   };
 }
 
@@ -334,6 +336,7 @@ export function toBrainVisitInsert(visit: Omit<Visit, 'id'>): Record<string, unk
     voice_memo_url: visit.voiceMemoUrl,
     visit_score: visit.visitScore,
     ...(visit.source !== undefined ? { source: visit.source } : {}),
+    checkout_id: visit.checkoutId ?? null,
   };
 }
 
@@ -344,6 +347,7 @@ export function toBrainVisitReconcileUpdate(input: {
   isNomination: boolean;
   treatmentAmount: number;
   retailAmount: number;
+  checkoutId?: string | null;
 }): Record<string, unknown> {
   return {
     staff_id: input.staffId,
@@ -352,6 +356,7 @@ export function toBrainVisitReconcileUpdate(input: {
     treatment_amount: input.treatmentAmount,
     retail_amount: input.retailAmount,
     source: 'reconciled' satisfies VisitSource,
+    checkout_id: input.checkoutId ?? null,
   };
 }
 

@@ -6,7 +6,7 @@ import { toBrainVisitInsert, toBrainVisitReconcileUpdate, toVisit, type BrainVis
 const VISIT_COLUMNS =
   'id, store_id, customer_id, staff_id, menu_id, visit_date, visit_count_at, is_nomination, ' +
   'treatment_amount, retail_amount, retail_category, homecare_purchased, homecare_declined, ' +
-  'next_booking_made, no_booking_reason, voice_memo_url, visit_score, source';
+  'next_booking_made, no_booking_reason, voice_memo_url, visit_score, source, checkout_id';
 
 export class VisitRepo implements IVisitRepo {
   constructor(private readonly client: SupabaseClient) {}
@@ -63,6 +63,7 @@ export class VisitRepo implements IVisitRepo {
         p_voice_memo_url: visit.voiceMemoUrl,
         p_visit_score: visit.visitScore,
         p_source: visit.source ?? 'staff_input',
+        p_checkout_id: visit.checkoutId ?? null,
       })
       .single();
 
@@ -160,6 +161,7 @@ export class VisitRepo implements IVisitRepo {
     isNomination: boolean;
     treatmentAmount: number;
     retailAmount: number;
+    checkoutId?: string | null;
   }): Promise<Visit> {
     const { data, error } = await this.client
       .from('brain_visits')

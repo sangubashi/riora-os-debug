@@ -32,7 +32,7 @@ describe('computeCsvQualityReport', () => {
   it('問題が無いCSVはscore=100/level=excellent/warningsは空', () => {
     const report = computeCsvQualityReport({
       aggregates: [agg({ customerName: '田中花子' }), agg({ customerName: '佐藤太郎' })],
-      menuLookup: buildMenuLookup(MENUS), hashMatchedCount: 0, nameProximityMatchedCount: 0, visitProximityClosestCount: 0, proximityReviewCount: 0, parseLevelErrorCount: 0, menuUnresolvedSkippedCount: 0,
+      menuLookup: buildMenuLookup(MENUS), hashMatchedCount: 0, nameProximityMatchedCount: 0, visitProximityClosestCount: 0, proximityReviewCount: 0, parseLevelErrorCount: 0, menuUnresolvedSkippedCount: 0, sameDayDifferentCheckoutCount: 0,
       unresolvedStaffCount: 0,
       needsReviewCount: 0,
     });
@@ -45,7 +45,7 @@ describe('computeCsvQualityReport', () => {
   it('未解決スタッフはseverity=errorで警告し、減点する(該当行が来店データとして取り込まれないため)', () => {
     const report = computeCsvQualityReport({
       aggregates: [agg({ customerName: '田中花子' })],
-      menuLookup: buildMenuLookup(MENUS), hashMatchedCount: 0, nameProximityMatchedCount: 0, visitProximityClosestCount: 0, proximityReviewCount: 0, parseLevelErrorCount: 0, menuUnresolvedSkippedCount: 0,
+      menuLookup: buildMenuLookup(MENUS), hashMatchedCount: 0, nameProximityMatchedCount: 0, visitProximityClosestCount: 0, proximityReviewCount: 0, parseLevelErrorCount: 0, menuUnresolvedSkippedCount: 0, sameDayDifferentCheckoutCount: 0,
       unresolvedStaffCount: 3,
       needsReviewCount: 0,
     });
@@ -61,7 +61,7 @@ describe('computeCsvQualityReport', () => {
         agg({ customerName: '中村陽子' }),
         agg({ customerName: '佐藤太郎' }),
       ],
-      menuLookup: buildMenuLookup(MENUS), hashMatchedCount: 0, nameProximityMatchedCount: 0, visitProximityClosestCount: 0, proximityReviewCount: 0, parseLevelErrorCount: 0, menuUnresolvedSkippedCount: 0,
+      menuLookup: buildMenuLookup(MENUS), hashMatchedCount: 0, nameProximityMatchedCount: 0, visitProximityClosestCount: 0, proximityReviewCount: 0, parseLevelErrorCount: 0, menuUnresolvedSkippedCount: 0, sameDayDifferentCheckoutCount: 0,
       unresolvedStaffCount: 0,
       needsReviewCount: 0,
     });
@@ -72,17 +72,29 @@ describe('computeCsvQualityReport', () => {
   it('要確認(needsReview)件数が0より大きい場合はneeds_review_pendingを警告する', () => {
     const report = computeCsvQualityReport({
       aggregates: [agg({ customerName: '田中花子' })],
-      menuLookup: buildMenuLookup(MENUS), hashMatchedCount: 0, nameProximityMatchedCount: 0, visitProximityClosestCount: 0, proximityReviewCount: 0, parseLevelErrorCount: 0, menuUnresolvedSkippedCount: 0,
+      menuLookup: buildMenuLookup(MENUS), hashMatchedCount: 0, nameProximityMatchedCount: 0, visitProximityClosestCount: 0, proximityReviewCount: 0, parseLevelErrorCount: 0, menuUnresolvedSkippedCount: 0, sameDayDifferentCheckoutCount: 0,
       unresolvedStaffCount: 0,
       needsReviewCount: 2,
     });
     expect(report.warnings).toContainEqual(expect.objectContaining({ type: 'needs_review_pending', count: 2, severity: 'warn' }));
   });
 
+  it('同日に既存visitと異なる会計IDが検出された場合はsame_day_new_checkoutをwarnで警告する(CHECKOUT_ID_FOUNDATION_1)', () => {
+    const report = computeCsvQualityReport({
+      aggregates: [agg({ customerName: '田中花子' })],
+      menuLookup: buildMenuLookup(MENUS), hashMatchedCount: 0, nameProximityMatchedCount: 0, visitProximityClosestCount: 0, proximityReviewCount: 0, parseLevelErrorCount: 0, menuUnresolvedSkippedCount: 0,
+      unresolvedStaffCount: 0,
+      needsReviewCount: 0,
+      sameDayDifferentCheckoutCount: 2,
+    });
+    expect(report.sameDayDifferentCheckoutCount).toBe(2);
+    expect(report.warnings).toContainEqual(expect.objectContaining({ type: 'same_day_new_checkout', count: 2, severity: 'warn' }));
+  });
+
   it('brain_menusと一致しないメニュー名(fallback_other)が有る場合はmenu_unmatchedをinfoで警告する', () => {
     const report = computeCsvQualityReport({
       aggregates: [agg({ customerName: '田中花子', menuName: '全く違うメニュー' })],
-      menuLookup: buildMenuLookup(MENUS), hashMatchedCount: 0, nameProximityMatchedCount: 0, visitProximityClosestCount: 0, proximityReviewCount: 0, parseLevelErrorCount: 0, menuUnresolvedSkippedCount: 0,
+      menuLookup: buildMenuLookup(MENUS), hashMatchedCount: 0, nameProximityMatchedCount: 0, visitProximityClosestCount: 0, proximityReviewCount: 0, parseLevelErrorCount: 0, menuUnresolvedSkippedCount: 0, sameDayDifferentCheckoutCount: 0,
       unresolvedStaffCount: 0,
       needsReviewCount: 0,
     });
@@ -97,7 +109,7 @@ describe('computeCsvQualityReport', () => {
         agg({ customerName: '田中花子' }), agg({ customerName: '田中花子' }),
         agg({ customerName: '佐藤太郎' }), agg({ customerName: '佐藤太郎' }),
       ],
-      menuLookup: buildMenuLookup(MENUS), hashMatchedCount: 0, nameProximityMatchedCount: 0, visitProximityClosestCount: 0, proximityReviewCount: 0, parseLevelErrorCount: 0, menuUnresolvedSkippedCount: 0,
+      menuLookup: buildMenuLookup(MENUS), hashMatchedCount: 0, nameProximityMatchedCount: 0, visitProximityClosestCount: 0, proximityReviewCount: 0, parseLevelErrorCount: 0, menuUnresolvedSkippedCount: 0, sameDayDifferentCheckoutCount: 0,
       unresolvedStaffCount: 5,
       needsReviewCount: 4,
     });
@@ -112,7 +124,7 @@ describe('computeCsvQualityReport', () => {
         agg({ customerName: 'C' }), agg({ customerName: 'D' }),
       ],
       menuLookup: buildMenuLookup(MENUS),
-      hashMatchedCount: 1, nameProximityMatchedCount: 1, visitProximityClosestCount: 1, proximityReviewCount: 2, parseLevelErrorCount: 0, menuUnresolvedSkippedCount: 0,
+      hashMatchedCount: 1, nameProximityMatchedCount: 1, visitProximityClosestCount: 1, proximityReviewCount: 2, parseLevelErrorCount: 0, menuUnresolvedSkippedCount: 0, sameDayDifferentCheckoutCount: 0,
       unresolvedStaffCount: 1,
       needsReviewCount: 0,
     });
@@ -132,7 +144,7 @@ describe('computeCsvQualityReport', () => {
   it('totalCheckouts=0の場合は全rateが0になる(ゼロ除算を起こさない)', () => {
     const report = computeCsvQualityReport({
       aggregates: [], menuLookup: buildMenuLookup(MENUS),
-      hashMatchedCount: 0, nameProximityMatchedCount: 0, visitProximityClosestCount: 0, proximityReviewCount: 0, parseLevelErrorCount: 0, menuUnresolvedSkippedCount: 0,
+      hashMatchedCount: 0, nameProximityMatchedCount: 0, visitProximityClosestCount: 0, proximityReviewCount: 0, parseLevelErrorCount: 0, menuUnresolvedSkippedCount: 0, sameDayDifferentCheckoutCount: 0,
       unresolvedStaffCount: 0, needsReviewCount: 0,
     });
     expect(report.rates).toEqual({

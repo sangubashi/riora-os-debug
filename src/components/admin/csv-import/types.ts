@@ -130,7 +130,7 @@ export interface ImportReport {
 export type CsvQualityLevel = 'excellent' | 'good' | 'fair' | 'poor'
 
 export interface CsvQualityWarning {
-  type: 'unresolved_staff' | 'duplicate_customer_name' | 'needs_review_pending' | 'menu_unmatched'
+  type: 'unresolved_staff' | 'duplicate_customer_name' | 'needs_review_pending' | 'menu_unmatched' | 'same_day_new_checkout'
   message: string
   count: number
   severity: 'error' | 'warn' | 'info'
@@ -184,6 +184,11 @@ export interface CsvQualityReport {
   proximityReviewCount: number
   /** proximityMatchCountのうち、複数候補タイブレーク(visit_proximity_closest)経由の件数。 */
   visitProximityClosestCount: number
+  /**
+   * CHECKOUT_ID_FOUNDATION_1: 同一顧客・同一来店日で、既存visitとは異なる会計ID
+   * (=本当に別の新規会計)が検出された件数。Dry Runでは常に0。
+   */
+  sameDayDifferentCheckoutCount: number
   rates: CsvImportRates
 }
 

@@ -191,6 +191,7 @@ export interface IVisitRepo {
   /**
    * 既存visit(主にsource='staff_input')をCSV内容で突合更新し、source='reconciled'に
    * 切り替える(Brain学習対象化)。更新後の行を返す。
+   * checkoutId(CHECKOUT_ID_FOUNDATION_1)は省略可(未指定時はnullのまま=会計ID不明)。
    */
   reconcile(id: UUID, input: {
     staffId: UUID;
@@ -198,6 +199,7 @@ export interface IVisitRepo {
     isNomination: boolean;
     treatmentAmount: number;
     retailAmount: number;
+    checkoutId?: string | null;
   }): Promise<Visit>;
   /** brain_visitsをstore_id+visit_dateでtreatment_amount+retail_amountの合計を返す(deleted_at IS NULL)。画面①本日売上。 */
   sumSalesByStoreAndDate(storeId: UUID, visitDate: string): Promise<number>;

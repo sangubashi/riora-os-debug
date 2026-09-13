@@ -26,6 +26,7 @@ const EMPTY_QUALITY_REPORT = {
   menuResolution: { exactMatch: 0, normalizedMatch: 0, partialMatch: 0, fallbackOther: 0, unresolved: 0, entries: [] },
   duplicateCustomerNames: [],
   proximityMatchCount: 0, proximityReviewCount: 0, visitProximityClosestCount: 0,
+  sameDayDifferentCheckoutCount: 0,
   rates: { customerResolutionRate: 0, nameProximityResolutionRate: 0, combinedCustomerResolutionRate: 0, staffResolutionRate: 1, menuResolutionRate: 1, importedOtherRate: 0, errorCount: 0, skippedCount: 0 },
 };
 

@@ -152,6 +152,11 @@ export interface Visit {
   visitScore: number;
   /** 来店データの出自。省略時はDB既定値('staff_input')が適用される。 */
   source?: VisitSource;
+  /**
+   * SalonBoard売上明細CSVの会計ID(CHECKOUT_ID_FOUNDATION_1)。CSV取込由来の行のみ
+   * 値を持つ。staff_input由来の行・本機能追加より前の過去分行はnull。
+   */
+  checkoutId?: string | null;
 }
 
 export interface OpsLog {

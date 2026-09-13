@@ -220,6 +220,7 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
         v.treatmentAmount = input.treatmentAmount;
         v.retailAmount = input.retailAmount;
         v.source = 'reconciled';
+        v.checkoutId = input.checkoutId ?? null;
         return v;
       },
       sumSalesByStoreAndDate: async (storeId, visitDate) =>
@@ -945,6 +946,92 @@ describe('csvImportPipeline', () => {
       expect(result.result.qualityReport.duplicateCustomerNames).toEqual([{ name: '中村陽子', occurrenceCount: 2 }]);
       // dry-runはDBに何も書込まない(既存方針を維持していることの確認)
       expect(repos.state.customers).toHaveLength(0);
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // CHECKOUT_ID_FOUNDATION_1(2026-09-13): 会計IDの保持・同日複数会計の検知
+  // ──────────────────────────────────────────────────────────────────────────
+  describe('runImportPipeline(CHECKOUT_ID_FOUNDATION_1: 会計ID保持・同日複数会計の検知)', () => {
+    it('同一顧客・同一来店日で異なる会計IDが検出されるとカウンタに記録される(このフェーズではまだ加算しない・既存のスキップ挙動を維持)', async () => {
+      const repos = createFakeRepos();
+      const csv = buildCsv([
+        row({ checkoutId: 'A1', date: '2026-06-01', staff: '鈴木', customerName: '田中花子', customerNumber: 'C001', amount: 5000 }),
+        row({ checkoutId: 'A2', date: '2026-06-01', staff: '鈴木', customerName: '田中花子', customerNumber: 'C001', amount: 8000 }),
+      ]);
+
+      const result = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // 既存挙動を維持: 同日1件目(A1)のみがbrain_visitsに残る(2件目A2の会計はまだ加算されない)
+      expect(repos.state.visits).toHaveLength(1);
+      expect(repos.state.visits[0].treatmentAmount).toBe(5000);
+      expect(repos.state.visits[0].checkoutId).toBe('A1');
+      // 異なる会計ID(A2)が検出されたことがqualityReport/ops_logに記録される
+      expect(result.report.qualityReport.sameDayDifferentCheckoutCount).toBe(1);
+      expect(result.report.qualityReport.warnings).toContainEqual(
+        expect.objectContaining({ type: 'same_day_new_checkout', count: 1, severity: 'warn' })
+      );
+      expect(repos.state.opsLogs[0].detail.sameDayCheckoutAudit).toEqual({
+        reason: 'same_day_different_checkout_id',
+        sameDayDifferentCheckoutCount: 1,
+      });
+    });
+
+    it('新規visit作成時・reconcile時にCSVの会計IDがbrain_visits.checkoutIdへ保存される', async () => {
+      const repos = createFakeRepos();
+      const csv = buildCsv([
+        row({ checkoutId: 'A1', date: '2026-06-01', staff: '鈴木', customerName: '田中花子', customerNumber: 'C001' }),
+      ]);
+
+      const result = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+
+      expect(result.ok).toBe(true);
+      expect(repos.state.visits[0].checkoutId).toBe('A1');
+    });
+
+    it('同一会計IDの再取込(同一CSVの再投入)はカウンタを増やさない(冪等)', async () => {
+      const repos = createFakeRepos();
+      const csv = buildCsv([
+        row({ checkoutId: 'A1', date: '2026-06-01', staff: '鈴木', customerName: '田中花子', customerNumber: 'C001' }),
+      ]);
+
+      await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+      const second = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+
+      expect(second.ok).toBe(true);
+      if (!second.ok) return;
+      expect(repos.state.visits).toHaveLength(1);
+      expect(second.report.qualityReport.sameDayDifferentCheckoutCount).toBe(0);
+    });
+
+    it('会計IDが不明な過去分(checkout_id=null)への再取込は判定不能として既存のスキップ挙動を維持する(混在期間の安全性)', async () => {
+      const repos = createFakeRepos();
+      const hash = hashExternalKey('C001', 'fixed-test-salt');
+      const existingCustomer = await repos.customerRepo.create({
+        storeId: STORE_ID, name: '田中花子', ageGroup: null, firstVisitDate: '2026-06-01',
+        prefecture: null, city: null, externalKeyHash: hash,
+      });
+      // 本機能追加より前に取り込まれた過去分を模擬(checkoutId未設定=null)。
+      await repos.visitRepo.create({
+        storeId: STORE_ID, customerId: existingCustomer.id, staffId: 'staff-1', menuId: 'menu-1',
+        visitDate: '2026-06-01', visitCountAt: 1, isNomination: false, treatmentAmount: 5000, retailAmount: 0,
+        retailCategory: null, homecarePurchased: false, homecareDeclined: false, nextBookingMade: false,
+        noBookingReason: null, voiceMemoUrl: null, visitScore: 0, source: 'salonboard_import',
+      });
+
+      const csv = buildCsv([
+        row({ checkoutId: 'A2', date: '2026-06-01', staff: '鈴木', customerName: '田中花子', customerNumber: 'C001', amount: 8000 }),
+      ]);
+      const result = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // 会計IDが片方(既存側)不明なため判定できず、既存のスキップ挙動を維持する
+      expect(result.report.qualityReport.sameDayDifferentCheckoutCount).toBe(0);
+      expect(repos.state.visits).toHaveLength(1);
+      expect(repos.state.visits[0].treatmentAmount).toBe(5000); // 上書きされない(既存挙動維持)
     });
   });
 });
