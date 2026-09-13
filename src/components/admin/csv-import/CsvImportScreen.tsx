@@ -153,21 +153,22 @@ export default function CsvImportScreen() {
 
     try {
       const result = await mockDryRun(file)
-      const defaults: Record<number, ReviewDecisionValue> = {}
-      result.needsReview.forEach((r) => { defaults[r.rowNumber] = 'new' })
+
+      // CSV_DUPLICATE_REVIEW_GAP_FIX_1(2026-09-13): 売上明細CSVのneeds_reviewに
+      // ここでデフォルト値'new'を仕込んでいたため、運用者が「④要確認顧客」を一切
+      // 見なくても取込実行ボタンが押せてしまい、氏名一致候補があっても黙って
+      // 重複顧客が作られていた(実例: 島袋千晴)。RESERVATION_DUPLICATE_FIX_1で
+      // 予約CSVに導入した「未回答のまま残す→canImportで検知してボタンをdisabled」
+      // という安全策を売上明細CSVにも揃える。デフォルト値は一切仕込まない。
 
       // 予約CSV(RES-5): 既存dry-runは検出のみ(空プレビュー)を返すため、
       // 予約CSV専用エンドポイントで実際のプレビューを追加取得する。
-      // RESERVATION_DUPLICATE_FIX_1: 予約CSVのneeds_reviewは、売上明細CSVと違い
-      // ここでデフォルト値を仕込まない(=未回答のまま残す)。canImportが未回答の
-      // 存在を検知して取込実行ボタンをdisabledにするため、「回答済みかどうか」を
-      // reviewDecisionsのキー有無で区別できる必要がある。
       if (result.csvType === 'reservation') {
         const resResult = await reservationDryRun(file)
         setResValidation(resResult)
       }
 
-      setReviewDecisions(defaults)
+      setReviewDecisions({})
       setValidation(result)
       setState('dryrun_done')
     } catch (e) {
@@ -218,18 +219,25 @@ export default function CsvImportScreen() {
     return validation.unresolvedStaff.every((u) => staffDecisions[u.rawName])
   }, [validation, staffDecisions])
 
-  // RESERVATION_DUPLICATE_FIX_1 ②: 予約CSVの要確認顧客(同姓同名)は、reviewDecisionsに
-  // 明示的な回答(merge/new)が無いままだと"新規顧客"として無条件にimportされてしまう
-  // (reservationImportPipeline.tsのデフォルトフォールバック)。1件でも未回答があれば
-  // 取込実行ボタン自体をdisabledにし、運用者に必ず選択させる。
+  // RESERVATION_DUPLICATE_FIX_1 ②→CSV_DUPLICATE_REVIEW_GAP_FIX_1で売上明細CSVにも
+  // 適用範囲を拡大: 要確認顧客(同姓同名)は、reviewDecisionsに明示的な回答(merge/new)
+  // が無いままだと"新規顧客"として無条件にimportされてしまう(csvImportPipeline.ts/
+  // reservationImportPipeline.tsのデフォルトフォールバック)。CSV種別を問わず、1件でも
+  // 未回答があれば取込実行ボタン自体をdisabledにし、運用者に必ず選択させる。
   const unansweredReservationReviewCount = useMemo(() => {
-    if (!resValidation || validation?.csvType !== 'reservation') return 0
-    return resValidation.needsReview.filter((r) => reviewDecisions[r.rowNumber] === undefined).length
+    if (validation?.csvType === 'reservation') {
+      if (!resValidation) return 0
+      return resValidation.needsReview.filter((r) => reviewDecisions[r.rowNumber] === undefined).length
+    }
+    if (validation?.csvType === 'detail') {
+      return validation.needsReview.filter((r) => reviewDecisions[r.rowNumber] === undefined).length
+    }
+    return 0
   }, [resValidation, validation, reviewDecisions])
 
   const canImport = useMemo(() => {
     if (!validation) return false
-    if (validation.csvType === 'detail') return allStaffResolved
+    if (validation.csvType === 'detail') return allStaffResolved && unansweredReservationReviewCount === 0
     if (validation.csvType === 'reservation') {
       if (!resValidation || resValidation.importable <= 0) return false
       return unansweredReservationReviewCount === 0
