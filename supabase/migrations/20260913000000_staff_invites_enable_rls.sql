@@ -1,0 +1,37 @@
+-- ================================================================
+-- STAFF_INVITES_RLS_FIX (2026-09-13)
+--
+-- 背景: DB全体のセキュリティ監査で public.staff_invites のみRLSが無効な
+-- ことが判明(他のpublicテーブルは全てRLS有効)。
+--
+-- 20260717150000_staff_management_phase2_2_staff_invites.sql の設計コメントは
+-- 「brain_staffもRLS無効なので合わせた」としていたが、brain_staffは
+-- 20260630091135_auth1_rls_policies.sql (Pass AUTH-1, 2026-06-30)で
+-- 既にRLSが有効化されており、前提が古いまま追従されていなかったことが
+-- 根本原因(2026-09-13調査で判明)。
+--
+-- 調査結果(2026-09-13時点):
+--   - anon/authenticatedロールへのGRANTは元から一切付与されていない
+--     (INSERT/SELECT/UPDATE/DELETEいずれも無し)。付与済みはpostgres/
+--     service_role/riora_backup(SELECTのみ)のみ。
+--   - 実機検証: publishable(anon)キーでのREST直接アクセスは
+--     `permission denied for table staff_invites`(42501)で拒否済み。
+--     RLSに到達する前にGRANT層で拒否されているため、現状は無効化状態
+--     でも外部からの不正アクセスは不可能だったが、将来誤って
+--     authenticated等にGRANTが追加された場合に無防備になるリスクがあった。
+--   - アプリのアクセスは app/lib/repos.ts getClient() のservice_role
+--     クライアント(src/repositories/supabase/InviteRepo.ts)のみで、
+--     ブラウザから直接このテーブルに触れる経路は存在しない。
+--
+-- 対応: RLSを有効化する。ポリシーは追加しない。
+--   - service_roleはBYPASSRLS属性を持つため、RLS有効化はアプリの動作
+--     (招待発行/検証/消費)に一切影響しない(適用後にservice_roleキーで
+--     REST実アクセスして無影響を確認済み)。
+--   - anon/authenticatedへの直接クライアントアクセスの正当な用途が
+--     コード上存在しないため、ポリシーは追加せず「RLS有効・ポリシー無し」
+--     とする。これは本プロジェクトの標準パターン(brain_events/
+--     brain_revisions/customer_karte_memos/reservations等、同様の
+--     構成の既存10テーブル)に合わせたもの。
+-- ================================================================
+
+ALTER TABLE public.staff_invites ENABLE ROW LEVEL SECURITY;
