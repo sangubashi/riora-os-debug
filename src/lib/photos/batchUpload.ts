@@ -4,21 +4,33 @@
  *
  * 設計根拠: PHOTO_KARTE Phase2調査(READ ONLY設計)で確定した方針。
  *   - 既存のカメラ撮影フロー(captureConfirmFlow.ts・usePhotoCapture.ts)とは完全に独立させる
- *     (共有するのは convertImageFileToWebpBlob() / uploadCustomerPhoto() のみ)。
+ *     (共有するのは uploadCustomerPhoto() のみ)。
+ *   - 写真カルテ Phase A(原本保存): 選択されたFileをconvertImageFileToWebpBlob()に通して
+ *     縮小・WebP再エンコードする処理は廃止した。iPad標準カメラのHEIC/JPEG原本を画質劣化
+ *     させずそのままStorageへ保存することを優先する(「画質を良くする」ための新しい圧縮を
+ *     追加するのではなく「元画像を壊さない」ことを最優先する設計判断)。FileはBlobの
+ *     サブタイプのため uploadCustomerPhoto() の型は無変更で受け付けられる。MIME許可・
+ *     拡張子対応はconstants.ts側(ALLOWED_PHOTO_MIME_TYPES/PHOTO_MIME_EXTENSIONS)に
+ *     HEIC/HEIFを追加するだけで、route.ts・commitCustomerPhoto.ts・photoApiClient.tsは
+ *     いずれも無変更のまま新形式を受け付けられる(既存が汎用実装のため)。カメラ撮影失敗時の
+ *     フォールバック(usePhotoCapture.tsのcaptureFromFile()、fileToWebpBlob.ts使用)は
+ *     今回のPhase Aのスコープ外のため無変更。
  *   - 新しい一括アップロードAPIは作らず、既存の POST /api/customers/[id]/photos を
  *     写真の枚数分だけ呼ぶ(uploadCustomerPhoto()をそのまま利用)。
  *   - Photo LibraryではEXIF撮影日時をまだ取得していないため、File.lastModifiedを暫定日時
  *     (takenAt)として利用し、取得できない場合のみ既存API仕様どおりサーバー側 now() に
  *     フォールバックする(resolveTakenAtFromFile()参照。既存のカメラ撮影フローは
  *     takenAt省略のまま変更しない)。
- *   - 完全自動の画像解析・顔向き判定は今回実装しない。THREE_SHOT_SEQUENCEによる
- *     「3枚ちょうどの場合だけ正面/左45°/右45°を仮割当て」という決定論ルールのみを持つ。
- *     将来、画像解析による判定を追加する場合は buildBatchItems() の中身を差し替えるだけで済み、
- *     呼び出し側(PhotoLibraryPickerView.tsx)のインターフェースは変えずに拡張できる。
+ *   - PHOTO_LABEL_REALIGN_1(2026-09-13): 自動の画像解析・顔向き判定は行わない方針は維持しつつ、
+ *     以前あった「3枚ちょうどの場合だけ正面/左45°/右45°を仮割当てする」決定論ルールは廃止した。
+ *     実際の撮影スタイル(施術ベッドで仰向け、正面・斜め・顎・額のバリエーション)と合わず、
+ *     3枚以外の枚数だと複数枚が同じ仮タグのまま登録されてしまい、お客様モードの
+ *     「同一撮影機会は代表1枚に集約する」設計と衝突して一部の写真が表示上見えなくなる
+ *     問題が実際に発生したため(小宮山仁美様の実例)。枚数によらず、全アイテムは
+ *     「未選択」状態で開始し、スタッフが明示的に部位を選ぶまでbodyPartは空文字のまま
+ *     (呼び出し側PhotoLibraryPickerView.tsxが未選択がある間は登録ボタンをdisabledにする)。
  */
-import { convertImageFileToWebpBlob } from './fileToWebpBlob'
 import { uploadCustomerPhoto } from './photoApiClient'
-import { DEFAULT_BODY_PART } from './bodyParts'
 
 export type BatchItemStatus = 'idle' | 'uploading' | 'success' | 'error'
 
@@ -27,34 +39,26 @@ export interface BatchPhotoItem {
   file:          File
   /** サムネイル表示用のobject URL。使い終わったら revokeBatchItemPreviews() で解放すること。 */
   previewUrl:    string
+  /** 空文字 = まだ部位が未選択(登録不可)。スタッフが選ぶとbodyParts.tsのidが入る。 */
   bodyPart:      string
-  /** 3枚ルールによる仮割当てかどうか。スタッフが部位を変更したらfalseにする。 */
+  /** 部位が未選択(bodyPart === '')かどうかの意味に変更した(旧: 3枚ルールによる仮割当てかどうか)。 */
   isProvisional: boolean
   status:        BatchItemStatus
   error?:        string
 }
 
 /**
- * 3枚ちょうどの場合だけ適用する仮分類の並び順(bodyParts.tsのid)。
- * 顔向きの画像解析は行わず、あくまで「選んだ順序」による決定論的な仮割当て。
- */
-const THREE_SHOT_SEQUENCE = ['face_front', 'face_left45', 'face_right45'] as const
-
-/**
  * 選択されたFile[]から確認画面用の初期状態を組み立てる(アップロードは一切行わない・純粋関数)。
- * ちょうど3枚の場合のみ 1枚目=正面/2枚目=左45°/3枚目=右45° を仮割当てする。
- * それ以外(1〜2枚・4枚以上)はDEFAULT_BODY_PART(顔全体・正面)をフォールバック値として使うが、
- * これも実際の内容を確認したものではないため、3枚ルール適用時と同じくisProvisional: trueとし、
- * 確認画面で「(仮)」バッジを表示させてスタッフに確認・修正を促す(READ ONLY調査で判明した、
- * 3枚以外は無警告でface_frontに分類される問題への対応)。
+ * PHOTO_LABEL_REALIGN_1: 自動仮割当ては行わず、全アイテムを常に「未選択」(bodyPart: '',
+ * isProvisional: true)で開始する。スタッフが確認画面で明示的に部位を選ぶまで登録できない
+ * (呼び出し側のゲート判定と対になる)。
  */
 export function buildBatchItems(files: File[]): BatchPhotoItem[] {
-  const useThreeShotRule = files.length === THREE_SHOT_SEQUENCE.length
-  return files.map((file, i) => ({
+  return files.map(file => ({
     id:            crypto.randomUUID(),
     file,
     previewUrl:    URL.createObjectURL(file),
-    bodyPart:      useThreeShotRule ? THREE_SHOT_SEQUENCE[i] : DEFAULT_BODY_PART,
+    bodyPart:      '',
     isProvisional: true,
     status:        'idle' as const,
   }))
@@ -91,7 +95,9 @@ function resolveTakenAtFromFile(file: File): string | undefined {
 }
 
 /**
- * 1件分のアップロード。WebP変換 → 既存 POST /api/customers/[id]/photos。
+ * 1件分のアップロード。原本(item.file)をそのまま → 既存 POST /api/customers/[id]/photos。
+ * 写真カルテ Phase A: 以前はここでconvertImageFileToWebpBlob()による縮小・WebP再エンコードを
+ * 行っていたが廃止した。item.file(Blobのサブタイプ)をそのままuploadCustomerPhoto()へ渡す。
  * 例外を投げず必ず結果オブジェクトを返す(呼び出し側のPromise.allSettledを全件fulfilledにするため)。
  * photoTypeは常に'progress'固定(ライブラリ由来の写真はbefore/afterのチェックリストに
  * 紐付かないため。既存のbrain_customer_photos.photo_typeデフォルト値と同じ)。
@@ -102,9 +108,8 @@ async function uploadOne(
   item:       BatchPhotoItem,
 ): Promise<UploadBatchItemResult> {
   try {
-    const blob = await convertImageFileToWebpBlob(item.file)
     await uploadCustomerPhoto(customerId, {
-      blob,
+      blob:            item.file,
       bodyPart:        item.bodyPart,
       photoType:       'progress',
       visitId,

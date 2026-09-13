@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
-import { BODY_PART_OPTIONS, bodyPartLabel } from '@/lib/photos/bodyParts'
+import { BODY_PART_OPTIONS } from '@/lib/photos/bodyParts'
 import {
   buildBatchItems,
   revokeBatchItemPreviews,
@@ -54,7 +54,10 @@ export default function PhotoLibraryPickerView({ customerId, visitId, files, onC
   const totalCount   = items.length
   const hasFailures  = phase === 'done' && errorCount > 0
 
-  const usedThreeShotRule = files.length === 3
+  // PHOTO_LABEL_REALIGN_1: 枚数によらず、部位が未選択(bodyPart === '')の写真が
+  // 1件でもあれば「一括登録」ボタン自体をdisabledにし、必ず全件を明示的に選ばせる
+  // (CSV取込のneeds_review未回答ゲートと同じパターン)。
+  const unselectedCount = useMemo(() => items.filter(i => i.bodyPart === '').length, [items])
 
   const updateBodyPart = (id: string, bodyPart: string) => {
     setItems(prev => prev.map(it => (it.id === id ? { ...it, bodyPart, isProvisional: false } : it)))
@@ -170,15 +173,14 @@ export default function PhotoLibraryPickerView({ customerId, visitId, files, onC
 
         {/* ── 案内・警告 ── */}
         <div style={{ flexShrink: 0, padding: '10px 16px 0' }}>
-          {usedThreeShotRule && (
+          {phase !== 'done' && unselectedCount > 0 && (
             <div style={{
               display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '9px 12px',
-              background: '#F0F5FA', border: '1px solid #C8DCF0', borderRadius: '12px', marginBottom: '8px',
+              background: '#FFF4E8', border: '1px solid #FFE2A8', borderRadius: '12px', marginBottom: '8px',
             }}>
-              <span style={{ fontSize: '13px' }}>💡</span>
-              <p style={{ fontSize: '11px', color: '#4878A8', lineHeight: 1.6 }}>
-                3枚選択されたため、選んだ順に「正面・左45°・右45°」を仮に割り当てました。
-                内容を確認し、違っていれば下の部位を変更してください。
+              <span style={{ fontSize: '13px' }}>⚠️</span>
+              <p style={{ fontSize: '11px', color: '#9F7E6C', lineHeight: 1.6 }}>
+                部位が未選択の写真が{unselectedCount}枚あります。全て選択するまで登録できません。
               </p>
             </div>
           )}
@@ -220,7 +222,12 @@ export default function PhotoLibraryPickerView({ customerId, visitId, files, onC
                 transition={{ duration: 0.15 }}
                 style={{
                   background: '#fff', borderRadius: '16px', overflow: 'hidden',
-                  border: `1.5px solid ${item.status === 'error' ? '#F5C0C8' : item.status === 'success' ? '#B7E4C7' : '#E4EEF8'}`,
+                  border: `1.5px solid ${
+                    item.status === 'error' ? '#F5C0C8'
+                    : item.status === 'success' ? '#B7E4C7'
+                    : item.bodyPart === '' ? '#FFE2A8'
+                    : '#E4EEF8'
+                  }`,
                   display: 'flex', flexDirection: 'column',
                 }}
               >
@@ -276,12 +283,12 @@ export default function PhotoLibraryPickerView({ customerId, visitId, files, onC
                     {item.file.name}
                   </p>
 
-                  {item.isProvisional && (
+                  {item.bodyPart === '' && (
                     <span style={{
-                      alignSelf: 'flex-start', fontSize: '9px', fontWeight: 700, color: '#4878A8',
-                      background: '#F0F5FA', border: '1px solid #C8DCF0', borderRadius: '999px', padding: '1px 8px',
+                      alignSelf: 'flex-start', fontSize: '9px', fontWeight: 700, color: '#9F7E6C',
+                      background: '#FFF4E8', border: '1px solid #FFE2A8', borderRadius: '999px', padding: '1px 8px',
                     }}>
-                      {bodyPartLabel(item.bodyPart)}(仮)
+                      未選択
                     </span>
                   )}
 
@@ -291,9 +298,14 @@ export default function PhotoLibraryPickerView({ customerId, visitId, files, onC
                     disabled={isBusy || item.status === 'success'}
                     style={{
                       width: '100%', fontSize: '12px', color: '#3d4858', padding: '7px 8px',
-                      borderRadius: '8px', border: '1.5px solid rgba(72,120,168,0.3)', background: '#fff',
+                      borderRadius: '8px',
+                      border: `1.5px solid ${item.bodyPart === '' ? '#F0B860' : 'rgba(72,120,168,0.3)'}`,
+                      background: '#fff',
                     }}
                   >
+                    {/* PHOTO_LABEL_REALIGN_1: 未選択のまま登録できないよう、選べない
+                        プレースホルダーを先頭に置く(disabledのため一度選んだら戻れない)。 */}
+                    <option value="" disabled>部位を選択してください</option>
                     {BODY_PART_OPTIONS.map(opt => (
                       <option key={opt.id} value={opt.id}>{opt.label}</option>
                     ))}
@@ -339,11 +351,12 @@ export default function PhotoLibraryPickerView({ customerId, visitId, files, onC
                 <button
                   type="button"
                   onClick={handleRegister}
-                  disabled={isBusy || items.length === 0}
+                  disabled={isBusy || items.length === 0 || unselectedCount > 0}
                   style={{
                     flex: 2, padding: '13px', borderRadius: '999px', fontSize: '13px', fontWeight: 700,
-                    background: isBusy || items.length === 0 ? '#A0BCD8' : '#4878A8', color: '#fff', border: 'none',
-                    cursor: isBusy || items.length === 0 ? 'default' : 'pointer',
+                    background: isBusy || items.length === 0 || unselectedCount > 0 ? '#A0BCD8' : '#4878A8',
+                    color: '#fff', border: 'none',
+                    cursor: isBusy || items.length === 0 || unselectedCount > 0 ? 'default' : 'pointer',
                   }}
                 >
                   {isBusy ? '登録中…' : `一括登録（${items.length}件）`}

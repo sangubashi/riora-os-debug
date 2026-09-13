@@ -132,15 +132,28 @@ describe('summarizeUploadResults（「選択して追加」の無言失敗防止
   })
 })
 
-describe('buildBatchItems（無変更の既存動作を回帰確認）', () => {
-  it('ちょうど3枚選択時は正面/左45°/右45°を順序で仮割当てする', () => {
+describe('buildBatchItems（PHOTO_LABEL_REALIGN_1: 自動仮割当ては廃止し、常に未選択で開始する）', () => {
+  it('ちょうど3枚選択してもbodyPartを自動割当てしない(全て未選択のまま)', () => {
     const files = [
       new File(['a'], 'a.heic', { type: 'image/heic' }),
       new File(['b'], 'b.heic', { type: 'image/heic' }),
       new File(['c'], 'c.heic', { type: 'image/heic' }),
     ]
     const items = buildBatchItems(files)
-    expect(items.map(i => i.bodyPart)).toEqual(['face_front', 'face_left45', 'face_right45'])
+    expect(items.map(i => i.bodyPart)).toEqual(['', '', ''])
     expect(items.every(i => i.isProvisional)).toBe(true)
+  })
+
+  it('2枚・4枚等どの枚数でも全アイテムが未選択(bodyPart:\'\')で始まる', () => {
+    const twoFiles = [
+      new File(['a'], 'a.jpg', { type: 'image/jpeg' }),
+      new File(['b'], 'b.jpg', { type: 'image/jpeg' }),
+    ]
+    const fourFiles = [...twoFiles,
+      new File(['c'], 'c.jpg', { type: 'image/jpeg' }),
+      new File(['d'], 'd.jpg', { type: 'image/jpeg' }),
+    ]
+    expect(buildBatchItems(twoFiles).map(i => i.bodyPart)).toEqual(['', ''])
+    expect(buildBatchItems(fourFiles).map(i => i.bodyPart)).toEqual(['', '', '', ''])
   })
 })

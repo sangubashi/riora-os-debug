@@ -41,14 +41,15 @@ import PhotoComparisonView from './PhotoComparisonView'
 
 /**
  * 写真カルテ Phase2「角度フィルター」の固定選択肢。既存のbody_part語彙
- * (face_front/face_left45/face_right45、src/lib/photos/bodyParts.ts)をそのまま使う
- * (新しいangleカラムは追加しない)。表示はこのフィルター専用の短いラベルにする
- * (BODY_PART_OPTIONSの「顔全体・正面」等は撮影画面向けの長いラベルのため流用しない)。
+ * (src/lib/photos/bodyParts.ts)をそのまま使う(新しいangleカラムは追加しない)。
+ * PHOTO_LABEL_REALIGN_1(2026-09-13)で部位語彙が正面/斜め/顎/額の4つに変更されたため、
+ * ここも同じ4つに合わせる。
  */
 const ANGLE_FILTER_OPTIONS: { id: string; label: string }[] = [
   { id: 'face_front',   label: '正面' },
-  { id: 'face_left45',  label: '左45°' },
-  { id: 'face_right45', label: '右45°' },
+  { id: 'face_oblique', label: '斜め' },
+  { id: 'chin',         label: '顎' },
+  { id: 'forehead',     label: '額' },
 ]
 
 interface Props {
@@ -294,8 +295,10 @@ export default function PhotoTimelineView({
               画面幅に合わせた折り返しはしない(overflowX:'auto' + 各ボタンflexShrink:0で
               PhotoCaptureView.tsxの部位選択チップと同じ横スクロールパターンを踏襲)。
               visit_id/visitCountAtが無い写真(未紐付け写真)はここには現れない
-              (「すべて」選択時のみ、既存の日付タイムラインにこれまで通り表示される)。 */}
-        {loadState === 'ready' && visitTabs.length > 0 && (
+              (「すべて」選択時のみ、既存の日付タイムラインにこれまで通り表示される)。
+              「すべて」ボタンはvisitTabsが0件でも常に表示する(初期状態を明示するため)。
+              個別の来店回数タブ(初回/2回目/…)はvisitTabsに実データがある場合だけ表示する。 */}
+        {loadState === 'ready' && (
           <div style={{ flexShrink: 0, padding: '12px 16px 0' }}>
             <p style={{ fontSize: '11px', fontWeight: 700, color: '#3d4858', marginBottom: '8px' }}>
               📅 来店で絞り込み
@@ -317,7 +320,7 @@ export default function PhotoTimelineView({
               >
                 すべて
               </button>
-              {visitTabs.map(tab => (
+              {visitTabs.length > 0 && visitTabs.map(tab => (
                 <button
                   key={tab.visitId}
                   type="button"
@@ -338,7 +341,7 @@ export default function PhotoTimelineView({
         )}
 
         {/* ── 写真カルテ Phase2: 角度フィルター(横スクロール・一覧表示のみを絞り込む) ──
-              既存のbody_part(face_front/face_left45/face_right45)をそのまま使う。 */}
+              既存のbody_part(face_front/face_oblique/chin/forehead)をそのまま使う。 */}
         {loadState === 'ready' && photos.length > 0 && (
           <div style={{ flexShrink: 0, padding: '10px 16px 0' }}>
             <div style={{

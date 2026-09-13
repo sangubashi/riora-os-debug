@@ -30,15 +30,15 @@ const OPACITY_LEVELS: { level: GhostOpacityLevel; label: string }[] = [
 ]
 
 /**
- * 静的ガイド(輪郭目安楕円)の角度別パラメータ。face_front/face_left45/face_right45
- * のみ定義し、他のbody_part(額・頬・鼻・顎・目周り・首・その他、いずれも正面固定)は
- * DEFAULT_GUIDE_ELLIPSE(=face_frontと同一)にフォールバックする。
- * face_left45/face_right45はcx=50を中心に左右対称(50±8)・rx同値(22)にしている。
+ * 静的ガイド(輪郭目安楕円)の角度別パラメータ。PHOTO_LABEL_REALIGN_1(2026-09-13)で
+ * 部位語彙を正面/斜め/顎/額の4つに変更したため、face_front/face_oblique のみ定義し、
+ * 他のbody_part(顎・額、いずれも正面固定)はDEFAULT_GUIDE_ELLIPSE(=face_frontと同一)に
+ * フォールバックする。新語彙では斜めの左右を区別しないため、face_obliqueは旧
+ * face_left45と同じオフセット(cx=42, rx=22)を暫定的に流用する。
  */
 const GUIDE_ELLIPSE: Record<string, { cx: number; rx: number }> = {
   face_front:   { cx: 50, rx: 26 },
-  face_left45:  { cx: 42, rx: 22 },
-  face_right45: { cx: 58, rx: 22 },
+  face_oblique: { cx: 42, rx: 22 },
 }
 const DEFAULT_GUIDE_ELLIPSE = GUIDE_ELLIPSE.face_front
 

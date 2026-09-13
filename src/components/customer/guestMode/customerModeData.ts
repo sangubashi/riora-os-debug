@@ -42,10 +42,13 @@ import {
 import { buildVisitTabs, type VisitTab } from '@/lib/photos/timelineGrouping'
 import { getHomecareUsageGuide } from '@/lib/homecare/homecareUsageGuide'
 
+// PHOTO_LABEL_REALIGN_1(2026-09-13): 部位語彙が正面/斜め/顎/額の4つに変更されたため、
+// お客様モードの角度タブもこれに合わせる(src/lib/photos/bodyParts.ts参照)。
 export const CUSTOMER_MODE_ANGLES = [
   { id: 'face_front', label: '正面' },
-  { id: 'face_left45', label: '左45°' },
-  { id: 'face_right45', label: '右45°' },
+  { id: 'face_oblique', label: '斜め' },
+  { id: 'chin', label: '顎' },
+  { id: 'forehead', label: '額' },
 ] as const
 
 export type CustomerModeAngleId = (typeof CUSTOMER_MODE_ANGLES)[number]['id']
