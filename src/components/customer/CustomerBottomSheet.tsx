@@ -450,8 +450,7 @@ export default function CustomerBottomSheet({
     return visitHistory.find(v => v.visitDate === todayStr)?.id ?? null;
   }, [visitHistory]);
 
-  // ── 今日気をつけること（PHASE UX-1: Focus / 触れない話題） ─────────────────────
-  const [todayFocus, setTodayFocus] = useState<string | null>(null);
+  // ── 今日気をつけること（PHASE UX-1: 触れない話題） ─────────────────────────────
   const [ngTopics,   setNgTopics]   = useState<string[]>([]);
 
   // ── ホームケア使用商品（PHASE HC-2B） ────────────────────────────────────────
@@ -533,7 +532,6 @@ export default function CustomerBottomSheet({
     setHandoverCollapsed(false);
     setContraindications([]);
     setVisitHistory([]);
-    setTodayFocus(null);
     setNgTopics([]);
     setInsightTags([]);
     setHomecareProducts([]);
@@ -661,16 +659,6 @@ export default function CustomerBottomSheet({
       }
     })();
 
-    // 今日気をつけること — 今日のFocus（timeline_summary_cache、生成済みキャッシュのみ参照）
-    void (async () => {
-      const { data } = await supabase
-        .from('timeline_summary_cache')
-        .select('focus')
-        .eq('customer_id', c.id)
-        .maybeSingle();
-      setTodayFocus((data as { focus: string | null } | null)?.focus ?? null);
-    })();
-
     // 今日気をつけること — 触れない話題（voice_notes.ng_topics 最新1件 + customer_memories(is_sensitive=true)）
     void (async () => {
       const [voiceRes, memoryRes] = await Promise.all([
@@ -760,7 +748,6 @@ export default function CustomerBottomSheet({
     setRecentActions([]);
     setRecentNotes([]);
     setVisitHistory([]);
-    setTodayFocus(null);
     setNgTopics([]);
     setInsightTags([]);
     setHomecareProducts([]);
@@ -1602,8 +1589,6 @@ export default function CustomerBottomSheet({
                       ⚠️ 今日気をつけること
                     </p>
                     <div className="flex flex-col gap-2.5">
-                      {/* PHASE UX-3C: 今日のFocus(timeline_summary_cache.focus)は構造的に常にnullのため非表示化。
-                          取得ロジック自体は変更しない(ロジック変更禁止) */}
                       {([
                         { label: 'アレルギー',    value: allergyText },
                         { label: '触れない話題',   value: ngTopics.length > 0 ? ngTopics.join('、') : null },
