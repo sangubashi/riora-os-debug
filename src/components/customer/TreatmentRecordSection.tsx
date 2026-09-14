@@ -149,9 +149,22 @@ const TreatmentRecordSectionInner = memo(function TreatmentRecordSection({
           }),
         }
       )
-      if (!res.ok) throw new Error('save failed')
-      const json = await res.json() as { success: boolean; treatment?: TreatmentApiShape }
-      if (!json.success || !json.treatment) throw new Error('save failed')
+      const json = await res.json().catch(() => null) as
+        | { success: true; treatment: TreatmentApiShape }
+        | { success: false; error?: string }
+        | null
+
+      if (!res.ok || !json?.success) {
+        // 顧客統合(重複マージ)でvisitIdが無効化されたケースは、通常の保存失敗と区別して案内する
+        const staleVisit =
+          res.status === 404 || (json != null && !json.success && json.error === 'invalid_visit_id')
+        toast.error(
+          staleVisit
+            ? '顧客情報が更新されました。画面を開き直してから再度お試しください'
+            : '今日の施術記録の保存に失敗しました'
+        )
+        return
+      }
 
       setOptions(toStringList(json.treatment.options))
       setProductsUsed(toStringList(json.treatment.productsUsed))

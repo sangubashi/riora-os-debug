@@ -510,6 +510,8 @@ export default function CustomerBottomSheet({
   useEffect(() => {
     if (!c?.id) return;
 
+    let cancelled = false;
+
     setPage('overview');
     setLogSelected(new Set());
     setLogSaved(false);
@@ -617,17 +619,18 @@ export default function CustomerBottomSheet({
       }
     })();
 
-    // 来店履歴（Phase UX-1）
+    // 来店履歴（Phase UX-1・顧客切り替え時のレース防止でcancelledガード追加）
     void (async () => {
       setVisitHistoryLoading(true);
       try {
         const res = await authedFetch(`/api/customers/${c.id}/visit-history`);
+        if (cancelled) return;
         if (res.ok) {
           const json = await res.json() as { success: boolean; visits: VisitHistoryEntry[] };
-          if (json.success) setVisitHistory(json.visits);
+          if (!cancelled && json.success) setVisitHistory(json.visits);
         }
       } finally {
-        setVisitHistoryLoading(false);
+        if (!cancelled) setVisitHistoryLoading(false);
       }
     })();
 
@@ -694,6 +697,10 @@ export default function CustomerBottomSheet({
       const rows = (data ?? []) as { insight_tags: string[] | null }[];
       setInsightTags(Array.from(new Set(rows.flatMap(r => r.insight_tags ?? []))));
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [c?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── ロード ────────────────────────────────────────────────────────────────
