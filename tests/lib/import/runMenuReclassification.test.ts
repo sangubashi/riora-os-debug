@@ -82,6 +82,10 @@ function createFakeRepos(opts: { menus: Menu[]; customers: Customer[]; visits: V
       updateNextBookingMade: async () => {},
       replaceRetailItems: async () => {},
     },
+    subscriptionPaymentRepo: {
+      replaceForCheckout: async () => {},
+      listByCustomer: async () => [],
+    },
   };
 
   return { ...repos, state };

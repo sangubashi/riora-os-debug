@@ -20,8 +20,9 @@ function agg(opts: { customerName: string; menuName?: string }): SalonBoardCheck
   return {
     checkoutId: `C${seq}`, lineNumber: seq, customerName: opts.customerName, customerNumber: '',
     customerKana: '', gender: '女性', visitDateTime: '2026-06-01T12:00:00+09:00', staffNameRaw: '鈴木',
-    isDesignated: false, bookingChannel: 'LINE', isNewCustomer: true, menuName: opts.menuName ?? 'カット',
-    netServiceSales: 5000, retailSales: 0, discountTotal: 0, optionNames: [], retailNames: [], retailItems: [],
+    isDesignated: false, bookingChannel: 'LINE', isNewCustomer: true,
+    baseTreatmentName: opts.menuName ?? 'カット', baseTreatmentNameSource: 'treatment_line',
+    netServiceSales: 5000, retailSales: 0, discountTotal: 0, optionLines: [], retailNames: [], retailItems: [],
     serviceNames: [], lineItemCount: 1, treatmentLineCount: 1, subscriptionPayments: [],
   };
 }

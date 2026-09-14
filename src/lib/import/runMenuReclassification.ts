@@ -37,16 +37,53 @@
 import {
   parseSalonBoardDetailCsv,
   aggregateCheckouts,
+  type SalonBoardCheckoutAggregate,
 } from './salonBoardDetailParser'
 import { buildMenuLookup, resolveMenuId, resolveOrCreateFallbackMenu, previewFallbackMenu } from './menuResolver'
 import { findNameCandidates } from './customerMatcher'
-import type { ICustomerRepo, IVisitRepo, IMenuRepo } from '../../repositories/interfaces'
+import {
+  resolveSubscriptionCourseName, buildBatchHistoryByCustomer,
+  type SubscriptionHistoryEntry,
+} from './subscriptionCourseNameResolver'
+import type { ICustomerRepo, IVisitRepo, IMenuRepo, ISubscriptionPaymentRepo } from '../../repositories/interfaces'
 import type { UUID } from '../../types/riora.types'
 
 export interface ReclassificationRepos {
   customerRepo: ICustomerRepo
   visitRepo:    IVisitRepo
   menuRepo:     IMenuRepo
+  /** BASE_TREATMENT_NAME_RESOLUTION: サブスク契約履歴の解決に使う。 */
+  subscriptionPaymentRepo: ISubscriptionPaymentRepo
+}
+
+/**
+ * BASE_TREATMENT_NAME_RESOLUTION: agg.baseTreatmentNameSource==='subscription_unresolved'の
+ * 会計に対し、DB既存のサブスク明細履歴 + 同一バッチ内の他会計からコース名を解決する。
+ * csvImportPipeline.tsのresolveBaseTreatmentName()と同じロジック(重複を避けるため
+ * ここだけ簡潔に再実装。両者ともsubscriptionCourseNameResolver.tsの純粋関数に処理を委譲する
+ * ため、ロジック自体の二重管理は発生しない)。
+ */
+async function resolveBaseTreatmentNameForReclassification(
+  agg: SalonBoardCheckoutAggregate,
+  customerId: string,
+  batchHistoryByCustomerName: Map<string, SubscriptionHistoryEntry[]>,
+  repos: ReclassificationRepos
+): Promise<string> {
+  if (agg.baseTreatmentNameSource !== 'subscription_unresolved') return agg.baseTreatmentName
+  if (agg.subscriptionPayments.length === 0) return agg.baseTreatmentName
+
+  const repSub = agg.subscriptionPayments.reduce((best, p) => (p.amount > best.amount ? p : best))
+  const dbHistory = await repos.subscriptionPaymentRepo.listByCustomer(customerId)
+  const batchHistory = batchHistoryByCustomerName.get(agg.customerName) ?? []
+  const mergedHistory: SubscriptionHistoryEntry[] = [
+    ...dbHistory.map(h => ({ date: h.paymentDate, itemName: h.itemName, amount: h.amount })),
+    ...batchHistory,
+  ]
+
+  const resolved = resolveSubscriptionCourseName(
+    dateOnly(agg.visitDateTime), repSub.amount, repSub.itemName, mergedHistory
+  )
+  return resolved.courseName
 }
 
 export interface ReclassificationDetail {
@@ -114,22 +151,18 @@ export async function runMenuReclassification(
   // PHASE CSV-MENU-FALLBACK-IMPROVE: fallbackMenuId(店舗共有1行)だけでなく、未マッチ名
   // ごとに作られたimported_other行もすべて「フォールバック扱い」として拾う。
   const importedOtherIds = new Set(menus.filter(m => m.role === 'imported_other').map(m => m.id))
+  // BASE_TREATMENT_NAME_RESOLUTION: 同一バッチ内の他会計のサブスク明細も履歴解決の
+  // 手がかりに使う(遡及是正の一括再取込では、これだけでほぼ全件解決できる)。
+  const batchHistoryByCustomerName = buildBatchHistoryByCustomer(aggregates)
 
   let updated = 0, noChange = 0, skipped = 0, errors = 0
   const details: ReclassificationDetail[] = []
 
   for (const agg of aggregates) {
     try {
-      // 1. メニュー再解決(既存4方式。変更なし)
-      const menuRes = resolveMenuId(agg.menuName, menuLookup)
-
-      // matched以外の行は、復元機能が無効ならここで早期skip(既存挙動と完全に同じ)。
-      if (menuRes.status !== 'matched' && !recoverFallbackNames) {
-        skipped++
-        continue
-      }
-
-      // 2. 顧客照合: 既存 salonboard_import 来店を持つ候補を探す
+      // 1. 顧客照合: 既存 salonboard_import 来店を持つ候補を探す(BASE_TREATMENT_NAME_
+      //    RESOLUTIONで、コース名解決にcustomerIdが必要になったためメニュー解決より先に行う
+      //    よう並び替えた。両者に依存関係は無い)。
       const nameCandidates = findNameCandidates(agg.customerName, customers)
       if (nameCandidates.length === 0) { skipped++; continue }
 
@@ -146,9 +179,24 @@ export async function runMenuReclassification(
       }
       if (!matchedCustomerId) { skipped++; continue }
 
-      // 3. 既存 visit 取得
+      // 2. 既存 visit 取得
       const existingVisit = await repos.visitRepo.findByCustomerAndDate(matchedCustomerId, visitDate)
       if (!existingVisit || existingVisit.source !== 'salonboard_import') { skipped++; continue }
+
+      // 3. 基本施術名解決(サブスクでカバーされ明細に基本施術が計上されない会計のみ、
+      //    履歴ベースでコース名を補完する。それ以外はagg.baseTreatmentNameをそのまま使う)
+      const resolvedBaseTreatmentName = await resolveBaseTreatmentNameForReclassification(
+        agg, matchedCustomerId, batchHistoryByCustomerName, repos
+      )
+
+      // 4. メニュー再解決(既存4方式。変更なし)
+      const menuRes = resolveMenuId(resolvedBaseTreatmentName, menuLookup)
+
+      // matched以外の行は、復元機能が無効ならここで早期skip(既存挙動と完全に同じ)。
+      if (menuRes.status !== 'matched' && !recoverFallbackNames) {
+        skipped++
+        continue
+      }
 
       if (menuRes.status === 'matched') {
         // ── 既存の「本当に一致するメニューが見つかった」場合の再分類(挙動は無変更) ──
@@ -163,7 +211,7 @@ export async function runMenuReclassification(
         details.push({
           visitDate,
           customerName: agg.customerName,
-          rawMenuName:  agg.menuName,
+          rawMenuName:  resolvedBaseTreatmentName,
           beforeMenuId: existingVisit.menuId,
           afterMenuId:  menuRes.menuId,
           method:       menuRes.method,
@@ -180,13 +228,13 @@ export async function runMenuReclassification(
       if (!importedOtherIds.has(existingVisit.menuId)) { skipped++; continue }
 
       if (dryRun) {
-        const preview = previewFallbackMenu(agg.menuName, menuLookup)
+        const preview = previewFallbackMenu(resolvedBaseTreatmentName, menuLookup)
         if (preview.menuId === null && !preview.wouldCreate) { skipped++; continue } // 空文字等、対象外
         if (preview.menuId === existingVisit.menuId) { noChange++; continue }
         details.push({
           visitDate,
           customerName: agg.customerName,
-          rawMenuName:  agg.menuName,
+          rawMenuName:  resolvedBaseTreatmentName,
           beforeMenuId: existingVisit.menuId,
           afterMenuId:  preview.menuId ?? '(新規作成予定)',
           method:       'fallback_other_recovered',
@@ -196,7 +244,7 @@ export async function runMenuReclassification(
         continue
       }
 
-      const recovered = await resolveOrCreateFallbackMenu(agg.menuName, menuLookup, input.storeId, repos.menuRepo)
+      const recovered = await resolveOrCreateFallbackMenu(resolvedBaseTreatmentName, menuLookup, input.storeId, repos.menuRepo)
       if (recovered.status !== 'fallback') { skipped++; continue } // 空文字等、対象外(matchedはこの分岐に来ない)
       if (recovered.menuId === existingVisit.menuId) { noChange++; continue }
 
@@ -205,7 +253,7 @@ export async function runMenuReclassification(
       details.push({
         visitDate,
         customerName: agg.customerName,
-        rawMenuName:  agg.menuName,
+        rawMenuName:  resolvedBaseTreatmentName,
         beforeMenuId: existingVisit.menuId,
         afterMenuId:  recovered.menuId,
         method:       'fallback_other_recovered',

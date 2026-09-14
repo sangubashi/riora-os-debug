@@ -41,6 +41,10 @@ import {
   parseSalonBoardDetailCsv, aggregateCheckouts,
   type SalonBoardCheckoutAggregate, type CheckoutIssue,
 } from './salonBoardDetailParser'
+import {
+  resolveSubscriptionCourseName, buildBatchHistoryByCustomer,
+  type SubscriptionHistoryEntry,
+} from './subscriptionCourseNameResolver'
 import { sanitizeResidualPii, hashExternalKey } from './piiSanitizer'
 import { buildStaffLookup, resolveStaffId, type StaffLookup } from './staffResolver'
 import { buildMenuLookup, resolveMenuId, resolveOrCreateFallbackMenu, type MenuLookup } from './menuResolver'
@@ -89,8 +93,13 @@ function dateOnly(visitDateTimeIso: string): string {
  * 既知の制約。
  */
 function hasSubscriptionKeyword(agg: SalonBoardCheckoutAggregate): boolean {
+  // BASE_TREATMENT_NAME_RESOLUTION: サブスク課金があるかは agg.subscriptionPayments で
+  // 直接判定できるため、まずこちらを見る(以前はbaseTreatmentName自体がサブスクの生文言に
+  // なっていたケースを文字列一致で拾っていたが、今回の改修でbaseTreatmentNameは解決済みの
+  // コース名(例:「選べる肌改善コース」)になり「サブスク」の文字列を含まなくなるため)。
   const KEYWORD = 'サブスク'
-  if (agg.menuName.includes(KEYWORD)) return true
+  if (agg.subscriptionPayments.length > 0) return true
+  if (agg.baseTreatmentName.includes(KEYWORD)) return true
   if (agg.serviceNames.some((name) => name.includes(KEYWORD))) return true
   if (agg.retailNames.some((name) => name.includes(KEYWORD))) return true
   return false
@@ -103,7 +112,7 @@ function hasSubscriptionKeyword(agg: SalonBoardCheckoutAggregate): boolean {
  */
 function hasPackKeyword(agg: SalonBoardCheckoutAggregate): boolean {
   const KEYWORD = 'パック'
-  if (agg.menuName.includes(KEYWORD)) return true
+  if (agg.baseTreatmentName.includes(KEYWORD)) return true
   if (agg.serviceNames.some((name) => name.includes(KEYWORD))) return true
   if (agg.retailNames.some((name) => name.includes(KEYWORD))) return true
   return false
@@ -118,6 +127,38 @@ function hasPackKeyword(agg: SalonBoardCheckoutAggregate): boolean {
  */
 function isPureSubscriptionCheckout(agg: SalonBoardCheckoutAggregate): boolean {
   return agg.subscriptionPayments.length > 0 && agg.treatmentLineCount === 0 && agg.retailSales === 0
+}
+
+/**
+ * BASE_TREATMENT_NAME_RESOLUTION: agg.baseTreatmentNameSource==='subscription_unresolved'の
+ * 会計に対し、DB既存のサブスク明細履歴(brain_subscription_payments) + 同一バッチ内の
+ * 他会計から、来店日時点で有効だった契約コース名を解決する。それ以外のsourceの会計は
+ * agg.baseTreatmentNameをそのまま返す(サブスク課金が無い通常会計・コース名を明細から
+ * 直接抽出できた会計)。
+ */
+async function resolveBaseTreatmentName(
+  agg: SalonBoardCheckoutAggregate,
+  // Dry Run(buildDryRunResult)では新規顧客(未作成)の場合customerIdが無いためnullを許容する。
+  // その場合はDB履歴を使わず、同一バッチ内の履歴のみで解決する(ベストエフォート)。
+  customerId: string | null,
+  batchHistoryByCustomerName: Map<string, SubscriptionHistoryEntry[]>,
+  repos: PipelineRepos
+): Promise<string> {
+  if (agg.baseTreatmentNameSource !== 'subscription_unresolved') return agg.baseTreatmentName
+  if (agg.subscriptionPayments.length === 0) return agg.baseTreatmentName // 到達しない想定の型ガード
+
+  const repSub = agg.subscriptionPayments.reduce((best, p) => (p.amount > best.amount ? p : best))
+  const dbHistory = customerId ? await repos.subscriptionPaymentRepo.listByCustomer(customerId) : []
+  const batchHistory = batchHistoryByCustomerName.get(agg.customerName) ?? []
+  const mergedHistory: SubscriptionHistoryEntry[] = [
+    ...dbHistory.map(h => ({ date: h.paymentDate, itemName: h.itemName, amount: h.amount })),
+    ...batchHistory,
+  ]
+
+  const resolved = resolveSubscriptionCourseName(
+    dateOnly(agg.visitDateTime), repSub.amount, repSub.itemName, mergedHistory
+  )
+  return resolved.courseName
 }
 
 /** brain_subscription_payments書込み入力への変換(混在会計はvisitId有り、純粋サブスク会計はnull)。 */
@@ -450,6 +491,9 @@ export async function buildDryRunResult(input: DryRunInput, repos: PipelineRepos
   let nameProximityMatchedCount = 0
   let visitProximityClosestCount = 0
   let proximityReviewCount = 0
+  // BASE_TREATMENT_NAME_RESOLUTION: 実取込(runImportPipeline)と同じ解決結果をDry Runでも
+  // プレビューできるよう、同一バッチ内の履歴を先に組み立てておく。
+  const batchHistoryByCustomerName = buildBatchHistoryByCustomer(aggregates)
 
   for (const agg of aggregates) {
     const staffRes = resolveStaffId(agg.staffNameRaw, ctx.staffLookup)
@@ -466,16 +510,9 @@ export async function buildDryRunResult(input: DryRunInput, repos: PipelineRepos
       }
     }
 
-    // 純粋サブスク会計(SUBSCRIPTION_VISIT_SPLIT_PHASE1)はmenuName=''(実施術行が無いため)
-    // となりresolveMenuId()が必ずunresolvedを返すが、これは実取込では
-    // brain_subscription_paymentsへ記録されるだけで「スキップ」ではないため、
-    // Dry Runでcheckout_integrity_errorとして誤表示しないよう除外する。
-    const menuRes = resolveMenuId(agg.menuName, ctx.menuLookup)
-    if (menuRes.status === 'unresolved' && !isPureSubscriptionCheckout(agg)) {
-      additionalSkipped.push({ rowNumber: agg.lineNumber, reasonCode: 'checkout_integrity_error' })
-      continue
-    }
-
+    // BASE_TREATMENT_NAME_RESOLUTION: メニュー解決より先にcustomer照合を行い、
+    // 確定済み顧客がいればそのDB履歴も使って解決する(新規顧客はDry Runでは未作成のため
+    // batchHistoryのみのベストエフォート解決になる)。
     const { decision, isHashMatch, matchMethod, proximityDeclined } = await matchCustomer(agg, ctx, repos)
     if (isHashMatch) hashMatchedCount += 1
     if (matchMethod === 'visit_proximity_single' || matchMethod === 'visit_proximity_closest') {
@@ -483,6 +520,19 @@ export async function buildDryRunResult(input: DryRunInput, repos: PipelineRepos
     }
     if (matchMethod === 'visit_proximity_closest') visitProximityClosestCount += 1
     if (proximityDeclined) proximityReviewCount += 1
+
+    const matchedCustomerId = decision.status === 'matched' ? decision.customerId : null
+    const resolvedBaseTreatmentName = await resolveBaseTreatmentName(agg, matchedCustomerId, batchHistoryByCustomerName, repos)
+
+    // 純粋サブスク会計(SUBSCRIPTION_VISIT_SPLIT_PHASE1)はbaseTreatmentName=''(実施術行が
+    // 無いため)となりresolveMenuId()が必ずunresolvedを返すが、これは実取込では
+    // brain_subscription_paymentsへ記録されるだけで「スキップ」ではないため、
+    // Dry Runでcheckout_integrity_errorとして誤表示しないよう除外する。
+    const menuRes = resolveMenuId(resolvedBaseTreatmentName, ctx.menuLookup)
+    if (menuRes.status === 'unresolved' && !isPureSubscriptionCheckout(agg)) {
+      additionalSkipped.push({ rowNumber: agg.lineNumber, reasonCode: 'checkout_integrity_error' })
+      continue
+    }
     if (decision.status === 'needs_review') {
       needsReview.push({
         rowNumber: agg.lineNumber,
@@ -591,6 +641,9 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
   // 1件以上ある場合のみ、ループ完了後にbrain_pattern_step_statsを1回だけrefreshする。
   let proposalOutcomesRecorded = 0
   const menuResolutionByRawName = new Map<string, MenuResolutionLogEntry>()
+  // BASE_TREATMENT_NAME_RESOLUTION: 同一バッチ内の他会計のサブスク明細も履歴解決の
+  // 手がかりに使う(1回のCSV取込に同一顧客の複数月分が含まれるケース・遡及是正バッチ等)。
+  const batchHistoryByCustomerName = buildBatchHistoryByCustomer(aggregates)
 
   for (const agg of aggregates) {
     const staffRes = resolveStaffId(agg.staffNameRaw, ctx.staffLookup)
@@ -605,19 +658,9 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
     // resolveOrCreateFallbackMenu()を呼ばずに済ませる。
     const pureSubscription = isPureSubscriptionCheckout(agg)
 
-    // PHASE CSV-MENU-FALLBACK-IMPROVE: 未マッチのCSVメニュー名ごとにimported_other行を
-    // 検索/新規作成する(resolveMenuId()の4つの一致方式自体は無変更)。DBへ書き込む
-    // この実取込経路でのみ使う(Dry Run/品質レポート/再分類は従来のresolveMenuId()のまま)。
-    let menuRes: Awaited<ReturnType<typeof resolveOrCreateFallbackMenu>> | null = null
-    if (!pureSubscription) {
-      menuRes = await resolveOrCreateFallbackMenu(agg.menuName, ctx.menuLookup, input.storeId, repos.menuRepo)
-      recordMenuResolution(agg.menuName, menuRes, menuResolutionByRawName)
-      if (menuRes.status === 'unresolved') {
-        menuUnresolvedSkippedCount += 1
-        continue
-      }
-    }
-
+    // BASE_TREATMENT_NAME_RESOLUTION: 顧客IDを使ったサブスク契約履歴解決(DB+同一バッチ)が
+    // 必要なため、customer照合(matchCustomer)をメニュー解決より先に行うよう並び替えた
+    // (以前はメニュー解決→customer照合の順だったが、両者に依存関係は無い)。
     const { hash, decision, isHashMatch, matchMethod, proximityDeclined } = await matchCustomer(agg, ctx, repos)
     if (isHashMatch) hashMatchedCount += 1
     if (matchMethod === 'visit_proximity_single' || matchMethod === 'visit_proximity_closest') {
@@ -682,9 +725,22 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
       continue
     }
 
-    // pureSubscription===falseの場合、menuResは必ず解決済み(unresolvedは既にcontinue済み)。
-    // 型上はnullを許容しているためTypeScriptの絞り込み用にガードする(到達しない分岐)。
-    if (!menuRes) continue
+    // BASE_TREATMENT_NAME_RESOLUTION: サブスクでカバーされる基本施術が明細として計上
+    // されない会計(baseTreatmentNameSource==='subscription_unresolved')は、customerId確定後に
+    // 履歴ベースでコース名を解決してからメニュー解決へ渡す。それ以外(通常の施術行が
+    // ある会計・コース名を直接抽出済みの会計)はagg.baseTreatmentNameをそのまま使う。
+    const resolvedBaseTreatmentName = await resolveBaseTreatmentName(agg, customerId, batchHistoryByCustomerName, repos)
+
+    // PHASE CSV-MENU-FALLBACK-IMPROVE: 未マッチのCSVメニュー名ごとにimported_other行を
+    // 検索/新規作成する(resolveMenuId()の4つの一致方式自体は無変更)。DBへ書き込む
+    // この実取込経路でのみ使う(Dry Run/品質レポート/再分類は従来のresolveMenuId()のまま)。
+    const menuRes = await resolveOrCreateFallbackMenu(resolvedBaseTreatmentName, ctx.menuLookup, input.storeId, repos.menuRepo)
+    recordMenuResolution(resolvedBaseTreatmentName, menuRes, menuResolutionByRawName)
+    if (menuRes.status === 'unresolved') {
+      menuUnresolvedSkippedCount += 1
+      continue
+    }
+
     const existingVisit = await repos.visitRepo.findByCustomerAndDate(customerId, visitDate)
 
     // 顧客ステータス機能(PHASE RETAIL-ITEMS-1): 店販明細をbrain_visit_retail_itemsへ
@@ -726,7 +782,7 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
         const outcomeResult = await recordProposalOutcome(
           {
             storeId: input.storeId, visit: reconciledVisit,
-            hasOptionPurchase: agg.optionNames.length > 0,
+            hasOptionPurchase: agg.optionLines.length > 0,
             hasSubscriptionKeyword: hasSubscriptionKeyword(agg),
             hasPackKeyword: hasPackKeyword(agg),
           },
@@ -769,7 +825,7 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
         const outcomeResult = await recordProposalOutcome(
           {
             storeId: input.storeId, visit: createdVisit,
-            hasOptionPurchase: agg.optionNames.length > 0,
+            hasOptionPurchase: agg.optionLines.length > 0,
             hasSubscriptionKeyword: hasSubscriptionKeyword(agg),
             hasPackKeyword: hasPackKeyword(agg),
           },

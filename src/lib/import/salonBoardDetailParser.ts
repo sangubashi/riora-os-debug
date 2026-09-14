@@ -61,6 +61,29 @@ export interface SalonBoardSubscriptionPayment {
   amount:   number
 }
 
+/**
+ * 施術基本メニュー名の解決元(BASE_TREATMENT_NAME_RESOLUTION・2026-09-14)。
+ *  - treatment_line: 通常どおり施術/メニュー/サービス行(オプション以外)の代表値から解決
+ *  - subscription_contract_named: サブスク明細itemName自体にコース名を含む
+ *    (「【サブスク契約】」「【サブスク会員様】」プレフィックス。extractSubscriptionCourseName参照)
+ *  - subscription_unresolved: サブスク課金はあるが明細からコース名を直接特定できない
+ *    (「【サブスク決済日】」等)。csvImportPipeline.ts側の履歴ベース解決
+ *    (subscriptionCourseNameResolver.ts)に委ねるための中間状態。パイプラインを経由しない
+ *    呼び出し元(admin再分類ツール等)がこの状態のまま使うと未解決の空文字扱いになる。
+ *  - none: 施術・サブスクいずれも無い会計(店販のみ・割引のみ等、従来のmenuName=''と同じ)
+ */
+export type BaseTreatmentNameSource =
+  | 'treatment_line'
+  | 'subscription_contract_named'
+  | 'subscription_unresolved'
+  | 'none'
+
+/** オプション明細1件分(BASE_TREATMENT_NAME_RESOLUTION)。isOptionLine()に一致した行。 */
+export interface SalonBoardOptionLine {
+  itemName: string
+  amount:   number
+}
+
 export interface SalonBoardCheckoutAggregate {
   checkoutId:      string
   /** 集約元の代表行番号(会計ID内の先頭行)。会計内整合性エラーが無ければ必ず付与される。 */
@@ -74,11 +97,18 @@ export interface SalonBoardCheckoutAggregate {
   isDesignated:    boolean
   bookingChannel:  string
   isNewCustomer:   boolean
-  menuName:        string
+  /** 施術基本メニュー名(BASE_TREATMENT_NAME_RESOLUTION・旧menuNameを置き換え)。
+   *  baseTreatmentNameSource==='subscription_unresolved'の間は空文字。 */
+  baseTreatmentName:       string
+  baseTreatmentNameSource: BaseTreatmentNameSource
   netServiceSales: number
   retailSales:     number
   discountTotal:   number
-  optionNames:     string[]
+  /** 有償オプション明細(BASE_TREATMENT_NAME_RESOLUTION・旧optionNamesを置き換え)。
+   *  旧optionNamesは区分='オプション'を条件にしていたが、実SalonBoard売上明細では
+   *  区分は常に'施術'でオプションは品目名プレフィックス(「オプション：」「オプション:」)
+   *  でのみ判別できるため常に空配列になっていた(死んだフィールドだった)。 */
+  optionLines:     SalonBoardOptionLine[]
   retailNames:     string[]
   /** 店販明細(商品名・数量・単価・金額)。retailNamesと内容は重複するが、こちらは
    *  brain_visit_retail_itemsへの保存用に数量・金額の対応関係を保った配列。 */
@@ -166,6 +196,30 @@ const NORMAL_CHECKOUT_TYPES = new Set(['通常', '会計'])
  * 将来新しい表記が増えても、この文字列を含む限り自動的に拾える。
  */
 const SUBSCRIPTION_NAME_PATTERN = /サブスク/
+
+/**
+ * オプション明細行の判定(BASE_TREATMENT_NAME_RESOLUTION)。実データ調査(2026-09-14・
+ * 978行全数)で確認した「オプション：」「オプション:」(全角/半角コロン両方が実在)で
+ * 始まる品目名を対象とする。区分='オプション'は実データに一度も出現しないため
+ * (デモ生成CSVのみの旧区分)、品目名プレフィックスでの判定のみを信頼する。
+ */
+const OPTION_NAME_PATTERN = /^オプション[:：]/
+export function isOptionLine(itemName: string): boolean {
+  return OPTION_NAME_PATTERN.test(itemName)
+}
+
+/**
+ * サブスク契約コース名の直接抽出(BASE_TREATMENT_NAME_RESOLUTION)。実データ調査
+ * (978行全数・12パターン)で確認した「【サブスク契約】コース名 月N回」「【サブスク会員様】
+ * コース名」の2形式のみコース名を直接含む。それ以外(「【サブスク決済日】※金額入力して
+ * お会計」等、残り10パターン)はコース名を含まないためnullを返し、呼び出し側
+ * (csvImportPipeline.ts + subscriptionCourseNameResolver.ts)の履歴ベース解決に委ねる。
+ */
+const SUBSCRIPTION_COURSE_NAME_PATTERN = /^【サブスク(?:契約|会員様)】(.+?)(?:\s*月\d+回)?$/
+export function extractSubscriptionCourseName(itemName: string): string | null {
+  const m = itemName.match(SUBSCRIPTION_COURSE_NAME_PATTERN)
+  return m ? m[1].trim() : null
+}
 
 /**
  * CSVImportSecurityArchitecture.md §1のDROP分類列(別名含む)。HEADER_MAPに無いCSV列のうち
@@ -410,17 +464,42 @@ export function aggregateCheckouts(rows: SalonBoardDetailRow[]): AggregateChecko
     const netServiceSales = shijutsuLineCount === 0 ? 0 : rawNetServiceSales
     const retailSales = shijutsuLineCount === 0 ? rawRetailSales + rawNetServiceSales : rawRetailSales
 
-    // メニュー名解決用の代表行を選ぶ(Pass C: 名寄せ精度改善)。サブスク課金行は除外済みの
-    // nonSubscriptionLinesから選ぶため、混在会計でサブスク課金の方が金額が大きくても
-    // 実施術名がメニュー名として正しく採用される。
-    // 実SalonBoard売上明細は区分=施術/メニュー/オプション/サービスの行が0件/複数件ありうるため、
-    // 安定して1件に決まらない。0件(店販・割引・サブスク課金のみの会計)はmenuNameを空文字の
-    // ままとし(menuResolver.resolveMenuId()がフォールバック/unresolvedとして扱う)、複数件
-    // ある場合は金額が最も大きい行(=会計の主たる施術と推定できる)の品目名を代表値として使う。
+    // 施術基本メニュー名解決用の代表行を選ぶ(Pass C: 名寄せ精度改善 →
+    // BASE_TREATMENT_NAME_RESOLUTIONでオプション行を除外するよう改修)。サブスク課金行は
+    // 除外済みのnonSubscriptionLinesから選ぶため、混在会計でサブスク課金の方が金額が
+    // 大きくても実施術名がbaseTreatmentNameとして正しく採用される。
+    // 実SalonBoard売上明細は区分=施術/メニュー/オプション/サービスの行が0件/複数件ありうる
+    // ため、安定して1件に決まらない。さらに「オプション：」プレフィックスの行(実データでは
+    // 区分='施術'のまま品目名でのみ判別できる)は、サブスク会員が基本施術を別明細で
+    // 計上されない日に唯一の施術系行となってしまい、誤って基本メニューとして採用される
+    // 既知の不具合(BASE_TREATMENT_NAME_RESOLUTION)があったため、代表行選定の対象から除く。
     const treatmentLines = nonSubscriptionLines.filter(l => TREATMENT_CATEGORIES.has(l.category))
-    const representativeMenuName = treatmentLines.length > 0
-      ? treatmentLines.reduce((best, l) => (l.amount > best.amount ? l : best)).itemName
-      : ''
+    const baseTreatmentLines = treatmentLines.filter(l => !isOptionLine(l.itemName))
+    const optionLines: SalonBoardOptionLine[] = treatmentLines
+      .filter(l => isOptionLine(l.itemName))
+      .map(l => ({ itemName: l.itemName, amount: l.amount }))
+
+    let baseTreatmentName = ''
+    let baseTreatmentNameSource: BaseTreatmentNameSource = 'none'
+    if (baseTreatmentLines.length > 0) {
+      // 金額が最も大きい行(=会計の主たる施術と推定できる)の品目名を代表値として使う。
+      baseTreatmentName = baseTreatmentLines.reduce((best, l) => (l.amount > best.amount ? l : best)).itemName
+      baseTreatmentNameSource = 'treatment_line'
+    } else if (subscriptionLines.length > 0) {
+      // 施術系行が(オプション以外)無く、サブスク課金だけがある会計 = サブスクでカバーされる
+      // 基本施術が明細として計上されない日。代表(金額最大)のサブスク明細itemNameから
+      // 直接コース名を抽出できればそれを採用し、できなければcsvImportPipeline.ts側の
+      // 履歴ベース解決(subscriptionCourseNameResolver.ts)に委ねる('subscription_unresolved'
+      // のまま返す。この関数はDBアクセスを持たないため、ここで解決できるのは直接抽出のみ)。
+      const repSubLine = subscriptionLines.reduce((best, l) => (l.amount > best.amount ? l : best))
+      const directCourseName = extractSubscriptionCourseName(repSubLine.itemName)
+      if (directCourseName) {
+        baseTreatmentName = directCourseName
+        baseTreatmentNameSource = 'subscription_contract_named'
+      } else {
+        baseTreatmentNameSource = 'subscription_unresolved'
+      }
+    }
 
     aggregates.push({
       checkoutId,
@@ -436,11 +515,12 @@ export function aggregateCheckouts(rows: SalonBoardDetailRow[]): AggregateChecko
       isDesignated:    head.isDesignatedRaw.includes('あり'),
       bookingChannel:  head.bookingChannel,
       isNewCustomer:   head.newOrRepeat === '新規',
-      menuName:        representativeMenuName,
+      baseTreatmentName,
+      baseTreatmentNameSource,
       netServiceSales,
       retailSales,
       discountTotal,
-      optionNames:  nonSubscriptionLines.filter(l => l.category === 'オプション').map(l => l.itemName),
+      optionLines,
       retailNames:  nonSubscriptionLines.filter(l => l.category === '店販').map(l => l.itemName),
       retailItems:  nonSubscriptionLines.filter(l => l.category === '店販').map(l => ({
         itemName:  l.itemName,

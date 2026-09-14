@@ -267,6 +267,13 @@ export interface ISubscriptionPaymentRepo {
    * payments=[]の場合は削除のみ行う(この会計にサブスク課金が無い・削除確定)。
    */
   replaceForCheckout(checkoutId: string, payments: SubscriptionPaymentInput[]): Promise<void>;
+  /**
+   * 顧客のサブスク明細履歴を古い順で取得する(BASE_TREATMENT_NAME_RESOLUTION)。
+   * subscriptionCourseNameResolver.tsの履歴ベース解決(価格→コース名逆引き・直近の
+   * 名前付き明細の採用)に使う。今回のCSVバッチ内の明細だけでなく、過去のCSV取込で
+   * 既に保存済みの履歴も含めて解決できるようにするためDBから読む。
+   */
+  listByCustomer(customerId: UUID): Promise<{ itemName: string; amount: number; paymentDate: string }[]>;
 }
 
 /**

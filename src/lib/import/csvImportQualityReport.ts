@@ -107,7 +107,11 @@ export function computeCsvQualityReport(input: ComputeCsvQualityReportInput): Cs
   const nameOccurrences = new Map<string, number>()
 
   for (const agg of aggregates) {
-    recordMenuResolution(agg.menuName, resolveMenuId(agg.menuName, menuLookup), menuResolutionByRawName)
+    // BASE_TREATMENT_NAME_RESOLUTION: この関数はDB/Supabaseに依存しない純粋関数のため、
+    // サブスク契約履歴を使った解決(subscriptionCourseNameResolver.ts)は行わず、
+    // agg.baseTreatmentNameをそのまま使う(subscription_unresolvedの会計は従来通り
+    // 空文字としてunresolved集計される。品質レポートの近似値という位置づけは変更なし)。
+    recordMenuResolution(agg.baseTreatmentName, resolveMenuId(agg.baseTreatmentName, menuLookup), menuResolutionByRawName)
     nameOccurrences.set(agg.customerName, (nameOccurrences.get(agg.customerName) ?? 0) + 1)
   }
 

@@ -22,6 +22,10 @@ test-results/
 # テストデータ（CSV取込実データ・PII含む可能性）
 test-data/
 
+# 本番DB書き込み前のローカルバックアップ（顧客氏名等PII含む）
+backups/
+
 # PWAアイコン元画像（素材フォルダ）
 public/icons1/
 public/icons2/
+.env*

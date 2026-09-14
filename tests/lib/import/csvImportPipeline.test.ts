@@ -296,6 +296,14 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
           paymentDate: p.paymentDate,
         })));
       },
+      // BASE_TREATMENT_NAME_RESOLUTION: subscriptionCourseNameResolver.tsの履歴ベース解決を
+      // 実データに近い形でテストできるよう、実装同様に日付昇順で返す。
+      listByCustomer: async (customerId) =>
+        state.subscriptionPayments
+          .filter(p => p.customerId === customerId)
+          .slice()
+          .sort((a, b) => a.paymentDate.localeCompare(b.paymentDate))
+          .map(p => ({ itemName: p.itemName, amount: p.amount, paymentDate: p.paymentDate })),
     },
   };
 
@@ -1150,6 +1158,125 @@ describe('csvImportPipeline', () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.result.skipped).toEqual([]);
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // BASE_TREATMENT_NAME_RESOLUTION(2026-09-14): 小宮山様パターン(オプション行だけが
+  // 明細に残りbaseTreatmentNameとして誤採用される問題)の履歴ベース解決
+  // ──────────────────────────────────────────────────────────────────────────
+  describe('runImportPipeline(BASE_TREATMENT_NAME_RESOLUTION: サブスク基本メニュー名の履歴ベース解決)', () => {
+    it('小宮山様パターン: オプション行のみの混在会計は、同一会計のサブスク明細(コース名直接抽出)から基本メニューを解決する(オプション名を採用しない)', async () => {
+      const repos = createFakeRepos();
+      const csv = buildCsv([
+        detailRow({
+          checkoutId: 'K1', date: '2026/09/03', category: '施術', itemName: 'オプション：モデリングパック各種',
+          amount: 3850, customerName: '小宮山仁美', customerNumber: 'C010',
+        }),
+        detailRow({
+          checkoutId: 'K1', date: '2026/09/03', category: '施術', itemName: '【サブスク会員様】選べる肌改善コース',
+          amount: 0, customerName: '小宮山仁美', customerNumber: 'C010',
+        }),
+      ]);
+
+      const result = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(repos.state.visits).toHaveLength(1);
+      const createdMenu = (await repos.menuRepo.listByStore(STORE_ID))
+        .find(m => m.id === repos.state.visits[0].menuId);
+      expect(createdMenu).toMatchObject({ name: '選べる肌改善コース', role: 'imported_other' });
+      // オプション代金(3850)のみがtreatmentAmountに計上され、サブスク分(0円)は分離される
+      expect(repos.state.visits[0].treatmentAmount).toBe(3850);
+    });
+
+    it('サブスク決済のみ(コース名を直接含まない)で当該バッチ内に手がかりが無い場合は「契約コース（詳細不明）」にフォールバックする', async () => {
+      const repos = createFakeRepos();
+      const csv = buildCsv([
+        detailRow({
+          checkoutId: 'K2', date: '2026/06/01', category: '施術', itemName: '【サブスク決済日】※金額入力してお会計',
+          amount: 16000, customerName: '新規太郎', customerNumber: 'C011',
+        }),
+        detailRow({
+          checkoutId: 'K2', date: '2026/06/01', category: '店販', itemName: 'CELCOSクリーム',
+          amount: 5000, customerName: '新規太郎', customerNumber: 'C011',
+        }),
+      ]);
+
+      const result = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // 店販売上があるため「混在会計」扱いでvisitは作られる(純粋サブスク会計ではない)
+      expect(repos.state.visits).toHaveLength(1);
+      const createdMenu = (await repos.menuRepo.listByStore(STORE_ID))
+        .find(m => m.id === repos.state.visits[0].menuId);
+      expect(createdMenu).toMatchObject({ name: '契約コース（詳細不明）', role: 'imported_other' });
+    });
+
+    it('同一バッチ内の別会計(名前付きコース明細)から価格逆引きで解決する', async () => {
+      const repos = createFakeRepos();
+      const csv = buildCsv([
+        // 5/10: 契約時のコース名入り明細(このcheckoutは純粋サブスク会計・visit無し)
+        detailRow({
+          checkoutId: 'K3', date: '2026/05/10', category: '施術', itemName: '【サブスク契約】選べる肌改善コース 月1回',
+          amount: 16000, customerName: '山崎澪', customerNumber: 'C012',
+        }),
+        // 6/10: 名前を含まない決済 + 実施術オプションが混在
+        detailRow({
+          checkoutId: 'K4', date: '2026/06/10', category: '施術', itemName: 'オプション：EMS',
+          amount: 2000, customerName: '山崎澪', customerNumber: 'C012',
+        }),
+        detailRow({
+          checkoutId: 'K4', date: '2026/06/10', category: '施術', itemName: '【サブスク決済日】※金額入力してお会計',
+          amount: 16000, customerName: '山崎澪', customerNumber: 'C012',
+        }),
+      ]);
+
+      const result = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // K3(純粋サブスク会計)はvisit無し、K4のみvisitが作られる
+      expect(repos.state.visits).toHaveLength(1);
+      const createdMenu = (await repos.menuRepo.listByStore(STORE_ID))
+        .find(m => m.id === repos.state.visits[0].menuId);
+      expect(createdMenu).toMatchObject({ name: '選べる肌改善コース', role: 'imported_other' });
+    });
+
+    it('過去のCSV取込(別バッチ)で保存済みのbrain_subscription_payments履歴からも解決する(DB履歴ベース)', async () => {
+      const repos = createFakeRepos();
+      // 1回目の取込: コース名入りの契約明細(純粋サブスク会計としてbrain_subscription_paymentsへ保存される)
+      const csv1 = buildCsv([
+        detailRow({
+          checkoutId: 'H1', date: '2026/05/10', category: '施術', itemName: '【サブスク契約】ヒト幹細胞ベーシック 月1回',
+          amount: 13000, customerName: '高取優', customerNumber: 'C013',
+        }),
+      ]);
+      const first = await runImportPipeline({ storeId: STORE_ID, csvText: csv1, reviewDecisions: {} }, repos);
+      expect(first.ok).toBe(true);
+      expect(repos.state.visits).toHaveLength(0); // 純粋サブスク会計
+
+      // 2回目の取込(別バッチ・別日): 名前を含まない決済 + オプションのみの混在会計
+      const csv2 = buildCsv([
+        detailRow({
+          checkoutId: 'H2', date: '2026/07/08', category: '施術', itemName: 'オプション：ラジオ波 (顔)',
+          amount: 4000, customerName: '高取優', customerNumber: 'C013',
+        }),
+        detailRow({
+          checkoutId: 'H2', date: '2026/07/08', category: '施術', itemName: '【サブスク決済日】※金額入力してお会計',
+          amount: 13000, customerName: '高取優', customerNumber: 'C013',
+        }),
+      ]);
+      const second = await runImportPipeline({ storeId: STORE_ID, csvText: csv2, reviewDecisions: {} }, repos);
+
+      expect(second.ok).toBe(true);
+      if (!second.ok) return;
+      expect(repos.state.visits).toHaveLength(1);
+      const createdMenu = (await repos.menuRepo.listByStore(STORE_ID))
+        .find(m => m.id === repos.state.visits[0].menuId);
+      expect(createdMenu).toMatchObject({ name: 'ヒト幹細胞ベーシック', role: 'imported_other' });
     });
   });
 });
