@@ -29,6 +29,26 @@ TL-5構成・AI提案の会話トーン・LINE領域・admin領域について�
 追加するため、顧客タブに限り凍結を解除した。**この解除は当該バッジ表示に限る。** 5タブ構成・
 TL-5構成・AI提案の会話トーン・LINE領域・admin領域については引き続き凍結を継続する。
 
+### v1.0.1 着手済み事項（Salon Boardカルテ取込・スマホ写真カルテの削除のみ・2026-09-14ユーザー承認）
+
+方針転換（過去カルテはカルテメモへ直接入力する運用に統一・写真撮影はiPadへ一本化）に伴い、
+以下2点の機能削除に限り顧客タブ・CustomerBottomSheet.tsx・iPadカルテ画面の凍結を解除した。
+
+- Salon Boardカルテ取込の導線削除: `CustomerBottomSheet.tsx`・`IpadStaffKarteView.tsx`の
+  カルテ取込セクション、`CustomersScreen.tsx`の「📋カルテ取込」ボタン(iPadカルテ検索への
+  近道。CustomerBottomSheet.tsx側の別のiPadカルテ検索導線は削除していない)。
+  `KarteImportSection.tsx`・関連API(analyze/commit)・`karte_imports`テーブルは
+  呼び出し元が無くなるだけで削除していない(将来の再利用に備えて保全)。
+- スマホの写真カルテ機能(撮影する/選択して追加/Before-After比較)を閲覧機能も含めて
+  完全削除。`PhotoTimelineView.tsx`・`PhotoCaptureView.tsx`・`PhotoLibraryPickerView.tsx`・
+  `PhotoComparisonView.tsx`・`batchUpload.ts`は削除。`usePhotoCapture.ts`・`captureFrame.ts`・
+  `constants.ts`(写真カルテ「原本保存化Phase A」の未コミット作業を含む)はユーザー判断により
+  ファイルとして保全(使用箇所は削除済み)。iPad側の写真表示機能(`PhotoCompareKit.tsx`・
+  `ipadKarteData.ts`経由、共有部分は`photoApiClient.ts`のみ)には影響していない。
+
+**この解除は上記2点の機能削除に限る。** 5タブ構成・TL-5構成・AI提案の会話トーン・LINE領域・
+admin領域、およびそれ以外の顧客タブ/iPadカルテ画面の仕様については引き続き凍結を継続する。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

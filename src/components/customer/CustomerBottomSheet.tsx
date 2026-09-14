@@ -89,10 +89,6 @@ import NextActionPanel from '@/components/customer/NextActionPanel';
 import TodayFocusCard from '@/components/customer/TodayFocusCard';
 import ServiceReplayCard from '@/components/customer/ServiceReplayCard';
 import VoiceMemoSection from '@/components/customer/VoiceMemoSection';
-import KarteImportSection from '@/components/customer/KarteImportSection';
-import PhotoCaptureView from '@/components/customer/photos/PhotoCaptureView';
-import PhotoLibraryPickerView from '@/components/customer/photos/PhotoLibraryPickerView';
-import PhotoTimelineView from '@/components/customer/photos/PhotoTimelineView';
 import CustomerNotesSection from '@/components/customer/CustomerNotesSection';
 import BookingPromptSection from '@/components/customer/BookingPromptSection';
 import ContraindicationSection from '@/components/customer/ContraindicationSection';
@@ -210,7 +206,7 @@ const ACTION_BUTTONS: Array<{ action: ActionType; emoji: string; label: string }
   { action: 'line_sent',           emoji: '📱', label: 'LINE送信した' },
 ];
 
-type SectionKey = 'homecare' | 'line' | 'voice' | 'lineSendLog' | 'karteImport';
+type SectionKey = 'homecare' | 'line' | 'voice' | 'lineSendLog';
 
 /** 来店履歴1件（Phase UX-1・/api/customers/[id]/visit-history のレスポンス型） */
 interface VisitHistoryEntry {
@@ -352,9 +348,6 @@ export default function CustomerBottomSheet({
   // ── ページ ──────────────────────────────────────────────────────────────────
   const [page, setPage] = useState<'overview' | 'log' | 'memory' | 'timeline'>('overview');
 
-  // ── 写真カルテ(PHOTO_KARTE Phase1・実機確認用の最小導線) ──────────────────────
-  const [showPhotoCapture, setShowPhotoCapture] = useState(false);
-
   // ── お客様モード(PHASE GUEST-MODE-1・2026-09-10)。スタッフ画面本体には一切触れず、
   //    起動状態を持つだけの最小限の導線(ボタン1つ+この1state)にとどめる。
   //    描画するCustomerModeView自体は完全に別コンポーネントツリー(自己完結fetch)。
@@ -367,36 +360,6 @@ export default function CustomerBottomSheet({
   //    名前・担当スタッフ名で別の顧客を検索してIpadStaffKarteViewへ直接遷移するための入口。
   //    こちらもボタン1つ+この1stateのみの追加。
   const [showIpadKarteSearch, setShowIpadKarteSearch] = useState(false);
-
-  // ── 写真カルテ Phase2: 写真ライブラリから複数選択して登録 ──────────────────────
-  // <input type="file" multiple>自体はこのコンポーネント側に置く(iOS Safariの
-  // ファイル選択ダイアログはユーザークリックと同期して呼ばないと確実に開かないため)。
-  // 選択後の確認・仮分類・一括登録UIはPhotoLibraryPickerView.tsxに委譲する。
-  const libraryInputRef = useRef<HTMLInputElement | null>(null);
-  const [showPhotoLibraryPicker, setShowPhotoLibraryPicker] = useState(false);
-  const [libraryPickerFiles, setLibraryPickerFiles] = useState<File[]>([]);
-
-  const handleLibraryFilesSelected = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const input = e.target;
-    // FileList → 通常配列への変換を、input.valueのリセットより先に行う。
-    // 順序を逆にする(先にvalue=''してからe.target.filesを見る)と、実機によっては
-    // 直前に取得したFileList参照そのものの長さが0になり、次のガード節で無言のまま
-    // returnしてしまう(「選択して追加」で写真を選んでも確認画面に進まない症状の原因)。
-    // filesを先にプレーン配列へコピーしておけば、その後input.valueを何度リセットしても
-    // 影響を受けない。
-    const files = input.files ? Array.from(input.files) : [];
-    input.value = ''; // 同じファイルを連続選択できるようリセット
-    if (files.length === 0) return;
-    setLibraryPickerFiles(files);
-    setShowPhotoLibraryPicker(true);
-  }, []);
-
-  // ── 写真カルテ Phase3: 顧客ごとの写真時系列一覧(PhotoTimelineView) ─────────────
-  // 「写真カルテ」ブロック自体をTimelineの入口にする(タップで一覧を開く)。
-  // 撮影・ライブラリ追加はTimeline側のボタンから起動し、閉じたらphotoRefreshKeyを
-  // 増やしてTimelineに一覧を再取得させる。
-  const [showPhotoTimeline, setShowPhotoTimeline] = useState(false);
-  const [photoRefreshKey,   setPhotoRefreshKey]   = useState(0);
 
   // ── 接客ログ ────────────────────────────────────────────────────────────────
   const [logSelected,   setLogSelected]   = useState<Set<LogKey>>(new Set());
@@ -737,8 +700,6 @@ export default function CustomerBottomSheet({
   // ─── クローズ ──────────────────────────────────────────────────────────────
   const close = useCallback(() => {
     onClose?.();
-    setShowPhotoCapture(false);
-    setShowPhotoTimeline(false);
     setSelectedCustomer(null);
     setSelectedReservation(null);
     setPage('overview');
@@ -1673,48 +1634,6 @@ export default function CustomerBottomSheet({
                       {/* 前回の次回提案・前回の店販提案は2026-09-11仕様変更で「前回のサマリー」
                           カード内(下方)へ移動済み(ロジック無変更・移動のみ)。 */}
 
-                      {/* Phase 2-A: 情報構造整理。写真カルテ入口を上段(見る情報)へ移動。
-                          Before/After比較UIは今回のスコープ外(未実装、無変更)。 */}
-                      <div className="bg-[#F0F5FA] rounded-[22px] overflow-hidden flex-shrink-0">
-                        <button onClick={() => setShowPhotoTimeline(true)}
-                          className="w-full flex items-center justify-between px-4 py-3.5 bg-transparent border-none cursor-pointer">
-                          <p className="text-[11px] tracking-[0.18em] text-[#4878A8] font-semibold">
-                            📷 写真カルテ
-                          </p>
-                          <span className="text-sm text-[#4878A8]">›</span>
-                        </button>
-                        {/* <input type="file" multiple>自体はここに置く(iOS Safariのファイル選択
-                            ダイアログはユーザークリックと同期して呼ばないと確実に開かないため)。
-                            起動はPhotoTimelineView側の「選択して追加」ボタン(onOpenLibraryPicker
-                            経由でlibraryInputRef.current?.click()を呼ぶ)から行う。
-                            display:noneにはしない — iOS Safariはdisplay:noneのinput[type=file]に
-                            対してプログラム的な.click()を呼んでもネイティブの写真選択シートが
-                            開かないことがある既知の挙動があるため(実機で「選択して追加」を押しても
-                            無反応になる症状の原因)。レイアウトツリーには残しつつ視覚的にのみ隠す
-                            (いわゆるvisually-hiddenパターン)ことで、.click()経由の起動を確実にする。 */}
-                        <input
-                          ref={libraryInputRef}
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          style={{
-                            position: 'fixed',
-                            top: 0,
-                            left: 0,
-                            width: '1px',
-                            height: '1px',
-                            padding: 0,
-                            margin: '-1px',
-                            overflow: 'hidden',
-                            clip: 'rect(0, 0, 0, 0)',
-                            whiteSpace: 'nowrap',
-                            border: 0,
-                            opacity: 0,
-                          }}
-                          onChange={handleLibraryFilesSelected}
-                        />
-                      </div>
-
                       {/* ════════════════════════════
                           PHASE UX-1: 5秒で接客準備できるブリーフィング
                       ════════════════════════════ */}
@@ -2303,51 +2222,11 @@ export default function CustomerBottomSheet({
                         )}
                       </div>
 
-                      {/* Salon Boardカルテ取込（Phase1・docs/CALTE_IMPORT_MVP_DESIGN.md） */}
-                      <div className="bg-[#F0F5FA] rounded-[22px] overflow-hidden flex-shrink-0">
-                        <button onClick={() => toggleSection('karteImport')}
-                          className="w-full flex items-center justify-between px-4 py-3.5 bg-transparent border-none cursor-pointer">
-                          <p className="text-[11px] tracking-[0.18em] text-[#4878A8] font-semibold">
-                            📋 Salon Boardカルテ取込
-                          </p>
-                          <span className="text-sm text-[#4878A8] transition-transform duration-200 inline-block"
-                            style={{ transform: openSections.has('karteImport') ? 'rotate(180deg)' : 'none' }}>▾</span>
-                        </button>
-                        {openSections.has('karteImport') && (
-                          <div className="px-4 pb-4">
-                            <KarteImportSection
-                              customerId={c.id}
-                              customerName={c.name}
-                              onSaved={() => {
-                                setNotesRefreshKey(p => p + 1);
-                                void loadRecentNotes(c.id);
-                                void (async () => {
-                                  const updated = await fetchContraindications(c.id);
-                                  if (updated.length > 0) setContraindications(updated);
-                                })();
-                              }}
-                            />
-                          </div>
-                        )}
-                      </div>
-
                     </div>
 
                     {/* position:fixedの各ビューが祖先のmotion.div(transform)にcontainされないよう、
                         document.body直下へportalする(既存のAnimatePresence/motion構造には
-                        一切手を入れない)。PhotoTimelineViewを先に描画することで、そこから
-                        起動するPhotoCaptureView/PhotoLibraryPickerViewが後続のDOM順で
-                        上に重なる(いずれもzIndex:200)。 */}
-                    {showPhotoTimeline && typeof document !== 'undefined' && createPortal(
-                      <PhotoTimelineView
-                        customerId={c.id}
-                        refreshKey={photoRefreshKey}
-                        onClose={() => setShowPhotoTimeline(false)}
-                        onOpenCapture={() => setShowPhotoCapture(true)}
-                        onOpenLibraryPicker={() => libraryInputRef.current?.click()}
-                      />,
-                      document.body
-                    )}
+                        一切手を入れない)。 */}
 
                     {/* お客様モード(PHASE GUEST-MODE-1)。他の全画面ビューと同じくdocument.body直下へportal。
                         CustomerModeView自体はcustomerId/customerNameのみを受け取る自己完結コンポーネント
@@ -2381,34 +2260,6 @@ export default function CustomerBottomSheet({
                         portalする点・自己完結コンポーネントである点は他の2つの導線と同じ。 */}
                     {showIpadKarteSearch && typeof document !== 'undefined' && createPortal(
                       <IpadKarteSearchView onClose={() => setShowIpadKarteSearch(false)} />,
-                      document.body
-                    )}
-
-                    {showPhotoCapture && typeof document !== 'undefined' && createPortal(
-                      <PhotoCaptureView
-                        customerId={c.id}
-                        visitId={todayVisitId}
-                        onClose={() => {
-                          setShowPhotoCapture(false);
-                          setPhotoRefreshKey(k => k + 1);
-                        }}
-                      />,
-                      document.body
-                    )}
-
-                    {/* PHOTO_KARTE Phase2: 写真ライブラリから複数選択して登録する確認画面。
-                        PhotoCaptureViewと同じくdocument.body直下へportalする。 */}
-                    {showPhotoLibraryPicker && typeof document !== 'undefined' && createPortal(
-                      <PhotoLibraryPickerView
-                        customerId={c.id}
-                        visitId={todayVisitId}
-                        files={libraryPickerFiles}
-                        onClose={() => {
-                          setShowPhotoLibraryPicker(false);
-                          setLibraryPickerFiles([]);
-                          setPhotoRefreshKey(k => k + 1);
-                        }}
-                      />,
                       document.body
                     )}
 
