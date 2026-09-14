@@ -186,6 +186,14 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
         c.typeConfidence = input.typeConfidence;
         return c;
       },
+      // BASE_TREATMENT_NAME_RESOLUTION: 実装(CustomerRepo.markAsSubscriber)と同じく、
+      // is_subscriberが既にtrueの顧客には何もしない(冪等・上書きしない)。
+      markAsSubscriber: async (id, subscribedAt) => {
+        const c = state.customers.find(x => x.id === id);
+        if (!c || c.isSubscriber) return;
+        c.isSubscriber = true;
+        c.subscribedAt = subscribedAt;
+      },
     },
     visitRepo: {
       recentByCustomer: async (customerId, n) =>
@@ -1277,6 +1285,90 @@ describe('csvImportPipeline', () => {
       const createdMenu = (await repos.menuRepo.listByStore(STORE_ID))
         .find(m => m.id === repos.state.visits[0].menuId);
       expect(createdMenu).toMatchObject({ name: 'ヒト幹細胞ベーシック', role: 'imported_other' });
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // SUBSCRIBER_HISTORY_FLAG(2026-09-14): is_subscriberの恒久履歴フラグ配線
+  // ──────────────────────────────────────────────────────────────────────────
+  describe('runImportPipeline(SUBSCRIBER_HISTORY_FLAG: is_subscriber/subscribed_atの再配線)', () => {
+    it('名前付き契約明細(【サブスク契約】)を検出した会計でis_subscriberがtrueになりsubscribed_atが設定される(純粋サブスク会計)', async () => {
+      const repos = createFakeRepos();
+      const csv = buildCsv([
+        detailRow({
+          checkoutId: 'SUB1', date: '2026/05/10', category: '施術', itemName: '【サブスク契約】選べる肌改善コース 月1回',
+          amount: 16000, customerName: '田中花子', customerNumber: 'C001',
+        }),
+      ]);
+
+      const result = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+
+      expect(result.ok).toBe(true);
+      const customer = repos.state.customers.find(c => c.name === '田中花子');
+      expect(customer?.isSubscriber).toBe(true);
+      expect(customer?.subscribedAt).toBe('2026-05-10');
+    });
+
+    it('名前付き契約明細(【サブスク会員様】)を検出した混在会計でもis_subscriberがtrueになる', async () => {
+      const repos = createFakeRepos();
+      const csv = buildCsv([
+        detailRow({
+          checkoutId: 'SUB2', date: '2026/09/03', category: '施術', itemName: 'オプション：モデリングパック各種',
+          amount: 3850, customerName: '田中花子', customerNumber: 'C001',
+        }),
+        detailRow({
+          checkoutId: 'SUB2', date: '2026/09/03', category: '施術', itemName: '【サブスク会員様】選べる肌改善コース',
+          amount: 0, customerName: '田中花子', customerNumber: 'C001',
+        }),
+      ]);
+
+      const result = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+
+      expect(result.ok).toBe(true);
+      const customer = repos.state.customers.find(c => c.name === '田中花子');
+      expect(customer?.isSubscriber).toBe(true);
+      expect(customer?.subscribedAt).toBe('2026-09-03');
+    });
+
+    it('名前を含まない決済(【サブスク決済日】)のみの会計ではis_subscriberは変化しない', async () => {
+      const repos = createFakeRepos();
+      const csv = buildCsv([
+        detailRow({
+          checkoutId: 'SUB3', date: '2026/06/01', category: '施術', itemName: '【サブスク決済日】※金額入力してお会計',
+          amount: 16000, customerName: '田中花子', customerNumber: 'C001',
+        }),
+      ]);
+
+      const result = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+
+      expect(result.ok).toBe(true);
+      const customer = repos.state.customers.find(c => c.name === '田中花子');
+      expect(customer?.isSubscriber).toBe(false);
+      expect(customer?.subscribedAt).toBeNull();
+    });
+
+    it('既にis_subscriber=trueの顧客は、別の名前付き契約明細を検出してもsubscribed_atを上書きしない(冪等)', async () => {
+      const repos = createFakeRepos();
+      const csv1 = buildCsv([
+        detailRow({
+          checkoutId: 'SUB4', date: '2026/05/10', category: '施術', itemName: '【サブスク契約】選べる肌改善コース 月1回',
+          amount: 16000, customerName: '田中花子', customerNumber: 'C001',
+        }),
+      ]);
+      await runImportPipeline({ storeId: STORE_ID, csvText: csv1, reviewDecisions: {} }, repos);
+
+      // 後日、プラン変更で別のコース名の契約明細が検出された場合でも、最初の契約日は上書きしない
+      const csv2 = buildCsv([
+        detailRow({
+          checkoutId: 'SUB5', date: '2026/08/10', category: '施術', itemName: '【サブスク契約】ヒト幹細胞ベーシック 月1回',
+          amount: 13000, customerName: '田中花子', customerNumber: 'C001',
+        }),
+      ]);
+      await runImportPipeline({ storeId: STORE_ID, csvText: csv2, reviewDecisions: {} }, repos);
+
+      const customer = repos.state.customers.find(c => c.name === '田中花子');
+      expect(customer?.isSubscriber).toBe(true);
+      expect(customer?.subscribedAt).toBe('2026-05-10'); // 最初の契約日のまま
     });
   });
 });

@@ -38,7 +38,7 @@ import type {
 } from '../../repositories/interfaces'
 import type { Customer } from '../../types/riora.types'
 import {
-  parseSalonBoardDetailCsv, aggregateCheckouts,
+  parseSalonBoardDetailCsv, aggregateCheckouts, extractSubscriptionCourseName,
   type SalonBoardCheckoutAggregate, type CheckoutIssue,
 } from './salonBoardDetailParser'
 import {
@@ -712,6 +712,16 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
     }
 
     const visitDate = dateOnly(agg.visitDateTime)
+
+    // SUBSCRIBER_HISTORY_FLAG(2026-09-14): is_subscriberは「過去に一度でもサブスク契約を
+    // したことがあるか」を表す恒久的な履歴フラグ。名前付き契約明細(【サブスク契約】/
+    // 【サブスク会員様】)を初めて検出した時点でのみtrueにする(purely/mixedいずれの会計でも
+    // 対象。CustomerRepo.markAsSubscriber()自体が「既にtrueなら何もしない」冪等実装のため、
+    // ここでは無条件に呼んでよい)。「今まさに契約中か」はこのフラグでは表さない。
+    const namedSubscriptionPayment = agg.subscriptionPayments.find(p => extractSubscriptionCourseName(p.itemName) !== null)
+    if (namedSubscriptionPayment) {
+      await repos.customerRepo.markAsSubscriber?.(customerId, visitDate)
+    }
 
     // SUBSCRIPTION_VISIT_SPLIT_PHASE1: 純粋サブスク会計(実施術・店販を伴わない決済のみの
     // 会計)はbrain_visitsの行を一切作らず、brain_subscription_paymentsのみに記録する。

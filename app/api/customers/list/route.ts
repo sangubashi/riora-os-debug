@@ -122,6 +122,10 @@ export async function GET(req: NextRequest) {
         staffName:        stats.latestStaffId ? (staffMap[stats.latestStaffId] ?? '') : '',
         lineResponseRate: 0,
         hasNextRebook:    false,
+        // SUBSCRIBER_HISTORY_FLAG(2026-09-14): 「過去に一度でもサブスク契約をしたことが
+        // あるか」を表す恒久的な履歴フラグ(事実表示。顧客フェーズ(VIP/Repeat/Growing/
+        // New/Risk)とは別軸)。「今まさに契約中か」はこのフラグでは表さない。
+        isSubscriber:     !!c.is_subscriber,
       };
     }).sort((a, b) => b.totalSpent - a.totalSpent);
 

@@ -165,6 +165,16 @@ export interface ICustomerRepo {
    * customerType=nullの場合はNULLのまま保存する(架空のタイプを書き込まない)。
    */
   updateCustomerType(id: UUID, input: { customerType: CustomerType | null; typeConfidence: number }): Promise<Customer>;
+  /**
+   * is_subscriberを「過去に一度でもサブスク契約をしたことがあるか」を表す恒久的な
+   * 履歴フラグとして設定する(BASE_TREATMENT_NAME_RESOLUTION関連・2026-09-14)。
+   * 既にis_subscriber=trueの顧客には何もしない(冪等・上書きしない。DB側で
+   * is_subscriber=false の行のみを対象にUPDATEすることで実現する)。
+   * 「今まさに契約中か」はこのフラグでは表さない(都度計算する派生値として別途扱う)。
+   * オプショナルメソッド: 既存のICustomerRepo実装/フェイクを壊さないよう追加した
+   * 新規機能のため、呼び出し側は呼び出し前に存在チェックする。
+   */
+  markAsSubscriber?(id: UUID, subscribedAt: string): Promise<void>;
 }
 
 export interface IVisitRepo {

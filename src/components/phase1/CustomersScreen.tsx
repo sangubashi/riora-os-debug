@@ -489,7 +489,19 @@ export default function CustomersScreen() {
                 >
                   {c.name} 様
                 </span>
-                <p className="text-[11px] font-medium mb-1" style={{ color }}>{c.type}</p>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <p className="text-[11px] font-medium" style={{ color }}>{c.type}</p>
+                  {/* SUBSCRIBER_HISTORY_FLAG: 契約状態は顧客フェーズ(上のタイプ表示)とは
+                      別軸の事実表示。「今まさに契約中か」は表さず、契約経験の有無のみを示す。 */}
+                  {c.isSubscriber && (
+                    <span
+                      className="text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0"
+                      style={{ background: '#F0E8F5', color: '#9B7FB8' }}
+                    >
+                      サブスク契約経験あり
+                    </span>
+                  )}
+                </div>
                 <div
                   className="flex items-center gap-3 text-[11px]"
                   style={{ color: '#9E8090' }}

@@ -27,6 +27,8 @@ export interface CustomerRow {
   staffName:        string
   lineResponseRate: number
   hasNextRebook:    boolean
+  /** SUBSCRIBER_HISTORY_FLAG: 過去に一度でもサブスク契約をしたことがあるか(恒久的な履歴フラグ・事実表示)。 */
+  isSubscriber:     boolean
 }
 
 export interface CustomerDebug {

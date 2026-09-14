@@ -118,4 +118,18 @@ export class CustomerRepo implements ICustomerRepo {
     }
     return toCustomer(data as unknown as BrainCustomerRow);
   }
+
+  async markAsSubscriber(id: UUID, subscribedAt: string): Promise<void> {
+    // is_subscriber=falseの行のみを対象にUPDATEすることで、既にtrueの顧客には
+    // 何もしない(冪等・subscribed_atを上書きしない)。事前読み取りは不要。
+    const { error } = await this.client
+      .from('brain_customers')
+      .update({ is_subscriber: true, subscribed_at: subscribedAt })
+      .eq('id', id)
+      .eq('is_subscriber', false);
+
+    if (error) {
+      throw new Error(`CustomerRepo.markAsSubscriber failed: ${error.message}`);
+    }
+  }
 }

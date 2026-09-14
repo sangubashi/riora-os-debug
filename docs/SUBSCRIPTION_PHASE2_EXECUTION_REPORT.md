@@ -65,3 +65,50 @@ soft delete対象visitを参照する既存2件は、`/api/customers/[id]/homeca
 - 統合Dry Run(投資判断用): `scripts/phase2_integrated_dry_run.ts`
 - 事前バックアップ: `backups/20260914_subscription_phase2_pre_execution/`(`.gitignore`対象・コミットしない)
 - コード変更本体: `src/lib/import/salonBoardDetailParser.ts`, `csvImportPipeline.ts`, `runMenuReclassification.ts`, `csvImportQualityReport.ts`, `subscriptionCourseNameResolver.ts`(新規), `src/repositories/interfaces.ts` / `SubscriptionPaymentRepo.ts`(`listByCustomer`追加)
+
+## 追記(2026-09-14): is_subscriber/subscribed_at 再配線・遡及バッチ実行
+
+`brain_customers.is_subscriber`(過去に一度でもサブスク契約をしたことがあるかを表す恒久的な
+履歴フラグ)・`subscribed_at`(最初の契約日)を、CSV取込パイプライン(`csvImportPipeline.ts`)
+から名前付き契約明細(「【サブスク契約】」「【サブスク会員様】」等、`extractSubscriptionCourseName()`
+で抽出可能なもの)を検出した時点で書き込むよう配線した(`CustomerRepo.markAsSubscriber()`、
+`is_subscriber=false`の行のみを対象にする冪等UPDATEで、一度trueになったら上書きしない)。
+「今まさに契約中か」はこのフラグでは表さず、都度計算する派生値として別途扱う方針(判定閾値は
+コースごとの決済周期をスタッフに確認してから別途確定・今回はスコープ外)。
+
+`scripts/subscriberFlagBackfill.ts --execute`により、アーカイブCSVから遡及的に**27名**の
+`is_subscriber`をtrue・`subscribed_at`を設定した(大熊萌様2026-05-10、碓井志歩様2026-07-29を含む)。
+実機確認(顧客タブ「全顧客」一覧)で、大熊萌様・碓井志歩様に「サブスク契約経験あり」バッジが
+表示されること、他の既存顧客(サブスク未経験者)の表示に崩れ・影響が無いことを確認済み。
+
+顧客タブ(`CustomersScreen.tsx`)へのバッジ追加は、CLAUDE.mdのv1.0凍結ルール上「顧客タブに
+限定した凍結解除」として2026-09-14にユーザー承認済み(詳細はCLAUDE.md参照)。
+
+### 判定基準の制約により検出できなかった10名(今回は対応せず据え置き)
+
+以下の10名は、観測期間中のCSV記録が汎用クーポン文言(「【※サブスク会員様専用※】こちらの
+クーポンでご予約ください◎」等、コース名を含まない)のみだったため、「名前付き契約明細を
+検出した時点でtrueにする」という今回の判定基準では`is_subscriber`をtrueにできなかった。
+
+- 井口 悠様
+- 水谷 悦子様
+- 松本 真由美様
+- 齊藤 奈穂様
+- 下津 里恵様
+- 芦田 沙也加様
+- 猪俣 加南子様
+- 松島 愛乃様
+- 大西 璃子様
+- 斎藤 美唯様
+
+**据え置きの理由(2026-09-14ユーザー判断)**: 汎用クーポン文言のみでは「本当にサブスク契約者か」
+を確定できず、無理に`is_subscriber=true`にすると、今回是正したサブスク決済分離の問題(推測で
+埋めること)と同じ轍を踏むことになる。また、この10名のうち何名が実際にサブスク経験者かは、
+スタッフへの聞き取りでしか判明しない可能性が高い(決済周期の閾値確定と同様の性質の問題)。
+
+**重要: `is_subscriber=false`(バッジ非表示)は「サブスク契約経験なし」を意味しない。**
+上記10名はいずれも`brain_subscription_payments`に決済記録自体は存在する(＝過去にサブスク
+関連の会計があったことは確実)。単に今回の自動判定基準では契約開始日・コース名を特定できな
+かっただけであり、「バッジが無い＝未経験」と誤解しないこと。将来、スタッフへの聞き取りで
+実態が判明した場合は、`CustomerRepo.markAsSubscriber(customerId, subscribedAt)`を個別に
+呼ぶ(または直接DBを更新する)ことで手動対応する運用を想定する。
