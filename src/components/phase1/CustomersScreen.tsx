@@ -4,7 +4,7 @@ import { motion } from 'framer-motion'
 import { Search, Calendar, MessageSquareText, X, Clock } from 'lucide-react'
 import Image from 'next/image'
 import AppBottomNav from './AppBottomNav'
-import { useCustomerStore, type CustomerRow, type CustomerType } from '@/store/useCustomerStore'
+import { useCustomerStore, type CustomerRow } from '@/store/useCustomerStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import CustomerBottomSheet from '@/components/customer/CustomerBottomSheet'
 import { authedFetch } from '@/lib/api/authedFetch'
@@ -67,14 +67,6 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
 
 // ─── 定数 ────────────────────────────────────────────────────────────────────
 
-const TYPE_COLOR: Record<CustomerType, string> = {
-  'VIP型':       '#D4A96A',
-  '慎重・不安型': '#9EB4D8',
-  '感情重視型':   '#E88AAE',
-  '効果重視型':   '#78C890',
-  '信頼構築型':   '#D8A878',
-}
-
 function formatYen(n: number) {
   if (n >= 10_000) return `¥${(n / 10000).toFixed(1)}万`
   return `¥${n.toLocaleString('ja-JP')}`
@@ -125,23 +117,15 @@ function toReservation(c: CustomerRow): Reservation {
 // ─── メイン画面 ───────────────────────────────────────────────────────────────
 // 検索・一覧のみのシンプル構成。スコア順・フェーズ順ソート、離脱危険ランキング、
 // VIPバッジは評価系UIのため廃止（Riora OS v1.0 再設計書 準拠）。
-
-// ─── 担当軸タブ(私のお客様/全顧客) ─────────────────────────────────────────────
-// PHASE CUSTOMER-FILTER-PASS-C: /api/customers/list(Pass B)は既にAUTH-1 V2の
-// アクセス可能顧客のみを返す(filterAccessibleCustomerIds)。この単一の取得結果を
-// クライアント側でさらに絞り込むだけで、新たな担当判定・API呼び出しは追加しない。
-// assignedStaffId は同APIが直近来店staff_id(Rule A')基準で既に算出済みのフィールド
-// (CustomerRow.assignedStaffId)であり、これが設定されている行のみを「私のお客様」
-// として扱う(Rule C: 来店・本日予約とも無い共有顧客はassignedStaffId=nullのため
-// 「全顧客」タブでのみ表示される。CUSTOMER_FILTER_V2_DESIGN.md §3 に準拠)。
-type OwnerScope = 'mine' | 'all'
+//
+// 2026-09-14: 全スタッフが全顧客を閲覧できる方針のため「私のお客様/全顧客」の
+// 区別・来店日順/売上順のソート切替・区分ラベル(効果重視型等)を廃止した。
+// 常に全顧客を来店日順(直近来店が新しい順)で表示する固定仕様にする。
 
 export default function CustomersScreen() {
   const { customers, isLoading, fetchCustomers } = useCustomerStore()
   const { initialized: authInitialized } = useAuthStore()
   const [query,            setQuery]           = useState('')
-  const [sortKey,          setSortKey]         = useState<'lastVisit' | 'sales'>('lastVisit')
-  const [scope,            setScope]           = useState<OwnerScope>('mine')
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerRow | null>(null)
 
   // ── 会話履歴検索（PHASE NOTES-SEARCH-1） ────────────────────────────────────
@@ -191,11 +175,7 @@ export default function CustomersScreen() {
     fetchCustomers()
   }, [authInitialized, fetchCustomers])
 
-  const scoped = scope === 'mine'
-    ? customers.filter(c => !!c.assignedStaffId)
-    : customers
-
-  const filtered = scoped.filter(c => {
+  const filtered = customers.filter(c => {
     if (!query.trim()) return true
     const q = query.trim().toLowerCase()
 
@@ -217,7 +197,6 @@ export default function CustomersScreen() {
       const bNameMatch = b.name.toLowerCase().includes(q)
       if (aNameMatch !== bNameMatch) return aNameMatch ? -1 : 1
     }
-    if (sortKey === 'sales') return b.totalSpent - a.totalSpent
     return a.lastVisit - b.lastVisit
   })
 
@@ -253,7 +232,7 @@ export default function CustomersScreen() {
         <div>
           <h1 className="text-[24px] font-light leading-tight" style={{ color: '#4A2C2A', fontFamily: 'Playfair Display, serif' }}>Customers</h1>
           <p className="text-[13px] mt-0.5" style={{ color: '#9E8090' }}>
-            {isLoading ? '読み込み中…' : `${scope === 'mine' ? '私のお客様' : '全顧客'} ${scoped.length}名`}
+            {isLoading ? '読み込み中…' : `全顧客 ${customers.length}名`}
           </p>
         </div>
 
@@ -297,28 +276,6 @@ export default function CustomersScreen() {
           </div>
         )}
 
-        {/* 担当軸タブ: 私のお客様(デフォルト) / 全顧客 */}
-        <div className="flex gap-2 mt-3">
-          {([
-            { key: 'mine', label: '私のお客様' },
-            { key: 'all',  label: '全顧客' },
-          ] as const).map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => setScope(key)}
-              className="flex-1 text-center rounded-[12px] py-2.5 text-[13px] font-semibold transition-all"
-              style={{
-                background: scope === key ? 'linear-gradient(135deg, #F5A0B5, #F0879E)' : '#FFFFFF',
-                color:      scope === key ? '#FFFFFF' : '#9E8090',
-                border:     `1px solid ${scope === key ? 'transparent' : '#F0E8E8'}`,
-                boxShadow:  scope === key ? '0 4px 14px rgba(240,135,158,0.28)' : 'none',
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
         {/* 検索 */}
         <div
           className="flex items-center gap-2 mt-3 rounded-[14px] px-3.5 py-2.5"
@@ -332,33 +289,6 @@ export default function CustomersScreen() {
             className="flex-1 bg-transparent outline-none"
             style={{ fontSize: 16, color: '#4A2C2A' }}
           />
-        </div>
-
-        {/* ソートタブ */}
-        <div className="flex gap-2 mt-2 overflow-x-auto no-scrollbar" style={{ scrollbarWidth: 'none' }}>
-          {([
-            { key: 'lastVisit', label: '来店日順' },
-            { key: 'sales',     label: '売上順' },
-          ] as const).map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => setSortKey(key)}
-              style={{
-                flexShrink: 0,
-                fontSize: '11px',
-                fontWeight: sortKey === key ? 700 : 400,
-                padding: '4px 12px',
-                borderRadius: '999px',
-                border: `1px solid ${sortKey === key ? '#F56E8B' : '#F0E8E8'}`,
-                background: sortKey === key ? 'rgba(245,110,139,0.08)' : 'transparent',
-                color: sortKey === key ? '#F56E8B' : '#C8A8B0',
-                cursor: 'pointer',
-                transition: 'all 0.15s',
-              }}
-            >
-              {label}
-            </button>
-          ))}
         </div>
       </div>
 
@@ -433,7 +363,6 @@ export default function CustomersScreen() {
 
         {/* カードリスト */}
         {!isLoading && sorted.map((c, i) => {
-          const color = TYPE_COLOR[c.type]
           return (
             <motion.div
               key={c.id}
@@ -470,19 +399,18 @@ export default function CustomersScreen() {
                 >
                   {c.name} 様
                 </span>
-                <div className="flex items-center gap-1.5 mb-1">
-                  <p className="text-[11px] font-medium" style={{ color }}>{c.type}</p>
-                  {/* SUBSCRIBER_HISTORY_FLAG: 契約状態は顧客フェーズ(上のタイプ表示)とは
-                      別軸の事実表示。「今まさに契約中か」は表さず、契約経験の有無のみを示す。 */}
-                  {c.isSubscriber && (
+                {/* SUBSCRIBER_HISTORY_FLAG: 契約状態は事実表示。
+                    「今まさに契約中か」は表さず、契約経験の有無のみを示す。 */}
+                {c.isSubscriber && (
+                  <div className="flex items-center gap-1.5 mb-1">
                     <span
                       className="text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0"
                       style={{ background: '#F0E8F5', color: '#9B7FB8' }}
                     >
                       サブスク契約経験あり
                     </span>
-                  )}
-                </div>
+                  </div>
+                )}
                 <div
                   className="flex items-center gap-3 text-[11px]"
                   style={{ color: '#9E8090' }}
@@ -513,11 +441,6 @@ export default function CustomersScreen() {
             <p className="text-[13px]" style={{ color: '#9E8090' }}>
               該当する顧客が見つかりません
             </p>
-            {scope === 'mine' && customers.length > scoped.length && (
-              <p className="text-[11px]" style={{ color: '#C8A8B0' }}>
-                「全顧客」タブに切り替えると他の顧客も表示されます
-              </p>
-            )}
           </div>
         )}
           </>
