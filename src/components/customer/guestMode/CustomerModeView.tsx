@@ -18,7 +18,7 @@
  * デザイン方針: アイボリー×ベージュ×ゴールド×ダークブラウン。大きな余白・細い境界線・
  * 控えめなシャドウ。業務アプリ感を避け、美容サロンらしい落ち着いた高級感を優先する。
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Playfair_Display } from 'next/font/google'
 import { X, Leaf, CalendarDays, Flower2, ImageOff } from 'lucide-react'
 import {
@@ -34,8 +34,9 @@ import {
   hasDistinctFirstOccasion,
   type BodyPartPhotoGroup,
   type ComparisonBasis,
+  type PhotoOccasion,
 } from '@/lib/photos/comparisonSelection'
-import { getPhotoSignedUrl, type TimelinePhoto } from '@/lib/photos/photoApiClient'
+import { getPhotoSignedUrl, getBatchSignedUrls, type TimelinePhoto } from '@/lib/photos/photoApiClient'
 import { usePinchZoom } from './usePinchZoom'
 import {
   PALETTE,
@@ -63,12 +64,9 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
   const data = useCustomerModeData(customerId)
   const [angle, setAngle] = useState<CustomerModeAngleId>('face_front')
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
-  /**
-   * 「過去の写真・来店履歴」でタップされた来店回のid(PHASE GUEST-MODE-2)。
-   * 現時点では選択状態を保持するのみで、実際の比較表示切り替えは別Phaseで実装する
-   * (タップ→選択の導線とデータ取得までが今回のスコープ)。
-   */
-  const [selectedVisitId, setSelectedVisitId] = useState<string | null>(null)
+  // スクロール領域への参照。「過去の写真」サムネイルタップ時に拡大モードの表示(上部)まで
+  // スクロールを戻すために使う(お客様用カルテ再構成・2026-09-14)。
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   // 次回目安エンジン(PHASE NEXT-VISIT-1・2026-09-11)。お客様モードでは具体的な日付は出さず、
   // 「約◯週間後」のみ表示する(次回予約が既にある場合のみ日付を表示)。
@@ -87,6 +85,11 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
   // 都度取得する(来店回数が多い顧客で全件事前取得すると無駄なsigned URL発行が増えるため)。
   const [extraPhotoUrls, setExtraPhotoUrls] = useState<Record<string, string>>({})
 
+  // 「過去の写真」サムネイル一覧用のsigned URL(お客様用カルテ再構成・2026-09-14)。
+  // 現在選択中の角度の撮影機会(occasions)ごとの代表写真をまとめて取得する
+  // (角度タブに連動。角度を切り替えるたびに取り直す)。
+  const [thumbUrls, setThumbUrls] = useState<Record<string, string>>({})
+
   // 角度切替時は比較・拡大の選択状態をリセットする(別の角度の撮影機会を参照し続けるのを防ぐ)。
   useEffect(() => {
     setCompareBasis('previous')
@@ -101,6 +104,21 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
   const occasions = useMemo(() => groupByOccasion(angleGroup.photos), [angleGroup])
   const isComparable = occasions.length >= 2
   const showFirstShortcut = hasDistinctFirstOccasion(angleGroup)
+
+  // 「過去の写真」サムネイル: 現在の角度の撮影機会ごとに代表写真のsigned URLをまとめて取得する。
+  // photoUrls(前回/今回/初回として既に事前取得済みのもの)は再利用し、不足分だけ取りに行く。
+  useEffect(() => {
+    const missingIds = occasions
+      .map(o => representativePhoto(o).id)
+      .filter(id => !data.photoUrls[id] && !thumbUrls[id])
+    if (missingIds.length === 0) return
+    let cancelled = false
+    void getBatchSignedUrls(customerId, missingIds, 'thumbnail').then(urls => {
+      if (!cancelled && Object.keys(urls).length > 0) setThumbUrls(prev => ({ ...prev, ...urls }))
+    })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [occasions, customerId])
 
   // 比較モード: 「前回↔今回」「初回↔今回」ショートカット切替。既存のcomparisonSelection.ts
   // 公開関数のみを使い、比較ロジック自体は変更しない。
@@ -121,7 +139,7 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
   }, [occasions, enlargeOccasionKey])
   const enlargedPhoto = enlargedOccasion ? representativePhoto(enlargedOccasion) : null
   const enlargedUrl = enlargedPhoto
-    ? (data.photoUrls[enlargedPhoto.id] ?? extraPhotoUrls[enlargedPhoto.id])
+    ? (data.photoUrls[enlargedPhoto.id] ?? extraPhotoUrls[enlargedPhoto.id] ?? thumbUrls[enlargedPhoto.id])
     : undefined
   const enlargedLoading = !!enlargedPhoto && !enlargedUrl
   // ハイライト対象のvisitId。写真が見つかった場合は写真自身のvisitId、
@@ -131,7 +149,7 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
 
   useEffect(() => {
     if (!enlargedPhoto) return
-    if (data.photoUrls[enlargedPhoto.id] || extraPhotoUrls[enlargedPhoto.id]) return
+    if (data.photoUrls[enlargedPhoto.id] || extraPhotoUrls[enlargedPhoto.id] || thumbUrls[enlargedPhoto.id]) return
     let cancelled = false
     void getPhotoSignedUrl(customerId, enlargedPhoto.id, 'detail').then(url => {
       if (!cancelled && url) setExtraPhotoUrls(prev => ({ ...prev, [enlargedPhoto.id]: url }))
@@ -139,6 +157,19 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enlargedPhoto?.id, customerId])
+
+  /**
+   * 「過去の写真」サムネイルタップ: 既存の拡大モード(比較｜拡大の「拡大」)へそのまま切り替える
+   * (お客様用カルテ再構成・2026-09-14)。新しい表示ロジックは増やさず、拡大モードの状態
+   * (photoMode/enlargeOccasionKey)を書き換えるだけ。画面上部の写真表示エリアまで
+   * スクロールし直す。
+   */
+  function openOccasionInEnlargeMode(o: PhotoOccasion) {
+    setPhotoMode('enlarge')
+    setEnlargeOccasionKey(o.key)
+    setEnlargeFallbackTab(null)
+    scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: PALETTE.bg, display: 'flex', flexDirection: 'column' }}>
@@ -202,8 +233,8 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
       </div>
 
       {/* ── スクロール領域(「1画面目」+「スクロール部分」を1つの連続スクロールにまとめる) ── */}
-      <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
-        <div style={{ maxWidth: '1140px', margin: '0 auto', padding: '24px 24px 48px' }}>
+      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '24px 16px 48px' }}>
 
           {/* 角度タブ */}
           <div style={{ display: 'flex', gap: '32px', borderBottom: `1px solid ${PALETTE.border}`, marginBottom: '20px' }}>
@@ -286,7 +317,7 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
 
               {/* 写真表示: 比較モード(2枚並び・既存動作)｜拡大モード(1枚・ピンチズーム) */}
               {photoMode === 'compare' ? (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                   <PhotoPanel
                     label={compareBasis === 'previous' ? '前回' : '初回'}
                     url={compareReferenceUrl}
@@ -358,8 +389,12 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
                 }}
               >
                 <InfoBarItem icon={Leaf} label="今回の施術" value={data.currentMenuName ?? '本日のメニューは準備中です'} />
-                <div style={{ width: '1px', background: PALETTE.border }} />
-                <NextVisitInfoCell result={nextVisit.result} />
+                {!nextVisit.hiddenFromCustomer && (
+                  <>
+                    <div style={{ width: '1px', background: PALETTE.border }} />
+                    <NextVisitInfoCell result={nextVisit.result} />
+                  </>
+                )}
               </div>
             </>
           )}
@@ -418,82 +453,87 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
                 </Card>
               )}
 
-              {/* 2026-09-12仕様変更: データが無くても枠自体は常に表示し、「まだ登録されていません」の
-                  控えめな表示にする(以前は項目ごと非表示にしていた)。利用データを蓄積してから
-                  必要性を判断する方針のため(ユーザー指示)。 */}
-              <Card title="お客様の目標">
-                {data.goalNote?.trim() ? (
-                  <p style={{ margin: 0, fontSize: '14px', color: PALETTE.text, lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>
-                    {customerName}様の目標：{data.goalNote}
-                  </p>
-                ) : (
-                  <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>
-                    まだ登録されていません
-                  </p>
-                )}
-              </Card>
-
-              <Card title="今回の施術ポイント">
-                {data.treatmentPoints.length > 0 ? (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                    {data.treatmentPoints.map((point, i) => (
-                      <span
-                        key={`${point}-${i}`}
-                        style={{
-                          fontSize: '12px', color: PALETTE.text, background: PALETTE.bg,
-                          border: `1px solid ${PALETTE.border}`, borderRadius: '999px', padding: '6px 14px',
-                        }}
-                      >
-                        {point}
-                      </span>
-                    ))}
+              {/* 過去の写真 — 現在選択中の角度タブに連動したサムネイル一覧(お客様用カルテ
+                  再構成・2026-09-14)。タップすると既存の拡大モードでその回の写真を表示する。 */}
+              {occasions.length > 0 && (
+                <Card title="過去の写真">
+                  <div
+                    style={{
+                      display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: '8px',
+                    }}
+                  >
+                    {occasions.map(o => {
+                      const photo = representativePhoto(o)
+                      const url = data.photoUrls[photo.id] ?? thumbUrls[photo.id]
+                      const active = enlargedActiveVisitId != null
+                        ? photo.visitId === enlargedActiveVisitId
+                        : o.key === enlargedOccasion?.key
+                      const dateLabel = formatVisitDateLabel(photo.visitDate ?? photo.takenAt)
+                      return (
+                        <button
+                          key={o.key}
+                          type="button"
+                          onClick={() => openOccasionInEnlargeMode(o)}
+                          aria-label={`${dateLabel ?? ''}の写真を拡大表示`}
+                          style={{
+                            position: 'relative', aspectRatio: '1 / 1', borderRadius: '10px', overflow: 'hidden',
+                            padding: 0, cursor: 'pointer', background: '#EFE8DA',
+                            border: active && photoMode === 'enlarge' ? `2px solid ${PALETTE.gold}` : `1px solid ${PALETTE.border}`,
+                          }}
+                        >
+                          {url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={url}
+                              alt=""
+                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                            />
+                          ) : (
+                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <ImageOff size={16} strokeWidth={1.3} color={PALETTE.gold} />
+                            </div>
+                          )}
+                          {photo.visitCountAt != null && (
+                            <span
+                              style={{
+                                position: 'absolute', bottom: '4px', left: '4px', right: '4px',
+                                fontSize: '9px', fontWeight: 700, color: '#fff', textAlign: 'center',
+                                background: 'rgba(30,24,16,0.55)', borderRadius: '6px', padding: '2px 4px',
+                              }}
+                            >
+                              {photo.visitCountAt === 1 ? '初回' : `${photo.visitCountAt}回目`}
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
                   </div>
-                ) : (
-                  <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>
-                    まだ登録されていません
-                  </p>
-                )}
-              </Card>
+                </Card>
+              )}
 
-              {/* 過去の写真・来店履歴 — 将来のPhase B(比較表示切り替え)への入り口(PHASE GUEST-MODE-2)。
-                  今回はタップ→選択の導線のみ。実際に比較対象を切り替える処理は別Phaseで実装する。 */}
+              {/* 来店履歴 */}
               {data.visits.length > 0 && (
-                <Card title="過去の写真・来店履歴">
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <Card title="来店履歴">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                     {data.visits.map((visit, i) => {
                       const visitNumber = data.visits.length - i
                       const dateLabel = formatVisitDateLabel(visit.visitDate)
-                      const selected = selectedVisitId === visit.id
                       return (
-                        <button
+                        <div
                           key={visit.id}
-                          type="button"
-                          onClick={() => setSelectedVisitId(selected ? null : visit.id)}
                           style={{
-                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            width: '100%', textAlign: 'left', cursor: 'pointer',
-                            padding: '12px 14px', borderRadius: '12px',
-                            background: selected ? PALETTE.bg : 'transparent',
-                            border: `1px solid ${selected ? PALETTE.gold : PALETTE.border}`,
+                            display: 'flex', alignItems: 'baseline', gap: '10px',
+                            padding: '10px 4px',
+                            borderBottom: i < data.visits.length - 1 ? `1px solid ${PALETTE.border}` : 'none',
                           }}
                         >
-                          <span style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
-                            <span style={{ fontSize: '13px', fontWeight: 700, color: PALETTE.text }}>
-                              来店{visitNumber}回目
-                            </span>
-                            <span style={{ fontSize: '12px', color: PALETTE.muted }}>
-                              {[dateLabel, visit.menuName].filter(Boolean).join(' ・ ')}
-                            </span>
+                          <span style={{ fontSize: '13px', fontWeight: 700, color: PALETTE.text }}>
+                            来店{visitNumber}回目
                           </span>
-                          <span
-                            style={{
-                              fontSize: '11px', fontWeight: 600, color: selected ? PALETTE.gold : PALETTE.muted,
-                              flexShrink: 0, marginLeft: '12px',
-                            }}
-                          >
-                            {selected ? '選択中' : '比較に選ぶ'}
+                          <span style={{ fontSize: '12px', color: PALETTE.muted }}>
+                            {[dateLabel, visit.menuName].filter(Boolean).join(' ・ ')}
                           </span>
-                        </button>
+                        </div>
                       )
                     })}
                   </div>

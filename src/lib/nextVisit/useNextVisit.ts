@@ -6,6 +6,11 @@
  * サーバー側(app/api/customers/[id]/next-visit/route.ts)がnextVisitEngine.tsで行う。
  * IpadStaffKarteView・CustomerBottomSheet・CustomerModeViewの3画面が同じ挙動
  * (取得・手動上書きの設定/解除)を必要とするため、共通フックとして切り出す。
+ *
+ * hiddenFromCustomer(お客様用カルテ再構成・2026-09-14): お客様モード(CustomerModeView)
+ * でのみ「次回のお手入れ目安」を非表示にする設定。IpadStaffKarteViewの次回の目安カードから
+ * setHiddenFromCustomerで切り替える。スタッフ向け画面(CustomerBottomSheet/
+ * IpadStaffKarteView自身)の表示には影響させない(呼び出し元が意図的に無視する)。
  */
 import { useCallback, useEffect, useState } from 'react'
 import { authedFetch } from '@/lib/api/authedFetch'
@@ -15,9 +20,12 @@ export interface UseNextVisitState {
   loading: boolean
   result: NextVisitResult | null
   overrideDate: string | null
+  hiddenFromCustomer: boolean
   saving: boolean
   /** dateにnullを渡すと上書きを解除する。成功時true。 */
   setOverride: (date: string | null) => Promise<boolean>
+  /** お客様モードでの非表示設定を切り替える。成功時true。 */
+  setHiddenFromCustomer: (hidden: boolean) => Promise<boolean>
   /**
    * 明示的な再取得。CustomerBottomSheet(常時マウント)とIpadStaffKarteView/
    * CustomerModeView(portalで都度マウント)はそれぞれ別々にuseNextVisitを呼ぶため、
@@ -31,6 +39,7 @@ export function useNextVisit(customerId: string): UseNextVisitState {
   const [loading, setLoading] = useState(true)
   const [result, setResult] = useState<NextVisitResult | null>(null)
   const [overrideDate, setOverrideDate] = useState<string | null>(null)
+  const [hiddenFromCustomer, setHiddenFromCustomerState] = useState(false)
   const [saving, setSaving] = useState(false)
 
   const load = useCallback(async () => {
@@ -38,10 +47,13 @@ export function useNextVisit(customerId: string): UseNextVisitState {
     try {
       const res = await authedFetch(`/api/customers/${customerId}/next-visit`)
       if (res.ok) {
-        const json = await res.json() as { success: boolean; result?: NextVisitResult; overrideDate?: string | null }
+        const json = await res.json() as {
+          success: boolean; result?: NextVisitResult; overrideDate?: string | null; hiddenFromCustomer?: boolean
+        }
         if (json.success && json.result) {
           setResult(json.result)
           setOverrideDate(json.overrideDate ?? null)
+          setHiddenFromCustomerState(json.hiddenFromCustomer ?? false)
         }
       }
     } catch {
@@ -71,5 +83,23 @@ export function useNextVisit(customerId: string): UseNextVisitState {
     }
   }, [customerId, load])
 
-  return { loading, result, overrideDate, saving, setOverride, refetch: load }
+  const setHiddenFromCustomer = useCallback(async (hidden: boolean) => {
+    setSaving(true)
+    try {
+      const res = await authedFetch(`/api/customers/${customerId}/next-visit`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hiddenFromCustomer: hidden }),
+      })
+      if (!res.ok) return false
+      await load()
+      return true
+    } catch {
+      return false
+    } finally {
+      setSaving(false)
+    }
+  }, [customerId, load])
+
+  return { loading, result, overrideDate, hiddenFromCustomer, saving, setOverride, setHiddenFromCustomer, refetch: load }
 }

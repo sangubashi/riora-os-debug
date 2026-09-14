@@ -19,7 +19,7 @@
  * 写真比較UIはCustomerModeViewと共有(src/components/customer/shared/PhotoCompareKit.tsx)。
  */
 import { useState } from 'react'
-import { Flower2, X, Pencil } from 'lucide-react'
+import { Flower2, X, Pencil, EyeOff } from 'lucide-react'
 import { useIpadKarteData, IPAD_KARTE_ANGLES, type IpadKarteAngleId, type RetailProductStatus } from './ipadKarteData'
 import KarteMemoSection from './KarteMemoSection'
 import GoalEditCard from './GoalEditCard'
@@ -169,9 +169,13 @@ function CustomerStatusPanel({
  * 次回の目安カード。次回目安エンジン(useNextVisit)の結果表示と、担当スタッフによる
  * 手動上書きの入力を担う。「次回提案(施術メニューの提案・StaffProposalSection)」とは
  * 完全に別物であり、このカードでは一切扱わない。
+ *
+ * お客様モードでの非表示切替(お客様用カルテ再構成・2026-09-14): hiddenFromCustomerの
+ * トグルもこのカード内に置く。あくまでお客様モード(CustomerModeView.tsx)の表示だけを
+ * 制御する設定で、このiPadカルテ画面自身の表示(上の結果表示)には一切影響させない。
  */
 function NextVisitCard({ customerId }: { customerId: string }) {
-  const { loading, result, overrideDate, saving, setOverride } = useNextVisit(customerId)
+  const { loading, result, overrideDate, hiddenFromCustomer, saving, setOverride, setHiddenFromCustomer } = useNextVisit(customerId)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
 
@@ -186,6 +190,7 @@ function NextVisitCard({ customerId }: { customerId: string }) {
     return (
       <Card title="📅 次回の目安">
         <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>{result?.basisLabel ?? 'データがありません'}</p>
+        <HideFromCustomerToggle hidden={hiddenFromCustomer} saving={saving} onChange={setHiddenFromCustomer} />
       </Card>
     )
   }
@@ -297,7 +302,40 @@ function NextVisitCard({ customerId }: { customerId: string }) {
           </div>
         </div>
       )}
+      <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `1px solid ${PALETTE.border}` }}>
+        <HideFromCustomerToggle hidden={hiddenFromCustomer} saving={saving} onChange={setHiddenFromCustomer} />
+      </div>
     </Card>
+  )
+}
+
+/**
+ * お客様モードでの「次回のお手入れ目安」非表示トグル(お客様用カルテ再構成・2026-09-14)。
+ * next_visit_hidden_from_customerを切り替えるだけの単純なチェック。デフォルトはfalse
+ * (表示する)。切り替えてもこのiPadカルテ画面・CustomerBottomSheet側の表示には影響しない。
+ */
+function HideFromCustomerToggle({
+  hidden, saving, onChange,
+}: { hidden: boolean; saving: boolean; onChange: (hidden: boolean) => Promise<boolean> }) {
+  return (
+    <label
+      style={{
+        display: 'flex', alignItems: 'center', gap: '10px', cursor: saving ? 'default' : 'pointer',
+        opacity: saving ? 0.6 : 1,
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={hidden}
+        disabled={saving}
+        onChange={e => { void onChange(e.target.checked) }}
+        style={{ width: '16px', height: '16px', accentColor: PALETTE.gold, cursor: saving ? 'default' : 'pointer' }}
+      />
+      <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: PALETTE.text }}>
+        <EyeOff size={13} strokeWidth={1.6} color={PALETTE.muted} />
+        お客様モードでは非表示にする
+      </span>
+    </label>
   )
 }
 

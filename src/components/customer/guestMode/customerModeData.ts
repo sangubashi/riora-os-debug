@@ -25,6 +25,11 @@
  * 「今回の施術記録」(options/productsUsed)のうち治療メモ(treatmentMemo)は自由記述の
  * スタッフ向けメモであり、顧客に見せる前提で書かれていないため、お客様モードには
  * 意図的に含めない(options/productsUsedという定型項目のみを使う)。
+ *
+ * お客様用カルテ再構成(2026-09-14): 「お客様の目標」「今回の施術ポイント」セクションを
+ * CustomerModeView.tsxから廃止したため、GET /api/customers/[id]/goal・
+ * GET /api/customers/[id]/visits/[visitId]/treatment の呼び出しをこのフックから削除した
+ * (このフックがこの2件のAPIの唯一の呼び出し元だったため、他画面への影響はない)。
  */
 import { useEffect, useState } from 'react'
 import { authedFetch } from '@/lib/api/authedFetch'
@@ -110,16 +115,6 @@ export interface HomecareCardItem {
   caution: string | null
 }
 
-interface TreatmentDetail {
-  options: unknown
-  productsUsed: unknown
-}
-
-function toStringList(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value.filter((v): v is string => typeof v === 'string')
-}
-
 function todayDateStr(): string {
   return new Date().toISOString().slice(0, 10)
 }
@@ -153,8 +148,6 @@ export interface CustomerModeData {
   currentSkinTags: SkinTagChip[]
   previousSkinTags: SkinTagChip[]
   homecareItems: HomecareCardItem[]
-  goalNote: string | null
-  treatmentPoints: string[]
   /**
    * 来店履歴(最大30件、visit_date降順・既存API仕様のまま)。
    * 「過去の写真・来店履歴」入り口用(PHASE GUEST-MODE-2)。amount/staffNameは
@@ -172,8 +165,6 @@ const EMPTY_DATA: CustomerModeData = {
   currentSkinTags: [],
   previousSkinTags: [],
   homecareItems: [],
-  goalNote: null,
-  treatmentPoints: [],
   visits: [],
 }
 
@@ -187,13 +178,11 @@ export function useCustomerModeData(customerId: string): CustomerModeData {
     void (async () => {
       const todayStr = todayDateStr()
 
-      const [photos, visitsJson, skinJson, goalJson, homecareJson] = await Promise.all([
+      const [photos, visitsJson, skinJson, homecareJson] = await Promise.all([
         listCustomerPhotosTimeline(customerId),
         authedFetch(`/api/customers/${customerId}/visit-history`)
           .then(r => (r.ok ? r.json() : null)).catch(() => null),
         authedFetch(`/api/customers/${customerId}/skin-records`)
-          .then(r => (r.ok ? r.json() : null)).catch(() => null),
-        authedFetch(`/api/customers/${customerId}/goal`)
           .then(r => (r.ok ? r.json() : null)).catch(() => null),
         authedFetch(`/api/customers/${customerId}/homecare-products`)
           .then(r => (r.ok ? r.json() : null)).catch(() => null),
@@ -220,27 +209,6 @@ export function useCustomerModeData(customerId: string): CustomerModeData {
         const guide = getHomecareUsageGuide(p.productName)
         return { productName: p.productName, frequency: guide?.frequency ?? null, timing: guide?.timing ?? null, caution: guide?.caution ?? null }
       })
-
-      const goalNote: string | null = goalJson?.success ? (goalJson.goalNote ?? null) : null
-
-      let treatmentPoints: string[] = []
-      if (todayVisitId) {
-        try {
-          const res = await authedFetch(`/api/customers/${customerId}/visits/${todayVisitId}/treatment`)
-          if (res.ok) {
-            const json = (await res.json()) as { success: boolean; treatment?: TreatmentDetail }
-            if (json.success && json.treatment) {
-              treatmentPoints = [
-                ...toStringList(json.treatment.options),
-                ...toStringList(json.treatment.productsUsed),
-              ]
-            }
-          }
-        } catch {
-          /* 施術ポイントが無くても他の表示に影響させない */
-        }
-      }
-      if (cancelled) return
 
       const bodyPartGroups = groupPhotosByBodyPart(photos)
       const photosByAngle: Record<string, TimelinePhoto[]> = {}
@@ -272,8 +240,6 @@ export function useCustomerModeData(customerId: string): CustomerModeData {
         currentSkinTags,
         previousSkinTags,
         homecareItems,
-        goalNote,
-        treatmentPoints,
         visits,
       })
     })()
