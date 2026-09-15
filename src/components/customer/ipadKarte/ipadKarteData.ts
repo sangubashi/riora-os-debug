@@ -147,6 +147,8 @@ export interface IpadKarteData {
   visitCount: number
   /** 顧客ステータスパネル用: 店販商品ごとの最終購入日・累計購入額・平均購入周期(全件)。 */
   retailProducts: RetailProductStatus[]
+  /** 写真撮影・追加フロー(PHASE IPAD-PHOTO-CAPTURE-1)用: 本日来店のvisit_id。来店記録が無ければnull。 */
+  todayVisitId: string | null
 }
 
 const EMPTY_DATA: IpadKarteData = {
@@ -162,6 +164,7 @@ const EMPTY_DATA: IpadKarteData = {
   lastVisitDate: null,
   visitCount: 0,
   retailProducts: [],
+  todayVisitId: null,
 }
 
 export interface UseIpadKarteDataResult extends IpadKarteData {
@@ -171,6 +174,12 @@ export interface UseIpadKarteDataResult extends IpadKarteData {
    * 重要事項・目標のみを更新する(全項目再取得は写真の signed URL 再発行等が走り重いため)。
    */
   refetchGoalAndContraindications: () => Promise<void>
+  /**
+   * 写真撮影・追加フロー(PHASE IPAD-PHOTO-CAPTURE-1)のアップロード成功後に呼ぶ軽量な
+   * 再取得。写真一覧(anglePairs/photoUrls)のみを更新し、他の項目(重要事項・目標・
+   * 顧客ステータス等)は再取得しない。
+   */
+  refetchPhotos: () => Promise<void>
 }
 
 export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
@@ -279,6 +288,7 @@ export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
         lastVisitDate,
         visitCount,
         retailProducts,
+        todayVisitId,
       })
     })()
 
@@ -300,5 +310,23 @@ export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
     setData(prev => ({ ...prev, goalNote, contraindications: sortedContraindications }))
   }, [customerId])
 
-  return { ...data, refetchGoalAndContraindications }
+  /**
+   * 写真撮影・追加フロー(PHASE IPAD-PHOTO-CAPTURE-1)のアップロード成功後に呼ぶ。
+   * listCustomerPhotosTimeline以降のロジックはマウント時のuseEffectと同じ
+   * (buildAngleComparison→getBatchSignedUrls)。写真以外の項目には触れない。
+   */
+  const refetchPhotos = useCallback(async () => {
+    const photos = await listCustomerPhotosTimeline(customerId)
+    const anglePairs: Record<string, AnglePhotoPair> = {}
+    for (const angle of IPAD_KARTE_ANGLES) {
+      anglePairs[angle.id] = buildAngleComparison(photos, angle.id)
+    }
+    const photoIds = Object.values(anglePairs)
+      .flatMap(p => [p.current?.id, p.reference?.id])
+      .filter((id): id is string => !!id)
+    const photoUrls = await getBatchSignedUrls(customerId, photoIds, 'detail')
+    setData(prev => ({ ...prev, anglePairs, photoUrls }))
+  }, [customerId])
+
+  return { ...data, refetchGoalAndContraindications, refetchPhotos }
 }

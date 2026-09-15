@@ -142,6 +142,40 @@ iPadカルテ画面の仕様については引き続き凍結を継続する。
 LINE領域・admin領域、およびそれ以外の顧客タブ/iPadカルテ画面の仕様については引き続き
 凍結を継続する。
 
+### v1.0.1 着手済み事項（IpadStaffKarteView.tsx「写真カルテ」セクションへの撮影・追加機能新設のみ・2026-09-15ユーザー承認）
+
+方針転換（撮影機能のiPad一本化）に伴いスマホ側の撮影導線（commit 46c6900）を削除して以降、
+iPad側の撮影導線が未実装のまま残っていた（iPad・スマホどちらからも写真を登録する手段が
+存在しない状態）ため、iPadスタッフカルテに撮影・追加機能を新規実装する範囲に限り、
+iPadカルテ画面の凍結を解除した。
+
+- 温存されていた`usePhotoCapture.ts`・`captureConfirmFlow.ts`・`captureFrame.ts`・
+  `ghostSelection.ts`・`cameraError.ts`・`photoApiClient.ts`（写真カルテ「原本保存化Phase A」
+  の土台）はREAD ONLY調査の結果、無傷でそのまま使えると判断し、方針Bどおり流用した
+  （旧スマホ実装`PhotoCaptureView.tsx`等の単純移植はしていない・復元もしていない）。
+- 新規ファイル`IpadPhotoCaptureModal.tsx`を追加し、「撮影する」「選択して追加」の2つの入り口
+  ボタンを`IpadStaffKarteView.tsx`の写真カルテセクション（PhotoPanelのグリッド直下）に追加した。
+  既存のPhotoPanel（表示・比較用）自体には一切手を加えていない。
+- 部位（正面/斜め/顎/額、`IPAD_KARTE_ANGLES`）の選択を必須化: モーダル内は`bodyPart`未選択
+  (空文字)状態で開始し、4つのいずれかを明示的に選ぶまでシャッター/ファイル選択ボタンを
+  disabledにする（枚数によらず部位未選択のまま登録できない構造）。
+- photoTypeはユーザー確定により常に`'progress'`固定（iPadスタッフカルテの「前回|今回」比較は
+  施術前後の区別を表示に使わないため、before/after選択UIは設けていない）。
+- `ipadKarteData.ts`に`todayVisitId`（本日来店のvisit_id）の公開、および撮影成功後に写真一覧
+  のみを軽量再取得する`refetchPhotos()`を追加した。他の項目（重要事項・目標・顧客ステータス等）
+  には触れていない。
+- サーバー側API（`POST /api/customers/[id]/photos`）・DBスキーマの変更は不要だった（`bodyPart`
+  は元々自由文字列として受理される設計のため）。
+- 実機確認（Playwright、本番Supabase・実顧客「小宮山 仁美」）: 部位未選択の間は「写真ライブラリ
+  から選ぶ」がdisabledであること、部位選択後にファイルを選ぶと`body_part=face_oblique`・
+  `photo_type=progress`で`brain_customer_photos`に保存されること、「撮影する」モーダルも
+  エラー無く開けることを確認済み。作成したテストデータは検証後に削除済み。検証用一時spec
+  はコミット前に削除。既存ユニットテスト（写真関連118件）に新規の回帰なし。
+
+**この解除は上記の撮影・追加機能新設に限る。** 5タブ構成・TL-5構成・AI提案の会話トーン・
+LINE領域・admin領域、およびそれ以外の顧客タブ/iPadカルテ画面の仕様については引き続き
+凍結を継続する。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

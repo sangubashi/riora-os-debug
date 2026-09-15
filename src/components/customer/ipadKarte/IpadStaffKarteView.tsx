@@ -20,9 +20,10 @@
  * 写真比較UIはCustomerModeViewと共有(src/components/customer/shared/PhotoCompareKit.tsx)。
  */
 import { useState } from 'react'
-import { Flower2, X, Pencil, EyeOff, ChevronDown } from 'lucide-react'
+import { Flower2, X, Pencil, EyeOff, ChevronDown, Camera, ImagePlus } from 'lucide-react'
 import { useIpadKarteData, IPAD_KARTE_ANGLES, type IpadKarteAngleId, type RetailProductStatus } from './ipadKarteData'
 import KarteMemoSection from './KarteMemoSection'
+import IpadPhotoCaptureModal, { type PhotoCaptureIntent } from './IpadPhotoCaptureModal'
 import { PALETTE, headingFont, Card, PhotoPanel, SkinTagRow } from '@/components/customer/shared/PhotoCompareKit'
 import { useNextVisit } from '@/lib/nextVisit/useNextVisit'
 import { formatWeeksLabel, formatApproxDateLabel } from '@/lib/nextVisit/nextVisitEngine'
@@ -371,6 +372,9 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
   const data = useIpadKarteData(customerId)
   const [angle, setAngle] = useState<IpadKarteAngleId>('face_front')
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+  // 写真撮影・追加フロー(PHASE IPAD-PHOTO-CAPTURE-1・2026-09-15緊急実装)。
+  // 既存のPhotoPanel(表示・比較用)とは独立したフローとして、モーダル表示のon/offのみを持つ。
+  const [photoCaptureIntent, setPhotoCaptureIntent] = useState<PhotoCaptureIntent | null>(null)
 
   const pair = data.anglePairs[angle]
   const currentUrl = pair?.current ? data.photoUrls[pair.current.id] : undefined
@@ -496,6 +500,35 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
                     emptyText="本日未撮影"
                     onExpand={currentUrl ? () => setLightboxUrl(currentUrl) : undefined}
                   />
+                </div>
+
+                {/* 撮影・追加フロー(PHASE IPAD-PHOTO-CAPTURE-1・2026-09-15緊急実装)。
+                    上のPhotoPanel(表示・比較用)には一切手を加えず、独立した入り口として追加した。 */}
+                <div style={{ display: 'flex', gap: '10px', marginTop: '14px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setPhotoCaptureIntent('camera')}
+                    style={{
+                      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                      padding: '12px', borderRadius: '10px', border: `1.5px solid ${PALETTE.gold}`,
+                      background: 'none', color: PALETTE.text, fontSize: '13px', cursor: 'pointer',
+                    }}
+                  >
+                    <Camera size={16} strokeWidth={1.8} color={PALETTE.gold} />
+                    撮影する
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPhotoCaptureIntent('picker')}
+                    style={{
+                      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                      padding: '12px', borderRadius: '10px', border: `1.5px solid ${PALETTE.border}`,
+                      background: 'none', color: PALETTE.text, fontSize: '13px', cursor: 'pointer',
+                    }}
+                  >
+                    <ImagePlus size={16} strokeWidth={1.8} color={PALETTE.gold} />
+                    選択して追加
+                  </button>
                 </div>
               </Card>
 
@@ -625,6 +658,17 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
             <X size={18} />
           </button>
         </div>
+      )}
+
+      {/* 撮影・追加モーダル(PHASE IPAD-PHOTO-CAPTURE-1・2026-09-15緊急実装)。 */}
+      {photoCaptureIntent && (
+        <IpadPhotoCaptureModal
+          customerId={customerId}
+          visitId={data.todayVisitId}
+          intent={photoCaptureIntent}
+          onClose={() => setPhotoCaptureIntent(null)}
+          onSaved={() => { void data.refetchPhotos() }}
+        />
       )}
     </div>
   )
