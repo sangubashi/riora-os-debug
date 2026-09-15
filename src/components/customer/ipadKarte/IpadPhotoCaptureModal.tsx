@@ -201,17 +201,11 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
                   muted
                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                 />
-                {capture.ghostUrl && capture.ghostOpacityLevel !== 'off' && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={capture.ghostUrl}
-                    alt=""
-                    style={{
-                      position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
-                      opacity: capture.ghostOpacityLevel === 'strong' ? 0.5 : 0.25, pointerEvents: 'none',
-                    }}
-                  />
-                )}
+                {/* ゴースト(前回写真の半透明重ね表示)は今回のスコープ外(2026-09-15ユーザー指示)。
+                    usePhotoCapture.ts側は土台としてそのまま流用しているため内部では引き続き
+                    取得され続けるが(ghostUrl/ghostOpacityLevel)、未調整のまま本番で誤って
+                    使われることのないよう、UIとしては意図的に描画しない。正式に作るかどうかは
+                    別途相談の上で判断する。 */}
                 {capture.cameraStatus === 'requesting' && (
                   <p style={{
                     position: 'absolute', inset: 0, margin: 0, display: 'flex',
