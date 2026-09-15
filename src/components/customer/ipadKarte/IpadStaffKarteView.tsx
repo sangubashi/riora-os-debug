@@ -20,7 +20,7 @@
  * 写真比較UIはCustomerModeViewと共有(src/components/customer/shared/PhotoCompareKit.tsx)。
  */
 import { useState } from 'react'
-import { Flower2, X, Pencil, EyeOff } from 'lucide-react'
+import { Flower2, X, Pencil, EyeOff, ChevronDown } from 'lucide-react'
 import { useIpadKarteData, IPAD_KARTE_ANGLES, type IpadKarteAngleId, type RetailProductStatus } from './ipadKarteData'
 import KarteMemoSection from './KarteMemoSection'
 import { PALETTE, headingFont, Card, PhotoPanel, SkinTagRow } from '@/components/customer/shared/PhotoCompareKit'
@@ -116,6 +116,9 @@ function CustomerStatusPanel({
   const nextVisit = useNextVisit(customerId)
   const today = todayIsoUtc()
   const daysSinceLastVisit = lastVisitDate ? daysBetweenIso(lastVisitDate, today) : null
+  // 店販購入ステータスは商品数分だけ縦に伸びるため、アコーディオン化してデフォルト
+  // 折りたたんでおく(2026-09-15)。上の来店系ステータスは常時表示のまま。
+  const [retailExpanded, setRetailExpanded] = useState(false)
 
   return (
     <Card title="📊 顧客ステータス">
@@ -138,27 +141,46 @@ function CustomerStatusPanel({
 
       {retailProducts.length > 0 && (
         <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: `1px solid ${PALETTE.border}` }}>
-          <p style={{ margin: '0 0 10px', fontSize: '11px', letterSpacing: '0.08em', color: PALETTE.gold, fontFamily: headingFont.style.fontFamily }}>
-            店販購入ステータス(商品ごと)
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {retailProducts.map(p => (
-              <div key={p.productName} style={{ background: PALETTE.bg, borderRadius: '12px', padding: '10px 12px' }}>
-                <p style={{ margin: '0 0 4px', fontSize: '13px', fontWeight: 700, color: PALETTE.text }}>{p.productName}</p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                  <StatusRow label="最終購入日" value={formatApproxDateLabel(p.lastPurchasedAt)} />
-                  <StatusRow
-                    label="累計購入額"
-                    value={p.totalAmount != null ? `¥${p.totalAmount.toLocaleString('ja-JP')}` : '集計データなし'}
-                  />
-                  <StatusRow
-                    label="購入周期"
-                    value={p.averageIntervalDays != null ? `約${p.averageIntervalDays}日ごと` : '算出データ不足(購入1回のみ)'}
-                  />
+          <button
+            type="button"
+            onClick={() => setRetailExpanded(v => !v)}
+            aria-expanded={retailExpanded}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+            }}
+          >
+            <p style={{ margin: 0, fontSize: '11px', letterSpacing: '0.08em', color: PALETTE.gold, fontFamily: headingFont.style.fontFamily }}>
+              店販購入ステータス(商品ごと・{retailProducts.length}件)
+            </p>
+            <ChevronDown
+              size={16}
+              strokeWidth={1.8}
+              color={PALETTE.gold}
+              style={{ transform: retailExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }}
+            />
+          </button>
+
+          {retailExpanded && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
+              {retailProducts.map(p => (
+                <div key={p.productName} style={{ background: PALETTE.bg, borderRadius: '12px', padding: '10px 12px' }}>
+                  <p style={{ margin: '0 0 4px', fontSize: '13px', fontWeight: 700, color: PALETTE.text }}>{p.productName}</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <StatusRow label="最終購入日" value={formatApproxDateLabel(p.lastPurchasedAt)} />
+                    <StatusRow
+                      label="累計購入額"
+                      value={p.totalAmount != null ? `¥${p.totalAmount.toLocaleString('ja-JP')}` : '集計データなし'}
+                    />
+                    <StatusRow
+                      label="購入周期"
+                      value={p.averageIntervalDays != null ? `約${p.averageIntervalDays}日ごと` : '算出データ不足(購入1回のみ)'}
+                    />
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </Card>
