@@ -315,7 +315,11 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
                 )}
               </div>
 
-              {/* 写真表示: 比較モード(2枚並び・既存動作)｜拡大モード(1枚・ピンチズーム) */}
+              {/* 写真表示: 比較モード(2枚並び・既存動作)｜拡大モード(1枚・ピンチズーム)。
+                  比較モードのaspectRatioは既定値('5 / 4'・横長寄り)のままだと縦長の顔写真を
+                  objectFit:coverで切り抜く際に上下(特に顎周辺)が見切れるため、実際の撮影
+                  写真に近い縦長比('4 / 5')を指定する。IpadStaffKarteView側のPhotoPanel呼び出しは
+                  aspectRatio未指定のまま(既定値'5 / 4')のため、この変更による影響はない。 */}
               {photoMode === 'compare' ? (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                   <PhotoPanel
@@ -325,6 +329,7 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
                     visitDate={compareReferencePhoto?.visitDate ?? compareReferencePhoto?.takenAt ?? null}
                     emptyText={compareBasis === 'previous' ? '前回の写真はまだありません' : '初回の写真はまだありません'}
                     onExpand={compareReferenceUrl ? () => setLightboxUrl(compareReferenceUrl) : undefined}
+                    aspectRatio="4 / 5"
                   />
                   <PhotoPanel
                     label="今回"
@@ -333,6 +338,7 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
                     visitDate={compareCurrentPhoto?.visitDate ?? compareCurrentPhoto?.takenAt ?? null}
                     emptyText="まだ写真がありません"
                     onExpand={compareCurrentUrl ? () => setLightboxUrl(compareCurrentUrl) : undefined}
+                    aspectRatio="4 / 5"
                   />
                 </div>
               ) : (
@@ -469,42 +475,42 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
                         ? photo.visitId === enlargedActiveVisitId
                         : o.key === enlargedOccasion?.key
                       const dateLabel = formatVisitDateLabel(photo.visitDate ?? photo.takenAt)
+                      // キャプション(写真の下・PhotoPanel/EnlargedPhotoPanelと同じ「画像の外に表示」
+                      // 方針に揃える)。既に取得済みのdateLabel/visitCountAtのみを使い、新規fetchは
+                      // 行わない。日付が取れない場合のみ来店回数を代わりに出す。
+                      const captionText = dateLabel
+                        ?? (photo.visitCountAt != null ? (photo.visitCountAt === 1 ? '初回' : `${photo.visitCountAt}回目`) : null)
                       return (
-                        <button
-                          key={o.key}
-                          type="button"
-                          onClick={() => openOccasionInEnlargeMode(o)}
-                          aria-label={`${dateLabel ?? ''}の写真を拡大表示`}
-                          style={{
-                            position: 'relative', aspectRatio: '1 / 1', borderRadius: '10px', overflow: 'hidden',
-                            padding: 0, cursor: 'pointer', background: '#EFE8DA',
-                            border: active && photoMode === 'enlarge' ? `2px solid ${PALETTE.gold}` : `1px solid ${PALETTE.border}`,
-                          }}
-                        >
-                          {url ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={url}
-                              alt=""
-                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                            />
-                          ) : (
-                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <ImageOff size={16} strokeWidth={1.3} color={PALETTE.gold} />
-                            </div>
+                        <div key={o.key}>
+                          <button
+                            type="button"
+                            onClick={() => openOccasionInEnlargeMode(o)}
+                            aria-label={`${dateLabel ?? ''}の写真を拡大表示`}
+                            style={{
+                              position: 'relative', aspectRatio: '1 / 1', borderRadius: '10px', overflow: 'hidden',
+                              padding: 0, cursor: 'pointer', background: '#EFE8DA', width: '100%',
+                              border: active && photoMode === 'enlarge' ? `2px solid ${PALETTE.gold}` : `1px solid ${PALETTE.border}`,
+                            }}
+                          >
+                            {url ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={url}
+                                alt=""
+                                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                              />
+                            ) : (
+                              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <ImageOff size={16} strokeWidth={1.3} color={PALETTE.gold} />
+                              </div>
+                            )}
+                          </button>
+                          {captionText && (
+                            <p style={{ margin: '4px 0 0', fontSize: '10px', color: PALETTE.muted, textAlign: 'center' }}>
+                              {captionText}
+                            </p>
                           )}
-                          {photo.visitCountAt != null && (
-                            <span
-                              style={{
-                                position: 'absolute', bottom: '4px', left: '4px', right: '4px',
-                                fontSize: '9px', fontWeight: 700, color: '#fff', textAlign: 'center',
-                                background: 'rgba(30,24,16,0.55)', borderRadius: '6px', padding: '2px 4px',
-                              }}
-                            >
-                              {photo.visitCountAt === 1 ? '初回' : `${photo.visitCountAt}回目`}
-                            </span>
-                          )}
-                        </button>
+                        </div>
                       )
                     })}
                   </div>

@@ -59,7 +59,7 @@ export function formatVisitDateLabel(dateStr: string | null): string | null {
 }
 
 export function PhotoPanel({
-  label, url, visitCountAt, visitDate, emptyText, onExpand,
+  label, url, visitCountAt, visitDate, emptyText, onExpand, aspectRatio = '5 / 4',
 }: {
   label: string
   url: string | undefined
@@ -67,6 +67,9 @@ export function PhotoPanel({
   visitDate: string | null
   emptyText: string
   onExpand?: () => void
+  /** コンテナのaspect-ratio(objectFit:coverでの切り抜き枠)。既定は元の顔写真比較用('5 / 4')を
+   *  維持しつつ、呼び出し元ごとに実際の写真比率(縦長ポートレート等)へ合わせられるようにする。 */
+  aspectRatio?: string
 }) {
   const dateLabel = formatVisitDateLabel(visitDate)
   const captionParts = [
@@ -78,7 +81,7 @@ export function PhotoPanel({
     <div>
       <div
         style={{
-          position: 'relative', aspectRatio: '5 / 4', borderRadius: '16px', overflow: 'hidden',
+          position: 'relative', aspectRatio, borderRadius: '16px', overflow: 'hidden',
           background: '#EFE8DA',
           border: url ? `1px solid ${PALETTE.border}` : `1.5px dashed ${PALETTE.border}`,
         }}
