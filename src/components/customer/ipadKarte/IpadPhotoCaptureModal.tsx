@@ -18,12 +18,31 @@
  *
  * photoTypeは常に'progress'固定(ユーザー確定・2026-09-15): iPadスタッフカルテの
  * 「前回|今回」比較は施術前後の区別を表示に使わないため、before/after選択UIは設けない。
+ *
+ * 撮影ガイド強化(PHASE IPAD-PHOTO-CAPTURE-3・2026-09-15): useFaceGuide.ts
+ * (@mediapipe/tasks-vision)による大きさ・位置・(正面のみ)傾きのリアルタイムフィードバック。
+ * 詳細はfaceGuideModeFor()・src/lib/photos/faceGuide.tsのコメント参照。実機での閾値
+ * チューニング前のPhase1実装であることに留意。
  */
 import { useEffect, useRef, useState } from 'react'
 import { Camera, ImagePlus, RotateCcw, X } from 'lucide-react'
 import { usePhotoCapture } from '@/hooks/usePhotoCapture'
+import { useFaceGuide } from '@/hooks/useFaceGuide'
+import { pickFaceGuideMessage, type FaceGuideMode } from '@/lib/photos/faceGuide'
 import { PALETTE, headingFont } from '@/components/customer/shared/PhotoCompareKit'
 import { IPAD_KARTE_ANGLES, type IpadKarteAngleId } from './ipadKarteData'
+
+/**
+ * 撮影ガイド強化(PHASE IPAD-PHOTO-CAPTURE-3・2026-09-15、久保田さん確認済みの設計)。
+ * 正面: 大きさ・位置・傾きの3種フィードバック。右斜め・左斜め: 大きさ・位置のみ
+ * (傾きの基準が未確定のため今回は見送り)。額: 顔検出自体を行わず静的な枠ガイドのみ
+ * (額クローズアップは目・鼻・口が写らずモデルが顔として認識できない可能性が高いため)。
+ */
+function faceGuideModeFor(bodyPart: string): FaceGuideMode {
+  if (bodyPart === 'face_front') return 'full'
+  if (bodyPart === 'face_right' || bodyPart === 'face_left') return 'position_size'
+  return 'none'
+}
 
 export type PhotoCaptureIntent = 'camera' | 'picker'
 
@@ -63,6 +82,10 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
   }, [capture.justSaved])
 
   const bodyPartSelected = isValidBodyPart(capture.bodyPart)
+  const faceGuideMode = faceGuideModeFor(capture.bodyPart)
+  const faceGuideActive = intent === 'camera' && capture.cameraStatus === 'ready' && bodyPartSelected
+  const faceGuide = useFaceGuide({ videoRef: capture.videoRef, mode: faceGuideMode, active: faceGuideActive })
+  const faceGuideMessage = faceGuide.state ? pickFaceGuideMessage(faceGuide.state) : null
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -206,6 +229,47 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
                     取得され続けるが(ghostUrl/ghostOpacityLevel)、未調整のまま本番で誤って
                     使われることのないよう、UIとしては意図的に描画しない。正式に作るかどうかは
                     別途相談の上で判断する。 */}
+
+                {/* 撮影ガイド強化(PHASE IPAD-PHOTO-CAPTURE-3・2026-09-15)。部位が選択済みの
+                    間のみ表示する(未選択のうちは何も描画しない)。 */}
+                {bodyPartSelected && capture.cameraStatus === 'ready' && (
+                  <>
+                    {faceGuideMode === 'none' ? (
+                      <div
+                        style={{
+                          position: 'absolute', left: '18%', right: '18%', top: '30%', height: '28%',
+                          border: '2px dashed rgba(255,255,255,0.7)', borderRadius: '8px', pointerEvents: 'none',
+                        }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          position: 'absolute', left: '28%', right: '28%', top: '14%', bottom: '18%',
+                          border: `2px dashed ${faceGuideMessage ? 'rgba(255,255,255,0.7)' : PALETTE.gold}`,
+                          borderRadius: '50%', pointerEvents: 'none',
+                        }}
+                      />
+                    )}
+
+                    {faceGuideMode === 'none' ? (
+                      <p style={{
+                        position: 'absolute', left: 0, right: 0, bottom: '10px', margin: 0,
+                        textAlign: 'center', fontSize: '12px', color: '#fff',
+                      }}>
+                        額を枠内に収めてください
+                      </p>
+                    ) : (
+                      <p style={{
+                        position: 'absolute', left: 0, right: 0, bottom: '10px', margin: 0,
+                        textAlign: 'center', fontSize: '12px', fontWeight: 700,
+                        color: faceGuideMessage ? '#fff' : PALETTE.gold,
+                      }}>
+                        {faceGuideMessage ?? (faceGuide.state?.faceDetected ? '✓ 良い構図です' : '')}
+                      </p>
+                    )}
+                  </>
+                )}
+
                 {capture.cameraStatus === 'requesting' && (
                   <p style={{
                     position: 'absolute', inset: 0, margin: 0, display: 'flex',
