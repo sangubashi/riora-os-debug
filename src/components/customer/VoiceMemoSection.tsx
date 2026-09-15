@@ -38,6 +38,7 @@ import { extractCustomerNotes } from '@/lib/voiceInsight/extractCustomerNotes'
 import type { MemoryType } from '@/types/customerMemory'
 import { logAction } from '@/lib/actionLog'
 import { authedFetch } from '@/lib/api/authedFetch'
+import { VOICE_MEMO_DISABLED } from '@/lib/constants'
 import VoiceNotesList from './VoiceNotesList'
 
 // ─── 型 ──────────────────────────────────────────────────────────────────────
@@ -482,6 +483,27 @@ const VoiceMemoSectionInner = memo(function VoiceMemoSection({
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
+
+  // 緊急停止(2026-09-15応急対応・VOICE_MEMO_DISABLED)。録音・保存・過去メモ閲覧を含め
+  // すべて非表示にし、準備中メッセージのみ表示する。上のフックはすべてこれより前で
+  // 呼び終えているため、ここで早期returnしてもフック呼び出し順序には影響しない。
+  if (VOICE_MEMO_DISABLED) {
+    return (
+      <div style={{ background: '#F0F5FA', borderRadius: '22px', padding: '16px' }}>
+        <p style={{ fontSize: '11px', letterSpacing: '0.18em', color: '#4878A8', fontWeight: 600, marginBottom: '12px' }}>
+          🎙️ 音声メモ
+        </p>
+        <div style={{
+          background: '#fff', borderRadius: '18px', padding: '20px 16px',
+          border: '1px solid #C8DCF0', textAlign: 'center',
+        }}>
+          <p style={{ fontSize: '13px', color: '#688098', lineHeight: 1.7, margin: 0 }}>
+            音声メモ機能は現在改善中です。
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ background: '#F0F5FA', borderRadius: '22px', padding: '16px' }}>
