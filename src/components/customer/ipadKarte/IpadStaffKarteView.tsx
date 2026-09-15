@@ -22,7 +22,6 @@ import { useState } from 'react'
 import { Flower2, X, Pencil, EyeOff } from 'lucide-react'
 import { useIpadKarteData, IPAD_KARTE_ANGLES, type IpadKarteAngleId, type RetailProductStatus } from './ipadKarteData'
 import KarteMemoSection from './KarteMemoSection'
-import GoalEditCard from './GoalEditCard'
 import { PALETTE, headingFont, Card, PhotoPanel, SkinTagRow } from '@/components/customer/shared/PhotoCompareKit'
 import { useNextVisit } from '@/lib/nextVisit/useNextVisit'
 import { formatWeeksLabel, formatApproxDateLabel } from '@/lib/nextVisit/nextVisitEngine'
@@ -435,18 +434,6 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
                   </div>
                 </Card>
               )}
-
-              {/* 目標編集(PHASE IPAD-6・2026-09-12・READ ONLY調査に基づき追加)。
-                  goal_noteの編集UI(GoalSection.tsx)がCustomerBottomSheet.tsxにしか無く
-                  196人中0人と定着していなかったため、iPadスタッフカルテ側にも編集導線を
-                  追加する。保存先・API(GET/PATCH /api/customers/[id]/goal)は無変更、
-                  CustomerBottomSheet.tsxにも一切触れない。常時表示(お客様の目標カードと
-                  同じ方針)。保存後はcontraindications/goalNoteのみ軽量再取得する。 */}
-              <GoalEditCard
-                customerId={customerId}
-                goalNote={data.goalNote}
-                onSaved={() => { void data.refetchGoalAndContraindications() }}
-              />
 
               <KarteMemoSection customerId={customerId} />
             </div>

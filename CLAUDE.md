@@ -77,6 +77,22 @@ commit 46c6900で削除したSalon Boardカルテ取込セクションとは別�
 AI提案の会話トーン・LINE領域・admin領域、およびそれ以外の顧客タブ/iPadカルテ画面の仕様
 については引き続き凍結を継続する。
 
+### v1.0.1 着手済み事項（スタッフカルテ「目標」表示・編集UIの削除のみ・2026-09-15ユーザー承認）
+
+お客様モードに続き、スタッフカルテ（iPad・スマホ）側の「目標」欄も不要と方針確定したため、
+以下の表示・編集UIに限り顧客タブ・CustomerBottomSheet.tsx・iPadカルテ画面の凍結を解除した。
+
+- `IpadStaffKarteView.tsx`から`GoalEditCard`の呼び出し（import・JSX・関連コメント）を削除。
+- `CustomerBottomSheet.tsx`から`GoalSection`の呼び出し（import・ErrorBoundaryラップ含む
+  JSX）を削除。
+- `GoalSection.tsx`・`GoalEditCard.tsx`のファイル自体、GET/PATCH `/api/customers/[id]/goal`
+  API、`brain_customers.goal_note`列・既存データはいずれも削除せず保全（呼び出し元が
+  無くなるのみ）。`ipadKarteData.ts`のgoalNote取得ロジック自体にも手を加えていない
+  （表示先が無くなり未使用データになるが、データ取得層はスコープ外のため無変更）。
+
+**この解除は上記UI削除に限る。** 5タブ構成・TL-5構成・AI提案の会話トーン・LINE領域・
+admin領域、およびそれ以外の顧客タブ/iPadカルテ画面の仕様については引き続き凍結を継続する。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

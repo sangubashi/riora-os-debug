@@ -94,7 +94,6 @@ import BookingPromptSection from '@/components/customer/BookingPromptSection';
 import ContraindicationSection from '@/components/customer/ContraindicationSection';
 import CustomerMemorySection from '@/components/customer/CustomerMemorySection';
 import CustomerMemoryTab from '@/components/customer/CustomerMemoryTab'
-import GoalSection from '@/components/customer/GoalSection';
 import StaffProposalSection from '@/components/customer/StaffProposalSection';
 import ProductProposalSection from '@/components/customer/ProductProposalSection';
 import SkinConditionSection from '@/components/customer/SkinConditionSection';
@@ -1596,14 +1595,6 @@ export default function CustomerBottomSheet({
                           <X size={14} color="#C8A58C" strokeWidth={2.5} />
                         </button>
                       </div>
-
-                      {/* デジタル顧客カルテ Phase1-B①: 🎯顧客目標(brain_customers.goal_note)。
-                          「見る情報」の最上部(ContraindicationSectionの次)に配置する。
-                          自己完結コンポーネントのためCustomerBottomSheet本体のstate/
-                          useEffectには手を加えない(ErrorBoundaryで隔離)。 */}
-                      <ErrorBoundary label="GoalSection" silentFail>
-                        <GoalSection customerId={c.id} />
-                      </ErrorBoundary>
 
                       {/* 前回の次回提案・前回の店販提案は2026-09-11仕様変更で「前回のサマリー」
                           カード内(下方)へ移動済み(ロジック無変更・移動のみ)。 */}
