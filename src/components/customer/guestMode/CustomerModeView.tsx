@@ -90,6 +90,14 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
   // (角度タブに連動。角度を切り替えるたびに取り直す)。
   const [thumbUrls, setThumbUrls] = useState<Record<string, string>>({})
 
+  // 写真の自由選択比較(お客様用カルテ自由選択比較・2026-09-15・設計確定)。
+  // 「前回↔今回」「初回↔今回」ショートカットとは独立した第3の選択肢で、来店回・角度を
+  // 問わず任意の2枚を選べる。角度をまたいで選択を保持する必要があるため、下の
+  // 角度切替リセットuseEffectの対象には含めない。
+  const [freeSelectMode, setFreeSelectMode] = useState(false)
+  const [selectedPhotoA, setSelectedPhotoA] = useState<TimelinePhoto | null>(null)
+  const [selectedPhotoB, setSelectedPhotoB] = useState<TimelinePhoto | null>(null)
+
   // 角度切替時は比較・拡大の選択状態をリセットする(別の角度の撮影機会を参照し続けるのを防ぐ)。
   useEffect(() => {
     setCompareBasis('previous')
@@ -131,6 +139,48 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
   const compareCurrentUrl = compareCurrentPhoto ? data.photoUrls[compareCurrentPhoto.id] : undefined
   const compareReferenceUrl = compareReferencePhoto ? data.photoUrls[compareReferencePhoto.id] : undefined
 
+  // 自由選択で選んだ写真のsigned URL(detail品質)。photoUrls(前回/初回/今回として
+  // 事前取得済みのもの)に無ければ都度取得する(enlargedPhotoと同じパターン)。
+  const [freeCompareUrls, setFreeCompareUrls] = useState<Record<string, string>>({})
+  useEffect(() => {
+    const need = [selectedPhotoA, selectedPhotoB]
+      .filter((p): p is TimelinePhoto => !!p)
+      .filter(p => !data.photoUrls[p.id] && !freeCompareUrls[p.id])
+    if (need.length === 0) return
+    let cancelled = false
+    void getBatchSignedUrls(customerId, need.map(p => p.id), 'detail').then(urls => {
+      if (!cancelled && Object.keys(urls).length > 0) setFreeCompareUrls(prev => ({ ...prev, ...urls }))
+    })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPhotoA?.id, selectedPhotoB?.id, customerId])
+
+  // 2枚が揃った瞬間、写真表示エリア(画面上部)までスクロールし直す
+  // (「過去の写真」サムネイルタップ時の拡大モード切替と同じ挙動)。
+  useEffect(() => {
+    if (freeSelectMode && selectedPhotoA && selectedPhotoB) {
+      scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPhotoA?.id, selectedPhotoB?.id])
+
+  // 比較パネルの左右(自由選択モードでは選んだ順=左が1枚目・右が2枚目で固定。
+  // 通常モードではショートカットのペアをそのまま使う)。
+  const leftPhoto  = freeSelectMode ? selectedPhotoA : compareReferencePhoto
+  const rightPhoto = freeSelectMode ? selectedPhotoB : compareCurrentPhoto
+  const leftUrl  = freeSelectMode
+    ? (selectedPhotoA ? (data.photoUrls[selectedPhotoA.id] ?? freeCompareUrls[selectedPhotoA.id]) : undefined)
+    : compareReferenceUrl
+  const rightUrl = freeSelectMode
+    ? (selectedPhotoB ? (data.photoUrls[selectedPhotoB.id] ?? freeCompareUrls[selectedPhotoB.id]) : undefined)
+    : compareCurrentUrl
+  const leftLabel  = freeSelectMode ? '選択した1枚目' : (compareBasis === 'previous' ? '前回' : '初回')
+  const rightLabel = freeSelectMode ? '選択した2枚目' : '今回'
+  const leftEmptyText  = freeSelectMode
+    ? '「過去の写真」から1枚目をタップして選んでください'
+    : (compareBasis === 'previous' ? '前回の写真はまだありません' : '初回の写真はまだありません')
+  const rightEmptyText = freeSelectMode ? '「過去の写真」から2枚目をタップして選んでください' : 'まだ写真がありません'
+
   // 拡大モード: 「初回」「前回」ショートカット＋全来店日リストから選んだ1枚を単独表示。
   const enlargedOccasion = useMemo(() => {
     if (occasions.length === 0) return null
@@ -169,6 +219,30 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
     setEnlargeOccasionKey(o.key)
     setEnlargeFallbackTab(null)
     scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  /**
+   * 「過去の写真」サムネイルタップ: 自由選択モード中(かつ比較タブ表示中)は比較対象への
+   * ピン留め/解除、それ以外は従来通り拡大モードへの切り替え(お客様用カルテ自由選択比較・
+   * 2026-09-15・設計確定)。3枚目のタップは先入れ先出し(1枚目を追い出し、2枚目だった
+   * 写真を1枚目へ繰り上げ、新しい写真を2枚目にする)で「常に直近タップした2枚」を維持する。
+   */
+  function onThumbnailTap(o: PhotoOccasion) {
+    if (!freeSelectMode || photoMode !== 'compare') {
+      openOccasionInEnlargeMode(o)
+      return
+    }
+    const photo = representativePhoto(o)
+    if (selectedPhotoA?.id === photo.id) { setSelectedPhotoA(null); return }
+    if (selectedPhotoB?.id === photo.id) { setSelectedPhotoB(null); return }
+    if (!selectedPhotoA) {
+      setSelectedPhotoA(photo)
+    } else if (!selectedPhotoB) {
+      setSelectedPhotoB(photo)
+    } else {
+      setSelectedPhotoA(selectedPhotoB)
+      setSelectedPhotoB(photo)
+    }
   }
 
   return (
@@ -282,16 +356,41 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
                   ))}
                 </div>
 
-                {photoMode === 'compare' && isComparable && (
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <ShortcutButton active={compareBasis === 'previous'} onClick={() => setCompareBasis('previous')}>
-                      前回↔今回
-                    </ShortcutButton>
-                    {showFirstShortcut && (
-                      <ShortcutButton active={compareBasis === 'first'} onClick={() => setCompareBasis('first')}>
-                        初回↔今回
-                      </ShortcutButton>
+                {photoMode === 'compare' && (
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {isComparable && (
+                      <>
+                        <ShortcutButton
+                          active={!freeSelectMode && compareBasis === 'previous'}
+                          onClick={() => { setFreeSelectMode(false); setCompareBasis('previous') }}
+                        >
+                          前回↔今回
+                        </ShortcutButton>
+                        {showFirstShortcut && (
+                          <ShortcutButton
+                            active={!freeSelectMode && compareBasis === 'first'}
+                            onClick={() => { setFreeSelectMode(false); setCompareBasis('first') }}
+                          >
+                            初回↔今回
+                          </ShortcutButton>
+                        )}
+                      </>
                     )}
+                    {/* 自由選択(お客様用カルテ自由選択比較・2026-09-15)。来店回・角度を問わず
+                        「過去の写真」から任意の2枚を選んで比較する。ONにすると解除するまで
+                        選択が有効(選択内容は角度タブをまたいでも保持される)。 */}
+                    <ShortcutButton
+                      active={freeSelectMode}
+                      onClick={() => {
+                        setFreeSelectMode(v => {
+                          const next = !v
+                          if (!next) { setSelectedPhotoA(null); setSelectedPhotoB(null) }
+                          return next
+                        })
+                      }}
+                    >
+                      🔀 自由選択
+                    </ShortcutButton>
                   </div>
                 )}
 
@@ -315,30 +414,57 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
                 )}
               </div>
 
+              {/* 自由選択の状態表示(お客様用カルテ自由選択比較・2026-09-15)。2枚揃うまでの
+                  案内と、選び直すためのクリア導線。 */}
+              {photoMode === 'compare' && freeSelectMode && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '10px' }}>
+                  <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>
+                    {selectedPhotoA && selectedPhotoB
+                      ? '選択した2枚を比較表示しています(別の写真をタップすると入れ替わります)'
+                      : !selectedPhotoA
+                        ? '下の「過去の写真」から1枚目をタップして選んでください(角度タブを切り替えてもOK)'
+                        : '2枚目をタップして選んでください'}
+                  </p>
+                  {(selectedPhotoA || selectedPhotoB) && (
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedPhotoA(null); setSelectedPhotoB(null) }}
+                      style={{
+                        background: 'none', border: 'none', color: PALETTE.gold, fontSize: '12px',
+                        fontWeight: 600, cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap',
+                      }}
+                    >
+                      選び直す
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* 写真表示: 比較モード(2枚並び・既存動作)｜拡大モード(1枚・ピンチズーム)。
                   PhotoPanel自体はobjectFit:containのため写真が見切れることは無いが、比較モードの
                   aspectRatioは既定値('5 / 4'・横長寄り)のままだと縦長の顔写真との差が大きく余白が
                   目立つため、実際の撮影写真に近い縦長比('4 / 5')を指定して余白を減らす。
                   IpadStaffKarteView側のPhotoPanel呼び出しはaspectRatio未指定のまま(既定値
-                  '5 / 4')のため、この指定による影響はない。 */}
+                  '5 / 4')のため、この指定による影響はない。自由選択モード中は左=1枚目(A)・
+                  右=2枚目(B)を選んだ順で固定表示する(leftPhoto/rightPhoto等を参照)。 */}
               {photoMode === 'compare' ? (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                   <PhotoPanel
-                    label={compareBasis === 'previous' ? '前回' : '初回'}
-                    url={compareReferenceUrl}
-                    visitCountAt={compareReferencePhoto?.visitCountAt ?? null}
-                    visitDate={compareReferencePhoto?.visitDate ?? compareReferencePhoto?.takenAt ?? null}
-                    emptyText={compareBasis === 'previous' ? '前回の写真はまだありません' : '初回の写真はまだありません'}
-                    onExpand={compareReferenceUrl ? () => setLightboxUrl(compareReferenceUrl) : undefined}
+                    label={leftLabel}
+                    url={leftUrl}
+                    visitCountAt={leftPhoto?.visitCountAt ?? null}
+                    visitDate={leftPhoto?.visitDate ?? leftPhoto?.takenAt ?? null}
+                    emptyText={leftEmptyText}
+                    onExpand={leftUrl ? () => setLightboxUrl(leftUrl) : undefined}
                     aspectRatio="4 / 5"
                   />
                   <PhotoPanel
-                    label="今回"
-                    url={compareCurrentUrl}
-                    visitCountAt={compareCurrentPhoto?.visitCountAt ?? null}
-                    visitDate={compareCurrentPhoto?.visitDate ?? compareCurrentPhoto?.takenAt ?? null}
-                    emptyText="まだ写真がありません"
-                    onExpand={compareCurrentUrl ? () => setLightboxUrl(compareCurrentUrl) : undefined}
+                    label={rightLabel}
+                    url={rightUrl}
+                    visitCountAt={rightPhoto?.visitCountAt ?? null}
+                    visitDate={rightPhoto?.visitDate ?? rightPhoto?.takenAt ?? null}
+                    emptyText={rightEmptyText}
+                    onExpand={rightUrl ? () => setLightboxUrl(rightUrl) : undefined}
                     aspectRatio="4 / 5"
                   />
                 </div>
@@ -481,16 +607,26 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
                       // 行わない。日付が取れない場合のみ来店回数を代わりに出す。
                       const captionText = dateLabel
                         ?? (photo.visitCountAt != null ? (photo.visitCountAt === 1 ? '初回' : `${photo.visitCountAt}回目`) : null)
+                      // 自由選択モード中のピン留め状態(1=1枚目・2=2枚目・null=未選択)。
+                      const pinSlot: 1 | 2 | null =
+                        photo.id === selectedPhotoA?.id ? 1 : photo.id === selectedPhotoB?.id ? 2 : null
+                      const freeSelectActive = freeSelectMode && photoMode === 'compare'
                       return (
                         <div key={o.key}>
                           <button
                             type="button"
-                            onClick={() => openOccasionInEnlargeMode(o)}
-                            aria-label={`${dateLabel ?? ''}の写真を拡大表示`}
+                            onClick={() => onThumbnailTap(o)}
+                            aria-label={
+                              freeSelectActive
+                                ? (pinSlot ? `${dateLabel ?? ''}の写真の選択を解除` : `${dateLabel ?? ''}の写真を比較対象に選ぶ`)
+                                : `${dateLabel ?? ''}の写真を拡大表示`
+                            }
                             style={{
                               position: 'relative', aspectRatio: '1 / 1', borderRadius: '10px', overflow: 'hidden',
                               padding: 0, cursor: 'pointer', background: '#EFE8DA', width: '100%',
-                              border: active && photoMode === 'enlarge' ? `2px solid ${PALETTE.gold}` : `1px solid ${PALETTE.border}`,
+                              border: pinSlot
+                                ? `2px solid ${PALETTE.gold}`
+                                : (active && photoMode === 'enlarge' ? `2px solid ${PALETTE.gold}` : `1px solid ${PALETTE.border}`),
                             }}
                           >
                             {url ? (
@@ -504,6 +640,18 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
                               <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <ImageOff size={16} strokeWidth={1.3} color={PALETTE.gold} />
                               </div>
+                            )}
+                            {pinSlot && (
+                              <span
+                                style={{
+                                  position: 'absolute', top: '4px', left: '4px', width: '18px', height: '18px',
+                                  borderRadius: '50%', background: PALETTE.gold, color: '#FFFFFF',
+                                  fontSize: '10px', fontWeight: 700,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}
+                              >
+                                {pinSlot}
+                              </span>
                             )}
                           </button>
                           {captionText && (
