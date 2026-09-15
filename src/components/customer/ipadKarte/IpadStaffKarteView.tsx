@@ -20,10 +20,11 @@
  * 写真比較UIはCustomerModeViewと共有(src/components/customer/shared/PhotoCompareKit.tsx)。
  */
 import { useState } from 'react'
-import { Flower2, X, Pencil, EyeOff, ChevronDown, Camera, ImagePlus } from 'lucide-react'
+import { Flower2, X, Pencil, EyeOff, ChevronDown, Camera, ImagePlus, Trash2 } from 'lucide-react'
 import { useIpadKarteData, IPAD_KARTE_ANGLES, type IpadKarteAngleId, type RetailProductStatus } from './ipadKarteData'
 import KarteMemoSection from './KarteMemoSection'
 import IpadPhotoCaptureModal, { type PhotoCaptureIntent } from './IpadPhotoCaptureModal'
+import IpadPhotoManageModal from './IpadPhotoManageModal'
 import { PALETTE, headingFont, Card, PhotoPanel, SkinTagRow } from '@/components/customer/shared/PhotoCompareKit'
 import { useNextVisit } from '@/lib/nextVisit/useNextVisit'
 import { formatWeeksLabel, formatApproxDateLabel } from '@/lib/nextVisit/nextVisitEngine'
@@ -375,6 +376,8 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
   // 写真撮影・追加フロー(PHASE IPAD-PHOTO-CAPTURE-1・2026-09-15緊急実装)。
   // 既存のPhotoPanel(表示・比較用)とは独立したフローとして、モーダル表示のon/offのみを持つ。
   const [photoCaptureIntent, setPhotoCaptureIntent] = useState<PhotoCaptureIntent | null>(null)
+  // 登録済み写真の削除フロー(PHASE IPAD-PHOTO-CAPTURE-2・2026-09-15)。同様に独立したモーダル。
+  const [photoManageOpen, setPhotoManageOpen] = useState(false)
 
   const pair = data.anglePairs[angle]
   const currentUrl = pair?.current ? data.photoUrls[pair.current.id] : undefined
@@ -530,6 +533,21 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
                     選択して追加
                   </button>
                 </div>
+
+                {/* 登録済み写真の削除(PHASE IPAD-PHOTO-CAPTURE-2・2026-09-15)。上のPhotoPanel
+                    (表示・比較用)・撮影・追加ボタンとは独立した入り口として追加した。 */}
+                <button
+                  type="button"
+                  onClick={() => setPhotoManageOpen(true)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    width: '100%', marginTop: '10px', padding: '10px', borderRadius: '10px',
+                    border: 'none', background: 'none', color: PALETTE.muted, fontSize: '12px', cursor: 'pointer',
+                  }}
+                >
+                  <Trash2 size={14} strokeWidth={1.8} color={PALETTE.muted} />
+                  写真を削除
+                </button>
               </Card>
 
               <KarteMemoSection customerId={customerId} />
@@ -668,6 +686,15 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
           intent={photoCaptureIntent}
           onClose={() => setPhotoCaptureIntent(null)}
           onSaved={() => { void data.refetchPhotos() }}
+        />
+      )}
+
+      {/* 写真削除モーダル(PHASE IPAD-PHOTO-CAPTURE-2・2026-09-15)。 */}
+      {photoManageOpen && (
+        <IpadPhotoManageModal
+          customerId={customerId}
+          onClose={() => setPhotoManageOpen(false)}
+          onDeleted={() => { void data.refetchPhotos() }}
         />
       )}
     </div>

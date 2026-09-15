@@ -47,12 +47,14 @@ import {
 import { buildVisitTabs, type VisitTab } from '@/lib/photos/timelineGrouping'
 import { getHomecareUsageGuide } from '@/lib/homecare/homecareUsageGuide'
 
-// PHOTO_LABEL_REALIGN_1(2026-09-13): 部位語彙が正面/斜め/顎/額の4つに変更されたため、
-// お客様モードの角度タブもこれに合わせる(src/lib/photos/bodyParts.ts参照)。
+// PHOTO_LABEL_REALIGN_2(2026-09-15): iPadスタッフカルテ側(src/components/customer/ipadKarte/
+// ipadKarteData.ts の IPAD_KARTE_ANGLES)と同時に変更(現場の手書きメモの運用実態に合わせ、
+// 「顎」を削除し「斜め」を「右」「左」に分割。基準は「写真に写って見えている通りの右・左」)。
+// 同じ写真をお客様モード/iPadの両方で見るため、ラベルが矛盾しないよう必ず同時変更する。
 export const CUSTOMER_MODE_ANGLES = [
   { id: 'face_front', label: '正面' },
-  { id: 'face_oblique', label: '斜め' },
-  { id: 'chin', label: '顎' },
+  { id: 'face_right', label: '右' },
+  { id: 'face_left', label: '左' },
   { id: 'forehead', label: '額' },
 ] as const
 

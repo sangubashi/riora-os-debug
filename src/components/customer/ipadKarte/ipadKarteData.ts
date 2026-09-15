@@ -35,12 +35,17 @@ import {
 import { pickNotableSkinTags, type SkinTagChip } from '@/components/customer/guestMode/customerModeData'
 import { getHomecareUsageGuide } from '@/lib/homecare/homecareUsageGuide'
 
-// PHOTO_LABEL_REALIGN_1(2026-09-13): 部位語彙が正面/斜め/顎/額の4つに変更されたため、
-// iPadスタッフカルテの角度タブもこれに合わせる(src/lib/photos/bodyParts.ts参照)。
+// PHOTO_LABEL_REALIGN_2(2026-09-15): 現場の手書きメモの運用実態(正・右・左・デコ)に合わせ、
+// 「顎」を削除し「斜め」を「右」「左」に分割した(基準は「写真に写って見えている通りの
+// 右・左」)。face_oblique/chinの既存データ(現状0件)はDBの値を書き換えず、
+// src/lib/photos/bodyParts.tsのbodyPartLabel()でレガシー表示ラベルのみ引き続き解決する
+// (新規アップロードの選択肢には出さない、PHOTO_LABEL_REALIGN_1と同じパターン)。
+// お客様モードの角度タブ(src/components/customer/guestMode/customerModeData.ts の
+// CUSTOMER_MODE_ANGLES)も同時に変更し、iPad側とラベルが矛盾しないようにする。
 export const IPAD_KARTE_ANGLES = [
   { id: 'face_front', label: '正面' },
-  { id: 'face_oblique', label: '斜め' },
-  { id: 'chin', label: '顎' },
+  { id: 'face_right', label: '右' },
+  { id: 'face_left', label: '左' },
   { id: 'forehead', label: '額' },
 ] as const
 
