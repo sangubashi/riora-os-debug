@@ -6,10 +6,11 @@
  * CustomerBottomSheet本体のstate/useEffectには一切触れず、customerId/customerNameのみを
  * 受け取る自己完結コンポーネント(CustomerModeViewと同じ設計方針)。
  *
- * 今回のスコープ(🟢項目のみ・READ ONLY調査2026-09-11で合意):
- *   左カラム: 重要事項・目標・カルテメモ(PHASE IPAD-3で追加)
- *   右カラム: 写真カルテ(正面/左45/右45、前回|今回比較)・肌の特徴タグ(簡易版)・
- *             今日の施術(自由記述、手順テンプレート化はしない)・次回の目安
+ * 2カラムレイアウト(2026-09-15時点):
+ *   左カラム: 重要事項・写真カルテ(正面/左45/右45、前回|今回比較)・カルテメモ
+ *   右カラム: 顧客ステータス・肌の特徴タグ(簡易版)・今日の施術(自由記述、手順
+ *             テンプレート化はしない)・今回のホームケア・次回の目安
+ * (写真カルテは元々右カラムだったが、右カラムの縦の集中を緩和するため左カラムへ移動した)
  * 前回の施術・AI接客ポイント・次回提案は次フェーズ(🟡項目)のため、この画面にはまだ無い。
  *
  * カルテメモ(customer_karte_memos)はcustomer_memories/customer_notesとは独立した
@@ -435,20 +436,8 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
                 </Card>
               )}
 
-              <KarteMemoSection customerId={customerId} />
-            </div>
-
-            {/* ── 右カラム ── */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/* 顧客ステータス(購買・来店周期データ管理 Phase1・2026-09-12)。すべて自動計算・
-                  スタッフ入力不要。次回目安の編集操作自体は下のNextVisitCardが担う。 */}
-              <CustomerStatusPanel
-                customerId={customerId}
-                lastVisitDate={data.lastVisitDate}
-                visitCount={data.visitCount}
-                retailProducts={data.retailProducts}
-              />
-
+              {/* 写真カルテ(2026-09-15・右カラムの縦の集中を緩和するため左カラムへ移動。
+                  ロジック・見た目自体は無変更、位置のみの変更)。 */}
               <Card title="📷 写真カルテ（前回｜今回）">
                 <div style={{ display: 'flex', gap: '24px', borderBottom: `1px solid ${PALETTE.border}`, marginBottom: '16px' }}>
                   {IPAD_KARTE_ANGLES.map(a => (
@@ -487,6 +476,20 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
                   />
                 </div>
               </Card>
+
+              <KarteMemoSection customerId={customerId} />
+            </div>
+
+            {/* ── 右カラム ── */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* 顧客ステータス(購買・来店周期データ管理 Phase1・2026-09-12)。すべて自動計算・
+                  スタッフ入力不要。次回目安の編集操作自体は下のNextVisitCardが担う。 */}
+              <CustomerStatusPanel
+                customerId={customerId}
+                lastVisitDate={data.lastVisitDate}
+                visitCount={data.visitCount}
+                retailProducts={data.retailProducts}
+              />
 
               {data.currentSkinTags.length > 0 && (
                 <Card title="✨ 肌の特徴">
