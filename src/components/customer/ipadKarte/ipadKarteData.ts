@@ -44,8 +44,8 @@ import { getHomecareUsageGuide } from '@/lib/homecare/homecareUsageGuide'
 // CUSTOMER_MODE_ANGLES)も同時に変更し、iPad側とラベルが矛盾しないようにする。
 export const IPAD_KARTE_ANGLES = [
   { id: 'face_front', label: '正面' },
-  { id: 'face_right', label: '右' },
-  { id: 'face_left', label: '左' },
+  { id: 'face_right', label: '右斜め' },
+  { id: 'face_left', label: '左斜め' },
   { id: 'forehead', label: '額' },
 ] as const
 

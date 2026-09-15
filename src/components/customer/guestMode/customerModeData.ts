@@ -53,8 +53,8 @@ import { getHomecareUsageGuide } from '@/lib/homecare/homecareUsageGuide'
 // 同じ写真をお客様モード/iPadの両方で見るため、ラベルが矛盾しないよう必ず同時変更する。
 export const CUSTOMER_MODE_ANGLES = [
   { id: 'face_front', label: '正面' },
-  { id: 'face_right', label: '右' },
-  { id: 'face_left', label: '左' },
+  { id: 'face_right', label: '右斜め' },
+  { id: 'face_left', label: '左斜め' },
   { id: 'forehead', label: '額' },
 ] as const
 

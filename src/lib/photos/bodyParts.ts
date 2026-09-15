@@ -34,8 +34,8 @@ export interface BodyPartOption {
 /** 新規アップロード時に選択できる語彙(常にこの中から明示的に選ぶ・自動仮割当ては行わない)。 */
 export const BODY_PART_OPTIONS: BodyPartOption[] = [
   { id: 'face_front', label: '正面' },
-  { id: 'face_right', label: '右' },
-  { id: 'face_left',  label: '左' },
+  { id: 'face_right', label: '右斜め' },
+  { id: 'face_left',  label: '左斜め' },
   { id: 'forehead',   label: '額' },
 ]
 
