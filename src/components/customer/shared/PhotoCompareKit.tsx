@@ -67,8 +67,9 @@ export function PhotoPanel({
   visitDate: string | null
   emptyText: string
   onExpand?: () => void
-  /** コンテナのaspect-ratio(objectFit:coverでの切り抜き枠)。既定は元の顔写真比較用('5 / 4')を
-   *  維持しつつ、呼び出し元ごとに実際の写真比率(縦長ポートレート等)へ合わせられるようにする。 */
+  /** コンテナのaspect-ratio(objectFit:containの表示枠。写真自体の比率とここが違うと
+   *  上下または左右に余白が生まれるが、写真が見切れることはない)。既定は元の顔写真比較用
+   *  ('5 / 4')を維持しつつ、呼び出し元ごとに実際の写真比率へ近づけて余白を減らせるようにする。 */
   aspectRatio?: string
 }) {
   const dateLabel = formatVisitDateLabel(visitDate)
@@ -91,7 +92,7 @@ export function PhotoPanel({
           <img
             src={url}
             alt={`${label}の写真`}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+            style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
           />
         ) : (
           <div

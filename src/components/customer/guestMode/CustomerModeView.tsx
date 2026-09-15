@@ -316,10 +316,11 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
               </div>
 
               {/* 写真表示: 比較モード(2枚並び・既存動作)｜拡大モード(1枚・ピンチズーム)。
-                  比較モードのaspectRatioは既定値('5 / 4'・横長寄り)のままだと縦長の顔写真を
-                  objectFit:coverで切り抜く際に上下(特に顎周辺)が見切れるため、実際の撮影
-                  写真に近い縦長比('4 / 5')を指定する。IpadStaffKarteView側のPhotoPanel呼び出しは
-                  aspectRatio未指定のまま(既定値'5 / 4')のため、この変更による影響はない。 */}
+                  PhotoPanel自体はobjectFit:containのため写真が見切れることは無いが、比較モードの
+                  aspectRatioは既定値('5 / 4'・横長寄り)のままだと縦長の顔写真との差が大きく余白が
+                  目立つため、実際の撮影写真に近い縦長比('4 / 5')を指定して余白を減らす。
+                  IpadStaffKarteView側のPhotoPanel呼び出しはaspectRatio未指定のまま(既定値
+                  '5 / 4')のため、この指定による影響はない。 */}
               {photoMode === 'compare' ? (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                   <PhotoPanel

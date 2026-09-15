@@ -93,6 +93,25 @@ AI提案の会話トーン・LINE領域・admin領域、およびそれ以外の
 **この解除は上記UI削除に限る。** 5タブ構成・TL-5構成・AI提案の会話トーン・LINE領域・
 admin領域、およびそれ以外の顧客タブ/iPadカルテ画面の仕様については引き続き凍結を継続する。
 
+### v1.0.1 着手済み事項（IpadStaffKarteView.tsx「前回/今回」写真表示のobjectFit修正のみ・2026-09-15ユーザー承認）
+
+お客様モード側の写真見切れ修正（aspectRatio調整）だけでは解消せず、objectFit:coverである
+限り写真とコンテナの比率が一致しない場合に必ずどこかが切り抜かれる構造的な問題と判明した。
+iPadスタッフカルテ側の「前回/今回」写真表示でも同じ見切れが確認されたため、共有コンポーネント
+`PhotoPanel`（`src/components/customer/shared/PhotoCompareKit.tsx`）のobjectFitを
+`cover`から`contain`へ変更する範囲に限り、iPadカルテ画面の凍結を解除した。
+
+- `PhotoPanel`はCustomerModeView.tsx（お客様モード）・IpadStaffKarteView.tsx（iPadスタッフ
+  カルテ「前回/今回」）の両方から使われる共有部品のため、この1箇所の変更で両画面に適用される。
+- containへの変更により、写真とコンテナの比率が一致しない場合に上下または左右へ余白が
+  生まれる可能性があるが、「写真全体が見切れないこと」をユーザー指示により優先する。
+- `EnlargedPhotoPanel`（拡大モード・お客様モードのみ）は元々objectFit:containだったため
+  変更不要だった。
+
+**この解除は上記objectFit変更（およびそれに伴うコメント更新）に限る。** 5タブ構成・
+TL-5構成・AI提案の会話トーン・LINE領域・admin領域、およびそれ以外の顧客タブ/iPadカルテ
+画面の仕様については引き続き凍結を継続する。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。
