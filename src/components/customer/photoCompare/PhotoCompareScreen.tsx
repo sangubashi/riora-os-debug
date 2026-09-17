@@ -44,8 +44,11 @@ interface Props {
   onClose: () => void
 }
 
+// objectFitはcontain(写真全体を必ず表示する)。coverだと縦長写真を横長画面に表示した際に
+// 上下(額・顎)が大きく切り取られてしまう(PhotoPanel共有コンポーネントで過去に対応した
+// のと同じ問題。CLAUDE.md参照)。
 const imgBaseStyle: React.CSSProperties = {
-  position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
+  position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain',
   willChange: 'transform', userSelect: 'none', pointerEvents: 'none',
 }
 
