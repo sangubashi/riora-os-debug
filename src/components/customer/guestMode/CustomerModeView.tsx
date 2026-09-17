@@ -20,7 +20,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Playfair_Display } from 'next/font/google'
-import { X, Leaf, CalendarDays, Flower2, ImageOff } from 'lucide-react'
+import { X, Leaf, CalendarDays, Flower2, ImageOff, SlidersHorizontal } from 'lucide-react'
 import {
   useCustomerModeData,
   CUSTOMER_MODE_ANGLES,
@@ -38,6 +38,7 @@ import {
 } from '@/lib/photos/comparisonSelection'
 import { getPhotoSignedUrl, getBatchSignedUrls, type TimelinePhoto } from '@/lib/photos/photoApiClient'
 import { usePinchZoom } from './usePinchZoom'
+import PhotoCompareScreen from '@/components/customer/photoCompare/PhotoCompareScreen'
 import {
   PALETTE,
   headingFont,
@@ -75,6 +76,10 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
   // 写真カルテ 比較｜拡大モード切替(PHASE GUEST-MODE-3・2026-09-12)。
   const [photoMode, setPhotoMode] = useState<'compare' | 'enlarge'>('compare')
   const [compareBasis, setCompareBasis] = useState<ComparisonBasis>('previous')
+  // スライダー比較(PhotoCompareScreen、2026-09-17導線変更): 撮影用ゴースト/ジャイロ画面
+  // (IpadPhotoCaptureModal.tsx)とは無関係の、保存済み写真の閲覧専用モーダル。
+  // お客様に見せる画面であるお客様モード側に導線を集約する(スタッフ用カルテからは削除済み)。
+  const [sliderCompareOpen, setSliderCompareOpen] = useState(false)
   // 拡大モードで選択中の撮影機会key(comparisonSelection.tsのoccasionKey形式と同じ)。
   // null = 「今回」(最新の撮影機会)を表す。全来店日リストから選ぶと`visit:${visitId}`になる。
   const [enlargeOccasionKey, setEnlargeOccasionKey] = useState<string | null>(null)
@@ -338,22 +343,40 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
             <>
               {/* 比較｜拡大 モード切替 + ショートカット(PHASE GUEST-MODE-3) */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
-                <div style={{ display: 'inline-flex', background: PALETTE.bg, border: `1px solid ${PALETTE.border}`, borderRadius: '999px', padding: '3px' }}>
-                  {(['compare', 'enlarge'] as const).map(m => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setPhotoMode(m)}
-                      style={{
-                        padding: '7px 18px', borderRadius: '999px', border: 'none', cursor: 'pointer',
-                        fontSize: '12px', fontWeight: 700, letterSpacing: '0.04em',
-                        background: photoMode === m ? PALETTE.gold : 'transparent',
-                        color: photoMode === m ? '#FFFFFF' : PALETTE.muted,
-                      }}
-                    >
-                      {m === 'compare' ? '比較' : '拡大'}
-                    </button>
-                  ))}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'inline-flex', background: PALETTE.bg, border: `1px solid ${PALETTE.border}`, borderRadius: '999px', padding: '3px' }}>
+                    {(['compare', 'enlarge'] as const).map(m => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setPhotoMode(m)}
+                        style={{
+                          padding: '7px 18px', borderRadius: '999px', border: 'none', cursor: 'pointer',
+                          fontSize: '12px', fontWeight: 700, letterSpacing: '0.04em',
+                          background: photoMode === m ? PALETTE.gold : 'transparent',
+                          color: photoMode === m ? '#FFFFFF' : PALETTE.muted,
+                        }}
+                      >
+                        {m === 'compare' ? '比較' : '拡大'}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* スライダー比較(PhotoCompareScreen、2026-09-17導線変更)。上の比較｜拡大とは
+                      独立した別モーダルとして開く(既存のPhotoPanel・自由選択比較には手を加えない)。 */}
+                  <button
+                    type="button"
+                    onClick={() => setSliderCompareOpen(true)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '6px',
+                      padding: '7px 16px', borderRadius: '999px', cursor: 'pointer',
+                      fontSize: '12px', fontWeight: 700, letterSpacing: '0.02em',
+                      border: `1px solid ${PALETTE.border}`, background: 'none', color: PALETTE.text,
+                    }}
+                  >
+                    <SlidersHorizontal size={13} strokeWidth={1.8} color={PALETTE.gold} />
+                    スライダーで比較
+                  </button>
                 </div>
 
                 {photoMode === 'compare' && (
@@ -728,6 +751,17 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
             <X size={18} />
           </button>
         </div>
+      )}
+
+      {/* スライダー比較(PhotoCompareScreen、2026-09-17導線変更)。撮影用ゴースト/ジャイロ画面
+          (IpadPhotoCaptureModal.tsx)とは無関係。お客様に見せる画面としてこちら側に導線を
+          集約した(スタッフ用カルテ側の同機能は削除済み)。 */}
+      {sliderCompareOpen && (
+        <PhotoCompareScreen
+          customerId={customerId}
+          initialBodyPart={angle}
+          onClose={() => setSliderCompareOpen(false)}
+        />
       )}
     </div>
   )
