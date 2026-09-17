@@ -20,11 +20,12 @@
  * 写真比較UIはCustomerModeViewと共有(src/components/customer/shared/PhotoCompareKit.tsx)。
  */
 import { useState } from 'react'
-import { Flower2, X, Pencil, EyeOff, ChevronDown, Camera, ImagePlus, Trash2 } from 'lucide-react'
+import { Flower2, X, Pencil, EyeOff, ChevronDown, Camera, ImagePlus, Trash2, GitCompareArrows } from 'lucide-react'
 import { useIpadKarteData, IPAD_KARTE_ANGLES, type IpadKarteAngleId, type RetailProductStatus } from './ipadKarteData'
 import KarteMemoSection from './KarteMemoSection'
 import IpadPhotoCaptureModal, { type PhotoCaptureIntent } from './IpadPhotoCaptureModal'
 import IpadPhotoManageModal from './IpadPhotoManageModal'
+import PhotoCompareScreen from '@/components/customer/photoCompare/PhotoCompareScreen'
 import { PALETTE, headingFont, Card, PhotoPanel, SkinTagRow } from '@/components/customer/shared/PhotoCompareKit'
 import { useNextVisit } from '@/lib/nextVisit/useNextVisit'
 import { formatWeeksLabel, formatApproxDateLabel } from '@/lib/nextVisit/nextVisitEngine'
@@ -378,6 +379,7 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
   const [photoCaptureIntent, setPhotoCaptureIntent] = useState<PhotoCaptureIntent | null>(null)
   // 登録済み写真の削除フロー(PHASE IPAD-PHOTO-CAPTURE-2・2026-09-15)。同様に独立したモーダル。
   const [photoManageOpen, setPhotoManageOpen] = useState(false)
+  const [compareOpen, setCompareOpen] = useState(false)
 
   const pair = data.anglePairs[angle]
   const currentUrl = pair?.current ? data.photoUrls[pair.current.id] : undefined
@@ -533,6 +535,23 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
                     選択して追加
                   </button>
                 </div>
+
+                {/* Before/After比較UI(写真カルテ Phase 2・2026-09-17)。撮影用ゴーストUI
+                    (IpadPhotoCaptureModal.tsx)とは完全に別画面。保存済み写真の閲覧専用の
+                    独立した入り口として追加した(上のPhotoPanel自体には手を加えていない)。 */}
+                <button
+                  type="button"
+                  onClick={() => setCompareOpen(true)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    width: '100%', marginTop: '10px', padding: '10px', borderRadius: '10px',
+                    border: `1.5px solid ${PALETTE.border}`, background: 'none', color: PALETTE.text,
+                    fontSize: '12px', cursor: 'pointer',
+                  }}
+                >
+                  <GitCompareArrows size={14} strokeWidth={1.8} color={PALETTE.gold} />
+                  写真を比較(スライダー)
+                </button>
 
                 {/* 登録済み写真の削除(PHASE IPAD-PHOTO-CAPTURE-2・2026-09-15)。上のPhotoPanel
                     (表示・比較用)・撮影・追加ボタンとは独立した入り口として追加した。 */}
@@ -695,6 +714,15 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
           customerId={customerId}
           onClose={() => setPhotoManageOpen(false)}
           onDeleted={() => { void data.refetchPhotos() }}
+        />
+      )}
+
+      {/* Before/After比較UI(写真カルテ Phase 2・2026-09-17)。撮影・ゴーストとは完全に別画面。 */}
+      {compareOpen && (
+        <PhotoCompareScreen
+          customerId={customerId}
+          initialBodyPart={angle}
+          onClose={() => setCompareOpen(false)}
         />
       )}
     </div>
