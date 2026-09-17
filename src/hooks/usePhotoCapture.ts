@@ -148,6 +148,40 @@ export function usePhotoCapture(options: UsePhotoCaptureOptions) {
     }
   }, [releaseStream])
 
+  // 連続撮影で画面が真っ黒になる不具合の修正(2026-09-17調査・原因確定):
+  // IpadPhotoCaptureModal.tsx側は「reviewPhase==='reviewing'の間だけ<video>を描画し、
+  // それ以外はvideoを含む別のJSXツリーを描画する」構造になっており、レビュー画面から
+  // カメラ映像へ戻るたびにReactが<video>を新しいDOM要素として再マウントする
+  // (実機なしでPlaywright+フェイクカメラで実測済み: シャッター前はsrcObjectあり・
+  // videoWidth>0だったのに、「撮り直す」後は別のDOM要素・srcObject=null・videoWidth=0に
+  // なることを確認)。startCamera()はモーダル最初の1回しか呼ばれずsrcObjectを設定しないため、
+  // 新しいvideo要素は誰にもストリームを割り当てられないまま真っ黒になる。
+  //
+  // Reactはコミット時にrefを同期的に更新するため、この副作用が実行される時点で
+  // videoRef.currentは(新しいDOM要素に置き換わっていたとしても)既に最新の要素を
+  // 指している。ref自体の変更を検知する仕組みは不要で、reviewPhase/cameraStatusという
+  // 「videoの描画有無に直結するstate」の変化を検知するだけで十分。
+  //
+  // 既存ストリーム(streamRef.current)は停止・再取得せず、新しいvideo要素への再アタッチ
+  // (srcObject再設定+play()再実行)のみを行う。play()が失敗した場合は既存の
+  // startCamera()と同じ分類・状態管理(classifyCameraError→cameraStatus='error')に
+  // 委ね、「もう一度試す」ボタン(retryCamera=startCamera)による正規の再取得で復旧させる
+  // (この副作用自身はreleaseStreamを呼ばない。既存ストリームの停止はstartCamera側の
+  // 責務のまま変更しない)。
+  useEffect(() => {
+    if (reviewPhase === 'reviewing') return
+    if (cameraStatus !== 'ready') return
+    const video = videoRef.current
+    const stream = streamRef.current
+    if (!video || !stream || video.srcObject) return
+
+    video.srcObject = stream
+    video.play().catch(err => {
+      setCameraStatus('error')
+      setCameraErrorKind(classifyCameraError(err, true))
+    })
+  }, [reviewPhase, cameraStatus])
+
   // ── ゴースト取得(bodyPart/photoType/visitId変化のたびに再取得) ─────────────
   useEffect(() => {
     let cancelled = false
