@@ -24,9 +24,10 @@ import { Calendar, Maximize2, Minimize2, MoveHorizontal, Rows3, SlidersHorizonta
 import { listCustomerPhotosTimeline, getBatchSignedUrls, type TimelinePhoto } from '@/lib/photos/photoApiClient'
 import {
   pickInitialComparisonPair,
-  listOccasionOptions,
-  formatOccasionDateLabel,
-  type OccasionOption,
+  listPhotoOptions,
+  formatPhotoDateLabel,
+  buildPhotoOptionLabels,
+  type PhotoOption,
 } from '@/lib/photos/comparePairSelection'
 import type { ComparisonPair } from '@/lib/photos/comparisonSelection'
 import { bodyPartLabel } from '@/lib/photos/bodyParts'
@@ -110,12 +111,17 @@ export default function PhotoCompareScreen({ customerId, initialBodyPart, onClos
     }
   }
 
-  const occasionOptions: OccasionOption[] = useMemo(
-    () => (pair ? listOccasionOptions(photos, pair.bodyPart) : []),
+  // 個別写真単位の比較候補一覧(2026-09-17改訂: 撮影機会への丸め込みを行わないため、
+  // 同一日・同一visitの複数枚もすべて独立した候補として並ぶ)。
+  const photoOptions: PhotoOption[] = useMemo(
+    () => (pair ? listPhotoOptions(photos, pair.bodyPart) : []),
     [photos, pair]
   )
+  // 各候補の表示ラベル(同日・同時刻の写真も個別に識別できるよう、必要に応じて
+  // 時刻・連番を付ける)。photoOptionsと同じ順序・同じ長さの配列。
+  const photoOptionLabels = useMemo(() => buildPhotoOptionLabels(photoOptions), [photoOptions])
 
-  const selectOccasion = (option: OccasionOption) => {
+  const selectPhotoOption = (option: PhotoOption) => {
     if (!pair || !pickerSide) return
     setPair({ ...pair, [pickerSide]: option.photo })
     setPickerSide(null)
@@ -138,8 +144,8 @@ export default function PhotoCompareScreen({ customerId, initialBodyPart, onClos
     draggingHandleRef.current = false
   }
 
-  const referenceLabel = formatOccasionDateLabel(pair?.reference.takenAt ?? new Date().toISOString())
-  const currentLabel = formatOccasionDateLabel(pair?.current.takenAt ?? new Date().toISOString())
+  const referenceLabel = formatPhotoDateLabel(pair?.reference.takenAt ?? new Date().toISOString())
+  const currentLabel = formatPhotoDateLabel(pair?.current.takenAt ?? new Date().toISOString())
 
   return (
     <div
@@ -269,14 +275,13 @@ export default function PhotoCompareScreen({ customerId, initialBodyPart, onClos
               今回(右)を選ぶ
             </button>
           </div>
-          {occasionOptions.map(o => {
-            const label = formatOccasionDateLabel(o.photo.takenAt)
+          {photoOptions.map((o, i) => {
             const isSelected = pickerSide === 'reference' ? o.photo.id === pair.reference.id : o.photo.id === pair.current.id
             return (
               <button
-                key={o.key}
+                key={o.photo.id}
                 type="button"
-                onClick={() => selectOccasion(o)}
+                onClick={() => selectPhotoOption(o)}
                 style={{
                   display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: '8px',
                   border: 'none', cursor: 'pointer', fontSize: '12px', marginBottom: '4px',
@@ -284,7 +289,7 @@ export default function PhotoCompareScreen({ customerId, initialBodyPart, onClos
                   color: isSelected ? '#fff' : PALETTE.text,
                 }}
               >
-                {label.dateStr}（{label.relative}）
+                {photoOptionLabels[i]}
               </button>
             )
           })}

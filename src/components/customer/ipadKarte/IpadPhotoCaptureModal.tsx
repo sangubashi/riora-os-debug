@@ -71,6 +71,16 @@ function faceGuideModeFor(bodyPart: string): FaceGuideMode {
  */
 const SAVED_FLASH_DURATION_MS = 900
 
+/**
+ * 撮影日入力(<input type="date">)のmax属性用に、今日の日付を"YYYY-MM-DD"
+ * (ローカルタイムゾーン基準)で返す。未来日を撮影日として指定できないようにする。
+ */
+function todayDateInputValue(): string {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 export type PhotoCaptureIntent = 'camera' | 'picker'
 
 interface Props {
@@ -125,6 +135,11 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
   const capture = usePhotoCapture({ customerId, visitId, initialBodyPart: '' })
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [pickerBusy, setPickerBusy] = useState(false)
+  // 撮影日の明示指定(過去写真登録)。"YYYY-MM-DD"のUI表示用state。空文字=未指定
+  // (既存どおりアップロード時刻を撮影日時として使う)。usePhotoCapture.tsの
+  // takenAtOverrideへは"T12:00:00.000Z"(UTC正午)を付けて渡す(日付のみ指定時、
+  // タイムゾーンに関わらず指定した日付がそのまま保存されるようにするための安全策)。
+  const [takenAtDateInput, setTakenAtDateInput] = useState('')
   const [dateListOpen, setDateListOpen] = useState(false)
 
   // 自動保存フィードバック(2026-09-17): reviewPhaseが'confirmed'になった瞬間
@@ -593,6 +608,46 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
       ) : (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', padding: '24px' }}>
           <div style={{ width: '100%', maxWidth: '360px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {/* 撮影日の指定(過去写真登録・2026-09-17設計調査で確定)。未指定(既定)の間は
+                既存どおりアップロード時刻がそのまま保存日時になる(既存動作を維持)。
+                過去の写真をまとめて登録する場合のみ、ここで撮影日(日付のみ)を選ぶ。 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <label style={{ fontSize: '12px', color: PALETTE.muted, whiteSpace: 'nowrap' }}>
+                撮影日(任意)
+              </label>
+              <input
+                type="date"
+                value={takenAtDateInput}
+                max={todayDateInputValue()}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setTakenAtDateInput(v)
+                  capture.setTakenAtOverride(v ? `${v}T12:00:00.000Z` : null)
+                }}
+                style={{
+                  flex: 1, minWidth: '140px', padding: '8px 10px', borderRadius: '8px',
+                  border: `1px solid ${PALETTE.border}`, background: PALETTE.card, color: PALETTE.text,
+                  fontSize: '13px',
+                }}
+              />
+              {takenAtDateInput && (
+                <button
+                  type="button"
+                  onClick={() => { setTakenAtDateInput(''); capture.setTakenAtOverride(null) }}
+                  style={{
+                    padding: '6px 10px', borderRadius: '8px', border: 'none', background: 'none',
+                    color: PALETTE.muted, fontSize: '12px', cursor: 'pointer',
+                  }}
+                >
+                  今日に戻す
+                </button>
+              )}
+            </div>
+            {takenAtDateInput && (
+              <p style={{ margin: 0, fontSize: '11px', color: PALETTE.muted }}>
+                この日付({takenAtDateInput})で保存されます。空欄に戻すと本日の日時で保存されます。
+              </p>
+            )}
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}

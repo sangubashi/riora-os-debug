@@ -61,6 +61,13 @@ export function usePhotoCapture(options: UsePhotoCaptureOptions) {
 
   const [bodyPart, setBodyPart]   = useState(options.initialBodyPart)
   const [photoType, setPhotoType] = useState<CapturePhotoType>('before')
+  // 撮影日の明示指定(過去写真登録・2026-09-17設計調査で確定): 未指定(null)の間は
+  // 既存どおりCapturedPhotoPayload.takenAtを省略し、サーバー側now()フォールバックに
+  // 委ねる(既存動作を維持)。呼び出し側(UI)が過去日付を選んだ場合のみ、その値を
+  // beginReview()経由でcapture()へ渡す。API・DB側は元々このフィールドを受理する
+  // 設計になっており(captureConfirmFlow.ts・photoApiClient.ts・route.ts参照)、
+  // ここでは値を通すだけで新規のI/Oは発生しない。
+  const [takenAtOverride, setTakenAtOverride] = useState<string | null>(null)
 
   const [ghost, setGhost]               = useState<GhostPhotoResult | null>(null)
   const [ghostUrl, setGhostUrl]         = useState<string | null>(null)
@@ -268,8 +275,8 @@ export function usePhotoCapture(options: UsePhotoCaptureOptions) {
     setJustSaved(false)
     setReviewPhase('reviewing')
 
-    ensureSession().capture({ blob, bodyPart, photoType, visitId })
-  }, [bodyPart, photoType, visitId, ensureSession, clearPreview])
+    ensureSession().capture({ blob, bodyPart, photoType, visitId, takenAt: takenAtOverride ?? undefined })
+  }, [bodyPart, photoType, visitId, takenAtOverride, ensureSession, clearPreview])
 
   const shutter = useCallback(async () => {
     if (reviewPhase === 'reviewing') return // 二重シャッター防止
@@ -336,6 +343,8 @@ export function usePhotoCapture(options: UsePhotoCaptureOptions) {
     setBodyPart,
     photoType,
     setPhotoType,
+    takenAtOverride,
+    setTakenAtOverride,
 
     ghost,
     ghostUrl,
