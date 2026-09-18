@@ -37,6 +37,18 @@
  *     元々無効化済み。
  *   - 自動保存の視覚フィードバック(savedFlash)・ガイドメッセージの視認性向上は
  *     Phase 2と合わせて実装(2026-09-17ユーザー承認)。
+ *
+ * ゴースト初期倍率の自動調整(小宮山様の実機フィードバック「ゴーストが大きすぎる」対応、
+ * 2026-09-18ユーザー承認): ライブ映像の顔検出結果(useFaceGuide.sizeSample)と、ゴースト
+ * 静止画に対して一度だけ実行する顔検出結果(新規useGhostImageFaceDetection)を比較し、
+ * 両者の顔の大きさが揃うようゴースト<img>にCSS transform: scale()を掛ける
+ * (ghostAutoScale.ts、位置(移動)は引き続き対象外)。顔検出できない場合は倍率100%
+ * (等倍)のままで、手動の「サイズ」スライダーで調整できる。既存の撮影・保存ロジック
+ * (usePhotoCapture.ts・captureConfirmFlow.ts・faceGuide.ts・useFaceGuide.ts・
+ * ghostSelection.ts・API・DB)には一切手を加えていない。保存される写真は従来通り
+ * <video>フレームのみから生成され(captureFrame.ts)、ゴースト(<img>)への参照を
+ * 一切持たないため、この変更後も「保存画像にゴーストが焼き込まれない」構造的保証は
+ * 変わらない。
  */
 import { useEffect, useRef, useState } from 'react'
 import {
@@ -45,8 +57,12 @@ import {
 import { usePhotoCapture } from '@/hooks/usePhotoCapture'
 import { useFaceGuide } from '@/hooks/useFaceGuide'
 import { useDeviceTilt } from '@/hooks/useDeviceTilt'
-import { useGhostOverlay, formatGhostDateLabel } from '@/hooks/useGhostOverlay'
+import {
+  useGhostOverlay, formatGhostDateLabel, GHOST_SCALE_MIN_PERCENT, GHOST_SCALE_MAX_PERCENT,
+} from '@/hooks/useGhostOverlay'
+import { useGhostImageFaceDetection } from '@/hooks/useGhostImageFaceDetection'
 import { pickFaceGuideMessage, type FaceGuideMode } from '@/lib/photos/faceGuide'
+import { computeGhostAutoScalePercent } from '@/lib/photos/ghostAutoScale'
 import { pickTiltMessage } from '@/lib/photos/tiltGuide'
 import { PALETTE, headingFont } from '@/components/customer/shared/PhotoCompareKit'
 import { IPAD_KARTE_ANGLES, type IpadKarteAngleId } from './ipadKarteData'
@@ -218,6 +234,28 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
   const ghostVisible = ghost.enabled && !!ghost.activeUrl
   const ghostMessage = ghostVisible ? '前回の写真に合わせて位置を揃えてください' : null
 
+  // ゴースト初期倍率の自動調整(小宮山様の実機フィードバック「ゴーストが大きすぎる」対応、
+  // 2026-09-18)。ゴースト静止画に対して一度だけ顔検出を行い(useGhostImageFaceDetection)、
+  // ライブ映像側の顔検出結果(faceGuide.sizeSample)と比較して初期倍率を決める。
+  //
+  // 「ライブ映像に合わせて継続追従」ではなく「表示中の写真ごとに一度だけ適用」にする理由:
+  // 位置合わせガイド(ghostMessage)はスタッフがカメラを前後に動かして大きさを揃えるための
+  // ものなので、動かすたびに自動でリサイズし続けると大きさのズレという判断材料自体が
+  // 消えてしまう(常に一致して見える=ガイドとして機能しなくなる)。そのためactivePhoto
+  // (表示中のゴースト写真)が変わった直後の最初の検出結果だけを「初期値の当たり」として
+  // 一度適用し、以降はスタッフの手動サイズスライダーに委ねる。
+  const ghostImageFaceSample = useGhostImageFaceDetection(ghostVisible ? ghost.activeUrl : null)
+  const autoScaleAppliedForPhotoRef = useRef<string | null>(null)
+  useEffect(() => {
+    const photoId = ghost.activePhoto?.id ?? null
+    if (!photoId || autoScaleAppliedForPhotoRef.current === photoId) return
+    const autoScale = computeGhostAutoScalePercent(faceGuide.sizeSample, ghostImageFaceSample)
+    if (autoScale === null) return // 片方(または両方)未検出。次の検出tickで再試行する
+    ghost.setScalePercent(autoScale)
+    autoScaleAppliedForPhotoRef.current = photoId
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ghost.activePhoto?.id, faceGuide.sizeSample, ghostImageFaceSample])
+
   // ガイドメッセージ優先順位(2026-09-17拡張): 顔ガイド(近い/遠い/位置/傾き) > 端末の
   // 傾き(ジャイロ) > ゴーストの位置合わせ案内 > 「良い構図です」。額タブは顔ガイドが
   // 無いため、ジャイロ→ゴースト→固定文言の順になる。複数の問題が同時にあっても一度に
@@ -372,6 +410,7 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
                       style={{
                         position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
                         opacity: ghost.opacityPercent / 100, pointerEvents: 'none',
+                        transform: `scale(${ghost.scalePercent / 100})`, transformOrigin: 'center',
                       }}
                     />
                   )}
@@ -515,6 +554,21 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
                         max={100}
                         value={ghost.opacityPercent}
                         onChange={e => ghost.setOpacityPercent(Number(e.target.value))}
+                        style={{ width: '100%', accentColor: PALETTE.gold }}
+                      />
+                    </div>
+
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: PALETTE.muted, marginBottom: '6px' }}>
+                        <span>サイズ</span>
+                        <span>{ghost.scalePercent}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={GHOST_SCALE_MIN_PERCENT}
+                        max={GHOST_SCALE_MAX_PERCENT}
+                        value={ghost.scalePercent}
+                        onChange={e => ghost.setScalePercent(Number(e.target.value))}
                         style={{ width: '100%', accentColor: PALETTE.gold }}
                       />
                     </div>

@@ -19,6 +19,20 @@ const GHOST_OPACITY_STORAGE_KEY = 'riora.photoKarte.ghostOpacityPercent'
 
 /** ゴーストの初期不透明度(%)。デザイン確定値(IMG_1448.JPG)。 */
 export const GHOST_DEFAULT_OPACITY_PERCENT = 30
+/**
+ * ゴーストの初期倍率(%、100=等倍)。写真カルテ Phase 2 追加調整
+ * (小宮山様の実機フィードバック「ゴーストが大きすぎる」対応、2026-09-18)。
+ *
+ * 強さ(不透明度)とは異なりlocalStorageへ永続化しない: 「ちょうど良い倍率」は
+ * 部位・お客様・撮影距離によってペアごとに変わるため、前回値を次回に持ち越す
+ * 意味が無い(むしろ誤って合わない倍率が残る方が害になる)。表示するゴースト写真
+ * (activePhoto)が変わるたびにこの既定値へ一旦リセットし、顔検出による自動倍率
+ * (ghostAutoScale.ts、呼び出し側がsetScalePercent()で反映)が算出できればそちらへ
+ * 更新される、算出できなければこの既定値のまま手動スライダーで調整する。
+ */
+export const GHOST_DEFAULT_SCALE_PERCENT = 100
+export const GHOST_SCALE_MIN_PERCENT = 50
+export const GHOST_SCALE_MAX_PERCENT = 200
 /** 日付候補一覧の取得件数上限。Phase1の他一覧取得(limit 5等)より広めに取る暫定値。 */
 const GHOST_CANDIDATE_LIMIT = 20
 
@@ -37,6 +51,9 @@ export interface UseGhostOverlayResult {
   /** 0-100の整数。 */
   opacityPercent: number
   setOpacityPercent: (v: number) => void
+  /** GHOST_SCALE_MIN_PERCENT-GHOST_SCALE_MAX_PERCENTの整数(100=等倍)。 */
+  scalePercent: number
+  setScalePercent: (v: number) => void
   /** 日付選択リスト用の候補(同一bodyPart・当日visitを除く、taken_at降順)。 */
   candidates: GhostCandidatePhoto[]
   candidatesLoading: boolean
@@ -96,6 +113,7 @@ export function useGhostOverlay({
 }: UseGhostOverlayOptions): UseGhostOverlayResult {
   const [enabled, setEnabledState] = useState(true)
   const [opacityPercent, setOpacityPercentState] = useState(GHOST_DEFAULT_OPACITY_PERCENT)
+  const [scalePercent, setScalePercentState] = useState(GHOST_DEFAULT_SCALE_PERCENT)
   const [candidates, setCandidates] = useState<GhostCandidatePhoto[]>([])
   const [candidatesLoading, setCandidatesLoading] = useState(false)
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null)
@@ -126,6 +144,11 @@ export function useGhostOverlay({
     } catch {
       // 同上
     }
+  }, [])
+
+  const setScalePercent = useCallback((v: number) => {
+    const clamped = Math.max(GHOST_SCALE_MIN_PERCENT, Math.min(GHOST_SCALE_MAX_PERCENT, Math.round(v)))
+    setScalePercentState(clamped)
   }, [])
 
   // 部位が変わるたびに日付候補一覧を再取得し、手動選択はリセットする
@@ -197,11 +220,21 @@ export function useGhostOverlay({
   const activeUrl = selectedPhotoId ? overrideUrl : autoGhostUrl
   const activeUrlLoading = selectedPhotoId ? overrideUrlLoading : false
 
+  // 表示するゴースト写真が切り替わるたびに倍率を既定値へ戻す(前の写真向けの倍率が
+  // 別の写真に誤って適用され続けることを防ぐ)。顔検出による自動倍率が算出できれば、
+  // 呼び出し側がこの直後にsetScalePercent()で更新する。
+  const activePhotoId = activePhoto?.id ?? null
+  useEffect(() => {
+    setScalePercentState(GHOST_DEFAULT_SCALE_PERCENT)
+  }, [activePhotoId])
+
   return {
     enabled,
     setEnabled,
     opacityPercent,
     setOpacityPercent,
+    scalePercent,
+    setScalePercent,
     candidates,
     candidatesLoading,
     selectedPhotoId,
