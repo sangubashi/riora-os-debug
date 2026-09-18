@@ -496,13 +496,40 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
                           }}
                         />
                       ) : (
-                        <div
-                          style={{
-                            position: 'absolute', left: '28%', right: '28%', top: '14%', bottom: '18%',
-                            border: `2px dashed ${faceGuideMessage ? 'rgba(255,255,255,0.7)' : PALETTE.gold}`,
-                            borderRadius: '50%', pointerEvents: 'none',
-                          }}
-                        />
+                        /* 顔位置合わせガイド(写真カルテUI改善 Part 2・2026-09-18ユーザー承認)。
+                           従来は丸い破線の輪(顔の輪郭に沿った楕円)だったが、スタッフから
+                           「十字のグリップ線の方が使いやすい」との意見を受け、カメラの
+                           ビューファインダーでよく使われる三分割グリッド線+中央の十字線に
+                           変更した。下の水平器/ジャイロ用クロス(lucideのCrosshairアイコン、
+                           傾き確認専用)とは別のDOM要素・別の見た目にして役割を分けている
+                           (この十字線は顔の大きさ・位置合わせ用で、faceGuideMessageの
+                           状態(未調整=白/調整OK=ゴールド)だけを色で示す。傾き検知には
+                           一切連動しない)。正面/右斜め/左斜め(faceGuideMode)の切替ロジック・
+                           ゴーストの自動位置合わせ計算(ghostAlignment.ts)には一切手を
+                           加えていない(このガイドの座標を読んでいるコードはどこにも
+                           無いことを確認済み)。 */
+                        <div aria-hidden="true" style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+                          {/* 三分割グリッド線(縦2本・横2本、常に薄い白の固定色) */}
+                          <div style={{ position: 'absolute', left: '33.333%', top: 0, bottom: 0, width: '1px', background: 'rgba(255,255,255,0.45)' }} />
+                          <div style={{ position: 'absolute', left: '66.666%', top: 0, bottom: 0, width: '1px', background: 'rgba(255,255,255,0.45)' }} />
+                          <div style={{ position: 'absolute', top: '33.333%', left: 0, right: 0, height: '1px', background: 'rgba(255,255,255,0.45)' }} />
+                          <div style={{ position: 'absolute', top: '66.666%', left: 0, right: 0, height: '1px', background: 'rgba(255,255,255,0.45)' }} />
+                          {/* 中央の十字線(顔位置合わせの目標点)。faceGuideMessageがある間は
+                              白(未調整)、無ければゴールド(調整OK、従来の輪の色ロジックを踏襲)。 */}
+                          <div style={{
+                            position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
+                            width: '52px', height: '52px',
+                          }}>
+                            <div style={{
+                              position: 'absolute', left: '50%', top: 0, bottom: 0, width: '2px', marginLeft: '-1px',
+                              background: faceGuideMessage ? 'rgba(255,255,255,0.85)' : PALETTE.gold,
+                            }} />
+                            <div style={{
+                              position: 'absolute', top: '50%', left: 0, right: 0, height: '2px', marginTop: '-1px',
+                              background: faceGuideMessage ? 'rgba(255,255,255,0.85)' : PALETTE.gold,
+                            }} />
+                          </div>
+                        </div>
                       )}
 
                       {/* 水平器/ジャイロガイド(写真カルテ Phase 2)の目標クロス。実機での校正前提の
