@@ -33,6 +33,17 @@ const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
 /** クイック選択の候補(本日起点の週数)。 */
 const QUICK_WEEK_OPTIONS = [2, 4, 6, 8]
 
+/**
+ * 表示の一時停止(スタッフ操作フィードバック対応・2026-09-18ユーザー承認、写真カルテUI
+ * 改善のPart 4)。「今回のホームケア」「次回のお手入れ目安」カードを一時的に非表示にする。
+ * データ取得(data.homecareItems・useNextVisit)・API・DBには一切手を加えていない
+ * (このフラグは表示のJSXをガードするだけ)。既存の`NextVisitCard`内の
+ * 顧客ごとの`hiddenFromCustomer`トグル(お客様モードのみを対象とする別機能)とは無関係。
+ * 再表示する場合はこの2つをtrueに戻すだけでよい。
+ */
+const SHOW_HOMECARE = false
+const SHOW_NEXT_VISIT_ESTIMATE = false
+
 function todayIsoUtc(): string {
   return new Date().toISOString().slice(0, 10)
 }
@@ -590,8 +601,10 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
 
               {/* 今回のホームケア(PHASE IPAD-4・2026-09-12・READ ONLY調査に基づき追加)。
                   CustomerModeView.tsxの同カードと同じ表示構造・データ取得ロジック(ipadKarteData.ts)。
-                  LINE下書き生成への接続は今回のスコープ外(表示のみ)。 */}
-              {data.homecareItems.length > 0 && (
+                  LINE下書き生成への接続は今回のスコープ外(表示のみ)。
+                  SHOW_HOMECAREがfalseの間は表示を一時停止する(2026-09-18ユーザー承認、詳細は
+                  ファイル冒頭のコメント参照)。 */}
+              {SHOW_HOMECARE && data.homecareItems.length > 0 && (
                 <Card title="🏠 今回のホームケア">
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
                     {data.homecareItems.map(item => (
@@ -640,8 +653,12 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
                 </Card>
               )}
 
-              {/* 次回の目安(次回目安エンジン)。次回提案(施術メニューの提案)とは別項目 — 混同しない。 */}
-              <NextVisitCard customerId={customerId} />
+              {/* 次回の目安(次回目安エンジン)。次回提案(施術メニューの提案)とは別項目 — 混同しない。
+                  SHOW_NEXT_VISIT_ESTIMATEがfalseの間は表示を一時停止する(2026-09-18ユーザー
+                  承認、詳細はファイル冒頭のコメント参照)。useNextVisit自体は呼ばず、カードの
+                  レンダリングごと止める(NextVisitCard内部のuseNextVisit呼び出しも実行されない
+                  ため、無駄なAPI呼び出しも発生しない)。 */}
+              {SHOW_NEXT_VISIT_ESTIMATE && <NextVisitCard customerId={customerId} />}
             </div>
           </div>
         )}

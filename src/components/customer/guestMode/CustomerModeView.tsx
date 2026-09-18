@@ -55,6 +55,18 @@ import { formatWeeksLabel, type NextVisitResult } from '@/lib/nextVisit/nextVisi
 // システム標準フォントのitalic指定をやめ、専用フォントを読み込む(PHASE GUEST-MODE-1-DESIGN)。
 const logoFont = Playfair_Display({ subsets: ['latin'], weight: '600', style: 'italic', display: 'swap' })
 
+/**
+ * 表示の一時停止(スタッフ操作フィードバック対応・2026-09-18ユーザー承認、写真カルテUI
+ * 改善のPart 4)。「今回のホームケア」「次回のお手入れ目安」カードを一時的に非表示にする。
+ * データ取得(data.homecareItems・useNextVisit)・API・DBには一切手を加えていない
+ * (このフラグは表示のJSXをガードするだけ)。既存の`nextVisit.hiddenFromCustomer`
+ * (顧客ごとにスタッフが個別設定する別機能)とは無関係で、今回は一律停止する。
+ * 再表示する場合はこの2つをtrueに戻すだけでよい。IpadStaffKarteView.tsxの同名フラグと
+ * 対応関係にある(値は必ず両方同時に切り替える)。
+ */
+const SHOW_HOMECARE = false
+const SHOW_NEXT_VISIT_ESTIMATE = false
+
 interface Props {
   customerId: string
   customerName: string
@@ -545,7 +557,10 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
                 }}
               >
                 <InfoBarItem icon={Leaf} label="今回の施術" value={data.currentMenuName ?? '本日のメニューは準備中です'} />
-                {!nextVisit.hiddenFromCustomer && (
+                {/* SHOW_NEXT_VISIT_ESTIMATEがfalseの間は表示を一時停止する(2026-09-18ユーザー
+                    承認、詳細はファイル冒頭のコメント参照)。既存のhiddenFromCustomer(顧客ごとの
+                    個別設定)条件はそのまま維持し、両方を満たす場合のみ表示する。 */}
+                {SHOW_NEXT_VISIT_ESTIMATE && !nextVisit.hiddenFromCustomer && (
                   <>
                     <div style={{ width: '1px', background: PALETTE.border }} />
                     <NextVisitInfoCell result={nextVisit.result} />
@@ -558,7 +573,9 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
           {/* ── スクロール部分 ── */}
           {!data.loading && (
             <div style={{ marginTop: '36px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {data.homecareItems.length > 0 && (
+              {/* SHOW_HOMECAREがfalseの間は表示を一時停止する(2026-09-18ユーザー承認、
+                  詳細はファイル冒頭のコメント参照)。 */}
+              {SHOW_HOMECARE && data.homecareItems.length > 0 && (
                 <Card title="今回のホームケア">
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
                     {data.homecareItems.map(item => (
