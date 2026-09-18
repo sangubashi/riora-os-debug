@@ -30,6 +30,24 @@ import { convertImageFileToWebpBlob } from '@/lib/photos/fileToWebpBlob'
 export type CameraStatus = 'idle' | 'requesting' | 'ready' | 'error'
 export type GhostOpacityLevel = 'off' | 'weak' | 'strong'
 
+/**
+ * 写真撮影画質改善 Phase 3-A: カメラ起動時のconstraints。
+ * width/height/facingModeいずれも「ideal」でのみ要求し、exactにはしない
+ * (端末が3072x2304や背面カメラに対応していなくても撮影自体はできるようにするため。
+ * classifyCameraError.tsのOverconstrainedError分類は変えずに済む)。
+ * ideal指定は「できればこの解像度が欲しい」という要求であり、端末が対応していなければ
+ * ブラウザが実際に返せる値へ自動的に妥協する(無理なアップスケールはしない)。
+ * 保存時リサイズ(captureFrame.ts、長辺3072px)・エンコード品質(0.9)と揃えた値。
+ */
+export const CAMERA_CONSTRAINTS: MediaStreamConstraints = {
+  video: {
+    facingMode: { ideal: 'environment' },
+    width:      { ideal: 3072 },
+    height:     { ideal: 2304 },
+  },
+  audio: false,
+}
+
 export const GHOST_OPACITY_VALUE: Record<GhostOpacityLevel, number> = {
   off:    0,
   weak:   0.25,
@@ -121,10 +139,7 @@ export function usePhotoCapture(options: UsePhotoCaptureOptions) {
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
-        audio: false,
-      })
+      const stream = await navigator.mediaDevices.getUserMedia(CAMERA_CONSTRAINTS)
       streamRef.current = stream
       if (videoRef.current) {
         videoRef.current.srcObject = stream

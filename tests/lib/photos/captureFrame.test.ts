@@ -1,6 +1,7 @@
 // ================================================================
 // captureFrame.ts — videoフレームのみをcanvasに描画する(ゴーストを焼き込まない)ことの検証
-// + 長辺1920pxへの縮小(必須修正3)・WebP→JPEGフォールバック(必須修正4、改訂)
+// + 長辺3072pxへの縮小(必須修正3、写真撮影画質改善Phase 3-Aで1920→3072へ引き上げ)・
+//   WebP→JPEGフォールバック(必須修正4、改訂)
 //
 // 対応: docs/PHOTO_KARTE_UX_WIREFRAME_1.md 1-4節「保存画像にゴーストを焼き込まない」、
 //   実装前レビュー必須修正3・4、iPhone実機テストでのWebP非対応判明後の改訂
@@ -75,7 +76,7 @@ describe('captureVideoFrameToBlob', () => {
 
     expect(blob.type).toBe('image/webp')
     expect(canvasToBlob).toHaveBeenCalledTimes(1)
-    expect(canvasToBlob).toHaveBeenCalledWith(canvas, 'image/webp', 0.8)
+    expect(canvasToBlob).toHaveBeenCalledWith(canvas, 'image/webp', 0.9)
   })
 
   it('WebP要求時にimage/png等へ黙ってフォールバックされた場合、image/jpegを再要求して返す(iOS Safari実機相当)', async () => {
@@ -92,8 +93,8 @@ describe('captureVideoFrameToBlob', () => {
     )
 
     expect(blob.type).toBe('image/jpeg')
-    expect(canvasToBlob).toHaveBeenNthCalledWith(1, canvas, 'image/webp', 0.8)
-    expect(canvasToBlob).toHaveBeenNthCalledWith(2, canvas, 'image/jpeg', 0.8)
+    expect(canvasToBlob).toHaveBeenNthCalledWith(1, canvas, 'image/webp', 0.9)
+    expect(canvasToBlob).toHaveBeenNthCalledWith(2, canvas, 'image/jpeg', 0.9)
   })
 
   it('WebP要求がrejectされた場合もJPEGへフォールバックする', async () => {
@@ -133,9 +134,9 @@ describe('captureVideoFrameToBlob', () => {
     ).rejects.toThrow('canvas_context_unavailable')
   })
 
-  // ── 必須修正3: 長辺1920pxへの縮小 ──────────────────────────────────────────
+  // ── 写真撮影画質改善 Phase 3-A: 長辺3072pxへの縮小(旧: 必須修正3の1920px) ──────
 
-  it('長辺が1920pxを超える場合、canvasサイズが縮小されて描画される(縦横比維持)', async () => {
+  it('長辺が3072pxを超える場合、canvasサイズが縮小されて描画される(縦横比維持)', async () => {
     const { canvas, ctx } = fakeCanvas()
     const canvasToBlob = vi.fn(async (_c, mimeType: string) => blobOfType(mimeType))
 
@@ -144,12 +145,12 @@ describe('captureVideoFrameToBlob', () => {
       { createCanvas: () => canvas, canvasToBlob }
     )
 
-    expect(canvas.width).toBe(1920)
-    expect(canvas.height).toBe(1080)
-    expect(ctx.drawImage).toHaveBeenCalledWith(expect.anything(), 0, 0, 1920, 1080)
+    expect(canvas.width).toBe(3072)
+    expect(canvas.height).toBe(1728)
+    expect(ctx.drawImage).toHaveBeenCalledWith(expect.anything(), 0, 0, 3072, 1728)
   })
 
-  it('1920px以下の場合は無駄な拡大をせず元のサイズのまま描画する', async () => {
+  it('3072px以下の場合は無駄な拡大をせず元のサイズのまま描画する', async () => {
     const { canvas, ctx } = fakeCanvas()
     const canvasToBlob = vi.fn(async (_c, mimeType: string) => blobOfType(mimeType))
 
@@ -181,8 +182,8 @@ describe('computeResizedDimensions', () => {
     expect(computeResizedDimensions(1920, 1080, 1920)).toEqual({ width: 1920, height: 1080 })
   })
 
-  it('既定の上限はMAX_CAPTURE_LONG_EDGE_PX(1920)', () => {
-    expect(computeResizedDimensions(3000, 3000)).toEqual({ width: MAX_CAPTURE_LONG_EDGE_PX, height: MAX_CAPTURE_LONG_EDGE_PX })
+  it('既定の上限はMAX_CAPTURE_LONG_EDGE_PX(写真撮影画質改善Phase 3-Aで3072)', () => {
+    expect(computeResizedDimensions(4000, 4000)).toEqual({ width: MAX_CAPTURE_LONG_EDGE_PX, height: MAX_CAPTURE_LONG_EDGE_PX })
   })
 })
 

@@ -10,18 +10,24 @@
  * (追加のガード処理は不要)。
  *
  * 実装前レビュー(必須修正3・4)対応:
- *   - 長辺を最大 MAX_CAPTURE_LONG_EDGE_PX(1920px) に縮小してからエンコードする
- *     (5MB API上限に対し、無制限解像度での送信を避ける)。
+ *   - 長辺を最大 MAX_CAPTURE_LONG_EDGE_PX(Phase 3-Aで3072pxへ引き上げ)に縮小してから
+ *     エンコードする(5MB API上限に対し、無制限解像度での送信を避ける)。
  *   - canvas.toBlob(...)がWebPを生成できたか(blob.type)を確認し、非対応環境
  *     (iOS Safari等が黙ってimage/png等へフォールバックする)ではimage/jpegを
  *     改めて明示的に要求してフォールバックする。UA判定ではなく実際のエンコード結果
  *     で判定するため、WebP対応環境では引き続きWebPが優先される
  *     (実機テストで判明、iPhone 11でcanvas.toBlob('image/webp')がPNG相当へ
  *     暗黙フォールバックし撮影が完了しない問題への対応)。
+ *
+ * 写真撮影画質改善 Phase 3-A: 長辺上限を1920→3072px、既定エンコード品質を0.8→0.9へ
+ * 引き上げる(毛穴・赤み等の細かい肌状態を確認できるようにするため)。あくまで
+ * 「入力(video本来の解像度)がこの上限を超える場合のみ縮小する」上限値であり、
+ * 端末のカメラが3072pxに満たない解像度しか返さない場合は無理にアップスケールしない
+ * (computeResizedDimensionsは「超えていなければそのまま返す」設計を維持)。
  */
 
 /** 撮影画像の長辺上限(px)。これを超える場合のみ縦横比を維持して縮小する。 */
-export const MAX_CAPTURE_LONG_EDGE_PX = 1920
+export const MAX_CAPTURE_LONG_EDGE_PX = 3072
 
 /**
  * 長辺が maxLongEdge を超える場合のみ、縦横比を維持して縮小した寸法を返す。
@@ -71,7 +77,7 @@ export type CanvasToBlobFn = (
 export async function encodeCanvasWithFallback(
   canvas: CaptureCanvas,
   canvasToBlob: CanvasToBlobFn,
-  quality = 0.8
+  quality = 0.9
 ): Promise<Blob> {
   let lastError: unknown = null
 
@@ -117,7 +123,7 @@ export async function captureVideoFrameToBlob(
   source: CaptureFrameSource,
   deps:   CaptureFrameDeps
 ): Promise<Blob> {
-  // 必須修正3: 長辺が1920pxを超える場合のみ縮小(video本来の解像度はsourceのまま、
+  // 必須修正3: 長辺がMAX_CAPTURE_LONG_EDGE_PX(3072px)を超える場合のみ縮小(video本来の解像度はsourceのまま、
   // ここではcanvasの描画先サイズだけを縮小する)。
   const { width, height } = computeResizedDimensions(source.width, source.height)
 
@@ -135,5 +141,5 @@ export async function captureVideoFrameToBlob(
   ctx.drawImage(source.element, 0, 0, canvas.width, canvas.height)
 
   // 必須修正4(改訂): WebP→JPEGの順に実際のエンコード結果で判定してフォールバックする。
-  return encodeCanvasWithFallback(canvas, deps.canvasToBlob, deps.quality ?? 0.8)
+  return encodeCanvasWithFallback(canvas, deps.canvasToBlob, deps.quality ?? 0.9)
 }
