@@ -81,6 +81,38 @@ describe('selectGhostForBefore', () => {
     })
     expect(result?.photo.id).toBe('other-visit')
   })
+
+  // 2026-09-18改訂(根本原因調査対応): iPadスタッフカルテはbrain_visitsが未作成の間
+  // (施術後のCSV取込/接客ログ保存まで)visit_id=nullのまま写真を保存する。旧実装は
+  // currentVisitId=nullの間「今日を除外する」処理が一切効かず、数分前に撮った同日の
+  // 写真が「前回」として誤って選ばれていた(実機で報告されたバグそのもの)。
+  it('visit未作成(currentVisitId=null)でも、同日にvisit_id無しで撮った写真は前回候補から除外する', async () => {
+    const todayIso = new Date().toISOString()
+    const { fetcher } = fakeFetcher((p) => {
+      const shotMinutesAgoToday = photo({ id: 'today-own', visitId: null, takenAt: todayIso })
+      const genuinePrevious = photo({ id: 'genuine-previous', visitId: null, takenAt: '2026-08-01T00:00:00Z' })
+      return p.order === 'desc' ? [shotMinutesAgoToday, genuinePrevious] : []
+    })
+    const result = await selectGhostForBefore(fetcher, {
+      customerId: 'c1', bodyPart: 'face_front', currentVisitId: null,
+    })
+    expect(result?.photo.id).toBe('genuine-previous')
+  })
+
+  it('visit_id無しの写真は撮影日が異なれば別の撮影機会として区別する(同一日のみ1件に代表される)', async () => {
+    const { fetcher } = fakeFetcher((p) => {
+      const day2Newer = photo({ id: 'day2-b', visitId: null, takenAt: '2026-08-02T09:00:00Z' })
+      const day2Older = photo({ id: 'day2-a', visitId: null, takenAt: '2026-08-02T08:00:00Z' })
+      const day1 = photo({ id: 'day1', visitId: null, takenAt: '2026-08-01T00:00:00Z' })
+      return p.order === 'desc' ? [day2Newer, day2Older, day1] : []
+    })
+    const result = await selectGhostForBefore(fetcher, {
+      customerId: 'c1', bodyPart: 'face_front', currentVisitId: 'visit-1',
+    })
+    // 同日(2026-08-02)内の2枚は1つの撮影機会に代表され、先頭(最新)のday2-bが選ばれる。
+    // day1(別日)は別の撮影機会として独立して残るため、この結果には影響しない。
+    expect(result?.photo.id).toBe('day2-b')
+  })
 })
 
 describe('selectGhostForAfter', () => {

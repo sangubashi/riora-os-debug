@@ -270,7 +270,17 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
     videoContainerObserverRef.current = observer
   }, [])
 
-  const ghostImageFaceSample = useGhostImageFaceDetection(ghostVisible ? ghost.activeUrl : null)
+  // 額タブ(faceGuideMode==='none')はfaceGuideModeFor()が既に「目・鼻・口が写らず
+  // モデルが顔として認識できない可能性が高い」と判断し、ライブ側の顔検出ガイドを止めている
+  // (下記faceGuideMode参照)。この判断をゴースト静止画側の顔検出にも揃え、額タブでは
+  // useGhostImageFaceDetection自体を呼ばない(2026-09-18改訂・根本原因調査対応)。
+  // 従来は額タブでも無条件にMediaPipeへ渡していたため、顔ではない部分への誤検出結果が
+  // computeGhostRingAlignmentにそのまま使われ、不自然な拡大・マスク位置("帯"状の表示)を
+  // 引き起こしていた。呼ばなければ結果はnullのままとなり、既存の「顔検出できない場合の
+  // 等倍・中央表示+手動スライダー」フォールバックへ自然に合流する。
+  const ghostImageFaceSample = useGhostImageFaceDetection(
+    ghostVisible && faceGuideMode !== 'none' ? ghost.activeUrl : null
+  )
   const ghostAlignment = ghostVisible
     ? computeGhostRingAlignment(videoContainerBox, ghostImageFaceSample)
     : null

@@ -12,6 +12,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { createPhotoListFetcher, getPhotoSignedUrl } from '@/lib/photos/photoApiClient'
+import { excludingCurrentOccasion } from '@/lib/photos/ghostSelection'
 import type { GhostCandidatePhoto, GhostPhotoResult } from '@/lib/photos/ghostSelection'
 
 const GHOST_ENABLED_STORAGE_KEY = 'riora.photoKarte.ghostEnabled'
@@ -54,7 +55,7 @@ export interface UseGhostOverlayResult {
   /** GHOST_SCALE_MIN_PERCENT-GHOST_SCALE_MAX_PERCENTの整数(100=等倍)。 */
   scalePercent: number
   setScalePercent: (v: number) => void
-  /** 日付選択リスト用の候補(同一bodyPart・当日visitを除く、taken_at降順)。 */
+  /** 日付選択リスト用の候補(同一bodyPart・現在の撮影機会=同一visitまたは当日分を除く、taken_at降順)。 */
   candidates: GhostCandidatePhoto[]
   candidatesLoading: boolean
   /** nullの場合は自動選択(前回/初回)に従う。 */
@@ -170,7 +171,10 @@ export function useGhostOverlay({
       .listPhotos({ customerId, bodyPart, order: 'desc', limit: GHOST_CANDIDATE_LIMIT })
       .then(photos => {
         if (cancelled) return
-        setCandidates(photos.filter(p => p.visitId !== currentVisitId))
+        // 「今日を除外する」ロジックはghostSelection.tsのexcludingCurrentOccasion()に統一
+        // (2026-09-18改訂。以前はここだけ`p.visitId !== currentVisitId`という別実装で、
+        // currentVisitIdがnullの間の挙動がghostSelection.ts側と食い違っていた)。
+        setCandidates(excludingCurrentOccasion(photos, currentVisitId))
       })
       .catch(() => {
         if (!cancelled) setCandidates([])
