@@ -580,6 +580,53 @@ AI提案の会話トーン・LINE領域・admin領域、およびそれ以外の
 ユーザーへの追加確認依頼が必要)。** 5タブ構成・TL-5構成・AI提案の会話トーン・LINE領域・
 admin領域、およびそれ以外の顧客タブ/iPadカルテ画面の仕様については引き続き凍結を継続する。
 
+### ゴースト機能の一時停止(2026-09-18ユーザー指示)
+
+実機確認を重ねた結果、ゴースト自動位置・サイズ合わせは依然ズレが解消しないと判断され、
+ユーザー指示により**この機能の追加改修を一旦停止**した。既存のコード
+(`ghostAlignment.ts`・`useGhostImageFaceDetection.ts`・`useGhostOverlay.ts`・
+`IpadPhotoCaptureModal.tsx`のゴースト関連部分)はそのまま残しており、削除・無効化は
+していない(機能自体はON/OFFトグルで従来通り使用可能)。次回以降、ゴースト機能に着手する
+際は、直近3回の実機フィードバック(ジッター→固定ガイド輪基準への再設計→四角い切り抜きの
+マスク化)の経緯と、それでも解消しなかったズレの詳細をユーザーに確認してから着手すること。
+
+### v1.0.1 着手済み事項（写真撮影画質改善 Phase 3-A の反映のみ・2026-09-18ユーザー承認）
+
+小宮山様の実機撮影(人形の練習ヘッドを使用)で写真がピンボケ気味だったことの切り分けとして、
+以前から用意されていた未コミットの「写真撮影画質改善 Phase 3-A」のみを対象に本番反映した。
+この対応はゴースト機能とは無関係(ゴースト機能は上記の通り一時停止中)。
+
+- `src/lib/photos/captureFrame.ts`: `MAX_CAPTURE_LONG_EDGE_PX`を1920→3072pxへ、
+  `encodeCanvasWithFallback`の既定エンコード品質を0.8→0.9へ引き上げ。
+- `src/hooks/usePhotoCapture.ts`: `CAMERA_CONSTRAINTS`(新規export、
+  `facingMode:{ideal:'environment'}`・`width:{ideal:3072}`・`height:{ideal:2304}`)を
+  追加し、`startCamera()`のgetUserMedia呼び出しをこれに差し替えた。**この作業対象の
+  ファイルには「一時診断(手ブレ/モーションブラー調査用)」のconsole.logコードが別途
+  未コミットで混在していたが、これはPhase 3-Aとは無関係の別作業のため、gitのINDEXに
+  直接blobを組み立てて(`git hash-object`+`git update-index --cacheinfo`)Phase 3-A分の
+  変更だけをステージし、作業ツリー上の診断コードには一切手を加えず温存した。**
+- `tests/lib/photos/captureFrame.test.ts`: 上記の値変更に合わせてテストを更新
+  (1920→3072、0.8→0.9)。
+- 検証: コミット対象のみを反映した状態を`git worktree`で分離したクリーンな
+  チェックアウトを作り、そこで`npm run typecheck`・`tests/lib/photos`(147件)・
+  `npm run build`を実行し、いずれも成功することを確認した(ローカルの未コミット・
+  未追跡ファイルが検証に紛れ込まないようにするため)。
+- 除外した無関係な未コミット変更: `src/lib/photos/constants.ts`・
+  `tests/api/customer-photos-upload.test.ts`(HEIC対応・アップロード上限15MB化、
+  別名称「写真カルテ Phase A(原本保存)対応」で本件とは別機能)、
+  `app/api/cron/dashboard-aggregator/route.ts`・`src/components/customer/
+  VoiceMemoSection.tsx`・`src/lib/contraindication.ts`・`package.json`
+  (`supabase` CLI依存追加)等は一切含めていない。
+- **iPad実機未確認**: 3072px・品質0.9化によって実際にピンボケが解消するか、
+  それとも解像度ではなくピント/手ブレ自体が原因で改善しないかは、本番反映後に
+  同一iPad・同一撮影条件で撮り直して比較する必要がある(ユーザーが実施予定)。
+  改善しなかった場合はカメラのフォーカス制御(オートフォーカスのロック等)を
+  次の検討対象とする方針(ユーザー確定)。
+
+**この解除は上記の写真撮影画質改善 Phase 3-A の反映のみに限る。** 5タブ構成・TL-5構成・
+AI提案の会話トーン・LINE領域・admin領域、およびそれ以外の顧客タブ/iPadカルテ画面の仕様
+については引き続き凍結を継続する。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。
