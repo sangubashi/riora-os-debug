@@ -386,7 +386,8 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
         </div>
       ) : intent === 'camera' ? (
         <>
-          {/* ── 本体: カメラ映像 + ゴーストサイドバー ── */}
+          {/* ── 本体: カメラ映像(写真カルテUI改善 Part 1・2026-09-18ユーザー承認により
+              全幅化。ゴースト調整UIは画面下部のゴーストパネルへ移動した) ── */}
           <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
             <div ref={setVideoContainerRef} style={{ flex: 1, position: 'relative', background: '#000', minWidth: 0 }}>
               {capture.cameraStatus === 'error' ? (
@@ -569,108 +570,6 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
               )}
             </div>
 
-            {/* ── ゴーストサイドバー(写真カルテ Phase 2) ── */}
-            {showGuideOverlay && (
-              <div
-                style={{
-                  width: '260px', flexShrink: 0, overflowY: 'auto',
-                  borderLeft: `1px solid ${PALETTE.border}`, background: PALETTE.bg,
-                  padding: '20px 18px', display: 'flex', flexDirection: 'column', gap: '16px',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '13px', fontWeight: 700, color: PALETTE.text }}>ゴースト</span>
-                  <ToggleSwitch checked={ghost.enabled} onChange={ghost.setEnabled} />
-                </div>
-
-                {ghost.enabled && (
-                  <>
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: PALETTE.muted, marginBottom: '6px' }}>
-                        <span>強さ</span>
-                        <span>{ghost.opacityPercent}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        value={ghost.opacityPercent}
-                        onChange={e => ghost.setOpacityPercent(Number(e.target.value))}
-                        style={{ width: '100%', accentColor: PALETTE.gold }}
-                      />
-                    </div>
-
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: PALETTE.muted, marginBottom: '6px' }}>
-                        <span>サイズ(微調整)</span>
-                        <span>{ghost.scalePercent}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={GHOST_SCALE_MIN_PERCENT}
-                        max={GHOST_SCALE_MAX_PERCENT}
-                        value={ghost.scalePercent}
-                        onChange={e => ghost.setScalePercent(Number(e.target.value))}
-                        style={{ width: '100%', accentColor: PALETTE.gold }}
-                      />
-                      <p style={{ margin: '6px 0 0', fontSize: '11px', color: ghostAlignment ? '#22C55E' : PALETTE.muted }}>
-                        {ghostAlignment ? '● ガイドの輪に合わせて自動調整しています' : '○ 前回写真から顔を検出できません(スライダーで手動調整してください)'}
-                      </p>
-                    </div>
-
-                    <div style={{ borderTop: `1px solid ${PALETTE.border}`, paddingTop: '14px' }}>
-                      {ghost.activePhoto ? (
-                        <>
-                          <p style={{ margin: '0 0 4px', fontSize: '12px', color: PALETTE.muted }}>前回</p>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                            <span style={{ fontSize: '13px', color: PALETTE.text }}>
-                              {formatGhostDateLabel(ghost.activePhoto.takenAt)}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setDateListOpen(v => !v)}
-                              aria-label="日付を選び直す"
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: PALETTE.gold, padding: '4px', flexShrink: 0 }}
-                            >
-                              <Calendar size={18} strokeWidth={1.8} />
-                            </button>
-                          </div>
-                        </>
-                      ) : ghost.candidatesLoading ? (
-                        <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>読み込み中…</p>
-                      ) : (
-                        <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>前回の写真がありません</p>
-                      )}
-
-                      {dateListOpen && (
-                        <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '220px', overflowY: 'auto' }}>
-                          <button
-                            type="button"
-                            onClick={() => { ghost.selectPhoto(null); setDateListOpen(false) }}
-                            style={dateOptionStyle(ghost.selectedPhotoId === null)}
-                          >
-                            自動(前回)
-                          </button>
-                          {ghost.candidates.map(c => (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onClick={() => { ghost.selectPhoto(c.id); setDateListOpen(false) }}
-                              style={dateOptionStyle(ghost.selectedPhotoId === c.id)}
-                            >
-                              {formatGhostDateLabel(c.takenAt)}
-                            </button>
-                          ))}
-                          {ghost.candidates.length === 0 && !ghost.candidatesLoading && (
-                            <p style={{ margin: '4px 0 0', fontSize: '11px', color: PALETTE.muted }}>他の日付の写真はありません</p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
           </div>
 
           {/* ── ガイドメッセージバー(映像の外・下、視認性向上のため濃色ピルではなく
@@ -685,23 +584,138 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
             </div>
           )}
 
-          {/* ── シャッター ── */}
-          {capture.cameraStatus === 'ready' && (
-            <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'center', padding: '16px 0 max(16px, env(safe-area-inset-bottom))' }}>
-              <button
-                type="button"
-                onClick={() => { void capture.shutter() }}
-                disabled={!bodyPartSelected}
-                aria-label="シャッター"
-                style={{
-                  width: '68px', height: '68px', borderRadius: '50%', cursor: bodyPartSelected ? 'pointer' : 'not-allowed',
-                  background: PALETTE.bg, border: `3px solid ${bodyPartSelected ? PALETTE.gold : PALETTE.border}`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}
-              >
-                <Camera size={22} strokeWidth={1.8} color={bodyPartSelected ? PALETTE.gold : PALETTE.muted} />
-              </button>
+          {/* ── ゴーストパネル(写真カルテUI改善 Part 1・画面下部へ移動、2026-09-18
+              ユーザー承認)。以前は映像の右側に固定幅260pxのサイドバーとして表示していたが、
+              シャッターを画面右側中央へ移動するスペースを確保するため、横一列の帯として
+              画面下部へ移した。ゴーストの自動位置・サイズ合わせ(ghostAlignment)・マスク・
+              手動スライダーの計算ロジック自体(ghost.opacityPercent/scalePercent等の値・
+              onChangeハンドラ)には一切手を加えていない、見た目の配置のみの変更。
+              日付候補リストは下部の帯に対して上に開くよう位置を変更した(画面下端で
+              切れるのを防ぐため)。 ── */}
+          {showGuideOverlay && (
+            <div style={{
+              flexShrink: 0, borderTop: `1px solid ${PALETTE.border}`, background: PALETTE.bg,
+              padding: '12px 20px', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '20px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: PALETTE.text }}>ゴースト</span>
+                <ToggleSwitch checked={ghost.enabled} onChange={ghost.setEnabled} />
+              </div>
+
+              {ghost.enabled && (
+                <>
+                  <div style={{ width: '170px', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: PALETTE.muted, marginBottom: '4px' }}>
+                      <span>強さ</span>
+                      <span>{ghost.opacityPercent}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={ghost.opacityPercent}
+                      onChange={e => ghost.setOpacityPercent(Number(e.target.value))}
+                      style={{ width: '100%', accentColor: PALETTE.gold }}
+                    />
+                  </div>
+
+                  <div style={{ width: '210px', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: PALETTE.muted, marginBottom: '4px' }}>
+                      <span>サイズ(微調整)</span>
+                      <span>{ghost.scalePercent}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={GHOST_SCALE_MIN_PERCENT}
+                      max={GHOST_SCALE_MAX_PERCENT}
+                      value={ghost.scalePercent}
+                      onChange={e => ghost.setScalePercent(Number(e.target.value))}
+                      style={{ width: '100%', accentColor: PALETTE.gold }}
+                    />
+                    <p style={{ margin: '4px 0 0', fontSize: '10px', color: ghostAlignment ? '#22C55E' : PALETTE.muted }}>
+                      {ghostAlignment ? '● 自動調整中' : '○ 顔未検出(手動調整)'}
+                    </p>
+                  </div>
+
+                  <div style={{ position: 'relative', marginLeft: 'auto', flexShrink: 0 }}>
+                    {ghost.activePhoto ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '11px', color: PALETTE.muted }}>前回</span>
+                        <span style={{ fontSize: '13px', color: PALETTE.text }}>
+                          {formatGhostDateLabel(ghost.activePhoto.takenAt)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setDateListOpen(v => !v)}
+                          aria-label="日付を選び直す"
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: PALETTE.gold, padding: '4px', flexShrink: 0 }}
+                        >
+                          <Calendar size={18} strokeWidth={1.8} />
+                        </button>
+                      </div>
+                    ) : ghost.candidatesLoading ? (
+                      <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>読み込み中…</p>
+                    ) : (
+                      <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>前回の写真がありません</p>
+                    )}
+
+                    {dateListOpen && (
+                      <div style={{
+                        position: 'absolute', bottom: '100%', right: 0, marginBottom: '8px',
+                        display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '220px', overflowY: 'auto',
+                        minWidth: '200px', background: PALETTE.card, border: `1px solid ${PALETTE.border}`,
+                        borderRadius: '10px', padding: '8px', boxShadow: '0 -4px 16px rgba(0,0,0,0.15)', zIndex: 6,
+                      }}>
+                        <button
+                          type="button"
+                          onClick={() => { ghost.selectPhoto(null); setDateListOpen(false) }}
+                          style={dateOptionStyle(ghost.selectedPhotoId === null)}
+                        >
+                          自動(前回)
+                        </button>
+                        {ghost.candidates.map(c => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => { ghost.selectPhoto(c.id); setDateListOpen(false) }}
+                            style={dateOptionStyle(ghost.selectedPhotoId === c.id)}
+                          >
+                            {formatGhostDateLabel(c.takenAt)}
+                          </button>
+                        ))}
+                        {ghost.candidates.length === 0 && !ghost.candidatesLoading && (
+                          <p style={{ margin: '4px 0 0', fontSize: '11px', color: PALETTE.muted }}>他の日付の写真はありません</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
+          )}
+
+          {/* ── シャッター(写真カルテUI改善 Part 1・画面右側中央へ移動、2026-09-18
+              ユーザー承認)。以前は画面下部で水平方向中央に配置していたが、片手操作時の
+              親指の届きやすさを優先し、画面全体(fixed inset:0の最外殻コンテナ)を基準に
+              右端中央へ絶対配置するオーバーレイに変更した。表示条件(cameraStatus==='ready')・
+              無効化条件(!bodyPartSelected)・onClickハンドラは無変更。 ── */}
+          {capture.cameraStatus === 'ready' && (
+            <button
+              type="button"
+              onClick={() => { void capture.shutter() }}
+              disabled={!bodyPartSelected}
+              aria-label="シャッター"
+              style={{
+                position: 'absolute', right: 'max(20px, env(safe-area-inset-right))', top: '50%',
+                transform: 'translateY(-50%)', zIndex: 5,
+                width: '68px', height: '68px', borderRadius: '50%', cursor: bodyPartSelected ? 'pointer' : 'not-allowed',
+                background: PALETTE.bg, border: `3px solid ${bodyPartSelected ? PALETTE.gold : PALETTE.border}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 2px 10px rgba(0,0,0,0.25)',
+              }}
+            >
+              <Camera size={22} strokeWidth={1.8} color={bodyPartSelected ? PALETTE.gold : PALETTE.muted} />
+            </button>
           )}
         </>
       ) : (
