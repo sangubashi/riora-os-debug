@@ -38,19 +38,23 @@
  *   - 自動保存の視覚フィードバック(savedFlash)・ガイドメッセージの視認性向上は
  *     Phase 2と合わせて実装(2026-09-17ユーザー承認)。
  *
- * ゴースト初期倍率の自動調整(小宮山様の実機フィードバック「ゴーストが大きすぎる」対応、
- * 2026-09-18ユーザー承認): ライブ映像の顔検出結果(useFaceGuide.sizeSample)と、ゴースト
- * 静止画に対して一度だけ実行する顔検出結果(新規useGhostImageFaceDetection)を比較し、
- * 両者の顔の大きさが揃うようゴースト<img>にCSS transform: scale()を掛ける
- * (ghostAutoScale.ts、位置(移動)は引き続き対象外)。顔検出できない場合は倍率100%
- * (等倍)のままで、手動の「サイズ」スライダーで調整できる。既存の撮影・保存ロジック
- * (usePhotoCapture.ts・captureConfirmFlow.ts・faceGuide.ts・useFaceGuide.ts・
- * ghostSelection.ts・API・DB)には一切手を加えていない。保存される写真は従来通り
- * <video>フレームのみから生成され(captureFrame.ts)、ゴースト(<img>)への参照を
- * 一切持たないため、この変更後も「保存画像にゴーストが焼き込まれない」構造的保証は
- * 変わらない。
+ * ゴーストの自動位置・サイズ合わせ(実機フィードバック「自動倍率だけでは調整精度・
+ * 使い勝手が不十分」対応、2026-09-18ユーザー承認・写真切替時に一度だけ倍率を計算する
+ * 方式から置き換え): ライブ映像の顔検出結果(useFaceGuide.rawDetection、既存の250ms
+ * 間隔の推論ループがそのまま更新し続ける)と、ゴースト静止画に対して一度だけ実行する
+ * 顔検出結果(useGhostImageFaceDetection)を毎回突き合わせ(ghostAlignment.ts)、
+ * ゴースト<img>にCSS transform: translate()+scale()を掛けて位置・大きさをライブの顔に
+ * 継続的に追従させる。カメラが多少動いても自動で合わせ直されるため、「カメラを動かして
+ * 位置を揃える」という従来の案内文言は、顔検出できず自動合わせが効かない場合のみの
+ * フォールバック表示にした。既存の手動「サイズ」スライダーは、自動合わせの結果に
+ * 対する追加の微調整倍率として残している(既定100%=無補正)。既存の撮影・保存ロジック
+ * (usePhotoCapture.ts・captureConfirmFlow.ts・faceGuide.ts・useFaceGuide.tsの判定
+ * ロジック本体・ghostSelection.ts・API・DB)には一切手を加えていない。保存される写真は
+ * 従来通り<video>フレームのみから生成され(captureFrame.ts)、ゴースト(<img>)への
+ * 参照を一切持たないため、この変更後も「保存画像にゴーストが焼き込まれない」構造的
+ * 保証は変わらない。
  */
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Calendar, Camera, CheckCircle2, Crosshair, ImagePlus, Lock, RotateCcw, X,
 } from 'lucide-react'
@@ -62,7 +66,7 @@ import {
 } from '@/hooks/useGhostOverlay'
 import { useGhostImageFaceDetection } from '@/hooks/useGhostImageFaceDetection'
 import { pickFaceGuideMessage, type FaceGuideMode } from '@/lib/photos/faceGuide'
-import { computeGhostAutoScalePercent } from '@/lib/photos/ghostAutoScale'
+import { computeGhostAlignment } from '@/lib/photos/ghostAlignment'
 import { pickTiltMessage } from '@/lib/photos/tiltGuide'
 import { PALETTE, headingFont } from '@/components/customer/shared/PhotoCompareKit'
 import { IPAD_KARTE_ANGLES, type IpadKarteAngleId } from './ipadKarteData'
@@ -232,29 +236,42 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
     autoGhostUrl: capture.ghostUrl,
   })
   const ghostVisible = ghost.enabled && !!ghost.activeUrl
-  const ghostMessage = ghostVisible ? '前回の写真に合わせて位置を揃えてください' : null
 
-  // ゴースト初期倍率の自動調整(小宮山様の実機フィードバック「ゴーストが大きすぎる」対応、
-  // 2026-09-18)。ゴースト静止画に対して一度だけ顔検出を行い(useGhostImageFaceDetection)、
-  // ライブ映像側の顔検出結果(faceGuide.sizeSample)と比較して初期倍率を決める。
+  // ゴーストの自動位置・サイズ合わせ(実機フィードバック「自動倍率だけでは調整精度・
+  // 使い勝手が不十分」対応、2026-09-18)。ゴースト静止画に対して一度だけ顔検出を行い
+  // (useGhostImageFaceDetection、写真自体は動かないので1回で十分)、ライブ映像側の
+  // 顔検出結果(faceGuide.rawDetection、既存の250ms間隔ループが更新し続ける)と毎回
+  // 突き合わせて(ghostAlignment.ts)、ゴーストの位置・大きさをライブの顔に継続的に
+  // 追従させる。カメラ位置を厳密に合わせなくても自動で追従するため、以前のバージョンで
+  // 懸念していた「常に一致して見えてガイドとして機能しなくなる」問題は、そもそも
+  // 「カメラを動かして合わせる」運用自体をこの自動追従に置き換えることで解消する
+  // (合わなくなるのはむしろ顔検出に失敗した時だけであり、その場合は下のフォール
+  // バック文言で知らせる)。
   //
-  // 「ライブ映像に合わせて継続追従」ではなく「表示中の写真ごとに一度だけ適用」にする理由:
-  // 位置合わせガイド(ghostMessage)はスタッフがカメラを前後に動かして大きさを揃えるための
-  // ものなので、動かすたびに自動でリサイズし続けると大きさのズレという判断材料自体が
-  // 消えてしまう(常に一致して見える=ガイドとして機能しなくなる)。そのためactivePhoto
-  // (表示中のゴースト写真)が変わった直後の最初の検出結果だけを「初期値の当たり」として
-  // 一度適用し、以降はスタッフの手動サイズスライダーに委ねる。
+  // 表示に使う枠(video/ゴースト<img>を包む相対配置コンテナ)の実測サイズが必要なため、
+  // コールバックrefでResizeObserverを張る(reviewPhaseの切り替えでこのdivがアン
+  // マウント/再マウントされてもその都度張り直せるよう、useEffect+useRefではなく
+  // コールバックrefにしている)。
+  const [videoContainerBox, setVideoContainerBox] = useState({ width: 0, height: 0 })
+  const videoContainerObserverRef = useRef<ResizeObserver | null>(null)
+  const setVideoContainerRef = useCallback((el: HTMLDivElement | null) => {
+    videoContainerObserverRef.current?.disconnect()
+    videoContainerObserverRef.current = null
+    if (!el) return
+    const update = () => setVideoContainerBox({ width: el.clientWidth, height: el.clientHeight })
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(el)
+    videoContainerObserverRef.current = observer
+  }, [])
+
   const ghostImageFaceSample = useGhostImageFaceDetection(ghostVisible ? ghost.activeUrl : null)
-  const autoScaleAppliedForPhotoRef = useRef<string | null>(null)
-  useEffect(() => {
-    const photoId = ghost.activePhoto?.id ?? null
-    if (!photoId || autoScaleAppliedForPhotoRef.current === photoId) return
-    const autoScale = computeGhostAutoScalePercent(faceGuide.sizeSample, ghostImageFaceSample)
-    if (autoScale === null) return // 片方(または両方)未検出。次の検出tickで再試行する
-    ghost.setScalePercent(autoScale)
-    autoScaleAppliedForPhotoRef.current = photoId
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ghost.activePhoto?.id, faceGuide.sizeSample, ghostImageFaceSample])
+  const ghostAlignment = ghostVisible
+    ? computeGhostAlignment(videoContainerBox, faceGuide.rawDetection, ghostImageFaceSample)
+    : null
+  // 自動追従が効いている間は「カメラを動かして揃えてください」の案内は不要(むしろ
+  // 矛盾する)。顔検出できず自動合わせが効かない場合のみ、従来通り手動での目安を示す。
+  const ghostMessage = ghostVisible && !ghostAlignment ? '前回の写真に合わせて位置を揃えてください' : null
 
   // ガイドメッセージ優先順位(2026-09-17拡張): 顔ガイド(近い/遠い/位置/傾き) > 端末の
   // 傾き(ジャイロ) > ゴーストの位置合わせ案内 > 「良い構図です」。額タブは顔ガイドが
@@ -366,7 +383,7 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
         <>
           {/* ── 本体: カメラ映像 + ゴーストサイドバー ── */}
           <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-            <div style={{ flex: 1, position: 'relative', background: '#000', minWidth: 0 }}>
+            <div ref={setVideoContainerRef} style={{ flex: 1, position: 'relative', background: '#000', minWidth: 0 }}>
               {capture.cameraStatus === 'error' ? (
                 <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
                   <div style={{ textAlign: 'center', maxWidth: '360px' }}>
@@ -401,7 +418,11 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
 
-                  {/* ゴースト(前回写真の半透明重ね表示、写真カルテ Phase 2)。 */}
+                  {/* ゴースト(前回写真の半透明重ね表示、写真カルテ Phase 2)。「サイズ」
+                      スライダー(ghost.scalePercent)は、自動位置・サイズ合わせ
+                      (ghostAlignment)が算出した倍率に対する追加の微調整として掛け合わせる
+                      (既定100%=無補正)。自動合わせが効かない(顔検出できない)場合は
+                      従来通り等倍・中央表示+手動スライダーのみにフォールバックする。 */}
                   {ghostVisible && ghost.activeUrl && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -410,7 +431,10 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
                       style={{
                         position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
                         opacity: ghost.opacityPercent / 100, pointerEvents: 'none',
-                        transform: `scale(${ghost.scalePercent / 100})`, transformOrigin: 'center',
+                        transform: ghostAlignment
+                          ? `translate(${ghostAlignment.translateX}px, ${ghostAlignment.translateY}px) scale(${ghostAlignment.scale * (ghost.scalePercent / 100)})`
+                          : `scale(${ghost.scalePercent / 100})`,
+                        transformOrigin: ghostAlignment ? `${ghostAlignment.originX}px ${ghostAlignment.originY}px` : 'center',
                       }}
                     />
                   )}
@@ -560,7 +584,7 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
 
                     <div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: PALETTE.muted, marginBottom: '6px' }}>
-                        <span>サイズ</span>
+                        <span>サイズ(微調整)</span>
                         <span>{ghost.scalePercent}%</span>
                       </div>
                       <input
@@ -571,6 +595,9 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
                         onChange={e => ghost.setScalePercent(Number(e.target.value))}
                         style={{ width: '100%', accentColor: PALETTE.gold }}
                       />
+                      <p style={{ margin: '6px 0 0', fontSize: '11px', color: ghostAlignment ? '#22C55E' : PALETTE.muted }}>
+                        {ghostAlignment ? '● 自動で位置・サイズを合わせています' : '○ 顔を検出できません(スライダーで手動調整してください)'}
+                      </p>
                     </div>
 
                     <div style={{ borderTop: `1px solid ${PALETTE.border}`, paddingTop: '14px' }}>
