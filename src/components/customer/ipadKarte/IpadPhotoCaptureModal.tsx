@@ -427,7 +427,14 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
                       スライダー(ghost.scalePercent)は、自動位置・サイズ合わせ
                       (ghostAlignment)が算出した倍率に対する追加の微調整として掛け合わせる
                       (既定100%=無補正)。自動合わせが効かない(顔検出できない)場合は
-                      従来通り等倍・中央表示+手動スライダーのみにフォールバックする。 */}
+                      従来通り等倍・中央表示+手動スライダーのみにフォールバックする
+                      (マスクも自動合わせが効いている時だけ適用し、フォールバック時は
+                      顔位置が分からないため画像全体をそのまま重ねる)。
+                      マスク(mask-image、実機フィードバック「ゴーストが四角く切り取られ、
+                      境界が目立つ」対応): 楕円のradial-gradientで顔まわりだけを自然に
+                      フェード表示する(ghostAlignment.ts参照、既存の丸い顔検出ガイドと
+                      同じ楕円の見た目で揃えている)。iOS Safariはベンダープレフィックス
+                      (-webkit-mask-image)が必須のため両方指定する。 */}
                   {ghostVisible && ghost.activeUrl && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -440,6 +447,12 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
                           ? `translate(${ghostAlignment.translateX}px, ${ghostAlignment.translateY}px) scale(${ghostAlignment.scale * (ghost.scalePercent / 100)})`
                           : `scale(${ghost.scalePercent / 100})`,
                         transformOrigin: ghostAlignment ? `${ghostAlignment.originX}px ${ghostAlignment.originY}px` : 'center',
+                        ...(ghostAlignment
+                          ? {
+                              WebkitMaskImage: `radial-gradient(ellipse ${ghostAlignment.maskRadiusX}px ${ghostAlignment.maskRadiusY}px at ${ghostAlignment.originX}px ${ghostAlignment.originY}px, #000 55%, transparent 100%)`,
+                              maskImage: `radial-gradient(ellipse ${ghostAlignment.maskRadiusX}px ${ghostAlignment.maskRadiusY}px at ${ghostAlignment.originX}px ${ghostAlignment.originY}px, #000 55%, transparent 100%)`,
+                            }
+                          : {}),
                       }}
                     />
                   )}

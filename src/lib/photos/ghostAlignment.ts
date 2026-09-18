@@ -25,6 +25,15 @@
  * ゴースト静止画は動かないため、この計算は写真が切り替わった時(と表示枠のリサイズ時)
  * にだけ行えばよく、ライブ映像の検出ループに一切依存しない(ジッターの原因を構造的に
  * 排除する)。
+ *
+ * 自然な楕円フェード(実機フィードバック「ゴースト画像が中央で四角く切り取られ、
+ * 背景との境界が目立つ」対応、2026-09-18): 従来はゴースト<img>をそのまま(矩形・
+ * ハードエッジ)重ねていたため、スケールダウンした際に画像の四角い輪郭がくっきり
+ * 見えてしまっていた。「顔領域だけを自然に重ねる」か「画像全体を自然な縁で重ねる」かを
+ * 比較し、前者を採用した: 既存の丸い顔検出ガイドと同じ楕円の見た目で揃えられること、
+ * 前回写真の髪型・服・背景まで写り込んで比較の邪魔になることを避けられることから、
+ * このアプリの用途(顔の位置合わせ)に適している。maskRadiusX/Yはこの判断に基づく
+ * 楕円マスクの半径(呼び出し側がCSS mask-imageのradial-gradientに使う)。
  */
 import { FACE_GUIDE_SIZE_MIN_RATIO, FACE_GUIDE_SIZE_MAX_RATIO } from './faceGuide'
 
@@ -61,11 +70,26 @@ export interface GhostAlignmentResult {
   /** scaleの後に適用する平行移動量(px)。 */
   translateX: number
   translateY: number
+  /**
+   * 顔だけを自然な楕円でフェード表示するためのマスク半径(px、transform適用前の
+   * box座標系。originX/originYを中心とする楕円で、outer transformのscaleと一緒に
+   * 拡大縮小されるため、最終的な画面上のサイズは常に顔の大きさに比例する)。
+   */
+  maskRadiusX: number
+  maskRadiusY: number
 }
 
 /** 誤検出等による極端な値を避けるためのクランプ範囲。Phase1の他閾値と同じ暫定値。 */
 export const GHOST_ALIGNMENT_SCALE_MIN = 0.4
 export const GHOST_ALIGNMENT_SCALE_MAX = 2.5
+
+/**
+ * マスク楕円の半径を、検出された顔ボックス(タイトにeyes/nose/mouth周辺を囲むだけで
+ * 額・顎・輪郭までは含まないことが多い)の何倍にするか。額から顎までを自然に含める
+ * ための余白。実機での見え方を見て調整するPhase1暫定値(FACE_GUIDE_SIZE_MIN_RATIO等と
+ * 同じ位置づけ)。
+ */
+export const GHOST_MASK_FACE_MARGIN = 1.7
 
 /**
  * ゴーストの顔が目指す「顔の高さ/フレーム高さ」比率。既存の顔検出ガイド
@@ -131,5 +155,7 @@ export function computeGhostRingAlignment(
     originY,
     translateX: targetX - originX,
     translateY: targetY - originY,
+    maskRadiusX: (ghost.face.width * scale * GHOST_MASK_FACE_MARGIN) / 2,
+    maskRadiusY: (faceHeightOnScreen * GHOST_MASK_FACE_MARGIN) / 2,
   }
 }

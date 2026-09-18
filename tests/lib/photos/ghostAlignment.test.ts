@@ -12,6 +12,7 @@ import {
   GHOST_ALIGNMENT_SCALE_MIN,
   GHOST_ALIGNMENT_SCALE_MAX,
   GHOST_ALIGNMENT_TARGET_HEIGHT_RATIO,
+  GHOST_MASK_FACE_MARGIN,
   type GhostFaceDetection,
 } from '../../../src/lib/photos/ghostAlignment'
 
@@ -29,6 +30,9 @@ describe('computeGhostRingAlignment', () => {
     expect(result!.scale).toBeCloseTo(1)
     expect(result!.translateX).toBeCloseTo(0)
     expect(result!.translateY).toBeCloseTo(0)
+    // マスク半径 = 顔の半幅/半高(scale=1なのでネイティブ値と同じ) × 余白倍率
+    expect(result!.maskRadiusX).toBeCloseTo((targetHeight / 2) * GHOST_MASK_FACE_MARGIN)
+    expect(result!.maskRadiusY).toBeCloseTo((targetHeight / 2) * GHOST_MASK_FACE_MARGIN)
   })
 
   it('顔が小さい場合は拡大し、中心がズレていればtranslateで画面中央へ寄せる', () => {
@@ -66,6 +70,9 @@ describe('computeGhostRingAlignment', () => {
     // 顔は既にbox中心(400,200)にあるためtranslateは0
     expect(result!.translateX).toBeCloseTo(0)
     expect(result!.translateY).toBeCloseTo(0)
+    // マスク半径 = 顔の半幅/半高(ネイティブ200/2=100) × coverScale(2) × 余白倍率
+    expect(result!.maskRadiusX).toBeCloseTo(100 * 2 * GHOST_MASK_FACE_MARGIN)
+    expect(result!.maskRadiusY).toBeCloseTo(100 * 2 * GHOST_MASK_FACE_MARGIN)
   })
 
   it('ghostがnullならnullを返す', () => {
