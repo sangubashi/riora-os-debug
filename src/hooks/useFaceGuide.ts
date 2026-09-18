@@ -56,16 +56,6 @@ export interface UseFaceGuideResult {
   /** モデルの初回ロード中(WASM+モデル取得)。 */
   modelLoading: boolean
   modelError: string | null
-  /**
-   * 直近の推論で得た顔ボックス・フレーム解像度の生の値(ghostAlignment.ts向け)。
-   * faceGuide.tsのFaceGuideState(ok/too_close等の分類結果)とは別に、ゴーストの
-   * 自動位置・サイズ合わせだけがこの生の座標を必要とするため、判定ロジック本体には
-   * 手を加えずここで併せて保持する。顔未検出時はnull。
-   */
-  rawDetection: {
-    frame: { width: number; height: number }
-    face: { x: number; y: number; width: number; height: number }
-  } | null
 }
 
 /**
@@ -82,7 +72,6 @@ function extractEyes(
 
 export function useFaceGuide({ videoRef, mode, active }: UseFaceGuideOptions): UseFaceGuideResult {
   const [state, setState] = useState<FaceGuideState | null>(null)
-  const [rawDetection, setRawDetection] = useState<UseFaceGuideResult['rawDetection']>(null)
   const [modelLoading, setModelLoading] = useState(false)
   const [modelError, setModelError] = useState<string | null>(null)
   const detectorRef = useRef<FaceDetectorInstance | null>(null)
@@ -113,7 +102,6 @@ export function useFaceGuide({ videoRef, mode, active }: UseFaceGuideOptions): U
   useEffect(() => {
     if (mode === 'none' || !active) {
       setState(null)
-      setRawDetection(null)
       return
     }
 
@@ -141,14 +129,6 @@ export function useFaceGuide({ videoRef, mode, active }: UseFaceGuideOptions): U
           width: video.videoWidth,
           height: video.videoHeight,
         }))
-        setRawDetection(
-          faceGuideDetection
-            ? {
-                frame: { width: video.videoWidth, height: video.videoHeight },
-                face: faceGuideDetection.box,
-              }
-            : null
-        )
       } catch {
         // 1フレームの推論失敗で撮影全体を止めない(次の間隔で再試行される)。
       }
@@ -157,5 +137,5 @@ export function useFaceGuide({ videoRef, mode, active }: UseFaceGuideOptions): U
     return () => window.clearInterval(intervalId)
   }, [mode, active, videoRef])
 
-  return { state, modelLoading, modelError, rawDetection }
+  return { state, modelLoading, modelError }
 }

@@ -38,21 +38,29 @@
  *   - 自動保存の視覚フィードバック(savedFlash)・ガイドメッセージの視認性向上は
  *     Phase 2と合わせて実装(2026-09-17ユーザー承認)。
  *
- * ゴーストの自動位置・サイズ合わせ(実機フィードバック「自動倍率だけでは調整精度・
- * 使い勝手が不十分」対応、2026-09-18ユーザー承認・写真切替時に一度だけ倍率を計算する
- * 方式から置き換え): ライブ映像の顔検出結果(useFaceGuide.rawDetection、既存の250ms
- * 間隔の推論ループがそのまま更新し続ける)と、ゴースト静止画に対して一度だけ実行する
- * 顔検出結果(useGhostImageFaceDetection)を毎回突き合わせ(ghostAlignment.ts)、
- * ゴースト<img>にCSS transform: translate()+scale()を掛けて位置・大きさをライブの顔に
- * 継続的に追従させる。カメラが多少動いても自動で合わせ直されるため、「カメラを動かして
- * 位置を揃える」という従来の案内文言は、顔検出できず自動合わせが効かない場合のみの
- * フォールバック表示にした。既存の手動「サイズ」スライダーは、自動合わせの結果に
- * 対する追加の微調整倍率として残している(既定100%=無補正)。既存の撮影・保存ロジック
- * (usePhotoCapture.ts・captureConfirmFlow.ts・faceGuide.ts・useFaceGuide.tsの判定
- * ロジック本体・ghostSelection.ts・API・DB)には一切手を加えていない。保存される写真は
- * 従来通り<video>フレームのみから生成され(captureFrame.ts)、ゴースト(<img>)への
- * 参照を一切持たないため、この変更後も「保存画像にゴーストが焼き込まれない」構造的
- * 保証は変わらない。
+ * ゴーストの初期位置・サイズ合わせ(実機フィードバックを受けての再設計、2026-09-18
+ * ユーザー承認): 当初は「ライブ映像の顔検出結果にゴーストを継続追従させる」方式
+ * (translate/scaleを250ms間隔で常に再計算)を実装したが、実機で検出結果のフレーム
+ * ごとのブレがそのままゴーストの微振動として見えてしまい(「ゴーストが下でちょこちょこ
+ * 動いてるだけ」)、使い物にならないと判明した。
+ *
+ * 調査の結果、既存の顔検出ガイド(下の丸い破線の輪、faceGuideMode!=='none'の時に表示)
+ * は検出結果に応じて動かない固定形状(CSSの固定パーセンテージ)であることを確認した。
+ * この輪は「顔をここに収めてください」という不変のターゲットであり、ライブ映像は
+ * 既存のuseFaceGuide.ts/faceGuide.tsのフィードバックで既にこの枠に収まるよう案内
+ * されている。そこで、ゴースト(前回写真)の顔もこの同じ固定ターゲットに一度だけ
+ * 合わせる方式(src/lib/photos/ghostAlignment.ts の computeGhostRingAlignment、
+ * ターゲットの数値はfaceGuide.tsのFACE_GUIDE_SIZE_MIN_RATIO〜MAX_RATIOの中央値・
+ * 画面中央0.5,0.5)へ置き換えた。ゴースト静止画は動かないため、この計算は写真が
+ * 切り替わった時と表示枠のリサイズ時にだけ行えばよく、ライブ映像の検出ループには
+ * 一切依存しない(ジッターの原因を構造的に排除する)。ライブ側の顔を輪に収める案内は
+ * 既存のuseFaceGuide.ts/faceGuide.tsがそのまま担い、この変更では一切手を加えていない。
+ * 既存の手動「サイズ」スライダーは、この自動合わせの結果に対する追加の微調整倍率として
+ * 残している(既定100%=無補正)。既存の撮影・保存ロジック(usePhotoCapture.ts・
+ * captureConfirmFlow.ts・faceGuide.ts・useFaceGuide.ts・ghostSelection.ts・API・DB)
+ * には一切手を加えていない。保存される写真は従来通り<video>フレームのみから生成され
+ * (captureFrame.ts)、ゴースト(<img>)への参照を一切持たないため、この変更後も
+ * 「保存画像にゴーストが焼き込まれない」構造的保証は変わらない。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
@@ -66,7 +74,7 @@ import {
 } from '@/hooks/useGhostOverlay'
 import { useGhostImageFaceDetection } from '@/hooks/useGhostImageFaceDetection'
 import { pickFaceGuideMessage, type FaceGuideMode } from '@/lib/photos/faceGuide'
-import { computeGhostAlignment } from '@/lib/photos/ghostAlignment'
+import { computeGhostRingAlignment } from '@/lib/photos/ghostAlignment'
 import { pickTiltMessage } from '@/lib/photos/tiltGuide'
 import { PALETTE, headingFont } from '@/components/customer/shared/PhotoCompareKit'
 import { IPAD_KARTE_ANGLES, type IpadKarteAngleId } from './ipadKarteData'
@@ -237,16 +245,13 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
   })
   const ghostVisible = ghost.enabled && !!ghost.activeUrl
 
-  // ゴーストの自動位置・サイズ合わせ(実機フィードバック「自動倍率だけでは調整精度・
-  // 使い勝手が不十分」対応、2026-09-18)。ゴースト静止画に対して一度だけ顔検出を行い
-  // (useGhostImageFaceDetection、写真自体は動かないので1回で十分)、ライブ映像側の
-  // 顔検出結果(faceGuide.rawDetection、既存の250ms間隔ループが更新し続ける)と毎回
-  // 突き合わせて(ghostAlignment.ts)、ゴーストの位置・大きさをライブの顔に継続的に
-  // 追従させる。カメラ位置を厳密に合わせなくても自動で追従するため、以前のバージョンで
-  // 懸念していた「常に一致して見えてガイドとして機能しなくなる」問題は、そもそも
-  // 「カメラを動かして合わせる」運用自体をこの自動追従に置き換えることで解消する
-  // (合わなくなるのはむしろ顔検出に失敗した時だけであり、その場合は下のフォール
-  // バック文言で知らせる)。
+  // ゴーストの初期位置・サイズ合わせ(実機フィードバックを受けての再設計、2026-09-18)。
+  // ゴースト静止画に対して一度だけ顔検出を行い(useGhostImageFaceDetection)、既存の
+  // 顔検出ガイド(丸い輪)が前提とする固定ターゲット(faceGuide.tsのFACE_GUIDE_SIZE_
+  // MIN_RATIO〜MAX_RATIOの中央値・画面中央0.5,0.5)に合わせる(ghostAlignment.tsの
+  // computeGhostRingAlignment)。ライブ映像の顔検出結果には依存しない(継続追従は
+  // 廃止。ジッターの原因だったため)。ライブ側の顔を同じ輪に収める案内は既存の
+  // useFaceGuide.ts/faceGuide.tsがそのまま担う(この変更では手を加えていない)。
   //
   // 表示に使う枠(video/ゴースト<img>を包む相対配置コンテナ)の実測サイズが必要なため、
   // コールバックrefでResizeObserverを張る(reviewPhaseの切り替えでこのdivがアン
@@ -267,10 +272,10 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
 
   const ghostImageFaceSample = useGhostImageFaceDetection(ghostVisible ? ghost.activeUrl : null)
   const ghostAlignment = ghostVisible
-    ? computeGhostAlignment(videoContainerBox, faceGuide.rawDetection, ghostImageFaceSample)
+    ? computeGhostRingAlignment(videoContainerBox, ghostImageFaceSample)
     : null
-  // 自動追従が効いている間は「カメラを動かして揃えてください」の案内は不要(むしろ
-  // 矛盾する)。顔検出できず自動合わせが効かない場合のみ、従来通り手動での目安を示す。
+  // ゴースト写真から顔検出できない場合のみ、従来通り手動での目安を示す
+  // (通常はライブ側の顔検出ガイド(丸い輪)が既にこの案内の役目を果たしている)。
   const ghostMessage = ghostVisible && !ghostAlignment ? '前回の写真に合わせて位置を揃えてください' : null
 
   // ガイドメッセージ優先順位(2026-09-17拡張): 顔ガイド(近い/遠い/位置/傾き) > 端末の
@@ -596,7 +601,7 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
                         style={{ width: '100%', accentColor: PALETTE.gold }}
                       />
                       <p style={{ margin: '6px 0 0', fontSize: '11px', color: ghostAlignment ? '#22C55E' : PALETTE.muted }}>
-                        {ghostAlignment ? '● 自動で位置・サイズを合わせています' : '○ 顔を検出できません(スライダーで手動調整してください)'}
+                        {ghostAlignment ? '● ガイドの輪に合わせて自動調整しています' : '○ 前回写真から顔を検出できません(スライダーで手動調整してください)'}
                       </p>
                     </div>
 

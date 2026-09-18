@@ -1,27 +1,35 @@
 /**
- * ghostAlignment.ts — ゴーストの自動位置・サイズ合わせ(写真カルテ Phase 2 追加調整・
- * 実機フィードバック「自動倍率だけでは調整精度・使い勝手が不十分」対応、2026-09-18)。
+ * ghostAlignment.ts — ゴーストの初期位置・サイズ合わせ(実機フィードバックを受けての
+ * 再設計、2026-09-18)。
  *
- * 前身のghostAutoScale.ts(写真切替時に一度だけ倍率を計算する方式)は、計算した瞬間の
- * カメラ位置からその後動くとズレてしまい、実機での使い勝手が十分ではないと判明した。
- * この関数は、ライブ映像の顔検出結果(usePhotoCaptureのdetectionループから継続的に
- * 渡される想定)を入力として、呼ばれるたびに「今の顔の位置・大きさ」にゴーストを
- * 合わせるための変換(CSS transform用のtranslate/scaleと、その基準点)を算出する
- * 純粋関数にした。呼び出し側(IpadPhotoCaptureModal.tsx)がライブ映像の検出が更新される
- * 都度(既存の250ms間隔)この関数を呼び直すことで、位置・サイズの自動追従を実現する。
+ * 経緯: 当初は「ライブ映像の顔検出結果にゴーストを継続追従させる」方式(位置・サイズを
+ * 250ms間隔で常に再計算)を実装したが、実機で検出結果のフレームごとのブレがそのまま
+ * ゴーストの微振動として見えてしまい(「ゴーストが下でちょこちょこ動いてるだけ」)、
+ * 使い物にならないと判明した。
  *
- * 考え方: ライブ映像・ゴースト静止画はどちらもobject-fit:coverで同一の枠に表示される。
- * 両者のネイティブ解像度・枠(box)のサイズから「顔中心が画面上のどこに、どれだけの
- * 大きさで表示されているか」をそれぞれ計算し、ゴースト側の顔がライブ側の顔と同じ画面
- * 位置・同じ大きさになるようなtransformを求める。
+ * 方針転換: 既存の顔検出ガイド(丸い破線の輪、IpadPhotoCaptureModal.tsx内でCSSの
+ * 固定パーセンテージ left:28%/right:28%/top:14%/bottom:18% により描画)は、検出結果に
+ * 応じて動かない固定形状であることを確認した(枠の色だけがガイド状態に応じて変わる)。
+ * この輪は「顔をこの枠に収めてください」という不変のターゲットであり、今回撮る写真
+ * (ライブ映像)は既存のuseFaceGuide.ts/faceGuide.tsによる大きさ・位置のフィードバック
+ * で既にこの枠に収まるよう案内されている。
  *
- * transform-originをゴースト自身の(変換前の)顔中心の画面座標に置くことで、
- * `transform: translate(dx, dy) scale(s)` の1組だけで「そこを基準に拡大縮小しつつ、
- * 目標位置まで平行移動する」変換になる(scaleの基準点自体を動かす必要がない)。
+ * したがって、ゴースト(前回写真)の顔もこの同じ固定ターゲットに一度だけ合わせておけば、
+ * ライブ側・ゴースト側の両方が同じ固定ターゲットに揃うことで、結果的に両者が一致する
+ * (ライブ検出への継続追従は不要)。ターゲットの数値は、輪の見た目のピクセル範囲
+ * (装飾用で、顔検出のタイトな矩形より余白を含む)ではなく、faceGuide.tsが「ちょうど
+ * 良い大きさ・位置」と判定する基準(FACE_GUIDE_SIZE_MIN_RATIO〜MAX_RATIOの中央値、
+ * 画面中央0.5,0.5)を使う。ライブ側もこの同じ基準で判定されるため、両者の測定方法
+ * (MediaPipeの検出ボックス)を揃えることで整合性を保てる。
+ *
+ * ゴースト静止画は動かないため、この計算は写真が切り替わった時(と表示枠のリサイズ時)
+ * にだけ行えばよく、ライブ映像の検出ループに一切依存しない(ジッターの原因を構造的に
+ * 排除する)。
  */
+import { FACE_GUIDE_SIZE_MIN_RATIO, FACE_GUIDE_SIZE_MAX_RATIO } from './faceGuide'
 
 export interface MediaFrame {
-  /** ネイティブ解像度(video.videoWidth/videoHeight、img.naturalWidth/naturalHeightと同じ単位)。 */
+  /** ネイティブ解像度(img.naturalWidth/naturalHeightと同じ単位)。 */
   width: number
   height: number
 }
@@ -59,62 +67,69 @@ export interface GhostAlignmentResult {
 export const GHOST_ALIGNMENT_SCALE_MIN = 0.4
 export const GHOST_ALIGNMENT_SCALE_MAX = 2.5
 
+/**
+ * ゴーストの顔が目指す「顔の高さ/フレーム高さ」比率。既存の顔検出ガイド
+ * (faceGuide.tsのFACE_GUIDE_SIZE_MIN_RATIO〜MAX_RATIO、ライブ映像が「ちょうど良い
+ * 大きさ」と判定される範囲)の中央値を使う。ライブ側もこの範囲に収まるよう案内される
+ * ため、ゴーストをこの値に合わせておけば両者が一致する。
+ */
+export const GHOST_ALIGNMENT_TARGET_HEIGHT_RATIO = (FACE_GUIDE_SIZE_MIN_RATIO + FACE_GUIDE_SIZE_MAX_RATIO) / 2
+
+/**
+ * ゴーストの顔が目指す中心位置(box全体に対する比率)。faceGuide.tsのevaluatePosition
+ * が「ちょうど良い位置」の基準として使う画面中央(0.5, 0.5)と揃えている。
+ */
+export const GHOST_ALIGNMENT_TARGET_CENTER_X_RATIO = 0.5
+export const GHOST_ALIGNMENT_TARGET_CENTER_Y_RATIO = 0.5
+
 function coverScale(frame: MediaFrame, box: ContainerBox): number {
   if (frame.width <= 0 || frame.height <= 0 || box.width <= 0 || box.height <= 0) return 0
   return Math.max(box.width / frame.width, box.height / frame.height)
 }
 
-/** 顔中心の画面上座標(box左上基準px)と、顔の高さの画面上サイズ(px)。 */
-function faceOnScreen(
-  detection: GhostFaceDetection,
-  box: ContainerBox
-): { x: number; y: number; height: number } | null {
-  const scale = coverScale(detection.frame, box)
+/**
+ * ゴースト静止画の顔検出結果を、固定ターゲット(顔の高さ比率・中心位置比率)に合わせる
+ * ための変換(CSS transform用のtranslate/scaleと、その基準点)を算出する。ゴーストは
+ * 動かないので一度計算すれば良く、ライブ映像の検出結果には一切依存しない。顔が検出
+ * できない場合、またはboxのサイズが未確定(初回レンダリング直後等)の場合はnullを返す
+ * (呼び出し側は「等倍・中央表示+手動スライダー」にフォールバックする)。
+ */
+export function computeGhostRingAlignment(
+  box: ContainerBox,
+  ghost: GhostFaceDetection | null
+): GhostAlignmentResult | null {
+  if (!ghost) return null
+  if (ghost.face.width <= 0 || ghost.face.height <= 0) return null
+
+  const scale = coverScale(ghost.frame, box)
   if (scale <= 0) return null
 
-  const displayedWidth = detection.frame.width * scale
-  const displayedHeight = detection.frame.height * scale
+  const displayedWidth = ghost.frame.width * scale
+  const displayedHeight = ghost.frame.height * scale
   const offsetX = (box.width - displayedWidth) / 2
   const offsetY = (box.height - displayedHeight) / 2
 
-  const faceCenterX = detection.face.x + detection.face.width / 2
-  const faceCenterY = detection.face.y + detection.face.height / 2
+  const faceCenterX = ghost.face.x + ghost.face.width / 2
+  const faceCenterY = ghost.face.y + ghost.face.height / 2
+  const originX = offsetX + faceCenterX * scale
+  const originY = offsetY + faceCenterY * scale
 
-  return {
-    x: offsetX + faceCenterX * scale,
-    y: offsetY + faceCenterY * scale,
-    height: detection.face.height * scale,
-  }
-}
+  const faceHeightOnScreen = ghost.face.height * scale
+  if (faceHeightOnScreen <= 0) return null
 
-/**
- * live(現在のカメラ映像)の顔検出結果に、ghost(ゴースト静止画に対して一度だけ実行した
- * 顔検出結果)を合わせるための変換を算出する。どちらかで顔が検出できない場合、または
- * boxのサイズが未確定(初回レンダリング直後等)の場合はnullを返す
- * (呼び出し側は「等倍・中央表示+手動スライダー」等の従来のフォールバックに戻す)。
- */
-export function computeGhostAlignment(
-  box: ContainerBox,
-  live: GhostFaceDetection | null,
-  ghost: GhostFaceDetection | null
-): GhostAlignmentResult | null {
-  if (!live || !ghost) return null
-  if (live.face.width <= 0 || live.face.height <= 0) return null
-  if (ghost.face.width <= 0 || ghost.face.height <= 0) return null
+  const targetHeightOnScreen = GHOST_ALIGNMENT_TARGET_HEIGHT_RATIO * box.height
+  const targetX = GHOST_ALIGNMENT_TARGET_CENTER_X_RATIO * box.width
+  const targetY = GHOST_ALIGNMENT_TARGET_CENTER_Y_RATIO * box.height
 
-  const livePoint = faceOnScreen(live, box)
-  const ghostPoint = faceOnScreen(ghost, box)
-  if (!livePoint || !ghostPoint || ghostPoint.height <= 0) return null
-
-  const rawScale = livePoint.height / ghostPoint.height
+  const rawScale = targetHeightOnScreen / faceHeightOnScreen
   if (!Number.isFinite(rawScale)) return null
-  const scale = Math.max(GHOST_ALIGNMENT_SCALE_MIN, Math.min(GHOST_ALIGNMENT_SCALE_MAX, rawScale))
+  const clampedScale = Math.max(GHOST_ALIGNMENT_SCALE_MIN, Math.min(GHOST_ALIGNMENT_SCALE_MAX, rawScale))
 
   return {
-    scale,
-    originX: ghostPoint.x,
-    originY: ghostPoint.y,
-    translateX: livePoint.x - ghostPoint.x,
-    translateY: livePoint.y - ghostPoint.y,
+    scale: clampedScale,
+    originX,
+    originY,
+    translateX: targetX - originX,
+    translateY: targetY - originY,
   }
 }
