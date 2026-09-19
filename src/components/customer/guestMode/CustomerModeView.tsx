@@ -20,7 +20,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Playfair_Display } from 'next/font/google'
-import { X, Leaf, CalendarDays, Flower2, ImageOff, SlidersHorizontal } from 'lucide-react'
+import { X, Leaf, CalendarDays, Flower2, ImageOff, SlidersHorizontal, Camera, ImagePlus, Trash2 } from 'lucide-react'
 import {
   useCustomerModeData,
   CUSTOMER_MODE_ANGLES,
@@ -39,6 +39,12 @@ import {
 import { getPhotoSignedUrl, getBatchSignedUrls, type TimelinePhoto } from '@/lib/photos/photoApiClient'
 import { usePinchZoom } from './usePinchZoom'
 import PhotoCompareScreen from '@/components/customer/photoCompare/PhotoCompareScreen'
+// 写真撮影・選択・削除フロー(PHASE GUEST-MODE-PHOTO-MOVE-1・Phase 0・2026-09-19)。
+// IpadStaffKarteView.tsxが使っていたものと同一のモーダル2つをそのまま再利用する
+// (customerId/onClose等のpropsのみで完結する自己完結コンポーネントのため、呼び出し元を
+// 追加するだけで済む。モーダル本体・内部の撮影/削除ロジックには一切手を加えていない)。
+import IpadPhotoCaptureModal, { type PhotoCaptureIntent } from '@/components/customer/ipadKarte/IpadPhotoCaptureModal'
+import IpadPhotoManageModal from '@/components/customer/ipadKarte/IpadPhotoManageModal'
 import {
   PALETTE,
   headingFont,
@@ -92,6 +98,10 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
   // (IpadPhotoCaptureModal.tsx)とは無関係の、保存済み写真の閲覧専用モーダル。
   // お客様に見せる画面であるお客様モード側に導線を集約する(スタッフ用カルテからは削除済み)。
   const [sliderCompareOpen, setSliderCompareOpen] = useState(false)
+  // 写真撮影・選択・削除フロー(PHASE GUEST-MODE-PHOTO-MOVE-1・Phase 0・2026-09-19)。
+  // IpadStaffKarteView.tsxの同名stateと同じ役割・同じ型(モーダルの開閉のみを持つ)。
+  const [photoCaptureIntent, setPhotoCaptureIntent] = useState<PhotoCaptureIntent | null>(null)
+  const [photoManageOpen, setPhotoManageOpen] = useState(false)
   // 拡大モードで選択中の撮影機会key(comparisonSelection.tsのoccasionKey形式と同じ)。
   // null = 「今回」(最新の撮影機会)を表す。全来店日リストから選ぶと`visit:${visitId}`になる。
   const [enlargeOccasionKey, setEnlargeOccasionKey] = useState<string | null>(null)
@@ -541,6 +551,50 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
                 </>
               )}
 
+              {/* 写真撮影・選択・削除(PHASE GUEST-MODE-PHOTO-MOVE-1・Phase 0・2026-09-19)。
+                  IpadStaffKarteView.tsxの「写真カルテ」セクションにあった3ボタンと同じ
+                  モーダル・同じonSaved/onDeletedの再取得方針(data.refetchPhotos)をそのまま
+                  お客様モード側に新設する。上の写真表示・比較(比較｜拡大・自由選択・
+                  スライダー比較)は一切変更していない。 */}
+              <div style={{ display: 'flex', gap: '10px', marginTop: '14px' }}>
+                <button
+                  type="button"
+                  onClick={() => setPhotoCaptureIntent('camera')}
+                  style={{
+                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    padding: '12px', borderRadius: '10px', border: `1.5px solid ${PALETTE.gold}`,
+                    background: 'none', color: PALETTE.text, fontSize: '13px', cursor: 'pointer',
+                  }}
+                >
+                  <Camera size={16} strokeWidth={1.8} color={PALETTE.gold} />
+                  撮影する
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPhotoCaptureIntent('picker')}
+                  style={{
+                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    padding: '12px', borderRadius: '10px', border: `1.5px solid ${PALETTE.border}`,
+                    background: 'none', color: PALETTE.text, fontSize: '13px', cursor: 'pointer',
+                  }}
+                >
+                  <ImagePlus size={16} strokeWidth={1.8} color={PALETTE.gold} />
+                  選択して追加
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPhotoManageOpen(true)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                  width: '100%', marginTop: '10px', padding: '10px', borderRadius: '10px',
+                  border: 'none', background: 'none', color: PALETTE.muted, fontSize: '12px', cursor: 'pointer',
+                }}
+              >
+                <Trash2 size={14} strokeWidth={1.8} color={PALETTE.muted} />
+                写真を削除
+              </button>
+
               {/* 肌状態タグ(前回/今回それぞれの上位2項目) */}
               {(data.previousSkinTags.length > 0 || data.currentSkinTags.length > 0) && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '12px' }}>
@@ -778,6 +832,28 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
           customerId={customerId}
           initialBodyPart={angle}
           onClose={() => setSliderCompareOpen(false)}
+        />
+      )}
+
+      {/* 撮影・追加モーダル(PHASE GUEST-MODE-PHOTO-MOVE-1・Phase 0・2026-09-19)。
+          IpadStaffKarteView.tsxと同じコンポーネント・同じprops構成をそのまま使う。 */}
+      {photoCaptureIntent && (
+        <IpadPhotoCaptureModal
+          customerId={customerId}
+          visitId={data.todayVisitId}
+          intent={photoCaptureIntent}
+          onClose={() => setPhotoCaptureIntent(null)}
+          onSaved={() => { void data.refetchPhotos() }}
+        />
+      )}
+
+      {/* 写真削除モーダル(PHASE GUEST-MODE-PHOTO-MOVE-1・Phase 0・2026-09-19)。
+          IpadStaffKarteView.tsxと同じコンポーネント・同じprops構成をそのまま使う。 */}
+      {photoManageOpen && (
+        <IpadPhotoManageModal
+          customerId={customerId}
+          onClose={() => setPhotoManageOpen(false)}
+          onDeleted={() => { void data.refetchPhotos() }}
         />
       )}
     </div>

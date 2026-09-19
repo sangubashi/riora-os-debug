@@ -31,7 +31,7 @@
  * GET /api/customers/[id]/visits/[visitId]/treatment の呼び出しをこのフックから削除した
  * (このフックがこの2件のAPIの唯一の呼び出し元だったため、他画面への影響はない)。
  */
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { authedFetch } from '@/lib/api/authedFetch'
 import {
   listCustomerPhotosTimeline,
@@ -121,6 +121,37 @@ function todayDateStr(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
+/**
+ * photosByAngle/photoUrlsの組み立て(角度ごとの前回↔今回↔初回の代表写真をsigned URL付きで
+ * 用意する)。マウント時のuseEffectとrefetchPhotos(写真撮影・選択・削除フロー用の軽量
+ * 再取得、PHASE GUEST-MODE-PHOTO-MOVE-1・2026-09-19)の両方から呼ぶ共通ロジックとして
+ * 切り出した(ipadKarteData.tsのbuildAngleComparisonと同じ「effectとrefetchで同じ組み立てを
+ * 共有する」方針)。ロジック自体は元のuseEffect内の処理を1文字も変えずそのまま関数化している。
+ */
+async function computePhotosByAngle(
+  customerId: string,
+  photos: TimelinePhoto[]
+): Promise<{ photosByAngle: Record<string, TimelinePhoto[]>; photoUrls: Record<string, string> }> {
+  const bodyPartGroups = groupPhotosByBodyPart(photos)
+  const photosByAngle: Record<string, TimelinePhoto[]> = {}
+  const photoIdSet = new Set<string>()
+  for (const angle of CUSTOMER_MODE_ANGLES) {
+    const group = bodyPartGroups.find(g => g.bodyPart === angle.id) ?? { bodyPart: angle.id, photos: [] }
+    photosByAngle[angle.id] = group.photos
+    if (comparableGroups([group]).length > 0) {
+      const previousPair = buildPreviousComparison(group)
+      const firstPair = buildFirstComparison(group)
+      photoIdSet.add(previousPair.current.id)
+      photoIdSet.add(previousPair.reference.id)
+      photoIdSet.add(firstPair.reference.id)
+    } else if (group.photos.length > 0) {
+      photoIdSet.add(group.photos[0].id)
+    }
+  }
+  const photoUrls = await getBatchSignedUrls(customerId, Array.from(photoIdSet), 'detail')
+  return { photosByAngle, photoUrls }
+}
+
 export interface CustomerModeData {
   loading: boolean
   /**
@@ -156,6 +187,13 @@ export interface CustomerModeData {
    * お客様モードには一切表示しないため、この型(id/visitDate/menuNameのみ)で保持する。
    */
   visits: VisitHistoryEntry[]
+  /**
+   * 写真撮影・選択・削除フロー(PHASE GUEST-MODE-PHOTO-MOVE-1・2026-09-19)用: 本日来店の
+   * visit_id。来店記録が無ければnull。算出ロジック自体は既存(下のuseEffect内、todayVisit)を
+   * そのまま公開するだけで、算出方法は変更していない。ipadKarteData.tsのtodayVisitIdと
+   * 同じ意味・同じ算出方法(visit-history APIのvisitDateが本日と一致する行)。
+   */
+  todayVisitId: string | null
 }
 
 const EMPTY_DATA: CustomerModeData = {
@@ -168,9 +206,20 @@ const EMPTY_DATA: CustomerModeData = {
   previousSkinTags: [],
   homecareItems: [],
   visits: [],
+  todayVisitId: null,
 }
 
-export function useCustomerModeData(customerId: string): CustomerModeData {
+export interface UseCustomerModeDataResult extends CustomerModeData {
+  /**
+   * 写真撮影・選択・削除フロー(PHASE GUEST-MODE-PHOTO-MOVE-1・2026-09-19)のアップロード/
+   * 削除成功後に呼ぶ軽量な再取得。ipadKarteData.tsのrefetchPhotosと同じ方針: 写真一覧
+   * (photosByAngle/photoUrls)のみを再取得し、他の項目(肌タグ・ホームケア・来店履歴等)は
+   * 再取得しない(全項目再取得は不要なsigned URL再発行等が走り重いため)。
+   */
+  refetchPhotos: () => Promise<void>
+}
+
+export function useCustomerModeData(customerId: string): UseCustomerModeDataResult {
   const [data, setData] = useState<CustomerModeData>(EMPTY_DATA)
 
   useEffect(() => {
@@ -212,23 +261,7 @@ export function useCustomerModeData(customerId: string): CustomerModeData {
         return { productName: p.productName, frequency: guide?.frequency ?? null, timing: guide?.timing ?? null, caution: guide?.caution ?? null }
       })
 
-      const bodyPartGroups = groupPhotosByBodyPart(photos)
-      const photosByAngle: Record<string, TimelinePhoto[]> = {}
-      const photoIdSet = new Set<string>()
-      for (const angle of CUSTOMER_MODE_ANGLES) {
-        const group = bodyPartGroups.find(g => g.bodyPart === angle.id) ?? { bodyPart: angle.id, photos: [] }
-        photosByAngle[angle.id] = group.photos
-        if (comparableGroups([group]).length > 0) {
-          const previousPair = buildPreviousComparison(group)
-          const firstPair = buildFirstComparison(group)
-          photoIdSet.add(previousPair.current.id)
-          photoIdSet.add(previousPair.reference.id)
-          photoIdSet.add(firstPair.reference.id)
-        } else if (group.photos.length > 0) {
-          photoIdSet.add(group.photos[0].id)
-        }
-      }
-      const photoUrls = await getBatchSignedUrls(customerId, Array.from(photoIdSet), 'detail')
+      const { photosByAngle, photoUrls } = await computePhotosByAngle(customerId, photos)
       if (cancelled) return
 
       const visitTabs = buildVisitTabs(photos)
@@ -243,6 +276,7 @@ export function useCustomerModeData(customerId: string): CustomerModeData {
         previousSkinTags,
         homecareItems,
         visits,
+        todayVisitId,
       })
     })()
 
@@ -251,5 +285,17 @@ export function useCustomerModeData(customerId: string): CustomerModeData {
     }
   }, [customerId])
 
-  return data
+  /**
+   * 写真撮影・選択・削除フロー(PHASE GUEST-MODE-PHOTO-MOVE-1・2026-09-19)のアップロード/
+   * 削除成功後に呼ぶ。ipadKarteData.tsのrefetchPhotosと同じ方針で、写真一覧
+   * (photosByAngle/photoUrls)のみを再取得し、他の項目(肌タグ・ホームケア・来店履歴等)には
+   * 触れない。
+   */
+  const refetchPhotos = useCallback(async () => {
+    const photos = await listCustomerPhotosTimeline(customerId)
+    const { photosByAngle, photoUrls } = await computePhotosByAngle(customerId, photos)
+    setData(prev => ({ ...prev, photosByAngle, photoUrls }))
+  }, [customerId])
+
+  return { ...data, refetchPhotos }
 }
