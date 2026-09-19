@@ -135,10 +135,10 @@ export default function KarteMemoSection({ customerId }: Props) {
                 <textarea
                   value={editContent}
                   onChange={e => setEditContent(e.target.value)}
-                  rows={4}
+                  rows={10}
                   autoFocus
                   style={{
-                    width: '100%', boxSizing: 'border-box', resize: 'vertical',
+                    width: '100%', boxSizing: 'border-box', resize: 'vertical', minHeight: '220px',
                     fontSize: '13px', color: PALETTE.text, lineHeight: 1.7,
                     border: `1px solid ${PALETTE.border}`, borderRadius: '8px', padding: '8px',
                     outline: 'none', fontFamily: 'inherit',
@@ -228,11 +228,11 @@ export default function KarteMemoSection({ customerId }: Props) {
             <textarea
               value={newContent}
               onChange={e => setNewContent(e.target.value)}
-              rows={4}
+              rows={10}
               autoFocus
               placeholder="今日の接客で気づいたこと、施術中の様子など自由に記録してください"
               style={{
-                width: '100%', boxSizing: 'border-box', resize: 'vertical',
+                width: '100%', boxSizing: 'border-box', resize: 'vertical', minHeight: '220px',
                 fontSize: '13px', color: PALETTE.text, lineHeight: 1.7,
                 border: `1px solid ${PALETTE.border}`, borderRadius: '8px', padding: '8px',
                 outline: 'none', fontFamily: 'inherit',
