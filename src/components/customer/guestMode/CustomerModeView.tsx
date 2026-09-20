@@ -85,9 +85,16 @@ interface Props {
   customerId: string
   customerName: string
   onClose: () => void
+  /**
+   * iPad専用カルテ入口(PHASE IPAD-KARTE-ENTRY-1・2026-09-20ユーザー承認)用の任意コールバック。
+   * 指定時のみ、ヘッダーの「Salon Riora」ロゴを1000ms長押しするとスタッフ用カルテへ
+   * 切り替わる(通常タップでは反応しない)。未指定時(CustomerBottomSheet経由の既存呼び出し)
+   * はロゴは従来通り非インタラクティブな装飾のまま、一切変更なし。
+   */
+  onSwitchToStaffView?: () => void
 }
 
-export default function CustomerModeView({ customerId, customerName, onClose }: Props) {
+export default function CustomerModeView({ customerId, customerName, onClose, onSwitchToStaffView }: Props) {
   const data = useCustomerModeData(customerId)
   const [angle, setAngle] = useState<CustomerModeAngleId>('face_front')
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
@@ -99,6 +106,13 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
   // 画面から誤タップでスタッフ専用画面(CustomerBottomSheet)へ戻ってしまうのを防ぐため、
   // 通常のタップでは閉じず600ms以上の長押しでのみonCloseを呼ぶ。
   const exitLongPress = useLongPress(onClose)
+
+  // ロゴ長押しでスタッフ用カルテへ切替(PHASE IPAD-KARTE-ENTRY-1・2026-09-20ユーザー承認)。
+  // onSwitchToStaffViewが未指定でもuseLongPress自体は呼ぶ(Hooksのルール上、条件付きで
+  // フックを呼び出せないため)が、ハンドラをロゴ要素に実際に付与するのは指定時のみ
+  // (下のJSX側で分岐)。moveCancelPx指定によりスクロール等の誤発動を防ぐ
+  // (第3引数を渡さない上のexitLongPressの挙動には一切影響しない、useLongPress.ts参照)。
+  const logoLongPress = useLongPress(onSwitchToStaffView ?? (() => {}), 1000, { moveCancelPx: 12 })
 
   // 担当者タグ選択(PHASE IPAD-SHARED-LOGIN-1・2026-09-20ユーザー承認)。店舗共通ログイン
   // 時のみ意味を持つ(個人ログイン時はisSharedLoginがfalseになり無変更)。写真撮影・選択
@@ -271,16 +285,38 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
         }}
       >
         <div>
-          <p
+          {/* ロゴ長押しでスタッフ用カルテへ切替(PHASE IPAD-KARTE-ENTRY-1・2026-09-20ユーザー
+              承認)。onSwitchToStaffView未指定時(CustomerBottomSheet経由の既存呼び出し)は
+              ハンドラを一切付与せず、従来通りただの装飾テキストのまま(見た目も無変更)。 */}
+          <div
+            {...(onSwitchToStaffView ? logoLongPress.handlers : {})}
             style={{
-              margin: 0, display: 'flex', alignItems: 'center', gap: '6px',
-              fontSize: '20px', color: PALETTE.gold, letterSpacing: '0.01em',
-              fontFamily: logoFont.style.fontFamily,
+              display: 'inline-block', borderRadius: '8px', margin: '-4px -6px', padding: '4px 6px',
+              background: logoLongPress.pressing ? PALETTE.gold : 'transparent',
+              touchAction: onSwitchToStaffView ? 'none' : undefined,
             }}
           >
-            <Flower2 size={16} strokeWidth={1.4} color={PALETTE.gold} />
-            Salon Riora
-          </p>
+            <p
+              style={{
+                margin: 0, display: 'flex', alignItems: 'center', gap: '6px',
+                fontSize: '20px', letterSpacing: '0.01em',
+                color: logoLongPress.pressing ? '#FFFFFF' : PALETTE.gold,
+                fontFamily: logoFont.style.fontFamily,
+              }}
+            >
+              <Flower2 size={16} strokeWidth={1.4} color={logoLongPress.pressing ? '#FFFFFF' : PALETTE.gold} />
+              Salon Riora
+            </p>
+            {logoLongPress.pressing && (
+              <div
+                style={{
+                  height: '2px', marginTop: '2px', borderRadius: '1px',
+                  background: 'rgba(255,255,255,0.7)',
+                  width: `${Math.round(logoLongPress.progress * 100)}%`,
+                }}
+              />
+            )}
+          </div>
           <p
             style={{
               margin: '4px 0 0', fontSize: '9px', letterSpacing: '0.2em', color: PALETTE.muted,

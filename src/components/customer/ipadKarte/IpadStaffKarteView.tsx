@@ -380,9 +380,16 @@ interface Props {
   customerId: string
   customerName: string
   onClose: () => void
+  /**
+   * iPad専用カルテ入口(PHASE IPAD-KARTE-ENTRY-1・2026-09-20ユーザー承認)用の任意コールバック。
+   * 指定時のみ、ヘッダー左上・ロゴ付近に常時表示の「お客様用カルテへ戻る」ボタンを表示し、
+   * 通常タップで即座に呼び出す(長押し不要、非対称設計)。未指定時(CustomerBottomSheet経由の
+   * 既存呼び出し)は何も表示されない。
+   */
+  onSwitchToCustomerView?: () => void
 }
 
-export default function IpadStaffKarteView({ customerId, customerName, onClose }: Props) {
+export default function IpadStaffKarteView({ customerId, customerName, onClose, onSwitchToCustomerView }: Props) {
   const data = useIpadKarteData(customerId)
   const [angle, setAngle] = useState<IpadKarteAngleId>('face_front')
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
@@ -412,19 +419,39 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
           borderBottom: `1px solid ${PALETTE.border}`,
         }}
       >
-        <p
-          style={{
-            margin: 0, display: 'flex', alignItems: 'center', gap: '6px',
-            fontSize: '20px', color: PALETTE.gold, letterSpacing: '0.01em',
-            fontFamily: headingFont.style.fontFamily,
-          }}
-        >
-          <Flower2 size={16} strokeWidth={1.4} color={PALETTE.gold} />
-          Salon Riora
-          <span style={{ fontSize: '11px', color: PALETTE.muted, marginLeft: '8px', fontWeight: 400 }}>
-            iPadカルテ(β)
-          </span>
-        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <p
+            style={{
+              margin: 0, display: 'flex', alignItems: 'center', gap: '6px',
+              fontSize: '20px', color: PALETTE.gold, letterSpacing: '0.01em',
+              fontFamily: headingFont.style.fontFamily,
+            }}
+          >
+            <Flower2 size={16} strokeWidth={1.4} color={PALETTE.gold} />
+            Salon Riora
+            <span style={{ fontSize: '11px', color: PALETTE.muted, marginLeft: '8px', fontWeight: 400 }}>
+              iPadカルテ(β)
+            </span>
+          </p>
+          {/* お客様用カルテへ戻る(PHASE IPAD-KARTE-ENTRY-1・2026-09-20ユーザー承認)。
+              長押し不要・常時表示の明示的ボタン(ブラウザの戻る操作には依存しない)。
+              onSwitchToCustomerView未指定時(CustomerBottomSheet経由の既存呼び出し)は
+              何も表示しない。 */}
+          {onSwitchToCustomerView && (
+            <button
+              type="button"
+              onClick={onSwitchToCustomerView}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '5px',
+                padding: '5px 12px', borderRadius: '999px', cursor: 'pointer',
+                border: `1px solid ${PALETTE.border}`, background: PALETTE.card, color: PALETTE.text,
+                fontSize: '11px', fontWeight: 600, whiteSpace: 'nowrap',
+              }}
+            >
+              お客様用カルテへ戻る
+            </button>
+          )}
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           <StaffTagBar
             isSharedLogin={isSharedLogin}

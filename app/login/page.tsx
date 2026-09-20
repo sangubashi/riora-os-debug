@@ -5,6 +5,18 @@ import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/store/useAuthStore'
 import { isAdminEmail } from '@/lib/auth/adminEmail'
+import { SHARED_IPAD_STAFF_USER_ID } from '@/lib/constants'
+
+/**
+ * ログイン後の遷移先(PHASE IPAD-KARTE-ENTRY-1・2026-09-20ユーザー承認)。
+ * admin判定は既存のまま最優先。店舗共通ログイン(iPad用)のみ`/karte`へ、
+ * それ以外の個人ログインは従来通り`/phase1`(無変更)。
+ */
+function resolveLandingPath(user: { email?: string | null; id: string }): string {
+  if (isAdminEmail(user.email)) return '/admin'
+  if (user.id === SHARED_IPAD_STAFF_USER_ID) return '/karte'
+  return '/phase1'
+}
 
 interface DebugInfo {
   uid:        string | null
@@ -53,7 +65,7 @@ export default function LoginPage() {
             role:       (session.user.user_metadata?.role as string | undefined) ?? session.user.role ?? null,
             hasSession: true,
           })
-          router.replace(isAdminEmail(session.user.email) ? '/admin' : '/phase1')
+          router.replace(resolveLandingPath(session.user))
           return
         }
 
@@ -105,7 +117,7 @@ export default function LoginPage() {
       })
     }
 
-    router.push(isAdminEmail(session?.user.email) ? '/admin' : '/phase1')
+    router.push(session ? resolveLandingPath(session.user) : '/phase1')
   }
 
   // ── ローディング ─────────────────────────────────────────────────────────────

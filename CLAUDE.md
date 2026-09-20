@@ -982,6 +982,54 @@ iPad用の店舗共通ログインアカウントを新規作成し、顧客の�
 TL-5構成・AI提案の会話トーン・LINE領域・admin領域、およびそれ以外の顧客タブ/iPadカルテ
 画面の仕様については引き続き凍結を継続する。
 
+### v1.0.1 着手済み事項（iPad専用カルテ入口 `/karte` の新設のみ・2026-09-20ユーザー承認）
+
+スマホ用画面(5タブ構成)とiPad専用カルテ画面を、ログイン後の入口から明確に分離する機能を
+新設した(PHASE IPAD-KARTE-ENTRY-1)。設計書(`docs/IPAD_KARTE_ENTRY_ROUTE_DESIGN_v1.md`
+v1.2)・凍結解除の事前承認記録(`docs/IPAD_KARTE_ENTRY_ROUTE_FREEZE_APPROVAL_v1.md`)を
+経て、記録6節で承認された9ファイルのみを対象に実装した。
+
+- **新規**: `app/karte/page.tsx`・`app/karte/[customerId]/page.tsx`・
+  `src/components/karte/KarteEntryScreen.tsx`(本日の予約+顧客検索、5タブナビ・
+  「通常画面へ」リンクなし)・`src/components/karte/KarteCustomerSwitcher.tsx`
+  (`GET /api/customers/[id]`で顧客を直接取得し、2択ランディングを介さず常に
+  `CustomerModeView`から開始する薄いラッパー)。
+- **変更**: `app/login/page.tsx`・`app/page.tsx` — 既存のadmin/個人ログイン分岐は無変更のまま、
+  店舗共通ログイン(`SHARED_IPAD_STAFF_USER_ID`)のみ`/karte`へ着地する分岐を追加。
+  `/phase1`のリネーム・`/staff`ルートの新設は行っていない(既存7ファイルへの影響を避ける
+  非破壊方針を優先、`docs/IPAD_KARTE_ENTRY_ROUTE_DESIGN_v1.md`1-1節参照)。
+- **変更**: `src/components/customer/guestMode/useLongPress.ts` — 第3引数
+  `options?: { moveCancelPx?: number }`を追加し、pointerdown位置から指定px以上動いたら
+  自動キャンセルする機能を実装。**完全にオプトイン**(`options`未指定の既存呼び出し元は
+  一切動作が変わらない)。
+- **変更**: `src/components/customer/guestMode/CustomerModeView.tsx` — 任意prop
+  `onSwitchToStaffView?: () => void`を追加。指定時のみヘッダーの「Salon Riora」ロゴに
+  `useLongPress(onSwitchToStaffView, 1000, { moveCancelPx: 12 })`を紐付け、1000ms長押し
+  (誤発動防止の移動キャンセル付き)でスタッフ用カルテへ切り替える。押下中はロゴの色が
+  白+goldの背景に変化し、進捗バーを表示する。未指定時(CustomerBottomSheet経由の既存呼び出し)
+  はロゴは従来通り非インタラクティブな装飾のまま。
+- **変更**: `src/components/customer/ipadKarte/IpadStaffKarteView.tsx` — 任意prop
+  `onSwitchToCustomerView?: () => void`を追加。指定時のみヘッダー左上・ロゴ付近に
+  常時表示の「お客様用カルテへ戻る」ボタンを表示し、通常タップで即座に呼び出す
+  (長押し不要、ブラウザの戻る操作には依存しない)。未指定時は何も表示されない。
+- 検証: `npm run typecheck`に新規エラーなし。Playwright(本番Supabase・実顧客
+  「小宮山 仁美」、検証用一時spec`e2e/karte-entry-verify.spec.ts`はコミット前に削除)で、
+  凍結解除事前承認記録のテスト計画12項目(①店舗共通ログイン→`/karte`自動着地、
+  ②個人ログイン→`/phase1`のまま(回帰確認)、③5タブ・「通常画面へ」リンクが無いこと、
+  ④顧客選択で2択ランディングを介さずお客様用カルテが直接開くこと、
+  ⑤`/karte/[customerId]`直接アクセスでの顧客取得、⑥1000ms未満のタップでは切り替わらない
+  こと、⑦1000ms以上の長押しでスタッフ用カルテへ切り替わり視覚フィードバックが出ること、
+  ⑧長押し中の移動でキャンセルされること、⑨「お客様用カルテへ戻る」が通常タップで即反応
+  すること、⑩担当者タグ選択が機能すること、⑪CustomerBottomSheet経由の既存呼び出し
+  (【4】の「終了」ボタン600ms長押しを含む)に回帰が無いこと、⑫typecheck)を全て確認した。
+
+**この解除は上記`/karte`関連の新規4ファイルおよび5ファイルへの追加変更のみに限る。**
+5タブ構成・TL-5構成・AI提案の会話トーン・LINE領域・admin領域、
+`CustomerBottomSheet.tsx`・`CustomersScreen.tsx`・`Phase1Screen.tsx`・
+`AppBottomNav.tsx`・`app/phase1/page.tsx`・`app/customers/page.tsx`・
+`app/home/page.tsx`、およびそれ以外の顧客タブ/iPadカルテ画面の仕様については
+引き続き凍結を継続する。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。
