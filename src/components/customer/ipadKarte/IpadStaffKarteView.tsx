@@ -513,12 +513,24 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
                 </Card>
               )}
 
+              {/* カルテメモ(PHASE IPAD-KARTE-DETAIL-UI-1 UI刷新・2026-09-20ユーザー承認で
+                  写真カルテの上へ移動)。重要事項(安全情報)は最優先のため上に維持し、
+                  カルテメモはその直下・写真カルテの直上に配置する。 */}
+              <KarteMemoSection
+                customerId={customerId}
+                previousVisitDate={data.previousVisitDate}
+                previousMenuName={data.previousMenuName}
+                previousTreatmentMemo={data.previousTreatmentMemo}
+                staffIdOverride={isSharedLogin ? staffTagSession.tag?.id ?? null : null}
+              />
+
               {/* 写真カルテ(2026-09-15・右カラムの縦の集中を緩和するため左カラムへ移動。
                   ロジック・見た目自体は無変更、位置のみの変更)。
                   撮影・選択して追加・削除の導線は、お客様モードへ移行(PHASE GUEST-MODE-
                   PHOTO-MOVE-1)したため2026-09-19に削除した。表示・比較(PhotoPanel)自体は
-                  無変更。 */}
-              <Card title="📷 写真カルテ（前回｜今回）">
+                  無変更。見出しから「（前回｜今回）」表記は削除した(2026-09-20ユーザー承認、
+                  PhotoPanel自体のlabel prop「前回」「今回」表示は変更なし)。 */}
+              <Card title="📷 写真カルテ">
                 <div style={{ display: 'flex', gap: '24px', borderBottom: `1px solid ${PALETTE.border}`, marginBottom: '16px' }}>
                   {IPAD_KARTE_ANGLES.map(a => (
                     <button
@@ -556,14 +568,6 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
                   />
                 </div>
               </Card>
-
-              <KarteMemoSection
-                customerId={customerId}
-                previousVisitDate={data.previousVisitDate}
-                previousMenuName={data.previousMenuName}
-                previousTreatmentMemo={data.previousTreatmentMemo}
-                staffIdOverride={isSharedLogin ? staffTagSession.tag?.id ?? null : null}
-              />
             </div>
 
             {/* ── 右カラム ── */}

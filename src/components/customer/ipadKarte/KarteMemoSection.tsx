@@ -63,8 +63,10 @@ export default function KarteMemoSection({
 }: Props) {
   const [memos, setMemos] = useState<CustomerKarteMemo[]>([])
   const [loading, setLoading] = useState(true)
-  // 「前回の記録を見る」折りたたみ(デフォルト閉じた状態・2026-09-20ユーザー承認)。
-  const [previousOpen, setPreviousOpen] = useState(false)
+  // 「前回の記録を見る」折りたたみ(デフォルト展開状態・PHASE IPAD-KARTE-DETAIL-UI-1
+  // UI刷新・2026-09-20ユーザー承認で変更。以前はデフォルト閉じていたが、カルテメモを
+  // 画面上部へ移動したことに伴い初期表示から見えるようにした。開閉ボタン自体は無変更)。
+  const [previousOpen, setPreviousOpen] = useState(true)
 
   const [adding, setAdding] = useState(false)
   const [newContent, setNewContent] = useState('')
