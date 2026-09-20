@@ -44,7 +44,6 @@ import {
   buildPreviousComparison,
   buildFirstComparison,
 } from '@/lib/photos/comparisonSelection'
-import { buildVisitTabs, type VisitTab } from '@/lib/photos/timelineGrouping'
 import { getHomecareUsageGuide } from '@/lib/homecare/homecareUsageGuide'
 
 // PHOTO_LABEL_REALIGN_2(2026-09-15): iPadスタッフカルテ側(src/components/customer/ipadKarte/
@@ -156,25 +155,21 @@ export interface CustomerModeData {
   loading: boolean
   /**
    * 角度(body_part)ごとの生の写真配列(taken_at DESC・既存API順そのまま)。
-   * 比較ペア(前回↔今回・初回↔今回)や拡大モードの回選択は、CustomerModeView側で
+   * 比較ペア(前回↔今回・初回↔今回)や「過去の写真」の撮影機会一覧は、CustomerModeView側で
    * comparisonSelection.tsの公開関数(groupByOccasion/representativePhoto/
    * buildPreviousComparison/buildFirstComparison/hasDistinctFirstOccasion)を使って
-   * ここから都度組み立てる(PHASE GUEST-MODE-3・2026-09-12・比較｜拡大モード切替)。
+   * ここから都度組み立てる(PHASE GUEST-MODE-3・2026-09-12。比較モード常時表示化・
+   * 拡大モード廃止は2026-09-20ユーザー承認)。
    */
   photosByAngle: Record<string, TimelinePhoto[]>
   /**
    * photoId → signed URL('detail'品質)。角度ごとの「今回・前回・初回」代表写真のみ
-   * 事前取得済み(比較モードのショートカット切替・拡大モードの初期表示/初回/前回
-   * ショートカットが即座に表示できるようにするため)。それ以外の来店回を拡大モードの
-   * 全来店日リストから選んだ場合は、CustomerModeView側でgetPhotoSignedUrlを都度呼ぶ
-   * (来店回数が多い顧客で全件事前取得すると無駄なsigned URL発行が増えるため)。
+   * 事前取得済み(比較モードのショートカット切替が即座に表示できるようにするため)。
+   * それ以外の撮影機会をライトボックスで開いた場合は、CustomerModeView側で
+   * getPhotoSignedUrlを都度呼ぶ(来店回数が多い顧客で全件事前取得すると無駄なsigned URL
+   * 発行が増えるため)。
    */
   photoUrls: Record<string, string>
-  /**
-   * 全来店日リスト(角度非依存・visit_id/visit_count_atが揃っている写真のみが対象、
-   * 既存のbuildVisitTabsと同じ制約)。拡大モードの「全来店日リストから選択」に使う。
-   */
-  visitTabs: VisitTab[]
   currentMenuName: string | null
   // 「次回の目安」は次回目安エンジン(PHASE NEXT-VISIT-1・src/lib/nextVisit/useNextVisit.ts)に
   // 置き換えたため、このフックでは算出しない(CustomerModeView側でuseNextVisitを直接使う)。
@@ -200,7 +195,6 @@ const EMPTY_DATA: CustomerModeData = {
   loading: true,
   photosByAngle: {},
   photoUrls: {},
-  visitTabs: [],
   currentMenuName: null,
   currentSkinTags: [],
   previousSkinTags: [],
@@ -264,13 +258,10 @@ export function useCustomerModeData(customerId: string): UseCustomerModeDataResu
       const { photosByAngle, photoUrls } = await computePhotosByAngle(customerId, photos)
       if (cancelled) return
 
-      const visitTabs = buildVisitTabs(photos)
-
       setData({
         loading: false,
         photosByAngle,
         photoUrls,
-        visitTabs,
         currentMenuName,
         currentSkinTags,
         previousSkinTags,

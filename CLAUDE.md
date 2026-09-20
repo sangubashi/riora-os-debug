@@ -845,6 +845,45 @@ TL-5構成・AI提案の会話トーン・LINE領域・admin領域、および�
 AI提案の会話トーン・LINE領域・admin領域、およびそれ以外の顧客タブ/iPadカルテ画面の仕様
 については引き続き凍結を継続する。
 
+### v1.0.1 着手済み事項（お客様モード「比較｜拡大」モード切替の廃止＋比較モードへのピンチズーム追加のみ・2026-09-20ユーザー承認）
+
+お客様モード写真カルテの「比較｜拡大」セグメンテッドコントロールを削除し、比較モード
+(2枚並び表示)を唯一の表示モードにした。拡大表示自体は既存のライトボックス
+(写真タップ→全画面表示、旧実装は静止画のみ)にピンチズーム機能を移設する形で維持する。
+
+- `src/components/customer/guestMode/CustomerModeView.tsx`:
+  - `photoMode`state・「比較｜拡大」セグメンテッドコントロールUIを削除。比較モードの
+    ショートカット(前回↔今回・初回↔今回・🔀自由選択)は常時表示に変更。
+  - 拡大モード専用だった state・算出値(`enlargeOccasionKey`・`enlargeFallbackTab`・
+    `extraPhotoUrls`・`enlargedOccasion`・`enlargedPhoto`・`enlargedUrl`・
+    `enlargedLoading`・`enlargedActiveVisitId`)と、それらに依存する「初回/前回
+    ショートカット(拡大モード用)」「全来店日リストタブ」UIを削除。
+  - 「過去の写真」サムネイルタップ時の遷移先を、旧`openOccasionInEnlargeMode`(拡大モードへ
+    切替)から新設の`openOccasionInLightbox`(ライトボックスを直接開く、既存の
+    `lightboxUrl`stateを再利用)に置き換え。
+  - `EnlargedPhotoPanel`(拡大モード専用の単独写真表示、`usePinchZoom`使用)を削除し、
+    そのピンチズーム機構(`usePinchZoom`の呼び出し・transform適用ロジックは無変更で移設)を
+    ライトボックス用に新設した`ZoomableLightboxImage`へ持たせた。ライトボックスの背景
+    クリックで閉じる挙動と競合しないよう、画像コンテナに`stopPropagation`を追加。
+  - `usePinchZoom.ts`自体(ピンチ/pan/ダブルタップリセットのロジック)は無変更。
+  - IpadStaffKarteView側のPhotoPanel呼び出し・比較ロジック・API・DBには一切手を加えていない
+    (お客様モード内のみのUI変更)。
+- `src/components/customer/guestMode/customerModeData.ts`: 拡大モードの「全来店日リストから
+  選択」専用だった`visitTabs`(および`buildVisitTabs`の呼び出し)を削除(呼び出し元が
+  無くなったため)。`buildVisitTabs`/`VisitTab`自体(`src/lib/photos/timelineGrouping.ts`)は
+  ファイルとして保全(他機能からの呼び出しはなし、将来の再利用に備え削除しない)。
+- 検証: `npm run typecheck`に新規エラーなし。Playwright(本番Supabase・実顧客
+  「小宮山 仁美」、検証用一時spec`e2e/enlarge-mode-removal-verify.spec.ts`はコミット前に
+  削除)で、①「比較」「拡大」ボタンが存在しないこと、②比較モード(今回の写真)が常時表示
+  されること、③写真の拡大ボタンタップでライトボックスが開くこと、④CDP経由のタッチ
+  イベント(2点タッチを広げる)でライトボックス内画像のtransformが`scale(4)`(最大倍率)まで
+  変化することを確認した(実機でのタップ操作でのピンチ自体は未確認、Chromiumの合成タッチ
+  イベントでの検証)。
+
+**この解除は上記「比較｜拡大」モード切替の廃止・比較モードへのピンチズーム追加のみに限る。**
+5タブ構成・TL-5構成・AI提案の会話トーン・LINE領域・admin領域、およびそれ以外の顧客タブ/
+iPadカルテ画面の仕様については引き続き凍結を継続する。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。
