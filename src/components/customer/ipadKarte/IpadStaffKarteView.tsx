@@ -6,12 +6,15 @@
  * CustomerBottomSheet本体のstate/useEffectには一切触れず、customerId/customerNameのみを
  * 受け取る自己完結コンポーネント(CustomerModeViewと同じ設計方針)。
  *
- * 2カラムレイアウト(2026-09-15時点):
- *   左カラム: 重要事項・写真カルテ(正面/左45/右45、前回|今回比較)・カルテメモ
+ * 2カラムレイアウト(2026-09-20時点):
+ *   左カラム: 重要事項・カルテメモ
  *   右カラム: 顧客ステータス・肌の特徴タグ(簡易版)・今日の施術(自由記述、手順
  *             テンプレート化はしない)・今回のホームケア・次回の目安
- * (写真カルテは元々右カラムだったが、右カラムの縦の集中を緩和するため左カラムへ移動した)
  * 前回の施術・AI接客ポイント・次回提案は次フェーズ(🟡項目)のため、この画面にはまだ無い。
+ *
+ * 写真カルテ(正面/左45/右45、前回|今回比較)はPHASE IPAD-KARTE-PHOTO-REMOVE-1
+ * (2026-09-20ユーザー承認)でこの画面から削除した。お客様用カルテ(CustomerModeView.tsx、
+ * 独立した別コンポーネント・別データフック)の写真カルテ表示には一切影響しない。
  *
  * カルテメモ(customer_karte_memos)はcustomer_memories/customer_notesとは独立した
  * 新規テーブル。AI(ProposalOrchestrator/FireScore/TodayFocusCard等)からは一切
@@ -21,10 +24,10 @@
  */
 import { useState } from 'react'
 import { Flower2, X, Pencil, EyeOff, ChevronDown } from 'lucide-react'
-import { useIpadKarteData, IPAD_KARTE_ANGLES, type IpadKarteAngleId, type RetailProductStatus } from './ipadKarteData'
+import { useIpadKarteData, type RetailProductStatus } from './ipadKarteData'
 import KarteMemoSection from './KarteMemoSection'
 import StaffTagBar from './StaffTagBar'
-import { PALETTE, headingFont, Card, PhotoPanel, SkinTagRow } from '@/components/customer/shared/PhotoCompareKit'
+import { PALETTE, headingFont, Card, SkinTagRow } from '@/components/customer/shared/PhotoCompareKit'
 import { useNextVisit } from '@/lib/nextVisit/useNextVisit'
 import { formatWeeksLabel, formatApproxDateLabel } from '@/lib/nextVisit/nextVisitEngine'
 import { useAuthStore } from '@/store/useAuthStore'
@@ -391,18 +394,12 @@ interface Props {
 
 export default function IpadStaffKarteView({ customerId, customerName, onClose, onSwitchToCustomerView }: Props) {
   const data = useIpadKarteData(customerId)
-  const [angle, setAngle] = useState<IpadKarteAngleId>('face_front')
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
 
   // 担当者タグ選択(PHASE IPAD-SHARED-LOGIN-1・2026-09-20ユーザー承認)。店舗共通ログイン
   // (SHARED_IPAD_STAFF_USER_ID)でのアクセス時のみ意味を持つ。個人ログイン時はisSharedLogin
   // がfalseになりStaffTagBarは何も描画しない(従来通り無変更)。
   const isSharedLogin = useAuthStore(s => s.user?.id) === SHARED_IPAD_STAFF_USER_ID
   const staffTagSession = useStaffTagSession(isSharedLogin)
-
-  const pair = data.anglePairs[angle]
-  const currentUrl = pair?.current ? data.photoUrls[pair.current.id] : undefined
-  const referenceUrl = pair?.reference ? data.photoUrls[pair.reference.id] : undefined
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: PALETTE.bg, display: 'flex', flexDirection: 'column' }}>
@@ -523,51 +520,6 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
                 previousTreatmentMemo={data.previousTreatmentMemo}
                 staffIdOverride={isSharedLogin ? staffTagSession.tag?.id ?? null : null}
               />
-
-              {/* 写真カルテ(2026-09-15・右カラムの縦の集中を緩和するため左カラムへ移動。
-                  ロジック・見た目自体は無変更、位置のみの変更)。
-                  撮影・選択して追加・削除の導線は、お客様モードへ移行(PHASE GUEST-MODE-
-                  PHOTO-MOVE-1)したため2026-09-19に削除した。表示・比較(PhotoPanel)自体は
-                  無変更。見出しから「（前回｜今回）」表記は削除した(2026-09-20ユーザー承認、
-                  PhotoPanel自体のlabel prop「前回」「今回」表示は変更なし)。 */}
-              <Card title="📷 写真カルテ">
-                <div style={{ display: 'flex', gap: '24px', borderBottom: `1px solid ${PALETTE.border}`, marginBottom: '16px' }}>
-                  {IPAD_KARTE_ANGLES.map(a => (
-                    <button
-                      key={a.id}
-                      type="button"
-                      onClick={() => setAngle(a.id)}
-                      style={{
-                        background: 'none', border: 'none', cursor: 'pointer',
-                        padding: '0 0 10px', fontSize: '13px', letterSpacing: '0.06em',
-                        color: angle === a.id ? PALETTE.text : PALETTE.muted,
-                        borderBottom: angle === a.id ? `2px solid ${PALETTE.gold}` : '2px solid transparent',
-                        fontFamily: headingFont.style.fontFamily,
-                      }}
-                    >
-                      {a.label}
-                    </button>
-                  ))}
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-                  <PhotoPanel
-                    label="前回"
-                    url={referenceUrl}
-                    visitCountAt={pair?.reference?.visitCountAt ?? null}
-                    visitDate={pair?.reference?.visitDate ?? pair?.reference?.takenAt ?? null}
-                    emptyText="前回の写真はまだありません"
-                    onExpand={referenceUrl ? () => setLightboxUrl(referenceUrl) : undefined}
-                  />
-                  <PhotoPanel
-                    label="今回"
-                    url={currentUrl}
-                    visitCountAt={pair?.current?.visitCountAt ?? null}
-                    visitDate={pair?.current?.visitDate ?? pair?.current?.takenAt ?? null}
-                    emptyText="本日未撮影"
-                    onExpand={currentUrl ? () => setLightboxUrl(currentUrl) : undefined}
-                  />
-                </div>
-              </Card>
             </div>
 
             {/* ── 右カラム ── */}
@@ -669,37 +621,6 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
           </div>
         )}
       </div>
-
-      {/* ── 拡大表示 ── */}
-      {lightboxUrl && (
-        <div
-          onClick={() => setLightboxUrl(null)}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 320, background: 'rgba(30,24,16,0.85)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '32px',
-          }}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={lightboxUrl}
-            alt=""
-            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '8px' }}
-          />
-          <button
-            type="button"
-            onClick={() => setLightboxUrl(null)}
-            aria-label="閉じる"
-            style={{
-              position: 'absolute', top: 'max(20px, env(safe-area-inset-top))', right: '24px',
-              width: '40px', height: '40px', borderRadius: '50%',
-              background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-            }}
-          >
-            <X size={18} />
-          </button>
-        </div>
-      )}
 
     </div>
   )
