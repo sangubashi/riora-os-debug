@@ -14,13 +14,21 @@
  * (src/types/customerKarteMemo.tsの絶対ルールに準拠)。
  */
 import { useCallback, useEffect, useState } from 'react'
-import { Pencil, Plus, Trash2, Check, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Pencil, Plus, Trash2, Check, X } from 'lucide-react'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, Card } from '@/components/customer/shared/PhotoCompareKit'
 import type { CustomerKarteMemo } from '@/types/customerKarteMemo'
 
 interface Props {
   customerId: string
+  /**
+   * 「前回メモをワンタップ参照」機能(PHASE IPAD-PREV-MEMO-1・2026-09-20ユーザー承認)用:
+   * ipadKarteData.tsで算出済みの「前回」(本日のvisitを除いた直近の来店)の来店日・
+   * メニュー名・施術メモ。いずれも前回来店が無ければnull。
+   */
+  previousVisitDate?: string | null
+  previousMenuName?: string | null
+  previousTreatmentMemo?: string | null
 }
 
 function formatDateTime(iso: string): string {
@@ -29,9 +37,27 @@ function formatDateTime(iso: string): string {
   return d.toLocaleString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-export default function KarteMemoSection({ customerId }: Props) {
+function formatDateOnly(dateStr: string): string {
+  const d = new Date(dateStr)
+  if (Number.isNaN(d.getTime())) return dateStr
+  return d.toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' })
+}
+
+function isSameLocalDate(iso: string, other: Date): boolean {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return false
+  return d.getFullYear() === other.getFullYear()
+    && d.getMonth() === other.getMonth()
+    && d.getDate() === other.getDate()
+}
+
+export default function KarteMemoSection({
+  customerId, previousVisitDate = null, previousMenuName = null, previousTreatmentMemo = null,
+}: Props) {
   const [memos, setMemos] = useState<CustomerKarteMemo[]>([])
   const [loading, setLoading] = useState(true)
+  // 「前回の記録を見る」折りたたみ(デフォルト閉じた状態・2026-09-20ユーザー承認)。
+  const [previousOpen, setPreviousOpen] = useState(false)
 
   const [adding, setAdding] = useState(false)
   const [newContent, setNewContent] = useState('')
@@ -106,6 +132,13 @@ export default function KarteMemoSection({ customerId }: Props) {
     setMemos(prev => prev.filter(m => m.id !== id))
     if (editingId === id) cancelEdit()
   }
+
+  // 「前回のカルテメモ」= 今日すでに書いた分(あれば)を除いた直近1件(2026-09-20ユーザー承認:
+  // 施術中に今日のメモを書き込んでも、参照データが常に「前回来店時のメモ」であり続けるように
+  // するため)。memosはcreated_at DESCで取得済み(load()参照)。
+  const today = new Date()
+  const previousMemo = memos.find(m => !isSameLocalDate(m.created_at, today)) ?? null
+  const hasPreviousRecord = previousVisitDate !== null || previousMemo !== null || (previousTreatmentMemo?.trim().length ?? 0) > 0
 
   return (
     <Card title="📝 カルテメモ">
@@ -222,6 +255,58 @@ export default function KarteMemoSection({ customerId }: Props) {
             </div>
           )
         })}
+
+        {/* 前回メモをワンタップ参照(PHASE IPAD-PREV-MEMO-1・2026-09-20ユーザー承認)。
+            デフォルト閉じた状態・タップで展開。前回の施術メモ・前回のカルテメモをそのまま
+            表示する(注意点等は独立項目を設けず、これらの自由記述文にすでに含まれている
+            前提)。前回来店・前回メモ・前回施術メモのいずれも無ければボタン自体を出さない。 */}
+        {!loading && hasPreviousRecord && (
+          <div style={{ border: `1px solid ${PALETTE.border}`, borderRadius: '10px', overflow: 'hidden' }}>
+            <button
+              type="button"
+              onClick={() => setPreviousOpen(v => !v)}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: '6px',
+                padding: '10px 12px', border: 'none', background: PALETTE.card,
+                color: PALETTE.gold, fontSize: '12px', fontWeight: 700, cursor: 'pointer',
+              }}
+            >
+              {previousOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+              前回の記録を見る
+              {previousVisitDate && (
+                <span style={{ fontWeight: 400, color: PALETTE.muted }}>
+                  ({formatDateOnly(previousVisitDate)}{previousMenuName ? `・${previousMenuName}` : ''})
+                </span>
+              )}
+            </button>
+            {previousOpen && (
+              <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', borderTop: `1px solid ${PALETTE.border}` }}>
+                <div>
+                  <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: 700, color: PALETTE.muted }}>前回の施術メモ</p>
+                  <p style={{ margin: 0, fontSize: '13px', color: PALETTE.text, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                    {previousTreatmentMemo?.trim() ? previousTreatmentMemo : '記録がありません'}
+                  </p>
+                </div>
+                <div>
+                  <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: 700, color: PALETTE.muted }}>前回のカルテメモ</p>
+                  {previousMemo ? (
+                    <>
+                      <p style={{ margin: 0, fontSize: '13px', color: PALETTE.text, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                        {previousMemo.content}
+                      </p>
+                      <p style={{ margin: '4px 0 0', fontSize: '10px', color: PALETTE.muted }}>
+                        {formatDateTime(previousMemo.created_at)}
+                        {previousMemo.staffName ? ` ・ ${previousMemo.staffName}` : ''}
+                      </p>
+                    </>
+                  ) : (
+                    <p style={{ margin: 0, fontSize: '13px', color: PALETTE.text }}>記録がありません</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {adding ? (
           <div style={{ border: `1.5px solid ${PALETTE.gold}`, borderRadius: '12px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>

@@ -513,7 +513,12 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
                 </div>
               </Card>
 
-              <KarteMemoSection customerId={customerId} />
+              <KarteMemoSection
+                customerId={customerId}
+                previousVisitDate={data.previousVisitDate}
+                previousMenuName={data.previousMenuName}
+                previousTreatmentMemo={data.previousTreatmentMemo}
+              />
             </div>
 
             {/* ── 右カラム ── */}

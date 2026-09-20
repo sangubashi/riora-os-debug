@@ -76,6 +76,7 @@ interface SkinRecord {
 interface TreatmentDetail {
   options: unknown
   productsUsed: unknown
+  treatmentMemo?: string | null
 }
 
 interface HomecareProductEntry {
@@ -154,6 +155,15 @@ export interface IpadKarteData {
   retailProducts: RetailProductStatus[]
   /** 写真撮影・追加フロー(PHASE IPAD-PHOTO-CAPTURE-1)用: 本日来店のvisit_id。来店記録が無ければnull。 */
   todayVisitId: string | null
+  /**
+   * 「前回メモをワンタップ参照」機能(PHASE IPAD-PREV-MEMO-1・2026-09-20ユーザー承認)用:
+   * 「前回」の来店日・メニュー名・施術メモ(treatment_memo)。「前回」は本日のvisitを除いた
+   * 直近の来店(todayVisitがあればvisits[1]、無ければvisits[0])。来店記録が無い/前回が
+   * 存在しない場合はいずれもnull。
+   */
+  previousVisitDate: string | null
+  previousMenuName: string | null
+  previousTreatmentMemo: string | null
 }
 
 const EMPTY_DATA: IpadKarteData = {
@@ -170,6 +180,9 @@ const EMPTY_DATA: IpadKarteData = {
   visitCount: 0,
   retailProducts: [],
   todayVisitId: null,
+  previousVisitDate: null,
+  previousMenuName: null,
+  previousTreatmentMemo: null,
 }
 
 export interface UseIpadKarteDataResult extends IpadKarteData {
@@ -217,6 +230,10 @@ export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
       const todayVisitId = todayVisit?.id ?? null
       const latestVisit = todayVisit ?? visits[0] ?? null
       const currentMenuName = latestVisit?.menuName ?? null
+      // 「前回メモをワンタップ参照」用: 本日のvisitを除いた直近の来店(visitsはvisit_date DESC)。
+      const previousVisit = todayVisit ? (visits[1] ?? null) : (visits[0] ?? null)
+      const previousVisitDate = previousVisit?.visitDate ?? null
+      const previousMenuName = previousVisit?.menuName ?? null
       // 顧客ステータスパネル用。visit-history自体は既にvisit_date DESCで返るため先頭が最終来店。
       const lastVisitDate = visits[0]?.visitDate ?? null
       const visitCount = visits.length
@@ -269,6 +286,25 @@ export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
       }
       if (cancelled) return
 
+      // 「前回メモをワンタップ参照」用: 前回visitのtreatment_memoのみ取得(施術内容は
+      // カルテメモと同様に自由記述の文章として表示するため、options/productsUsedの
+      // 箇条書き化はしない)。
+      let previousTreatmentMemo: string | null = null
+      if (previousVisit) {
+        try {
+          const res = await authedFetch(`/api/customers/${customerId}/visits/${previousVisit.id}/treatment`)
+          if (res.ok) {
+            const json = (await res.json()) as { success: boolean; treatment?: TreatmentDetail }
+            if (json.success && json.treatment) {
+              previousTreatmentMemo = json.treatment.treatmentMemo ?? null
+            }
+          }
+        } catch {
+          /* 前回の施術記録が無くても他の表示に影響させない */
+        }
+      }
+      if (cancelled) return
+
       const anglePairs: Record<string, AnglePhotoPair> = {}
       for (const angle of IPAD_KARTE_ANGLES) {
         anglePairs[angle.id] = buildAngleComparison(photos, angle.id)
@@ -294,6 +330,9 @@ export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
         visitCount,
         retailProducts,
         todayVisitId,
+        previousVisitDate,
+        previousMenuName,
+        previousTreatmentMemo,
       })
     })()
 
