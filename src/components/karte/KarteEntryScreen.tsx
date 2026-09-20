@@ -177,7 +177,9 @@ export default function KarteEntryScreen() {
                     <span style={{ width: '1px', height: '16px', background: PALETTE.border, margin: '0 12px', flexShrink: 0 }} />
                     <span style={{ fontSize: '14px', color: PALETTE.text }}>{r.brain_customer.name}様</span>
                     <span style={{ width: '1px', height: '16px', background: PALETTE.border, margin: '0 12px', flexShrink: 0 }} />
-                    <span style={{ fontSize: '13px', color: PALETTE.text, flex: 1 }}>{r.menu}</span>
+                    <span style={{ fontSize: '13px', color: PALETTE.text, flex: 1 }}>
+                      {r.menu === '未定' ? 'メニュー未定' : r.menu}
+                    </span>
                     <span style={{ width: '1px', height: '16px', background: PALETTE.border, margin: '0 12px', flexShrink: 0 }} />
                     <span style={{ fontSize: '12px', color: PALETTE.muted, whiteSpace: 'nowrap' }}>
                       担当 {r.staff_name ?? '-'}

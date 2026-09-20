@@ -12,6 +12,14 @@
  * line-message API呼び出し時にMenu AI Context(buildMenuAIContext参照)を組み立てる
  * ためのキーとして使う(内部的には既に取得済みの値をレスポンスに追加しただけで、
  * 新規クエリは発生していない)。
+ *
+ * PHASE MENU-DISPLAY-NAME-1(2026-09-20ユーザー承認): menuNameはbrain_menus.nameでは
+ * なく`official_display_name ?? name`を返す。official_display_nameは表示専用の
+ * 正式名称(ホットペッパービューティー掲載クーポン名等)で、CSV取込のメニュー名突合
+ * (menuResolver.ts)が参照するnameとは独立した列のため、この変更は取込ロジックに
+ * 一切影響しない。呼び出し元(ipadKarteData.ts・customerModeData.ts、IpadStaffKarteView.tsx・
+ * CustomerModeView.tsxの「今回の施術」「来店履歴」)はmenuNameをそのまま表示するだけなので
+ * 無変更で反映される。
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '../../../../lib/repos'
@@ -74,14 +82,14 @@ export async function GET(
 
   const [menusRes, staffRes] = await Promise.all([
     menuIds.length > 0
-      ? supabase.from('brain_menus').select('id, name').in('id', menuIds)
-      : Promise.resolve({ data: [] as Array<{ id: string; name: string }> }),
+      ? supabase.from('brain_menus').select('id, name, official_display_name').in('id', menuIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; name: string; official_display_name: string | null }> }),
     staffIds.length > 0
       ? supabase.from('brain_staff').select('id, name').in('id', staffIds)
       : Promise.resolve({ data: [] as Array<{ id: string; name: string }> }),
   ])
 
-  const menuMap  = new Map((menusRes.data ?? []).map(m => [m.id, m.name]))
+  const menuMap  = new Map((menusRes.data ?? []).map(m => [m.id, m.official_display_name ?? m.name]))
   const staffMap = new Map((staffRes.data ?? []).map(s => [s.id, s.name]))
 
   const result: VisitHistoryEntry[] = rows.map(v => ({
