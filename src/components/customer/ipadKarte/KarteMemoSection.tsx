@@ -29,6 +29,12 @@ interface Props {
   previousVisitDate?: string | null
   previousMenuName?: string | null
   previousTreatmentMemo?: string | null
+  /**
+   * 店舗共通ログイン+担当者タグ選択機能(PHASE IPAD-SHARED-LOGIN-1・2026-09-20ユーザー承認)用:
+   * 選択済みの担当者(brain_staff.id)。個人ログイン時は常にnull(サーバー側でJWTから
+   * 解決した本人のstaff_idがそのまま使われ、この値は無視される)。
+   */
+  staffIdOverride?: string | null
 }
 
 function formatDateTime(iso: string): string {
@@ -53,6 +59,7 @@ function isSameLocalDate(iso: string, other: Date): boolean {
 
 export default function KarteMemoSection({
   customerId, previousVisitDate = null, previousMenuName = null, previousTreatmentMemo = null,
+  staffIdOverride = null,
 }: Props) {
   const [memos, setMemos] = useState<CustomerKarteMemo[]>([])
   const [loading, setLoading] = useState(true)
@@ -88,7 +95,11 @@ export default function KarteMemoSection({
       const res = await authedFetch('/api/customer-karte-memos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customer_id: customerId, content: newContent.trim() }),
+        body: JSON.stringify({
+          customer_id: customerId,
+          content: newContent.trim(),
+          ...(staffIdOverride ? { staff_id: staffIdOverride } : {}),
+        }),
       })
       if (!res.ok) throw new Error()
       setNewContent('')

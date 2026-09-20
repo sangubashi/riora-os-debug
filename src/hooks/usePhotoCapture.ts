@@ -60,6 +60,11 @@ export interface UsePhotoCaptureOptions {
   customerId:      string
   visitId:         string | null
   initialBodyPart: string
+  /**
+   * 店舗共通ログイン+担当者タグ選択(PHASE IPAD-SHARED-LOGIN-1・2026-09-20ユーザー承認)用の
+   * 任意の担当者(brain_staff.id)上書き。個人ログイン時は常にnull/未指定。
+   */
+  staffId?:        string | null
 }
 
 function isGhostOpacityLevel(v: string | null): v is GhostOpacityLevel {
@@ -67,7 +72,7 @@ function isGhostOpacityLevel(v: string | null): v is GhostOpacityLevel {
 }
 
 export function usePhotoCapture(options: UsePhotoCaptureOptions) {
-  const { customerId, visitId } = options
+  const { customerId, visitId, staffId = null } = options
 
   const videoRef       = useRef<HTMLVideoElement | null>(null)
   const streamRef       = useRef<MediaStream | null>(null)
@@ -290,8 +295,8 @@ export function usePhotoCapture(options: UsePhotoCaptureOptions) {
     setJustSaved(false)
     setReviewPhase('reviewing')
 
-    ensureSession().capture({ blob, bodyPart, photoType, visitId, takenAt: takenAtOverride ?? undefined })
-  }, [bodyPart, photoType, visitId, takenAtOverride, ensureSession, clearPreview])
+    ensureSession().capture({ blob, bodyPart, photoType, visitId, takenAt: takenAtOverride ?? undefined, staffId })
+  }, [bodyPart, photoType, visitId, takenAtOverride, staffId, ensureSession, clearPreview])
 
   const shutter = useCallback(async () => {
     if (reviewPhase === 'reviewing') return // 二重シャッター防止

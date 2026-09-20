@@ -14,6 +14,7 @@ import { getPhotoServiceClient } from '@/lib/photos/photoDb'
 import { verifyVisitBelongsToCustomer } from '@/lib/photos/ownership'
 import { commitCustomerPhoto } from '@/lib/photos/commitCustomerPhoto'
 import { createSupabaseCommitCustomerPhotoRepo } from '@/lib/photos/commitCustomerPhotoRepo.supabase'
+import { resolveStaffIdOverride } from '@/lib/staffTag/resolveStaffIdOverride'
 import {
   ALLOWED_PHOTO_MIME_TYPES,
   MAX_PHOTO_UPLOAD_BYTES,
@@ -177,6 +178,7 @@ export async function POST(
   const photoType        = form.get('photoType')
   const takenAtRaw       = form.get('takenAt')
   const clientRequestId  = form.get('clientRequestId')
+  const staffIdRaw       = form.get('staffId')
 
   if (
     !(file instanceof Blob) ||
@@ -220,6 +222,13 @@ export async function POST(
     }
   }
 
+  // 店舗共通ログイン+担当者タグ選択(PHASE IPAD-SHARED-LOGIN-1・2026-09-20ユーザー承認):
+  // 共通アカウントからのリクエストに限り、選択済みの担当者(brain_staff.id)をcreated_by
+  // として使う。個人ログイン時はstaffIdが送られてきても無視され、常に本人のstaffBrainId
+  // が使われる(resolveStaffIdOverride参照、なりすまし防止)。
+  const requestedStaffId = typeof staffIdRaw === 'string' && staffIdRaw.trim().length > 0 ? staffIdRaw : null
+  const override = await resolveStaffIdOverride(getPhotoServiceClient(), staff, requestedStaffId)
+
   const repo   = createSupabaseCommitCustomerPhotoRepo()
   const result = await commitCustomerPhoto(repo, {
     // store_idはクライアントから受け取らず、サーバー側の固定値を使用
@@ -230,9 +239,10 @@ export async function POST(
     bodyPart:   bodyPart.trim(),
     photoType:  photoType as PhotoType,
     takenAt,
-    // created_by はクライアントから受け取らず、JWTから解決したstaffBrainIdのみを使用
-    // (auth.users.idではなくbrain_staff.id、PHOTO_KARTE_API_DESIGN_1.md 5-1節)
-    createdBy:  staff.staffBrainId,
+    // created_by は原則クライアントから受け取らず、JWTから解決したstaffBrainIdを使用
+    // (PHOTO_KARTE_API_DESIGN_1.md 5-1節)。店舗共通ログイン時のみ、上記で検証済みの
+    // 担当者タグへ上書きする。
+    createdBy:  override?.staffBrainId ?? staff.staffBrainId,
     file,
   }, clientRequestId)
 

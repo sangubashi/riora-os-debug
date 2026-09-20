@@ -118,6 +118,11 @@ interface Props {
   onClose: () => void
   /** 1枚保存成功のたびに呼ぶ(親側でIpadKarteDataのrefetchPhotosを呼ぶ想定)。モーダルは閉じない。 */
   onSaved: () => void
+  /**
+   * 店舗共通ログイン+担当者タグ選択(PHASE IPAD-SHARED-LOGIN-1・2026-09-20ユーザー承認)用の
+   * 任意の担当者(brain_staff.id)上書き。個人ログイン時は常にnull。
+   */
+  staffId?: string | null
 }
 
 function isValidBodyPart(v: string): v is IpadKarteAngleId {
@@ -159,8 +164,8 @@ function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: b
   )
 }
 
-export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onClose, onSaved }: Props) {
-  const capture = usePhotoCapture({ customerId, visitId, initialBodyPart: '' })
+export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onClose, onSaved, staffId = null }: Props) {
+  const capture = usePhotoCapture({ customerId, visitId, initialBodyPart: '', staffId })
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [pickerBusy, setPickerBusy] = useState(false)
   // 撮影日の明示指定(過去写真登録)。"YYYY-MM-DD"のUI表示用state。空文字=未指定

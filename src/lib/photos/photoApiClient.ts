@@ -87,6 +87,11 @@ export async function uploadCustomerPhoto(
   // 常に省略するため挙動は変わらない。写真ライブラリ選択(Phase2)のみFile.lastModified
   // 由来の値をpayload.takenAtとして渡す場合がある(batchUpload.ts参照)。
   if (payload.takenAt) form.set('takenAt', payload.takenAt)
+  // 店舗共通ログイン+担当者タグ選択(PHASE IPAD-SHARED-LOGIN-1・2026-09-20ユーザー承認)用。
+  // 個人ログイン時はstaffIdを送らない(=従来通りJWTから解決したstaffBrainIdのみを使う)。
+  // 送った場合もサーバー側で「店舗共通ログインからのリクエストか」を検証してから
+  // 反映するため、個人ログイン時に送ってもなりすましにはならない(resolveStaffIdOverride参照)。
+  if (payload.staffId) form.set('staffId', payload.staffId)
   // createdBy/storeId/storagePathはクライアントから一切送らない
   // (サーバー側でJWTから解決したstaffBrainId・固定STORE_ID・決定的パスのみを使う)。
 

@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '../../lib/repos'
 import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest'
 import { canAccessCustomer } from '@/lib/auth/canAccessCustomer'
+import { resolveStaffIdOverride } from '@/lib/staffTag/resolveStaffIdOverride'
 
 interface KarteMemoRow {
   id:          string
@@ -72,7 +73,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
 
-  let body: { customer_id: string; content: string }
+  let body: { customer_id: string; content: string; staff_id?: string }
   try {
     body = await req.json()
   } catch {
@@ -89,11 +90,18 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = getServiceClient()
+
+  // 店舗共通ログイン+担当者タグ選択(PHASE IPAD-SHARED-LOGIN-1・2026-09-20ユーザー承認):
+  // 共通アカウントからのリクエストに限り、選択済みの担当者(brain_staff.id)をstaff_id
+  // (auth.users.id)へ解決して使う。個人ログイン時はbody.staff_idが送られてきても
+  // 無視され、常に本人のauthUserIdが使われる(resolveStaffIdOverride参照)。
+  const override = await resolveStaffIdOverride(supabase, staff, body.staff_id)
+
   const { data, error } = await supabase
     .from('customer_karte_memos')
     .insert({
       customer_id: body.customer_id,
-      staff_id:    staff.authUserId,
+      staff_id:    override?.authUserId ?? staff.authUserId,
       content:     body.content.trim(),
     })
     .select('id, customer_id, staff_id, content, created_at, updated_at')

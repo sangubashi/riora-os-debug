@@ -23,9 +23,13 @@ import { useState } from 'react'
 import { Flower2, X, Pencil, EyeOff, ChevronDown } from 'lucide-react'
 import { useIpadKarteData, IPAD_KARTE_ANGLES, type IpadKarteAngleId, type RetailProductStatus } from './ipadKarteData'
 import KarteMemoSection from './KarteMemoSection'
+import StaffTagBar from './StaffTagBar'
 import { PALETTE, headingFont, Card, PhotoPanel, SkinTagRow } from '@/components/customer/shared/PhotoCompareKit'
 import { useNextVisit } from '@/lib/nextVisit/useNextVisit'
 import { formatWeeksLabel, formatApproxDateLabel } from '@/lib/nextVisit/nextVisitEngine'
+import { useAuthStore } from '@/store/useAuthStore'
+import { SHARED_IPAD_STAFF_USER_ID } from '@/lib/constants'
+import { useStaffTagSession } from '@/lib/staffTag/useStaffTagSession'
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
 /** クイック選択の候補(本日起点の週数)。 */
@@ -383,6 +387,12 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
   const [angle, setAngle] = useState<IpadKarteAngleId>('face_front')
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
 
+  // 担当者タグ選択(PHASE IPAD-SHARED-LOGIN-1・2026-09-20ユーザー承認)。店舗共通ログイン
+  // (SHARED_IPAD_STAFF_USER_ID)でのアクセス時のみ意味を持つ。個人ログイン時はisSharedLogin
+  // がfalseになりStaffTagBarは何も描画しない(従来通り無変更)。
+  const isSharedLogin = useAuthStore(s => s.user?.id) === SHARED_IPAD_STAFF_USER_ID
+  const staffTagSession = useStaffTagSession(isSharedLogin)
+
   const pair = data.anglePairs[angle]
   const currentUrl = pair?.current ? data.photoUrls[pair.current.id] : undefined
   const referenceUrl = pair?.reference ? data.photoUrls[pair.reference.id] : undefined
@@ -416,6 +426,13 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
           </span>
         </p>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <StaffTagBar
+            isSharedLogin={isSharedLogin}
+            tag={staffTagSession.tag}
+            needsPrompt={staffTagSession.needsPrompt}
+            onSelect={staffTagSession.setTag}
+            onRequestChange={staffTagSession.clearTag}
+          />
           <p style={{ margin: 0, fontSize: '13px', letterSpacing: '0.04em', color: PALETTE.text, whiteSpace: 'nowrap' }}>
             {customerName}様
           </p>
@@ -518,6 +535,7 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose }
                 previousVisitDate={data.previousVisitDate}
                 previousMenuName={data.previousMenuName}
                 previousTreatmentMemo={data.previousTreatmentMemo}
+                staffIdOverride={isSharedLogin ? staffTagSession.tag?.id ?? null : null}
               />
             </div>
 

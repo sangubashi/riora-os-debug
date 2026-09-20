@@ -27,6 +27,12 @@ export interface CapturedPhotoPayload {
    * File.lastModified由来の暫定日時を渡す場合がある(batchUpload.ts参照)。
    */
   takenAt?:  string
+  /**
+   * 店舗共通ログイン+担当者タグ選択(PHASE IPAD-SHARED-LOGIN-1・2026-09-20ユーザー承認)用の
+   * 任意の担当者(brain_staff.id)上書き。個人ログイン時は常にnull/未指定で、サーバー側で
+   * 無視される(JWTから解決した本人のstaffBrainIdがそのまま使われる)。
+   */
+  staffId?:  string | null
 }
 
 /** clientRequestIdは自動確定のタイミングで初めて付与される(撮り直し時は一切生成されない)。 */

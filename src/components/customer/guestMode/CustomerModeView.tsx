@@ -46,6 +46,13 @@ import PhotoCompareScreen from '@/components/customer/photoCompare/PhotoCompareS
 // 追加するだけで済む。モーダル本体・内部の撮影/削除ロジックには一切手を加えていない)。
 import IpadPhotoCaptureModal, { type PhotoCaptureIntent } from '@/components/customer/ipadKarte/IpadPhotoCaptureModal'
 import IpadPhotoManageModal from '@/components/customer/ipadKarte/IpadPhotoManageModal'
+// 担当者タグ選択(PHASE IPAD-SHARED-LOGIN-1・2026-09-20ユーザー承認)。写真登録が本画面に
+// あるため必要(店舗共通ログイン時のみ意味を持つ表示専用コンポーネントで、顧客の業務データは
+// 一切扱わないため、上記の「スタッフ専用コンポーネントは読み込まない」方針には抵触しない)。
+import StaffTagBar from '@/components/customer/ipadKarte/StaffTagBar'
+import { useStaffTagSession } from '@/lib/staffTag/useStaffTagSession'
+import { useAuthStore } from '@/store/useAuthStore'
+import { SHARED_IPAD_STAFF_USER_ID } from '@/lib/constants'
 import {
   PALETTE,
   headingFont,
@@ -92,6 +99,12 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
   // 画面から誤タップでスタッフ専用画面(CustomerBottomSheet)へ戻ってしまうのを防ぐため、
   // 通常のタップでは閉じず600ms以上の長押しでのみonCloseを呼ぶ。
   const exitLongPress = useLongPress(onClose)
+
+  // 担当者タグ選択(PHASE IPAD-SHARED-LOGIN-1・2026-09-20ユーザー承認)。店舗共通ログイン
+  // 時のみ意味を持つ(個人ログイン時はisSharedLoginがfalseになり無変更)。写真撮影・選択
+  // 追加がこの画面にあるため、選択済みの担当者をIpadPhotoCaptureModalへ渡す必要がある。
+  const isSharedLogin = useAuthStore(s => s.user?.id) === SHARED_IPAD_STAFF_USER_ID
+  const staffTagSession = useStaffTagSession(isSharedLogin)
 
   // 次回目安エンジン(PHASE NEXT-VISIT-1・2026-09-11)。お客様モードでは具体的な日付は出さず、
   // 「約◯週間後」のみ表示する(次回予約が既にある場合のみ日付を表示)。
@@ -286,6 +299,13 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
           お肌の変化を一緒に確認しましょう
         </p>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '14px' }}>
+          <StaffTagBar
+            isSharedLogin={isSharedLogin}
+            tag={staffTagSession.tag}
+            needsPrompt={staffTagSession.needsPrompt}
+            onSelect={staffTagSession.setTag}
+            onRequestChange={staffTagSession.clearTag}
+          />
           <p style={{ margin: 0, fontSize: '11px', letterSpacing: '0.06em', color: PALETTE.muted, whiteSpace: 'nowrap' }}>
             {customerName}様
           </p>
@@ -760,6 +780,7 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
           intent={photoCaptureIntent}
           onClose={() => setPhotoCaptureIntent(null)}
           onSaved={() => { void data.refetchPhotos() }}
+          staffId={isSharedLogin ? staffTagSession.tag?.id ?? null : null}
         />
       )}
 

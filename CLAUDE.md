@@ -920,6 +920,68 @@ iPadカルテ画面の仕様については引き続き凍結を継続する。
 会話トーン・LINE領域・admin領域、およびそれ以外の顧客タブ/iPadカルテ画面の仕様については
 引き続き凍結を継続する。
 
+### v1.0.1 着手済み事項（iPad店舗共通ログイン+担当者タグ選択の新設のみ・2026-09-20ユーザー承認）
+
+iPad用の店舗共通ログインアカウントを新規作成し、顧客のカルテを開いた際に担当スタッフを
+タグとして選択、そのセッション中(端末単位・2時間保持)のstaffIdとして写真登録・カルテメモの
+書き込みに紐付ける機能を新設した(PHASE IPAD-SHARED-LOGIN-1)。個人ログイン時は一切無変更
+(担当者タグUI自体が表示されない)。事前にREAD ONLY調査→設計案提示→久保田さん承認を経て
+実装した。
+
+- **店舗共通アカウント**: `auth.users`1件(email: `ipad-shared@salon-riora.jp`、パスワードは
+  仮値、久保田さんの指定後に差し替え予定)+`brain_staff`1件(id=`a75826c5-5327-4a8b-867c-
+  8c4bfbfcbafb`、user_id=`7e29dcfb-20ce-4f7c-8793-6b46b2f2aa60`)を
+  `auth.admin.createUser()`+SQL insertで作成済み(既存のスタッフ招待フローは使わず、
+  仮パスワードで即座に使える状態にする指示のため)。
+- `src/lib/constants.ts`: `SHARED_IPAD_STAFF_USER_ID`定数を追加(共通アカウントの
+  `auth.users.id`。`DEMO_STORE_ID`と同じ「クライアントに含まれてよい公開識別子」方針)。
+- **新規API** `GET /api/staff/active-list`: 担当者タグ候補一覧(`brain_staff`の
+  `is_active=true`・共通アカウント自身を除く`id, name`)を返す。既存の`/api/admin/staff`は
+  管理者専用のため共通アカウントからは使えず、新規に軽量版を追加した。
+- **新規lib** `src/lib/staffTag/`: `useStaffTagSession.ts`(localStorageに選択結果+選択時刻を
+  保存し2時間TTLで判定するクライアントhook)・`staffTagApiClient.ts`(上記APIの薄い
+  クライアント)・`resolveStaffIdOverride.ts`(サーバー専用。**リクエストのJWTが
+  `SHARED_IPAD_STAFF_USER_ID`本人の場合のみ**、指定された`staffId`を有効な`brain_staff`か
+  検証した上で許可する。個人ログイン時は指定されても常に無視され、なりすましは発生しない)。
+- **新規UI** `src/components/customer/ipadKarte/StaffTagBar.tsx`: 店舗共通ログイン時のみ
+  意味を持つ表示専用コンポーネント。担当未選択(または2時間経過)ならフルスクリーンの
+  選択プロンプトをブロッキング表示、選択済みなら「担当: ◯◯」チップを表示しタップで
+  いつでも選び直せる。`IpadStaffKarteView.tsx`・`CustomerModeView.tsx`の両方のヘッダーに
+  設置した(写真登録の導線がPHASE GUEST-MODE-PHOTO-MOVE-1でお客様モード側にあるため。
+  お客様の業務データを一切扱わない表示専用コンポーネントのため、CustomerModeView.tsxの
+  「スタッフ専用コンポーネントは読み込まない」方針には抵触しないと判断)。
+- **write API側の変更**: `POST /api/customer-karte-memos`・`POST /api/customers/[id]/photos`
+  が任意の`staff_id`/`staffId`上書きを受け付けるよう変更。`resolveStaffIdOverride`経由で
+  検証した場合のみ反映する。`customer_karte_memos.staff_id`(auth.users.id参照)と
+  `brain_customer_photos.created_by`(brain_staff.id参照)でスキーマの参照先が異なるため、
+  `resolveStaffIdOverride`は両方の値(`staffBrainId`・`authUserId`)を返し、呼び出し元が
+  自分のテーブルに合う方を使う。
+- **クライアント側の配線**: `KarteMemoSection.tsx`(`staffIdOverride`prop追加)・
+  `captureConfirmFlow.ts`の`CapturedPhotoPayload`・`usePhotoCapture.ts`の
+  `UsePhotoCaptureOptions`・`photoApiClient.ts`の`uploadCustomerPhoto`・
+  `IpadPhotoCaptureModal.tsx`(`staffId`prop追加)を順に配線し、選択済みの担当者タグが
+  写真登録(撮影・選択して追加どちらも同じ`beginReview`を通るため両方に効く)・カルテメモ
+  登録の両方に反映されるようにした。
+- 検証: `npm run typecheck`に新規エラーなし。本番環境で直接API検証(①共通アカウントで
+  `GET /api/staff/active-list`が共通アカウント自身を除いた4名を返す、②共通アカウントから
+  `staff_id`上書き付きでカルテメモ・写真を登録すると実際に指定した担当者のID
+  (`customer_karte_memos.staff_id`=対象のuser_id、`brain_customer_photos.created_by`=
+  対象のbrain_staff.id)で保存される、③個人(admin)ログインから同じ上書きを試みても無視され
+  本人の識別子のまま保存される、をSQLで直接確認済み)。Playwright(本番Supabase・実顧客
+  「小宮山 仁美」、検証用一時spec`e2e/staff-tag-verify.spec.ts`はコミット前に削除)で、
+  ④共通アカウントで開くと選択プロンプトが出ること、⑤選択後チップ表示に変わること、
+  ⑥別の顧客を開いても(2時間以内のため)再表示されずチップが保持されること、⑦チップタップで
+  選び直せること、⑧個人(admin)ログインではプロンプト・チップとも一切表示されないことを
+  確認した。テスト用に作成したカルテメモ・写真はいずれも検証後に削除済み。
+- **未実施**: アイドルタイムアウト・重要操作PIN(2026-09-20ユーザー承認により対象外)。
+- **要確認事項(久保田さんへ)**: 共通アカウントのパスワードは仮値のため、実運用開始前に
+  Supabase管理画面等で正式なパスワードへ変更する必要がある(この会話内で個別にお伝え済み、
+  ファイルには平文パスワードを一切残していない)。
+
+**この解除は上記「iPad店舗共通ログイン+担当者タグ選択」機能の新設のみに限る。** 5タブ構成・
+TL-5構成・AI提案の会話トーン・LINE領域・admin領域、およびそれ以外の顧客タブ/iPadカルテ
+画面の仕様については引き続き凍結を継続する。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。
