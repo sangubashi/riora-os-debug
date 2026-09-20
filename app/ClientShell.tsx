@@ -74,7 +74,10 @@ export default function ClientShell({ children }: { children: React.ReactNode })
     const isPublic = PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + '/'))
     if (!session && !isPublic) {
       console.log('[AUTH]', { pathname, initialized, hasSession: !!session })
-      router.replace('/login')
+      // 未ログイン直アクセス時のredirectTo対応(2026-09-20ユーザー承認)。ログイン後に
+      // 元々アクセスしようとしていたパスへ戻せるよう、/loginへ渡す。安全性の検証
+      // (相対パスのみ許可等)はapp/login/page.tsx側で行う(オープンリダイレクト対策)。
+      router.replace(`/login?redirectTo=${encodeURIComponent(pathname)}`)
     }
   }, [initialized, session, pathname, router])
 

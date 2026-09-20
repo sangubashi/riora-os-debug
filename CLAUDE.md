@@ -928,8 +928,10 @@ iPad用の店舗共通ログインアカウントを新規作成し、顧客の�
 (担当者タグUI自体が表示されない)。事前にREAD ONLY調査→設計案提示→久保田さん承認を経て
 実装した。
 
-- **店舗共通アカウント**: `auth.users`1件(email: `ipad-shared@salon-riora.jp`、パスワードは
-  仮値、久保田さんの指定後に差し替え予定)+`brain_staff`1件(id=`a75826c5-5327-4a8b-867c-
+- **店舗共通アカウント**: `auth.users`1件(email: `ipad@salon-riora.jp`。作成時は
+  `ipad-shared@salon-riora.jp`だったが、2026-09-20ユーザー承認によりSupabase Auth Admin API
+  経由でこのメールアドレスへ変更済み。UUID・パスワード・`SHARED_IPAD_STAFF_USER_ID`は変更なし)
+  +`brain_staff`1件(id=`a75826c5-5327-4a8b-867c-
   8c4bfbfcbafb`、user_id=`7e29dcfb-20ce-4f7c-8793-6b46b2f2aa60`)を
   `auth.admin.createUser()`+SQL insertで作成済み(既存のスタッフ招待フローは使わず、
   仮パスワードで即座に使える状態にする指示のため)。

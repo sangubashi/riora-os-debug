@@ -8,11 +8,30 @@ import { isAdminEmail } from '@/lib/auth/adminEmail'
 import { SHARED_IPAD_STAFF_USER_ID } from '@/lib/constants'
 
 /**
- * ログイン後の遷移先(PHASE IPAD-KARTE-ENTRY-1・2026-09-20ユーザー承認)。
- * admin判定は既存のまま最優先。店舗共通ログイン(iPad用)のみ`/karte`へ、
- * それ以外の個人ログインは従来通り`/phase1`(無変更)。
+ * redirectTo の安全性検証(2026-09-20ユーザー承認)。オープンリダイレクト対策として、
+ * 相対パス(`/`始まり)のみ許可する。`//evil.com`(プロトコル相対URL)・
+ * `https://evil.com`(絶対URL、`/`始まりでないため自動的に弾かれる)・`/login`始まり
+ * (リダイレクトループ防止)は無効とし、呼び出し元は従来通りresolveLandingPath()の
+ * デフォルト値にフォールバックする。
  */
-function resolveLandingPath(user: { email?: string | null; id: string }): string {
+function isSafeRedirectPath(path: string | null): path is string {
+  if (!path) return false
+  if (!path.startsWith('/')) return false
+  if (path.startsWith('//')) return false
+  if (path.startsWith('/login')) return false
+  return true
+}
+
+/**
+ * ログイン後の遷移先(PHASE IPAD-KARTE-ENTRY-1・2026-09-20ユーザー承認、
+ * redirectTo対応は同日追加)。
+ * `redirectTo`が安全な相対パスであれば、admin/共通ログイン/個人ログインいずれの場合も
+ * それを最優先する(未ログインで直接アクセスしようとしていた元のページへ戻すため)。
+ * `redirectTo`が無い/不正な場合のみ、従来通りadmin判定→共通ログイン→個人ログインの
+ * 順で決定する(無変更)。
+ */
+function resolveLandingPath(user: { email?: string | null; id: string }, redirectTo?: string | null): string {
+  if (isSafeRedirectPath(redirectTo ?? null)) return redirectTo as string
   if (isAdminEmail(user.email)) return '/admin'
   if (user.id === SHARED_IPAD_STAFF_USER_ID) return '/karte'
   return '/phase1'
@@ -65,7 +84,8 @@ export default function LoginPage() {
             role:       (session.user.user_metadata?.role as string | undefined) ?? session.user.role ?? null,
             hasSession: true,
           })
-          router.replace(resolveLandingPath(session.user))
+          const redirectTo = new URLSearchParams(window.location.search).get('redirectTo')
+          router.replace(resolveLandingPath(session.user, redirectTo))
           return
         }
 
@@ -117,7 +137,8 @@ export default function LoginPage() {
       })
     }
 
-    router.push(session ? resolveLandingPath(session.user) : '/phase1')
+    const redirectTo = new URLSearchParams(window.location.search).get('redirectTo')
+    router.push(session ? resolveLandingPath(session.user, redirectTo) : '/phase1')
   }
 
   // ── ローディング ─────────────────────────────────────────────────────────────
