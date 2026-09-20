@@ -38,6 +38,7 @@ import {
 } from '@/lib/photos/comparisonSelection'
 import { getPhotoSignedUrl, getBatchSignedUrls, type TimelinePhoto } from '@/lib/photos/photoApiClient'
 import { usePinchZoom } from './usePinchZoom'
+import { useLongPress } from './useLongPress'
 import PhotoCompareScreen from '@/components/customer/photoCompare/PhotoCompareScreen'
 // 写真撮影・選択・削除フロー(PHASE GUEST-MODE-PHOTO-MOVE-1・Phase 0・2026-09-19)。
 // IpadStaffKarteView.tsxが使っていたものと同一のモーダル2つをそのまま再利用する
@@ -86,6 +87,11 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
   // スクロール領域への参照。「過去の写真」サムネイルタップ時に拡大モードの表示(上部)まで
   // スクロールを戻すために使う(お客様用カルテ再構成・2026-09-14)。
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  // 「終了」ボタンの長押し化(誤操作防止・2026-09-20ユーザー承認)。お客様に見せている
+  // 画面から誤タップでスタッフ専用画面(CustomerBottomSheet)へ戻ってしまうのを防ぐため、
+  // 通常のタップでは閉じず600ms以上の長押しでのみonCloseを呼ぶ。
+  const exitLongPress = useLongPress(onClose)
 
   // 次回目安エンジン(PHASE NEXT-VISIT-1・2026-09-11)。お客様モードでは具体的な日付は出さず、
   // 「約◯週間後」のみ表示する(次回予約が既にある場合のみ日付を表示)。
@@ -283,18 +289,44 @@ export default function CustomerModeView({ customerId, customerName, onClose }: 
           <p style={{ margin: 0, fontSize: '11px', letterSpacing: '0.06em', color: PALETTE.muted, whiteSpace: 'nowrap' }}>
             {customerName}様
           </p>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="お客様モードを終了"
-            style={{
-              width: '52px', height: '52px', borderRadius: '50%', flexShrink: 0,
-              background: PALETTE.card, border: `1.5px solid ${PALETTE.gold}`, color: PALETTE.text,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-            }}
-          >
-            <X size={22} strokeWidth={2.2} />
-          </button>
+          {/* 「終了」ボタンの長押し化(誤操作防止・2026-09-20ユーザー承認)。押している間は
+              リングで進捗を可視化し、下に常時ヒントを添えて「タップでは閉じない」ことを
+              あらかじめ分かるようにする。 */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+            <div style={{ position: 'relative', width: '52px', height: '52px', flexShrink: 0 }}>
+              {exitLongPress.pressing && (
+                <svg
+                  width="60" height="60" viewBox="0 0 60 60"
+                  style={{ position: 'absolute', top: '-4px', left: '-4px', transform: 'rotate(-90deg)', pointerEvents: 'none' }}
+                >
+                  <circle
+                    cx="30" cy="30" r="27" fill="none" stroke={PALETTE.gold} strokeWidth="3"
+                    strokeLinecap="round"
+                    strokeDasharray={2 * Math.PI * 27}
+                    strokeDashoffset={2 * Math.PI * 27 * (1 - exitLongPress.progress)}
+                  />
+                </svg>
+              )}
+              <button
+                type="button"
+                {...exitLongPress.handlers}
+                aria-label="長押しして終了"
+                style={{
+                  width: '52px', height: '52px', borderRadius: '50%', flexShrink: 0,
+                  background: exitLongPress.pressing ? PALETTE.gold : PALETTE.card,
+                  border: `1.5px solid ${PALETTE.gold}`,
+                  color: exitLongPress.pressing ? '#FFFFFF' : PALETTE.text,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                  touchAction: 'none',
+                }}
+              >
+                <X size={22} strokeWidth={2.2} />
+              </button>
+            </div>
+            <p style={{ margin: 0, fontSize: '9px', letterSpacing: '0.04em', color: PALETTE.muted, whiteSpace: 'nowrap' }}>
+              長押しで終了
+            </p>
+          </div>
         </div>
       </div>
 
