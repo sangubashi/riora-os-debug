@@ -50,6 +50,24 @@ function enrichWithBrainStats(
   })
 }
 
+/**
+ * 担当者名の解決(PHASE IPAD-KARTE-ENTRY-1 UI刷新・2026-09-20ユーザー承認)。
+ * reservations.staff_id(auth.users.id)を、担当者タグ選択で使っている
+ * `/api/staff/active-list`のuser_idと突き合わせて表示用の名前をマージする。
+ * 解決できない場合(店舗共通アカウント自身・久保田(admin)・退職済みスタッフ等)は
+ * staff_nameを付与せず、表示側でフォールバックする。
+ */
+function enrichWithStaffNames(
+  reservations: ReservationWithBrainCustomer[],
+  staffByUserId: Record<string, string>
+): ReservationWithBrainCustomer[] {
+  return reservations.map(r => {
+    const name = staffByUserId[r.staff_id]
+    if (!name) return r
+    return { ...r, staff_name: name }
+  })
+}
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useHomeStore = create<HomeState>((set) => ({
@@ -89,6 +107,26 @@ export const useHomeStore = create<HomeState>((set) => ({
           }
         } catch {
           // brain_visits 取得失敗時は brain_customers 基本情報で継続
+        }
+
+        // ── 3. 担当者タグ一覧(/api/staff/active-list)で担当者名を補完 ─────
+        try {
+          const staffRes = await authedFetch('/api/staff/active-list')
+          if (staffRes.ok) {
+            const json = await staffRes.json() as {
+              success: boolean
+              staff?: { id: string; name: string; user_id: string | null }[]
+            }
+            if (json.success && json.staff) {
+              const staffByUserId: Record<string, string> = {}
+              for (const s of json.staff) {
+                if (s.user_id) staffByUserId[s.user_id] = s.name
+              }
+              mapped = enrichWithStaffNames(mapped, staffByUserId)
+            }
+          }
+        } catch {
+          // 担当者名の解決に失敗しても本日の予約表示自体は継続(フォールバック表示)
         }
       }
 

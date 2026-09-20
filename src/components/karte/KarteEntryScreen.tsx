@@ -51,20 +51,45 @@ export default function KarteEntryScreen() {
 
   const openCustomer = (customerId: string) => router.push(`/karte/${customerId}`)
 
+  // 本日のJST日付を「2026/09/20 (日)」形式で表示する(PHASE IPAD-KARTE-ENTRY-1 UI刷新・
+  // 2026-09-20ユーザー承認)。サーバー側todayJst()とは独立(表示専用・クエリには使わない)。
+  const todayLabel = useMemo(() => {
+    const parts = new Intl.DateTimeFormat('ja-JP', {
+      timeZone: 'Asia/Tokyo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      weekday: 'short',
+    }).formatToParts(new Date())
+    const get = (type: string) => parts.find(p => p.type === type)?.value ?? ''
+    return `${get('year')}/${get('month')}/${get('day')} (${get('weekday')})`
+  }, [])
+
   return (
     <div style={{ minHeight: '100dvh', background: PALETTE.bg, display: 'flex', flexDirection: 'column' }}>
       <div
         style={{
           flexShrink: 0,
+          display: 'grid',
+          gridTemplateColumns: '1fr auto 1fr',
+          alignItems: 'center',
           padding: 'max(20px, calc(env(safe-area-inset-top) + 14px)) 32px 16px',
           borderBottom: `1px solid ${PALETTE.border}`,
         }}
       >
-        <p style={{ margin: 0, fontSize: '22px', color: PALETTE.gold, letterSpacing: '0.01em', fontFamily: headingFont.style.fontFamily }}>
+        <p style={{ margin: 0, fontSize: '22px', color: PALETTE.gold, letterSpacing: '0.01em', fontFamily: headingFont.style.fontFamily, justifySelf: 'start' }}>
           Salon Riora
         </p>
-        <p style={{ margin: '4px 0 0', fontSize: '10px', letterSpacing: '0.2em', color: PALETTE.muted, textTransform: 'uppercase' }}>
-          iPad カルテ
+        <p style={{ margin: 0, fontSize: '14px', color: PALETTE.text, letterSpacing: '0.02em', justifySelf: 'center', whiteSpace: 'nowrap' }}>
+          {todayLabel}
+        </p>
+        <p
+          style={{
+            margin: 0, fontSize: '11px', letterSpacing: '0.15em', color: PALETTE.gold, textTransform: 'uppercase',
+            justifySelf: 'end', paddingBottom: '4px', borderBottom: `1px solid ${PALETTE.gold}`,
+          }}
+        >
+          KARTE
         </p>
       </div>
 
@@ -76,7 +101,7 @@ export default function KarteEntryScreen() {
             <input
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="顧客名で検索"
+              placeholder="お客様を検索 (お名前)"
               style={{
                 width: '100%', boxSizing: 'border-box', padding: '13px 14px 13px 40px', borderRadius: '12px',
                 border: `1px solid ${PALETTE.border}`, background: PALETTE.card, fontSize: '15px',
@@ -110,16 +135,26 @@ export default function KarteEntryScreen() {
             </div>
           ) : (
             <div>
-              <p
-                style={{
-                  margin: '0 0 12px', display: 'flex', alignItems: 'center', gap: '6px',
-                  fontSize: '13px', color: PALETTE.gold, letterSpacing: '0.04em',
-                  fontFamily: headingFont.style.fontFamily,
-                }}
-              >
-                <Calendar size={14} strokeWidth={1.8} />
-                本日の予約
-              </p>
+              <div style={{ margin: '0 0 12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <p
+                  style={{
+                    margin: 0, display: 'flex', alignItems: 'center', gap: '6px',
+                    fontSize: '13px', color: PALETTE.gold, letterSpacing: '0.04em',
+                    fontFamily: headingFont.style.fontFamily,
+                  }}
+                >
+                  <Calendar size={14} strokeWidth={1.8} />
+                  本日の予約
+                </p>
+                <span
+                  style={{
+                    fontSize: '12px', color: PALETTE.gold, background: 'rgba(173,138,84,0.12)',
+                    borderRadius: '999px', padding: '2px 10px', fontWeight: 600,
+                  }}
+                >
+                  {reservations.length}件
+                </span>
+              </div>
               {reservationsLoading && <p style={{ fontSize: '13px', color: PALETTE.muted }}>読み込み中…</p>}
               {!reservationsLoading && reservations.length === 0 && (
                 <p style={{ fontSize: '13px', color: PALETTE.muted }}>本日の予約はありません</p>
@@ -131,14 +166,21 @@ export default function KarteEntryScreen() {
                     type="button"
                     onClick={() => openCustomer(r.brain_customer_id)}
                     style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      display: 'flex', alignItems: 'center',
                       textAlign: 'left', padding: '14px 16px', borderRadius: '12px',
                       border: `1px solid ${PALETTE.border}`, background: PALETTE.card, cursor: 'pointer',
                     }}
                   >
+                    <span style={{ fontSize: '14px', color: PALETTE.gold, fontWeight: 600, minWidth: '52px' }}>
+                      {new Date(r.scheduled_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    <span style={{ width: '1px', height: '16px', background: PALETTE.border, margin: '0 12px', flexShrink: 0 }} />
                     <span style={{ fontSize: '14px', color: PALETTE.text }}>{r.brain_customer.name}様</span>
-                    <span style={{ fontSize: '12px', color: PALETTE.muted }}>
-                      {new Date(r.scheduled_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })} ・ {r.menu}
+                    <span style={{ width: '1px', height: '16px', background: PALETTE.border, margin: '0 12px', flexShrink: 0 }} />
+                    <span style={{ fontSize: '13px', color: PALETTE.text, flex: 1 }}>{r.menu}</span>
+                    <span style={{ width: '1px', height: '16px', background: PALETTE.border, margin: '0 12px', flexShrink: 0 }} />
+                    <span style={{ fontSize: '12px', color: PALETTE.muted, whiteSpace: 'nowrap' }}>
+                      担当 {r.staff_name ?? '-'}
                     </span>
                   </button>
                 ))}

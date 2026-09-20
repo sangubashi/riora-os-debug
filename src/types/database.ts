@@ -79,6 +79,12 @@ export interface BrainCustomerMini {
 export interface ReservationWithBrainCustomer extends Omit<Reservation, 'customer_id'> {
   brain_customer_id: string            // 必須: クエリで IS NOT NULL を保証
   brain_customer:    BrainCustomerMini // 必須: brain_customer_id FK JOIN
+  /**
+   * 担当者名(PHASE IPAD-KARTE-ENTRY-1 UI刷新・2026-09-20ユーザー承認)。
+   * APIレスポンス自体には含まれず、useHomeStore.tsが`/api/staff/active-list`の結果で
+   * クライアント側マージした場合のみセットされる(未解決時はundefined、表示側でフォールバック)。
+   */
+  staff_name?: string | null
 }
 
 export interface StaffLog {

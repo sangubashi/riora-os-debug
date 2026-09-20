@@ -8,6 +8,11 @@
  * 店舗共通ログインアカウント自身(SHARED_IPAD_STAFF_USER_ID)、および現場施術を行わない
  * スタッフ(STAFF_TAG_EXCLUDED_IDS、2026-09-20ユーザー承認で「久保田」を追加)は
  * 候補から除外する。
+ *
+ * `user_id`(PHASE IPAD-KARTE-ENTRY-1 UI刷新・2026-09-20ユーザー承認で追加): 担当者タグ
+ * 選択の用途では使わないが、`useHomeStore.ts`が本日の予約(`reservations.staff_id` =
+ * `auth.users.id`)から担当者名を解決するために同じ一覧を再利用する。除外中の店舗共通
+ * アカウント自身・久保田(admin)がstaff_idに入るケースは元々想定していないため許容する。
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '../../../lib/repos'
@@ -23,7 +28,7 @@ export async function GET(req: NextRequest) {
   const supabase = getServiceClient()
   let query = supabase
     .from('brain_staff')
-    .select('id, name')
+    .select('id, name, user_id')
     .eq('store_id', DEMO_STORE_ID)
     .eq('is_active', true)
     .is('deleted_at', null)
