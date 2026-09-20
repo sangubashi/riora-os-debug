@@ -18,6 +18,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceClient } from '../../../lib/repos';
 import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
+import { SHARED_IPAD_STAFF_USER_ID } from '@/lib/constants';
 
 function todayJst(): { start: string; end: string } {
   const now = new Date();
@@ -74,7 +75,10 @@ export async function GET(req: NextRequest) {
       .lte('scheduled_at', end)
       .order('created_at', { ascending: false });
 
-    if (!staff.isAdmin) {
+    // iPad店舗共通ログイン(2026-09-20ユーザー承認)は特定の担当者に紐づかないため、
+    // adminと同様に本日の全予約を返す(絞り込まない)。この1クエリのみの例外で、
+    // isAdminフラグ自体は変更しないため他のadmin専用機能への影響はない。
+    if (!staff.isAdmin && staff.authUserId !== SHARED_IPAD_STAFF_USER_ID) {
       // reservations.staff_id は profiles.id (= auth.users.id) を格納する。
       // brain_staff.id (staffBrainId) とは別物のため authUserId で比較する。
       query = query.eq('staff_id', staff.authUserId);
