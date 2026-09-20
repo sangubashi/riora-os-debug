@@ -26,6 +26,23 @@ export const DEMO_STORE_ID = '00000000-0000-0000-0000-000000000001'
 export const SHARED_IPAD_STAFF_USER_ID = '7e29dcfb-20ce-4f7c-8793-6b46b2f2aa60'
 
 /**
+ * 担当者タグ選択(GET /api/staff/active-list)の候補一覧から除外する`brain_staff.id`
+ * (PHASE IPAD-SHARED-LOGIN-1・2026-09-20ユーザー承認)。
+ *
+ * 「久保田」(brain_staff.id=00000000-0000-0000-0000-000000000104)を除外する。
+ * このuser_idはadmin@salon-riora.jpアカウントと同一(現場施術を行うスタッフではなく
+ * オーナー/管理者のため、iPad担当者タグの選択肢としては不適切)。`is_active=false`には
+ * しない(is_active=falseはextractStaffFromRequestで退職済み扱いとなりログイン自体が
+ * できなくなるため、admin@salon-riora.jpのログインを壊してしまう)。あくまでこの一覧
+ * APIのSELECT結果からのみ除外する、限定的な変更。
+ *
+ * 今後さらに除外対象が増える場合はこの配列に追加するだけでよい。
+ */
+export const STAFF_TAG_EXCLUDED_IDS: string[] = [
+  '00000000-0000-0000-0000-000000000104', // 久保田(admin@salon-riora.jpと同一)
+]
+
+/**
  * 音声メモ機能の緊急停止フラグ(2026-09-15応急対応)。
  *
  * 背景: 実運用での利用実績が無い一方、録音・保存経路自体は生きている状態だった
