@@ -1032,6 +1032,53 @@ v1.2)・凍結解除の事前承認記録(`docs/IPAD_KARTE_ENTRY_ROUTE_FREEZE_AP
 `app/home/page.tsx`、およびそれ以外の顧客タブ/iPadカルテ画面の仕様については
 引き続き凍結を継続する。
 
+### v1.0.1 着手済み事項（画面切り替え・初回読み込み速度改善 Step 1: 長押し切り替えの再フェッチ防止＋治療メモ/signed URL並列化・2026-09-21ユーザー承認）
+
+「画面切り替え・初回読み込みが遅い」というユーザー報告を受けたREAD ONLY調査(同日実施)の
+結果判明した根本原因のうち、影響範囲が最小かつ効果の大きい2点についてユーザー承認を得て
+以下の範囲に限り凍結を解除した。認証・認可の重複コスト(全APIが`extractStaffFromRequest`+
+`canAccessCustomer`を毎回individually実行している件)等の残り施策は今回のスコープ外。
+
+- **①`KarteCustomerSwitcher.tsx`(長押し切り替えの再フェッチ防止・PERF-KARTE-SWITCH-CACHE-1)**:
+  従来は`mode === 'staff' ? <IpadStaffKarteView> : <CustomerModeView>`という条件分岐で、
+  長押し切り替えのたびに片方を完全にアンマウント/リマウントしており、同じ顧客のデータでも
+  `useIpadKarteData`/`useCustomerModeData`が毎回ゼロから再フェッチしていた(これが「長押し
+  切り替えが遅い」の直接原因と判明)。これを、`CustomerModeView`は従来通り常時マウント、
+  `IpadStaffKarteView`は**初回切り替え時に一度だけ遅延マウントし、以降は顧客が変わるまで
+  アンマウントせず`display:none`/`display:contents`で表示を切り替えるだけ**にする方式へ変更した。
+  両コンポーネントのルート要素が元々`position:fixed; inset:0`のため、ラップ用divの
+  `display`切替だけで表示位置・レイアウトへの副作用なく実現できた。顧客が変わった場合
+  (`customerId`変更)は`staffViewMounted`をfalseに戻し、次の顧客では再び初回切替時に
+  遅延マウントする(古い顧客のデータを握ったまま次の顧客画面に持ち越さないため)。
+  `CustomerModeView`/`IpadStaffKarteView`自体のロジック・見た目・props構成は無変更
+  (呼び出し側のマウント方式のみの変更)。
+- **②`ipadKarteData.ts`の直列await解消(PERF-KARTE-PARALLEL-1)**: 最初の`Promise.all`
+  (写真一覧・来店履歴・肌記録・目標・禁忌事項・ホームケア商品の6件)の後、「今日の施術メモ」
+  →「前回の施術メモ」→「写真signed URL取得」の3つを直列awaitしていたが、いずれも最初の
+  `Promise.all`で確定済みの値(`todayVisitId`・`previousVisit`・`photos`)のみに依存し
+  互いには依存しないため、3つとも`Promise.all`で並列実行するよう変更した。各fetch内の
+  try/catchによるフォールバック方針(取得失敗しても他の表示に影響させない)は無変更。
+- 検証: `npm run typecheck`は両ファイルとも新規エラーなし(既存の別作業由来のエラー
+  (voice memo再実装・DashboardRepo等、未コミットの別作業)とは無関係であることを、
+  変更前後で同一のエラー集合であることを確認して検証済み)。Playwright(本番Supabase・
+  実顧客「小宮山 仁美」、検証用一時spec`e2e/karte-switch-perf-verify.spec.ts`はコミット前に
+  削除済み)で、(a)お客様モードのみの段階ではスタッフ側API(goal・treatment)が未発火である
+  こと(遅延マウントの確認)、(b)スタッフ用カルテへの1回目の長押し切り替えでgoal/
+  skin-records/homecare-products/contraindications/visit-historyが発火すること、
+  (c)お客様用カルテへ戻って**再度**スタッフ用カルテへ切り替えても、これら全エンドポイントの
+  リクエスト件数が1回目から**一切増加しない**こと(再フェッチが起きていないことの直接確認)、
+  (d)「今日/前回の施術メモ」と「写真signed URL」が同一ミリ秒で発火し並列実行されている
+  ことを確認した。往復中のpage error・console errorも無いことを確認済み。
+- **トレードオフの明記**: 今回は「初回切り替え時のみ遅延マウント」方式を採用したため、
+  スタッフ用カルテを一度も開かない顧客ではスタッフ側APIは一切発火しない(初回表示の負荷を
+  増やさない)。一方、スタッフ用カルテを一度でも開いた後は、その顧客を表示している間は
+  ずっとメモリ上に保持され続ける(顧客を切り替えるまでアンマウントしない)。
+
+**この解除は上記①②の変更のみに限る。** 認証・認可の重複コスト削減・写真サムネイルの
+リサイズ配信・写真一覧APIのDBクエリ統合等、調査報告で提示したその他の改善案は今回の
+スコープ外(別途相談の上で着手する)。5タブ構成・TL-5構成・AI提案の会話トーン・LINE領域・
+admin領域、およびそれ以外の顧客タブ/iPadカルテ画面の仕様については引き続き凍結を継続する。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

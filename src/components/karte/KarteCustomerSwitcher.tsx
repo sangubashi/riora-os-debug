@@ -35,12 +35,21 @@ export default function KarteCustomerSwitcher({ customerId }: { customerId: stri
   const [customer, setCustomer] = useState<CustomerDetail | null>(null)
   const [error, setError] = useState<'forbidden' | 'not_found' | null>(null)
   const [mode, setMode] = useState<SwitcherMode>('customer')
+  // PERF-KARTE-SWITCH-CACHE-1(2026-09-21): 長押し切り替えのたびにIpadStaffKarteViewを
+  // アンマウント/リマウントすると、内部のuseIpadKarteData等が同じ顧客のデータを毎回
+  // 取り直してしまう(調査報告の根本原因①)。これを避けるため、スタッフ用カルテは
+  // 初回切り替え時に一度だけマウントし、以降は顧客が変わるまでアンマウントせず
+  // display:noneで隠すだけにする(お客様用カルテは元々常時マウントのまま、切り替えは
+  // CSS表示のみに変更)。初回表示時(お客様用カルテのみ表示中)はスタッフ用カルテの
+  // データ取得が一切走らないよう、mountするまでコンポーネント自体をレンダーしない。
+  const [staffViewMounted, setStaffViewMounted] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     setCustomer(null)
     setError(null)
     setMode('customer')
+    setStaffViewMounted(false)
 
     void (async () => {
       const res = await authedFetch(`/api/customers/${customerId}`)
@@ -95,23 +104,26 @@ export default function KarteCustomerSwitcher({ customerId }: { customerId: stri
     )
   }
 
-  if (mode === 'staff') {
-    return (
-      <IpadStaffKarteView
-        customerId={customer.id}
-        customerName={customer.name}
-        onClose={backToKarte}
-        onSwitchToCustomerView={() => setMode('customer')}
-      />
-    )
-  }
-
   return (
-    <CustomerModeView
-      customerId={customer.id}
-      customerName={customer.name}
-      onClose={backToKarte}
-      onSwitchToStaffView={() => setMode('staff')}
-    />
+    <>
+      <div style={{ display: mode === 'customer' ? 'contents' : 'none' }}>
+        <CustomerModeView
+          customerId={customer.id}
+          customerName={customer.name}
+          onClose={backToKarte}
+          onSwitchToStaffView={() => { setStaffViewMounted(true); setMode('staff') }}
+        />
+      </div>
+      {staffViewMounted && (
+        <div style={{ display: mode === 'staff' ? 'contents' : 'none' }}>
+          <IpadStaffKarteView
+            customerId={customer.id}
+            customerName={customer.name}
+            onClose={backToKarte}
+            onSwitchToCustomerView={() => setMode('customer')}
+          />
+        </div>
+      )}
+    </>
   )
 }

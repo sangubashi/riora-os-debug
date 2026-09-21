@@ -267,14 +267,26 @@ export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
         (a, b) => CONTRAINDICATION_SEVERITY_ORDER.indexOf(a.severity) - CONTRAINDICATION_SEVERITY_ORDER.indexOf(b.severity)
       )
 
-      let todayTreatmentPoints: string[] = []
-      if (todayVisitId) {
+      // PERF-KARTE-PARALLEL-1(2026-09-21): 「今日の施術メモ」「前回の施術メモ」「写真signed URL」の
+      // 3つは互いに依存しない(いずれもこの時点で確定済みのtodayVisitId/previousVisit/photosのみに
+      // 依存する)ため、直列awaitではなくPromise.allで並列実行する。各fetch内のtry/catchによる
+      // フォールバック方針(取得失敗しても他の表示に影響させない)は従来通り維持している。
+      const anglePairs: Record<string, AnglePhotoPair> = {}
+      for (const angle of IPAD_KARTE_ANGLES) {
+        anglePairs[angle.id] = buildAngleComparison(photos, angle.id)
+      }
+      const photoIds = Object.values(anglePairs)
+        .flatMap(p => [p.current?.id, p.reference?.id])
+        .filter((id): id is string => !!id)
+
+      const fetchTodayTreatmentPoints = async (): Promise<string[]> => {
+        if (!todayVisitId) return []
         try {
           const res = await authedFetch(`/api/customers/${customerId}/visits/${todayVisitId}/treatment`)
           if (res.ok) {
             const json = (await res.json()) as { success: boolean; treatment?: TreatmentDetail }
             if (json.success && json.treatment) {
-              todayTreatmentPoints = [
+              return [
                 ...toStringList(json.treatment.options),
                 ...toStringList(json.treatment.productsUsed),
               ]
@@ -283,37 +295,33 @@ export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
         } catch {
           /* 今日の施術記録が無くても他の表示に影響させない */
         }
+        return []
       }
-      if (cancelled) return
 
       // 「前回メモをワンタップ参照」用: 前回visitのtreatment_memoのみ取得(施術内容は
       // カルテメモと同様に自由記述の文章として表示するため、options/productsUsedの
       // 箇条書き化はしない)。
-      let previousTreatmentMemo: string | null = null
-      if (previousVisit) {
+      const fetchPreviousTreatmentMemo = async (): Promise<string | null> => {
+        if (!previousVisit) return null
         try {
           const res = await authedFetch(`/api/customers/${customerId}/visits/${previousVisit.id}/treatment`)
           if (res.ok) {
             const json = (await res.json()) as { success: boolean; treatment?: TreatmentDetail }
             if (json.success && json.treatment) {
-              previousTreatmentMemo = json.treatment.treatmentMemo ?? null
+              return json.treatment.treatmentMemo ?? null
             }
           }
         } catch {
           /* 前回の施術記録が無くても他の表示に影響させない */
         }
-      }
-      if (cancelled) return
-
-      const anglePairs: Record<string, AnglePhotoPair> = {}
-      for (const angle of IPAD_KARTE_ANGLES) {
-        anglePairs[angle.id] = buildAngleComparison(photos, angle.id)
+        return null
       }
 
-      const photoIds = Object.values(anglePairs)
-        .flatMap(p => [p.current?.id, p.reference?.id])
-        .filter((id): id is string => !!id)
-      const photoUrls = await getBatchSignedUrls(customerId, photoIds, 'detail')
+      const [todayTreatmentPoints, previousTreatmentMemo, photoUrls] = await Promise.all([
+        fetchTodayTreatmentPoints(),
+        fetchPreviousTreatmentMemo(),
+        getBatchSignedUrls(customerId, photoIds, 'detail'),
+      ])
       if (cancelled) return
 
       setData({
