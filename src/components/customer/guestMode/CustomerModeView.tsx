@@ -64,6 +64,7 @@ import {
 } from '@/components/customer/shared/PhotoCompareKit'
 import { useNextVisit } from '@/lib/nextVisit/useNextVisit'
 import { formatWeeksLabel, type NextVisitResult } from '@/lib/nextVisit/nextVisitEngine'
+import FacialSchemaViewer from './FacialSchemaViewer'
 
 // ロゴ用: エレガントな欧文セリフ体(イタリック)。高級サロンのブランドロゴらしい質感のため
 // システム標準フォントのitalic指定をやめ、専用フォントを読み込む(PHASE GUEST-MODE-1-DESIGN)。
@@ -732,6 +733,11 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
                   </div>
                 </Card>
               )}
+
+              {/* 顔シェーマ(顔シェーマ機能READ ONLY設計・Phase 0、2026-09-21ユーザー承認・Phase 6)。
+                  読み取り専用。記録が無い顧客にはカード自体を出さない(過去の写真/来店履歴と同じ方針、
+                  判定はFacialSchemaViewer内部で行う)。 */}
+              <FacialSchemaViewer customerId={customerId} />
 
               {/* 来店履歴 */}
               {data.visits.length > 0 && (

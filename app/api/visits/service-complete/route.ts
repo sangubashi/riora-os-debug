@@ -20,6 +20,9 @@
  *   そのvisitへ紐付ける(linkUnattachedPhotosToVisit、src/lib/photos/linkPhotosToVisit.ts)。
  *   brain_visitsの作成/採番ロジックには関与しない下流の非致命的処理で、失敗しても
  *   本APIの成功レスポンス(接客ログ保存自体)には影響させない。
+ * - 顔シェーマ「未紐付けデータ→visit自動紐付け」Phase 7: 写真と全く同じタイミング・
+ *   同じ非致命的方針で、visit_id未設定(NULL)の顔シェーマ記録をそのvisitへ紐付ける
+ *   (linkDraftFacialSchemaToVisit、src/lib/facialSchema/linkFacialSchemasToVisit.ts)。
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getRepos } from '../../../lib/repos';
@@ -29,6 +32,7 @@ import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest';
 import { canAccessCustomer } from '@/lib/auth/canAccessCustomer';
 import { buildMenuLookup, resolveMenuId } from '@/lib/import/menuResolver';
 import { linkUnattachedPhotosToVisit } from '@/lib/photos/linkPhotosToVisit';
+import { linkDraftFacialSchemaToVisit } from '@/lib/facialSchema/linkFacialSchemasToVisit';
 
 function todayDateOnly(): string {
   return new Date().toISOString().slice(0, 10);
@@ -102,6 +106,21 @@ export async function POST(req: NextRequest) {
         console.warn('[service-complete] photo link failed (non-fatal):', e);
       }
 
+      // 顔シェーマ Phase 7(非致命的): 同一顧客・同一visit_dateでvisit_id未設定の
+      // 顔シェーマ記録をこのvisitへ紐付ける。
+      try {
+        const schemaLinkResult = await linkDraftFacialSchemaToVisit({
+          customerId: input.customerId,
+          visitId:    existing.id,
+          visitDate:  existing.visitDate,
+        });
+        if (!schemaLinkResult.ok) {
+          console.warn('[service-complete] facial schema link failed (non-fatal):', schemaLinkResult.error);
+        }
+      } catch (e) {
+        console.warn('[service-complete] facial schema link failed (non-fatal):', e);
+      }
+
       return NextResponse.json({ success: true, visitId: existing.id, created: false }, { status: 200 });
     }
 
@@ -136,6 +155,21 @@ export async function POST(req: NextRequest) {
       }
     } catch (e) {
       console.warn('[service-complete] photo link failed (non-fatal):', e);
+    }
+
+    // 顔シェーマ Phase 7(非致命的): 同一顧客・同一visit_dateでvisit_id未設定の
+    // 顔シェーマ記録をこのvisitへ紐付ける。
+    try {
+      const schemaLinkResult = await linkDraftFacialSchemaToVisit({
+        customerId: input.customerId,
+        visitId:    visit.id,
+        visitDate:  visit.visitDate,
+      });
+      if (!schemaLinkResult.ok) {
+        console.warn('[service-complete] facial schema link failed (non-fatal):', schemaLinkResult.error);
+      }
+    } catch (e) {
+      console.warn('[service-complete] facial schema link failed (non-fatal):', e);
     }
 
     return NextResponse.json({ success: true, visitId: visit.id, created: true }, { status: 201 });

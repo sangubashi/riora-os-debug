@@ -26,6 +26,7 @@ import { useState } from 'react'
 import { Flower2, X, Pencil, EyeOff, ChevronDown } from 'lucide-react'
 import { useIpadKarteData, type RetailProductStatus } from './ipadKarteData'
 import KarteMemoSection from './KarteMemoSection'
+import FacialSchemaSection from './FacialSchemaSection'
 import StaffTagBar from './StaffTagBar'
 import { PALETTE, headingFont, Card, SkinTagRow } from '@/components/customer/shared/PhotoCompareKit'
 import { useNextVisit } from '@/lib/nextVisit/useNextVisit'
@@ -518,6 +519,14 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
                 previousVisitDate={data.previousVisitDate}
                 previousMenuName={data.previousMenuName}
                 previousTreatmentMemo={data.previousTreatmentMemo}
+                staffIdOverride={isSharedLogin ? staffTagSession.tag?.id ?? null : null}
+              />
+
+              {/* 顔シェーマ(顔シェーマ機能READ ONLY設計・Phase 0、2026-09-21ユーザー承認・Phase 5)。
+                  カルテメモの直下に配置(確定仕様E項)。 */}
+              <FacialSchemaSection
+                customerId={customerId}
+                visitId={data.todayVisitId}
                 staffIdOverride={isSharedLogin ? staffTagSession.tag?.id ?? null : null}
               />
             </div>

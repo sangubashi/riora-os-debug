@@ -1079,6 +1079,123 @@ v1.2)・凍結解除の事前承認記録(`docs/IPAD_KARTE_ENTRY_ROUTE_FREEZE_AP
 スコープ外(別途相談の上で着手する)。5タブ構成・TL-5構成・AI提案の会話トーン・LINE領域・
 admin領域、およびそれ以外の顧客タブ/iPadカルテ画面の仕様については引き続き凍結を継続する。
 
+### v1.0.1 着手済み事項（顔シェーマ機能の新設・2026-09-21ユーザー承認・Phase 0〜7完了）
+
+iPadスタッフカルテに、顔正面イラストの上へニキビ・赤み・毛穴・HIFU範囲を描き込んで記録する
+「顔シェーマ」機能を新設した。以前この機能をREAD ONLYで検討したセッションがあったとの
+ことだったが、リポジトリ・Git履歴・Artifact・Google Drive・永続メモリのいずれにも記録が
+残っておらず参照できなかったため、ユーザーが確定した仕様(下記)を要件として、既存の
+写真カルテ機能(`brain_customer_photos`)のアーキテクチャ・規約を最大限踏襲しゼロベースで
+設計・段階的に実装した(Phase 0設計→Phase 1 DB→Phase 2純粋関数→Phase 3 API→Phase 4
+キャンバスフック→Phase 5スタッフUI→Phase 6お客様UI→Phase 7自動連携、各Phaseごとに
+ユーザー承認を得てから次へ進む運用で実施)。
+
+**確定仕様**: A テンプレートは正面のみ(`IMG_1381.JPG`ベース)。B カテゴリ別描画
+(ニキビ=ポイント・赤み/毛穴=エリア・HIFU照射=線引き、実施/回避はスタイル違い(実線/破線)
+で表現し独立カテゴリにはしない、凡例を自動表示)。C Undo・クリア・Pointer Eventsによる
+パームリジェクション。D `visit_id`紐付け(null許容、写真機能と同じ「撮影機会」対策を踏襲)、
+ストローク座標(JSON、画像化しない)で保存し再編集・前回比較可能。E iPadスタッフカルテ
+(編集用)・お客様モード(閲覧用)の両方に表示。
+
+#### DBテーブル: `brain_customer_facial_schemas`
+
+マイグレーション: `supabase/migrations/20260921000000_brain_customer_facial_schemas.sql`
+(本番適用済み・Phase 1)。`brain_customer_photos`と同じ「service_role限定RLS」方式
+(SELECT/INSERT/UPDATE/DELETEとも`service_role`のみに許可するポリシーを明示作成、
+`authenticated`/`anon`には一切許可しない default-deny)。
+
+- `id`/`store_id`/`customer_id`(→`brain_customers`)/`visit_id`(→`brain_visits`、null許容)/
+  `schema_date`(date、JST暦日)/`template_key`(text、既定`'face_front'`、将来の複数テンプレート
+  拡張余地)/`strokes_data`(jsonb、既定`{"version":1,"strokes":[]}`)/`created_by`・
+  `updated_by`(→`brain_staff`)/`created_at`/`updated_at`/`deleted_at`。
+- 写真機能との意図的な差分: 写真は撮影のたびに新規INSERT(常に追記型)だが、顔シェーマは
+  同じ機会を保存後も描き直し続ける性質があるため、**customer_id×撮影機会(visit_idまたは
+  schema_date)につき1行をUPSERTする**設計。部分ユニークインデックス
+  `ux_facial_schemas_customer_visit`(`visit_id IS NOT NULL`時)・
+  `ux_facial_schemas_customer_date`(`visit_id IS NULL`時、customer_id×schema_date)で
+  1機会=1行を保証する。
+- 座標は**テンプレート画像に対する正規化座標(0〜1)**で保存する(スタッフ・お客様の両画面で
+  canvas実寸が異なっても矛盾なく再現できるようにするため)。カテゴリの色・線種は保存データに
+  焼き込まず、`facialSchemaCategories.ts`で描画時に都度解決する(将来調整しても過去データの
+  意味が変わらない、`bodyPartLabel()`と同じ思想)。
+
+#### 純粋ロジック層: `src/lib/facialSchema/`(Phase 2・DOM/Reactに非依存、ユニットテスト対象)
+
+- `facialSchemaCategories.ts`: カテゴリ×色×線種×ツールの定義(ニキビ=赤丸/point、
+  赤み=ピンク半透明/area、毛穴=アンバー半透明/area、HIFU実施=青実線/line、
+  HIFU回避=オレンジ破線/line。**いずれも暫定値**、将来の見た目調整はこのファイルのみで完結)。
+- `strokeModel.ts`: `Stroke`/`StrokesData`型、`addStroke`/`undoLastStroke`/`clearStrokes`
+  (すべてイミュータブル)、`parseStrokesData`(version不一致・不正データを安全にフォールバック、
+  個々の壊れたストローク/座標点のみを除外)。
+- `facialSchemaSelection.ts`: 写真機能の`comparisonSelection.ts`/`ghostSelection.ts`と同じ
+  「撮影機会(occasion)」の考え方(`visit_id`があれば`visit:${id}`、無ければ日付キー)を再利用。
+  写真と異なりschema_dateはDBの実カラム(JST暦日)であるため、`toJstDateStr`/
+  `todayJstDateStr`(+9時間固定オフセット、`linkPhotosToVisit.ts`と同じ方針)で正確なJST日付を
+  算出し、`excludingCurrentOccasion`・`buildPreviousSchema`(前回記録の抽出)を提供する。
+- `canvasRenderer.ts`: `renderStrokes(ctx, strokes, box)` — 正規化座標をpx変換してcanvas
+  2Dコンテキストへ描画する。DOM非依存のインターフェース(`RenderCanvasContext`)経由で
+  実DOMのcanvasにもテスト用モックにも渡せる(`captureFrame.ts`と同じ設計)。
+- `useFacialSchemaCanvas.ts`(Phase 4、Reactフック): Pointer Events
+  (onPointerDown/Move/Up/Cancel)を自前実装(外部ライブラリ追加なし、`usePinchZoom.ts`/
+  `useLongPress.ts`と同じ方針)。**パームリジェクション**: ①Apple Pencil(`pointerType==='pen'`)
+  描画中は他の`touch`入力を常に無視(ペン優先)、②指のみで描画中に別の`touch`が増えたら
+  手のひら疑いとして進行中のストロークをキャンセル。判定ロジック(`decidePointerDown`/
+  `decidePointerEnd`)・座標正規化(`toNormalizedPoint`/`clamp01`)は純粋関数としてexportし、
+  フック本体をレンダリングせずテストできるようにしている(このプロジェクトには
+  `@testing-library/react`等が無くフックを直接レンダリングしてテストできないため、
+  `usePhotoCapture.ts`の`CAMERA_CONSTRAINTS`と同じ回避パターンを踏襲)。
+- `linkFacialSchemasToVisit.ts`(Phase 7): `linkPhotosToVisit.ts`と同じ「visit解決直後の
+  非致命的な下流紐付け処理」。`schema_date`が既にJST暦日の`date`型のため、写真のような
+  タイムゾーン範囲変換は不要で直接等価比較でよい。
+
+#### API: `app/api/customers/[id]/facial-schemas/`(Phase 3)
+
+写真カルテAPIと同じ`extractStaffFromRequest`→`canAccessCustomer`→(PUTのみ)
+`verifyVisitBelongsToCustomer`(`src/lib/photos/ownership.ts`を再利用)→
+`resolveStaffIdOverride`の認証・認可チェーンを適用する。
+
+- `GET /api/customers/[id]/facial-schemas`: 履歴一覧(`schema_date DESC`)。
+- `PUT /api/customers/[id]/facial-schemas`: 現在の機会(`visitId`があればそれ、無ければ
+  本日JST日付)へのupsert。部分ユニークインデックス競合(Postgres `23505`)時は既存行を
+  再取得してUPDATEへフォールバックする(`commitCustomerPhoto.ts`の競合処理と同じ考え方)。
+- `DELETE /api/customers/[id]/facial-schemas/[schemaId]`: ソフトデリート。所有権不一致は
+  404ではなく403(`customer-memories`/写真の既存慣行)。
+- 所有権チェックは`src/lib/facialSchema/verifyFacialSchemaOwnership.ts`
+  (`verifyPhotoOwnership`と同じ思想の専用モジュール)。
+
+#### コンポーネント構成
+
+- `src/components/customer/shared/FacialSchemaKit.tsx`(Phase 5/6共有): テンプレート画像
+  定数、`FacialSchemaLegend`(凡例自動表示)、`FacialSchemaThumbnail`(読み取り専用の静止画
+  レンダリング、スタッフ側「前回のシェーマ」プレビューとお客様側閲覧の両方で共用)。
+- `src/components/customer/ipadKarte/FacialSchemaSection.tsx`(Phase 5、編集用):
+  `IpadStaffKarteView.tsx`の左カラム、`<KarteMemoSection>`直後に配置。カテゴリ切替・凡例・
+  描画キャンバス(ResizeObserverで実寸追従・高DPI対応)・元に戻す/全消去/保存ボタン・
+  「前回のシェーマを読み込む(コピー)」機能を持つ。保存成功後は履歴を自動再取得する。
+- `src/components/customer/guestMode/FacialSchemaViewer.tsx`(Phase 6、閲覧用):
+  `CustomerModeView.tsx`下部のCardスタック(「過去の写真」の直後・「来店履歴」の直前)に配置。
+  完全読み取り専用(pointerハンドラ・編集UIを一切持たない)。CustomerModeViewの設計方針どおり
+  自前で`GET .../facial-schemas`をfetchする自己完結コンポーネント。今回(最新)と前回を
+  横並びで比較表示(記録が1件のみの場合は今回のみ1カラム、0件なら記録が存在するまでカード
+  自体を表示しない)。
+- 写真の「ゴースト機能」で繰り返し発生した位置合わせの苦労(5回の改修を要した)は、顔シェーマ
+  では原理的に発生しない: 常に同一の固定テンプレート画像の上に描くため、「今回」と「前回」は
+  最初から同じ座標系で完全に一致し、特別な位置合わせロジックが不要。
+
+#### 検証結果(全Phase共通)
+
+各Phaseで`npm run typecheck`・関連ユニットテスト・`npm run build`を実行しパス済み
+(顔シェーマ関連の新規ユニット/APIテストは合計100件超、既存テストへのリグレッション無し)。
+Phase 5・6のUI実機相当確認はPlaywright(本番Supabase・実顧客「小宮山 仁美」)で実施したが、
+**開発サーバー(`npm run dev`)ではFast Refresh(HMR)の介入により描画状態が失われ
+テストが不安定になる**ことが判明したため、`npm run build`+`npm start`(本番ビルド)に対して
+検証する方式に切り替えた。検証用に作成したテストデータ・一時specはすべて削除済み。
+
+**この解除は上記の顔シェーマ機能新設(DBテーブル・API・純粋ロジック・キャンバスフック・
+スタッフ/お客様UI・接客ログ保存時の自動紐付け)に限る。** 5タブ構成・TL-5構成・AI提案の
+会話トーン・LINE領域・admin領域、およびそれ以外の顧客タブ/iPadカルテ画面の仕様については
+引き続き凍結を継続する。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。
