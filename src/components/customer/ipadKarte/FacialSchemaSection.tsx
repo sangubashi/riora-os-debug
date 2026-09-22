@@ -13,17 +13,17 @@
  * src/lib/facialSchema/canvasRenderer.tsに委譲する(このファイルはUIの組み立てのみ)。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { RotateCcw, Trash2, Check, History } from 'lucide-react'
+import { RotateCcw, Trash2, Check, History, Eraser } from 'lucide-react'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, Card } from '@/components/customer/shared/PhotoCompareKit'
 import {
   FACIAL_SCHEMA_TEMPLATE_ASPECT_RATIO, FACIAL_SCHEMA_TEMPLATE_SRC,
-  FacialSchemaLegend, FacialSchemaSubHeading, FacialSchemaThumbnail,
+  FacialSchemaSubHeading, FacialSchemaThumbnail,
 } from '@/components/customer/shared/FacialSchemaKit'
 import { useFacialSchemaCanvas } from '@/lib/facialSchema/useFacialSchemaCanvas'
 import { renderStroke, renderStrokes, type RenderBox } from '@/lib/facialSchema/canvasRenderer'
 import { createEmptyStrokesData } from '@/lib/facialSchema/strokeModel'
-import { FACIAL_SCHEMA_CATEGORIES, type FacialSchemaCategory } from '@/lib/facialSchema/facialSchemaCategories'
+import { FACIAL_SCHEMA_COLOR_PALETTE, type FacialSchemaCategory } from '@/lib/facialSchema/facialSchemaCategories'
 import { buildPreviousSchema, todayJstDateStr } from '@/lib/facialSchema/facialSchemaSelection'
 import type { FacialSchemaApiShape } from '@/lib/facialSchema/facialSchemaApiMapping'
 
@@ -194,39 +194,62 @@ export default function FacialSchemaSection({ customerId, visitId, staffIdOverri
 
         {!loading && (
           <>
-            <FacialSchemaLegend />
-
-            {/* カテゴリ切替 */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-              {FACIAL_SCHEMA_CATEGORIES.map(c => {
+            {/* 色鉛筆風の原色パレット(2026-09-22ユーザー要望: タブ廃止・原色から直接選択、
+                黒/赤必須の8色)+消しゴム。以前はカテゴリ(ニキビ/赤み等)ごとの意味付き
+                タブだったが、色そのものを選ぶ方式に変更した。丸いスウォッチをタップする
+                だけで選択でき、選択中は太いリングで強調する。消しゴムは色ではないため
+                見た目を区別した独立ボタンとして末尾に置く(canvas.setCategory('eraser')を
+                呼ぶだけで、フック側の「categoryからtoolを引く」ロジックがそのまま流用され、
+                以降のストロークはcanvasRenderer.ts側でdestination-out合成により実際に
+                ピクセルを消す)。 */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px' }}>
+              {FACIAL_SCHEMA_COLOR_PALETTE.map(c => {
                 const selected = canvas.category === c.category
                 return (
                   <button
                     key={c.category}
                     type="button"
                     onClick={() => canvas.setCategory(c.category as FacialSchemaCategory)}
+                    aria-label={c.label}
+                    aria-pressed={selected}
                     style={{
-                      display: 'flex', alignItems: 'center', gap: '6px',
-                      fontSize: '12px', fontWeight: 700, padding: '8px 14px', borderRadius: '999px',
-                      border: selected ? `1.5px solid ${PALETTE.gold}` : `1px solid ${PALETTE.border}`,
-                      background: selected ? PALETTE.gold : PALETTE.card,
-                      color: selected ? '#fff' : PALETTE.text,
-                      cursor: 'pointer',
+                      width: '34px', height: '34px', borderRadius: '50%', padding: 0, cursor: 'pointer',
+                      background: c.color,
+                      border: selected ? `3px solid ${PALETTE.gold}` : '3px solid transparent',
+                      boxShadow: selected ? `0 0 0 1px ${PALETTE.border}` : '0 0 0 1px rgba(0,0,0,0.08)',
                     }}
-                  >
-                    <span aria-hidden style={{ width: '8px', height: '8px', borderRadius: '50%', background: selected ? '#fff' : c.color }} />
-                    {c.label}
-                  </button>
+                  />
                 )
               })}
+              <span style={{ width: '1px', height: '24px', background: PALETTE.border, margin: '0 2px' }} aria-hidden />
+              <button
+                type="button"
+                onClick={() => canvas.setCategory('eraser')}
+                aria-pressed={canvas.category === 'eraser'}
+                aria-label="消しゴム"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  fontSize: '12px', fontWeight: 700, padding: '8px 14px', borderRadius: '999px',
+                  border: canvas.category === 'eraser' ? `1.5px solid ${PALETTE.text}` : `1px solid ${PALETTE.border}`,
+                  background: canvas.category === 'eraser' ? PALETTE.text : PALETTE.card,
+                  color: canvas.category === 'eraser' ? '#fff' : PALETTE.text,
+                  cursor: 'pointer',
+                }}
+              >
+                <Eraser size={13} />消しゴム
+              </button>
             </div>
 
-            {/* 描画キャンバス */}
+            {/* 描画キャンバス。2026-09-22ユーザー要望(描画エリア拡大)により、左カラムに
+                収まっていた時の実測幅(約380〜450px)より大幅に大きい640pxを上限とし、
+                IpadStaffKarteView側で全幅行(gridColumn:'1 / -1')へ移動したことで実際に
+                この上限まで使えるようにした。中央寄せして左右の余白を均等にする。 */}
             <div
               ref={el => { canvas.containerRef.current = el; containerElRef.current = el }}
               {...canvas.handlers}
               style={{
-                position: 'relative', width: '100%', aspectRatio: FACIAL_SCHEMA_TEMPLATE_ASPECT_RATIO,
+                position: 'relative', width: '100%', maxWidth: '640px', margin: '0 auto',
+                aspectRatio: FACIAL_SCHEMA_TEMPLATE_ASPECT_RATIO,
                 borderRadius: '12px', overflow: 'hidden', border: `1px solid ${PALETTE.border}`,
                 background: '#fff', ...canvas.recommendedContainerStyle,
               }}

@@ -14,7 +14,7 @@
 import { useEffect, useState } from 'react'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, Card } from '@/components/customer/shared/PhotoCompareKit'
-import { FacialSchemaLegend, FacialSchemaThumbnail } from '@/components/customer/shared/FacialSchemaKit'
+import { FacialSchemaThumbnail } from '@/components/customer/shared/FacialSchemaKit'
 import { sortRecordsDesc } from '@/lib/facialSchema/facialSchemaSelection'
 import type { FacialSchemaApiShape } from '@/lib/facialSchema/facialSchemaApiMapping'
 
@@ -66,8 +66,6 @@ export default function FacialSchemaViewer({ customerId }: Props) {
   return (
     <Card title="顔シェーマ">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-        <FacialSchemaLegend />
-
         <div
           style={{
             display: 'grid',

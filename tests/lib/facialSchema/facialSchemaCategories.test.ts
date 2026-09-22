@@ -1,61 +1,72 @@
 // ================================================================
 // facialSchemaCategories.ts — カテゴリ×色×線種×ツール定義のテスト
+//
+// 2026-09-22改訂: タブ(意味付き5カテゴリ)廃止→原色8色パレット化。
+// 旧5カテゴリはLEGACY_FACIAL_SCHEMA_CATEGORIESとして解決専用に残る(UIには出ない)。
 // ================================================================
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_FACIAL_SCHEMA_CATEGORY,
-  FACIAL_SCHEMA_CATEGORIES,
-  buildFacialSchemaLegend,
+  ERASER_CATEGORY_STYLE,
+  FACIAL_SCHEMA_COLOR_PALETTE,
+  LEGACY_FACIAL_SCHEMA_CATEGORIES,
   getCategoryStyle,
   isFacialSchemaCategory,
 } from '../../../src/lib/facialSchema/facialSchemaCategories'
 
-describe('FACIAL_SCHEMA_CATEGORIES', () => {
-  it('確定仕様の5カテゴリ(ニキビ・赤み・毛穴・HIFU実施・HIFU回避)を持つ', () => {
-    expect(FACIAL_SCHEMA_CATEGORIES.map(c => c.category)).toEqual([
+describe('FACIAL_SCHEMA_COLOR_PALETTE', () => {
+  it('原色8色を持ち、黒と赤を含む', () => {
+    const categories = FACIAL_SCHEMA_COLOR_PALETTE.map(c => c.category)
+    expect(categories).toHaveLength(8)
+    expect(categories).toContain('color_black')
+    expect(categories).toContain('color_red')
+  })
+
+  it('全色がtool=areaを持つ(色鉛筆のような自由線描画、point/lineの意味分けは廃止)', () => {
+    expect(FACIAL_SCHEMA_COLOR_PALETTE.every(c => c.tool === 'area')).toBe(true)
+  })
+
+  it('全色が一意なcolorを持つ(見分けがつくこと)', () => {
+    const colors = FACIAL_SCHEMA_COLOR_PALETTE.map(c => c.color)
+    expect(new Set(colors).size).toBe(colors.length)
+  })
+
+  it('不透明(fillOpacity未指定=既定1)で、旧カテゴリのような半透明塗りではない', () => {
+    expect(FACIAL_SCHEMA_COLOR_PALETTE.every(c => c.fillOpacity === undefined)).toBe(true)
+  })
+})
+
+describe('LEGACY_FACIAL_SCHEMA_CATEGORIES(互換専用、UIのボタン一覧には使わない)', () => {
+  it('旧仕様の5カテゴリ(ニキビ・赤み・毛穴・HIFU実施・HIFU回避)を保持する', () => {
+    expect(LEGACY_FACIAL_SCHEMA_CATEGORIES.map(c => c.category)).toEqual([
       'acne', 'redness', 'pores', 'hifu_treated', 'hifu_avoided',
     ])
   })
 
-  it('ニキビはpoint、赤み・毛穴はarea、HIFU実施/回避はlineツールを持つ', () => {
-    const byCategory = Object.fromEntries(FACIAL_SCHEMA_CATEGORIES.map(c => [c.category, c.tool]))
-    expect(byCategory.acne).toBe('point')
-    expect(byCategory.redness).toBe('area')
-    expect(byCategory.pores).toBe('area')
-    expect(byCategory.hifu_treated).toBe('line')
-    expect(byCategory.hifu_avoided).toBe('line')
-  })
-
-  it('HIFU実施/回避は同系色で線種(実線/破線)のみが異なる', () => {
-    const treated = getCategoryStyle('hifu_treated')
-    const avoided = getCategoryStyle('hifu_avoided')
-    expect(treated.lineDash).toEqual([])
-    expect(avoided.lineDash).not.toEqual([])
-    expect(avoided.lineDash!.length).toBeGreaterThan(0)
-  })
-
-  it('全カテゴリが一意なcolorを持つ(見分けがつくこと)', () => {
-    const colors = FACIAL_SCHEMA_CATEGORIES.map(c => c.color)
-    expect(new Set(colors).size).toBe(colors.length)
+  it('過去に保存されたストロークはgetCategoryStyleで引き続き正しく解決できる', () => {
+    expect(getCategoryStyle('redness').category).toBe('redness')
+    expect(getCategoryStyle('hifu_avoided').lineDash!.length).toBeGreaterThan(0)
   })
 })
 
 describe('getCategoryStyle', () => {
-  it('既知のcategoryに対応するスタイルを返す', () => {
-    expect(getCategoryStyle('redness').category).toBe('redness')
+  it('原色パレットの既知categoryに対応するスタイルを返す', () => {
+    expect(getCategoryStyle('color_red').category).toBe('color_red')
+    expect(getCategoryStyle('color_red').color).toBe('#E53935')
   })
 
-  it('未知のcategoryを渡された場合は例外を投げず先頭カテゴリへフォールバックする', () => {
+  it('未知のcategoryを渡された場合は例外を投げずパレット先頭(黒)へフォールバックする', () => {
     // @ts-expect-error 意図的に不正な値を渡す(壊れたDBデータ相当のケースを検証するため)
     const style = getCategoryStyle('unknown_category')
-    expect(style).toEqual(FACIAL_SCHEMA_CATEGORIES[0])
+    expect(style).toEqual(FACIAL_SCHEMA_COLOR_PALETTE[0])
   })
 })
 
 describe('isFacialSchemaCategory', () => {
-  it('既知のカテゴリ文字列に対してtrueを返す', () => {
+  it('原色パレット・レガシーカテゴリ・消しゴムのいずれに対してもtrueを返す', () => {
+    expect(isFacialSchemaCategory('color_black')).toBe(true)
     expect(isFacialSchemaCategory('acne')).toBe(true)
-    expect(isFacialSchemaCategory('hifu_avoided')).toBe(true)
+    expect(isFacialSchemaCategory('eraser')).toBe(true)
   })
 
   it('未知の値・非文字列に対してfalseを返す', () => {
@@ -67,25 +78,23 @@ describe('isFacialSchemaCategory', () => {
 })
 
 describe('DEFAULT_FACIAL_SCHEMA_CATEGORY', () => {
-  it('既知のカテゴリの1つである', () => {
+  it('原色パレットの先頭(黒)である', () => {
+    expect(DEFAULT_FACIAL_SCHEMA_CATEGORY).toBe('color_black')
     expect(isFacialSchemaCategory(DEFAULT_FACIAL_SCHEMA_CATEGORY)).toBe(true)
   })
 })
 
-describe('buildFacialSchemaLegend', () => {
-  it('カテゴリ定義と同じ順序・件数の凡例エントリを返す', () => {
-    const legend = buildFacialSchemaLegend()
-    expect(legend).toHaveLength(FACIAL_SCHEMA_CATEGORIES.length)
-    expect(legend.map(e => e.category)).toEqual(FACIAL_SCHEMA_CATEGORIES.map(c => c.category))
+describe('eraser(消しゴム)', () => {
+  it('色パレットではないためFACIAL_SCHEMA_COLOR_PALETTEには含まれない', () => {
+    expect(FACIAL_SCHEMA_COLOR_PALETTE.map(c => c.category)).not.toContain('eraser')
   })
 
-  it('各エントリがlabel・swatchColor・toolを持つ', () => {
-    const legend = buildFacialSchemaLegend()
-    for (const entry of legend) {
-      expect(typeof entry.label).toBe('string')
-      expect(entry.label.length).toBeGreaterThan(0)
-      expect(typeof entry.swatchColor).toBe('string')
-      expect(['point', 'area', 'line']).toContain(entry.tool)
-    }
+  it('それでもisFacialSchemaCategory/getCategoryStyleでは有効な値として解決できる(保存/再読込のため)', () => {
+    expect(isFacialSchemaCategory('eraser')).toBe(true)
+    expect(getCategoryStyle('eraser')).toEqual(ERASER_CATEGORY_STYLE)
+  })
+
+  it('tool=areaを持つ(useFacialSchemaCanvas.tsのcategory→tool解決ロジックをそのまま使えるように)', () => {
+    expect(ERASER_CATEGORY_STYLE.tool).toBe('area')
   })
 })

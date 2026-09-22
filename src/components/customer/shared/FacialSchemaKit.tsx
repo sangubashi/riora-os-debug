@@ -8,11 +8,6 @@
  */
 import { useEffect, useRef, type ReactNode } from 'react'
 import { PALETTE, headingFont } from './PhotoCompareKit'
-import {
-  buildFacialSchemaLegend,
-  getCategoryStyle,
-  type FacialSchemaLegendEntry,
-} from '@/lib/facialSchema/facialSchemaCategories'
 import { renderStrokes } from '@/lib/facialSchema/canvasRenderer'
 import type { StrokesData } from '@/lib/facialSchema/strokeModel'
 
@@ -20,53 +15,6 @@ import type { StrokesData } from '@/lib/facialSchema/strokeModel'
 export const FACIAL_SCHEMA_TEMPLATE_SRC = '/facial-schema/face-front.jpg'
 /** テンプレート画像の実寸(784×1168px)に基づくaspect-ratio。表示サイズが変わっても縦横比を保つ。 */
 export const FACIAL_SCHEMA_TEMPLATE_ASPECT_RATIO = '784 / 1168'
-
-function LegendSwatch({ entry }: { entry: FacialSchemaLegendEntry }) {
-  const style = getCategoryStyle(entry.category)
-
-  if (entry.tool === 'point') {
-    return (
-      <span
-        aria-hidden
-        style={{ display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%', background: entry.swatchColor, flexShrink: 0 }}
-      />
-    )
-  }
-  if (entry.tool === 'area') {
-    return (
-      <span
-        aria-hidden
-        style={{
-          display: 'inline-block', width: '20px', height: '12px', borderRadius: '4px',
-          background: entry.swatchColor, opacity: style.fillOpacity ?? 1, flexShrink: 0,
-        }}
-      />
-    )
-  }
-  // tool === 'line'
-  const dashed = (style.lineDash?.length ?? 0) > 0
-  return (
-    <span
-      aria-hidden
-      style={{ display: 'inline-block', width: '20px', height: 0, borderBottom: `3px ${dashed ? 'dashed' : 'solid'} ${entry.swatchColor}`, flexShrink: 0 }}
-    />
-  )
-}
-
-/** カテゴリごとの色・線種の凡例を表示する(自動表示、確定仕様B項)。 */
-export function FacialSchemaLegend() {
-  const legend = buildFacialSchemaLegend()
-  return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 16px' }}>
-      {legend.map(entry => (
-        <div key={entry.category} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <LegendSwatch entry={entry} />
-          <span style={{ fontSize: '11px', color: PALETTE.muted }}>{entry.label}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
 
 /** セクション見出し(Cardタイトルより小さい、サブ見出し用)。 */
 export function FacialSchemaSubHeading({ children }: { children: ReactNode }) {

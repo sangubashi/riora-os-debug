@@ -521,27 +521,10 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
                 previousTreatmentMemo={data.previousTreatmentMemo}
                 staffIdOverride={isSharedLogin ? staffTagSession.tag?.id ?? null : null}
               />
-
-              {/* 顔シェーマ(顔シェーマ機能READ ONLY設計・Phase 0、2026-09-21ユーザー承認・Phase 5)。
-                  カルテメモの直下に配置(確定仕様E項)。 */}
-              <FacialSchemaSection
-                customerId={customerId}
-                visitId={data.todayVisitId}
-                staffIdOverride={isSharedLogin ? staffTagSession.tag?.id ?? null : null}
-              />
             </div>
 
             {/* ── 右カラム ── */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/* 顧客ステータス(購買・来店周期データ管理 Phase1・2026-09-12)。すべて自動計算・
-                  スタッフ入力不要。次回目安の編集操作自体は下のNextVisitCardが担う。 */}
-              <CustomerStatusPanel
-                customerId={customerId}
-                lastVisitDate={data.lastVisitDate}
-                visitCount={data.visitCount}
-                retailProducts={data.retailProducts}
-              />
-
               {data.currentSkinTags.length > 0 && (
                 <Card title="✨ 肌の特徴">
                   <SkinTagRow tags={data.currentSkinTags} />
@@ -626,6 +609,33 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
                   レンダリングごと止める(NextVisitCard内部のuseNextVisit呼び出しも実行されない
                   ため、無駄なAPI呼び出しも発生しない)。 */}
               {SHOW_NEXT_VISIT_ESTIMATE && <NextVisitCard customerId={customerId} />}
+            </div>
+
+            {/* 顔シェーマ(顔シェーマ機能READ ONLY設計・Phase 0、2026-09-21ユーザー承認・Phase 5)。
+                2026-09-22ユーザー要望(描画エリア拡大)により、左カラム内(カルテメモ直下)から
+                左右カラムをまたぐ全幅行へ移動した(gridColumn:'1 / -1')。見た目・DOM上の
+                位置が変わるだけで、FacialSchemaSection自体のprops・内部ロジックには
+                一切手を加えていない。 */}
+            <div style={{ gridColumn: '1 / -1' }}>
+              <FacialSchemaSection
+                customerId={customerId}
+                visitId={data.todayVisitId}
+                staffIdOverride={isSharedLogin ? staffTagSession.tag?.id ?? null : null}
+              />
+            </div>
+
+            {/* 顧客ステータス(購買・来店周期データ管理 Phase1・2026-09-12)。すべて自動計算・
+                スタッフ入力不要。次回目安の編集操作自体は上のNextVisitCardが担う。
+                2026-09-22ユーザー要望により、右カラム内(旧: 一覧の最上部)から画面全体の
+                一番下(左右カラムをまたぐ全幅行、他の全セクションより後)へ移動した。
+                CustomerStatusPanel自体のprops・内部ロジックには一切手を加えていない。 */}
+            <div style={{ gridColumn: '1 / -1' }}>
+              <CustomerStatusPanel
+                customerId={customerId}
+                lastVisitDate={data.lastVisitDate}
+                visitCount={data.visitCount}
+                retailProducts={data.retailProducts}
+              />
             </div>
           </div>
         )}

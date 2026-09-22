@@ -67,6 +67,7 @@ import {
 import { useNextVisit } from '@/lib/nextVisit/useNextVisit'
 import { formatWeeksLabel, type NextVisitResult } from '@/lib/nextVisit/nextVisitEngine'
 import FacialSchemaViewer from './FacialSchemaViewer'
+import StaffPinModal from './StaffPinModal'
 
 // ロゴ用: エレガントな欧文セリフ体(イタリック)。高級サロンのブランドロゴらしい質感のため
 // システム標準フォントのitalic指定をやめ、専用フォントを読み込む(PHASE GUEST-MODE-1-DESIGN)。
@@ -90,9 +91,10 @@ interface Props {
   onClose: () => void
   /**
    * iPad専用カルテ入口(PHASE IPAD-KARTE-ENTRY-1・2026-09-20ユーザー承認)用の任意コールバック。
-   * 指定時のみ、ヘッダーの「Salon Riora」ロゴを1000ms長押しするとスタッフ用カルテへ
-   * 切り替わる(通常タップでは反応しない)。未指定時(CustomerBottomSheet経由の既存呼び出し)
-   * はロゴは従来通り非インタラクティブな装飾のまま、一切変更なし。
+   * 指定時のみ、ヘッダーの「Salon Riora」ロゴをタップすると4桁PIN入力モーダル
+   * (StaffPinModal、2026-09-22ユーザー承認)が開き、正しいPINを入力するとスタッフ用カルテへ
+   * 切り替わる。未指定時(CustomerBottomSheet経由の既存呼び出し)はロゴは従来通り
+   * 非インタラクティブな装飾のまま、一切変更なし。
    */
   onSwitchToStaffView?: () => void
 }
@@ -134,12 +136,11 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
   // 通常のタップでは閉じず600ms以上の長押しでのみonCloseを呼ぶ。
   const exitLongPress = useLongPress(onClose)
 
-  // ロゴ長押しでスタッフ用カルテへ切替(PHASE IPAD-KARTE-ENTRY-1・2026-09-20ユーザー承認)。
-  // onSwitchToStaffViewが未指定でもuseLongPress自体は呼ぶ(Hooksのルール上、条件付きで
-  // フックを呼び出せないため)が、ハンドラをロゴ要素に実際に付与するのは指定時のみ
-  // (下のJSX側で分岐)。moveCancelPx指定によりスクロール等の誤発動を防ぐ
-  // (第3引数を渡さない上のexitLongPressの挙動には一切影響しない、useLongPress.ts参照)。
-  const logoLongPress = useLongPress(onSwitchToStaffView ?? (() => {}), 1000, { moveCancelPx: 12 })
+  // ロゴタップでスタッフ用カルテへ切替(2026-09-22ユーザー承認)。従来の1000ms長押し
+  // (PHASE IPAD-KARTE-ENTRY-1)に代えて、4桁PIN入力モーダルを挟む方式に変更した。
+  // onSwitchToStaffViewが未指定(CustomerBottomSheet経由の既存呼び出し)の場合はロゴに
+  // ハンドラを一切付与せず、従来通りただの装飾テキストのまま(下のJSX側で分岐)。
+  const [staffPinOpen, setStaffPinOpen] = useState(false)
 
   // 担当者タグ選択(PHASE IPAD-SHARED-LOGIN-1・2026-09-20ユーザー承認)。店舗共通ログイン
   // 時のみ意味を持つ(個人ログイン時はisSharedLoginがfalseになり無変更)。写真撮影・選択
@@ -349,37 +350,28 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
         }}
       >
         <div>
-          {/* ロゴ長押しでスタッフ用カルテへ切替(PHASE IPAD-KARTE-ENTRY-1・2026-09-20ユーザー
-              承認)。onSwitchToStaffView未指定時(CustomerBottomSheet経由の既存呼び出し)は
-              ハンドラを一切付与せず、従来通りただの装飾テキストのまま(見た目も無変更)。 */}
+          {/* ロゴタップでスタッフ用カルテへ切替(2026-09-22ユーザー承認)。onSwitchToStaffView
+              未指定時(CustomerBottomSheet経由の既存呼び出し)はonClickを一切付与せず、
+              従来通りただの装飾テキストのまま(見た目も無変更)。指定時はPIN入力モーダルを
+              開き、正しいPINが入力された場合のみonSwitchToStaffViewを呼ぶ。 */}
           <div
-            {...(onSwitchToStaffView ? logoLongPress.handlers : {})}
+            {...(onSwitchToStaffView ? { onClick: () => setStaffPinOpen(true) } : {})}
             style={{
               display: 'inline-block', borderRadius: '8px', margin: '-4px -6px', padding: '4px 6px',
-              background: logoLongPress.pressing ? PALETTE.gold : 'transparent',
-              touchAction: onSwitchToStaffView ? 'none' : undefined,
+              cursor: onSwitchToStaffView ? 'pointer' : undefined,
             }}
           >
             <p
               style={{
                 margin: 0, display: 'flex', alignItems: 'center', gap: '6px',
                 fontSize: '20px', letterSpacing: '0.01em',
-                color: logoLongPress.pressing ? '#FFFFFF' : PALETTE.gold,
+                color: PALETTE.gold,
                 fontFamily: logoFont.style.fontFamily,
               }}
             >
-              <Flower2 size={16} strokeWidth={1.4} color={logoLongPress.pressing ? '#FFFFFF' : PALETTE.gold} />
+              <Flower2 size={16} strokeWidth={1.4} color={PALETTE.gold} />
               Salon Riora
             </p>
-            {logoLongPress.pressing && (
-              <div
-                style={{
-                  height: '2px', marginTop: '2px', borderRadius: '1px',
-                  background: 'rgba(255,255,255,0.7)',
-                  width: `${Math.round(logoLongPress.progress * 100)}%`,
-                }}
-              />
-            )}
           </div>
           <p
             style={{
@@ -1000,6 +992,15 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
           customerId={customerId}
           onClose={() => setPhotoManageOpen(false)}
           onDeleted={() => { void data.refetchPhotos() }}
+        />
+      )}
+
+      {/* スタッフ用カルテ切替PIN(2026-09-22ユーザー承認)。ロゴタップで開く。onSwitchToStaffView
+          未指定時はロゴにonClickが付与されないためstaffPinOpenは常にfalseのまま。 */}
+      {staffPinOpen && (
+        <StaffPinModal
+          onSuccess={() => { setStaffPinOpen(false); onSwitchToStaffView?.() }}
+          onClose={() => setStaffPinOpen(false)}
         />
       )}
     </div>

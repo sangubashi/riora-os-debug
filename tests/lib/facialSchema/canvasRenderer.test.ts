@@ -28,6 +28,7 @@ function fakeContext(): RenderCanvasContext {
     lineCap: '',
     lineJoin: '',
     globalAlpha: 1,
+    globalCompositeOperation: 'source-over',
   }
 }
 
@@ -148,5 +149,34 @@ describe('renderStrokes — 複数ストロークの一括描画', () => {
     renderStrokes(ctx, [], box)
     expect(ctx.save).not.toHaveBeenCalled()
     expect(ctx.arc).not.toHaveBeenCalled()
+  })
+})
+
+describe('renderStroke — category=eraser(消しゴム、2026-09-22追加)', () => {
+  it('drawAreaStroke本体の描画時点でglobalCompositeOperationがdestination-outになっている', () => {
+    const ctx = fakeContext()
+    const stroke: Stroke = {
+      id: 'e1', category: 'eraser', tool: 'area', width: 0.03,
+      points: [{ x: 0.2, y: 0.2 }, { x: 0.4, y: 0.4 }],
+    }
+    // ctx.stroke()(実際にピクセルへ適用される呼び出し)が起きた時点の値を記録する。
+    // save()呼び出し順(外側→内側)ではなく、実際の描画コマンドの時点を見ることで、
+    // 「外側save()の直後に設定する」実装(標準的な save→状態変更 の順序)でも
+    // 正しく検証できるようにする。
+    let compositeAtDraw: string | null = null
+    ctx.stroke = vi.fn(() => { compositeAtDraw = ctx.globalCompositeOperation })
+
+    renderStroke(ctx, stroke, box)
+
+    expect(compositeAtDraw).toBe('destination-out')
+    expect(ctx.stroke).toHaveBeenCalledTimes(1) // tool='area'なのでstroke()で描く
+    expect(ctx.restore).toHaveBeenCalledTimes(2) // 外側(renderStroke)1回 + drawAreaStroke内側1回
+  })
+
+  it('通常カテゴリ(消しゴム以外)ではglobalCompositeOperationに触れない', () => {
+    const ctx = fakeContext()
+    const before = ctx.globalCompositeOperation
+    renderStroke(ctx, pointStroke(), box)
+    expect(ctx.globalCompositeOperation).toBe(before)
   })
 })

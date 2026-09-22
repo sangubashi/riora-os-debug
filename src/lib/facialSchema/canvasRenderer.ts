@@ -38,6 +38,8 @@ export interface RenderCanvasContext {
   lineCap:     string
   lineJoin:    string
   globalAlpha: number
+  /** 消しゴム(2026-09-22追加)の"destination-out"合成に使う。既定は'source-over'。 */
+  globalCompositeOperation: string
 }
 
 /** 描画先の実寸(px)。テンプレート画像の表示サイズと一致させる(呼び出し側の責務)。 */
@@ -125,12 +127,25 @@ function drawLineStroke(ctx: RenderCanvasContext, stroke: Stroke, style: FacialS
 /** 1ストロークをカテゴリ定義(色・線種・ツール)に従って描画する。 */
 export function renderStroke(ctx: RenderCanvasContext, stroke: Stroke, box: RenderBox): void {
   const style = getCategoryStyle(stroke.category)
-  if (stroke.tool === 'point') {
-    drawPointStroke(ctx, stroke, style, box)
-  } else if (stroke.tool === 'area') {
-    drawAreaStroke(ctx, stroke, style, box)
-  } else {
-    drawLineStroke(ctx, stroke, style, box)
+  // 消しゴム(2026-09-22追加): 色を塗るのではなく、"destination-out"合成でこれまで描いた
+  // ピクセルを実際に透明化する(true eraser)。drawAreaStroke内部でも都度save/restoreする
+  // が、save()はglobalCompositeOperationも含めた状態全体を退避するため、ここで設定した
+  // 'destination-out'はdrawAreaStroke内で意図せず'source-over'へ戻ることはない。
+  const isEraser = stroke.category === 'eraser'
+  if (isEraser) {
+    ctx.save()
+    ctx.globalCompositeOperation = 'destination-out'
+  }
+  try {
+    if (stroke.tool === 'point') {
+      drawPointStroke(ctx, stroke, style, box)
+    } else if (stroke.tool === 'area') {
+      drawAreaStroke(ctx, stroke, style, box)
+    } else {
+      drawLineStroke(ctx, stroke, style, box)
+    }
+  } finally {
+    if (isEraser) ctx.restore()
   }
 }
 
