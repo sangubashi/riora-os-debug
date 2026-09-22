@@ -404,13 +404,16 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
         <>
           {/* ── 本体: カメラ映像(写真カルテUI改善 Part 1・2026-09-18ユーザー承認により
               全幅化。ゴースト調整UIは画面下部のゴーストパネルへ移動した)。
-              プレビュー画角の縦長化(2026-09-22ユーザー承認): 従来はflex:1で残り領域を
-              そのまま埋めていたため画面比率次第で四角く見えていた。顔の輪郭が収まりやすい
-              縦長(3:4)のaspect-ratioを明示し、幅方向はポスト撮影プレビュー(上の520px cap)と
-              揃え、高さ方向は行の残り高さを超えないようmaxHeightで制限する(横並びの
-              シャッター・ガイド要素はこのコンテナの外側=画面固定基準の絶対配置のため無影響)。 ── */}
-          <div style={{ flex: 1, display: 'flex', overflow: 'hidden', justifyContent: 'center' }}>
-            <div ref={setVideoContainerRef} style={{ position: 'relative', width: '100%', maxWidth: '520px', maxHeight: '100%', aspectRatio: '3 / 4', background: '#000' }}>
+              プレビュー最大化(2026-09-22ユーザー承認・再修正): 前回のaspect-ratio:3/4固定
+              +maxWidth:520pxは、横長(デスクトップ検証・iPad横向き等)の行では「幅は520pxで
+              頭打ちなのに高さは行の残り高さいっぱいまで使う」縦長の箱になり、結果的に行の
+              横幅の大半(実測で1300px以上)が未使用の余白になっていた(3:4固定の下では
+              箱を大きくしようとしても常に行の高さ側が律速し、maxWidthを引き上げても
+              改善しないことをスクリーンショット実測で確認済み)。固定比率をやめ、行の幅・
+              高さいっぱいに映像を広げる(video自体はobjectFit:coverのため、どんな行形状
+              でも引き伸ばされず自然にクロップ表示される)。 ── */}
+          <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+            <div ref={setVideoContainerRef} style={{ position: 'relative', width: '100%', height: '100%', background: '#000' }}>
               {capture.cameraStatus === 'error' ? (
                 <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
                   <div style={{ textAlign: 'center', maxWidth: '360px' }}>
@@ -621,11 +624,12 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
           </div>
 
           {/* ── ガイドメッセージバー(映像の外・下、視認性向上のため濃色ピルではなく
-              専用の帯として常に一定のコントラストを確保する) ── */}
+              専用の帯として常に一定のコントラストを確保する)。プレビュー最大化
+              (2026-09-22)に合わせ、縦方向のpaddingを12px→8pxへ縮小(表示内容は無変更)。 ── */}
           {showGuideOverlay && guideMessageText && (
             <div style={{
               flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-              padding: '12px 20px', borderTop: `1px solid ${PALETTE.border}`, background: PALETTE.bg,
+              padding: '8px 20px', borderTop: `1px solid ${PALETTE.border}`, background: PALETTE.bg,
             }}>
               <Crosshair size={16} strokeWidth={1.8} color={guideMessageIsSuccess ? '#22C55E' : PALETTE.gold} />
               <span style={{ fontSize: '14px', fontWeight: 700, color: PALETTE.text }}>{guideMessageText}</span>
@@ -639,11 +643,12 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
               手動スライダーの計算ロジック自体(ghost.opacityPercent/scalePercent等の値・
               onChangeハンドラ)には一切手を加えていない、見た目の配置のみの変更。
               日付候補リストは下部の帯に対して上に開くよう位置を変更した(画面下端で
-              切れるのを防ぐため)。 ── */}
+              切れるのを防ぐため)。プレビュー最大化(2026-09-22)に合わせ、縦方向の
+              paddingを12px→8pxへ縮小(スライダー等の操作要素・ロジックは無変更)。 ── */}
           {showGuideOverlay && (
             <div style={{
               flexShrink: 0, borderTop: `1px solid ${PALETTE.border}`, background: PALETTE.bg,
-              padding: '12px 20px', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '20px',
+              padding: '8px 20px', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '20px',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                 <span style={{ fontSize: '13px', fontWeight: 700, color: PALETTE.text }}>ゴースト</span>
