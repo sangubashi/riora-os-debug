@@ -738,6 +738,10 @@ export interface BrainMenuRow {
   contraindication_tags?: string[];
   recommended_homecare_products?: string[];
   ai_tags?: string[];
+  // Hot Pepper Beauty自動取込機能(2026-09-22)で追加。既存クエリとの互換性のため
+  // optionalにしている(toMenu()側で??フォールバックする、PHASE MENU-AI-1と同じ方針)。
+  hotpepper_item_id?: string | null;
+  hotpepper_synced_at?: string | null;
 }
 
 /** PHASE MENU-AI-1: create/updateどちらのInputでも共通の追加項目(全てoptional)。 */
@@ -749,6 +753,20 @@ interface MenuAIFieldsInput {
   contraindicationTags?: string[];
   recommendedHomecareProducts?: string[];
   aiTags?: string[];
+}
+
+/** Hot Pepper Beauty自動取込機能: create/updateどちらのInputでも共通の追加項目(全てoptional)。 */
+interface MenuHotpepperFieldsInput {
+  hotpepperItemId?: string | null;
+  hotpepperSyncedAt?: string | null;
+}
+
+/** Hot Pepper取込関連項目のみをsnake_caseへ変換する(undefinedのキーは含めない)。 */
+function fromMenuHotpepperFieldsInput(input: MenuHotpepperFieldsInput): Record<string, unknown> {
+  const patch: Record<string, unknown> = {};
+  if (input.hotpepperItemId !== undefined) patch.hotpepper_item_id = input.hotpepperItemId;
+  if (input.hotpepperSyncedAt !== undefined) patch.hotpepper_synced_at = input.hotpepperSyncedAt;
+  return patch;
 }
 
 /** PHASE MENU-AI-1追加項目のみをsnake_caseへ変換する(undefinedのキーは含めない)。 */
@@ -773,7 +791,7 @@ export function fromMenuCreateInput(input: {
   price: number;
   role: MenuRole;
   targetTypes: CustomerType[];
-} & MenuAIFieldsInput): Record<string, unknown> {
+} & MenuAIFieldsInput & MenuHotpepperFieldsInput): Record<string, unknown> {
   return {
     store_id: input.storeId,
     name: input.name,
@@ -781,6 +799,7 @@ export function fromMenuCreateInput(input: {
     role: input.role,
     target_types: input.targetTypes,
     ...fromMenuAIFieldsInput(input),
+    ...fromMenuHotpepperFieldsInput(input),
   };
 }
 
@@ -790,13 +809,13 @@ export function fromMenuUpdateInput(input: {
   price?: number;
   role?: Exclude<MenuRole, 'imported_other'>;
   targetTypes?: CustomerType[];
-} & MenuAIFieldsInput): Record<string, unknown> {
+} & MenuAIFieldsInput & MenuHotpepperFieldsInput): Record<string, unknown> {
   const patch: Record<string, unknown> = {};
   if (input.name !== undefined) patch.name = input.name;
   if (input.price !== undefined) patch.price = input.price;
   if (input.role !== undefined) patch.role = input.role;
   if (input.targetTypes !== undefined) patch.target_types = input.targetTypes;
-  return { ...patch, ...fromMenuAIFieldsInput(input) };
+  return { ...patch, ...fromMenuAIFieldsInput(input), ...fromMenuHotpepperFieldsInput(input) };
 }
 
 export function toMenu(row: BrainMenuRow): Menu {
@@ -814,6 +833,8 @@ export function toMenu(row: BrainMenuRow): Menu {
     contraindicationTags: row.contraindication_tags ?? [],
     recommendedHomecareProducts: row.recommended_homecare_products ?? [],
     aiTags: row.ai_tags ?? [],
+    hotpepperItemId: row.hotpepper_item_id ?? null,
+    hotpepperSyncedAt: row.hotpepper_synced_at ?? null,
   };
 }
 

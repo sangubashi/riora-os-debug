@@ -24,6 +24,29 @@ export interface MenuMutationResult {
   usageCount?: number
 }
 
+/** Hot Pepper Beauty自動取込機能(2026-09-22)。src/lib/menu/runHotpepperMenuSync.tsの
+ *  HotpepperSyncReportをそのままJSON経由で受け取る(APIレスポンスと型を共有)。 */
+export interface HotpepperImportReport {
+  dryRun: boolean
+  fetchedAt: string
+  pagesFetched: number
+  totalParsedItems: number
+  appliedCount: number
+  noChangeCount: number
+  newItems: { hotpepperItemId: string; name: string; price: number | null; category: 'coupon' | 'menu_option' }[]
+  priceChanges: { menuId: string; hotpepperItemId: string; name: string; oldPrice: number; newPrice: number }[]
+  backfills: { menuId: string; hotpepperItemId: string; name: string; priceChange: { oldPrice: number; newPrice: number } | null }[]
+  possiblyDiscontinued: { menuId: string; name: string; price: number; hotpepperItemId: string }[]
+  /** ¥0/価格不明のため新規提案から除外した項目(予約導線案内等、施術実体を持たないもの)。 */
+  excludedNoPrice: { hotpepperItemId: string; name: string; price: number | null; category: 'coupon' | 'menu_option' }[]
+}
+
+export interface HotpepperImportResult {
+  success: boolean
+  error?: string
+  report?: HotpepperImportReport
+}
+
 interface MenuMasterState {
   menus: MenuMasterRow[]
   isLoading: boolean
@@ -32,6 +55,8 @@ interface MenuMasterState {
   createMenu: (storeId: string, input: MenuMutationInput) => Promise<MenuMutationResult>
   updateMenu: (id: string, input: Partial<MenuMutationInput>) => Promise<MenuMutationResult>
   deleteMenu: (id: string) => Promise<MenuMutationResult>
+  previewHotpepperImport: (storeId: string) => Promise<HotpepperImportResult>
+  applyHotpepperImport: (storeId: string) => Promise<HotpepperImportResult>
 }
 
 export const useMenuMasterStore = create<MenuMasterState>((set, get) => ({
@@ -108,6 +133,40 @@ export const useMenuMasterStore = create<MenuMasterState>((set, get) => ({
       return { success: true }
     } catch (e) {
       return { success: false, error: e instanceof Error ? e.message : 'menu_delete_failed' }
+    }
+  },
+
+  previewHotpepperImport: async (storeId) => {
+    try {
+      const res = await authedFetch('/api/admin/menu/hotpepper-import/preview', {
+        method: 'POST',
+        body: JSON.stringify({ storeId }),
+      })
+      const body = await res.json()
+      if (!res.ok || !body.success) {
+        return { success: false, error: body.error ?? 'hotpepper_preview_failed' }
+      }
+      return { success: true, report: body.report }
+    } catch (e) {
+      return { success: false, error: e instanceof Error ? e.message : 'hotpepper_preview_failed' }
+    }
+  },
+
+  applyHotpepperImport: async (storeId) => {
+    try {
+      const res = await authedFetch('/api/admin/menu/hotpepper-import/apply', {
+        method: 'POST',
+        body: JSON.stringify({ storeId, confirm: true }),
+      })
+      const body = await res.json()
+      if (!res.ok || !body.success) {
+        return { success: false, error: body.error ?? 'hotpepper_apply_failed' }
+      }
+      // 反映後は一覧を最新化する(新規作成・価格更新・バックフィルを画面へ反映するため)。
+      await get().fetchMenus(storeId)
+      return { success: true, report: body.report }
+    } catch (e) {
+      return { success: false, error: e instanceof Error ? e.message : 'hotpepper_apply_failed' }
     }
   },
 }))

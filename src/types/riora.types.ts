@@ -109,6 +109,15 @@ export interface Menu {
   recommendedHomecareProducts?: string[];
   /** AI提案向けの短いタグ配列(例: 乾燥・ニキビ・毛穴・たるみ・くすみ・敏感肌・リフトアップ・保湿・美白・赤み)。 */
   aiTags?: string[];
+  /**
+   * Hot Pepper Beauty自動取込機能(2026-09-22)で追加。当該メニューに対応する
+   * Hot Pepper側の固有ID("CP..."=クーポン/"MN..."=メニューオプション)。手動登録
+   * (Phase 1/1.5等)のメニューはnull(未追跡)。名称完全一致でのバックフィルまたは
+   * 新規取込時に設定される。
+   */
+  hotpepperItemId?: string | null;
+  /** 直近でHot Pepper上に存在確認できた日時(ISO文字列)。未取込・未確認はnull。 */
+  hotpepperSyncedAt?: string | null;
 }
 
 export interface Booking {

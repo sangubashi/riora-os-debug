@@ -10,10 +10,19 @@
  *
  * role='imported_other'の行(CSV突合エンジンのフォールバック専用)は編集・削除ボタンを
  * 無効化する(API層でも二重にガード済み)。
+ *
+ * Hot Pepper Beauty自動取込機能(2026-09-22ユーザー承認): 「Hot Pepperから取込」ボタンで
+ * 差分プレビュー(新規/価格変更/名称一致バックフィル/掲載終了候補)を表示し、管理者が
+ * 内容を確認して「反映する」を押した時点で初めてbrain_menusへ書き込む
+ * (src/lib/menu/runHotpepperMenuSync.ts、既存のCSV再分類機能と同じdryRunパターン)。
+ * 新規登録メニューはrole='entry'+target_types=[](未分類)で登録され、
+ * MenuRowに「⚠ 未分類」バッジを表示して手動分類を促す。
  */
 import { useEffect, useState } from 'react'
-import { Loader2, Plus, Pencil, Trash2, Lock } from 'lucide-react'
-import { useMenuMasterStore, type MenuMasterRow, type MenuMutationInput } from '@/store/useMenuMasterStore'
+import { Loader2, Plus, Pencil, Trash2, Lock, Download, AlertTriangle } from 'lucide-react'
+import {
+  useMenuMasterStore, type MenuMasterRow, type MenuMutationInput, type HotpepperImportReport,
+} from '@/store/useMenuMasterStore'
 import type { MenuRole, CustomerType } from '@/types/riora.types'
 import { EDITABLE_MENU_ROLES, ALL_CUSTOMER_TYPES } from '@/lib/menu/menuMasterConstants'
 import { DEMO_STORE_ID } from '@/lib/constants'
@@ -223,7 +232,7 @@ function MenuRow({ menu, onEdit, onDeleted }: { menu: MenuMasterRow; onEdit: (me
         </div>
       </div>
 
-      {menu.targetTypes.length > 0 && (
+      {menu.targetTypes.length > 0 ? (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
           {menu.targetTypes.map((t) => (
             <span key={t} style={{ fontSize: '10px', padding: '3px 8px', borderRadius: '999px', background: '#FDEEF1', color: '#D98292' }}>
@@ -231,6 +240,14 @@ function MenuRow({ menu, onEdit, onDeleted }: { menu: MenuMasterRow; onEdit: (me
             </span>
           ))}
         </div>
+      ) : !isProtected && (
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', gap: '4px', width: 'fit-content',
+          fontSize: '10px', fontWeight: 700, padding: '3px 8px', borderRadius: '999px',
+          background: '#FFF3DC', color: '#B8860B',
+        }}>
+          <AlertTriangle size={11} /> 未分類(role/target_typesを設定してください)
+        </span>
       )}
 
       {confirming && (
@@ -258,10 +275,178 @@ function MenuRow({ menu, onEdit, onDeleted }: { menu: MenuMasterRow; onEdit: (me
   )
 }
 
+/** Hot Pepper Beauty自動取込機能(2026-09-22): 差分プレビュー→確認→反映のモーダル。 */
+function HotpepperImportModal({ onClose, onApplied }: { onClose: () => void; onApplied: () => void }) {
+  const { previewHotpepperImport, applyHotpepperImport } = useMenuMasterStore()
+  const [loading, setLoading] = useState(true)
+  const [applying, setApplying] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [report, setReport] = useState<HotpepperImportReport | null>(null)
+  const [applied, setApplied] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setError(null)
+    previewHotpepperImport(DEMO_STORE_ID).then((result) => {
+      if (cancelled) return
+      setLoading(false)
+      if (!result.success || !result.report) {
+        setError(result.error ?? 'hotpepper_preview_failed')
+        return
+      }
+      setReport(result.report)
+    })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const handleApply = async () => {
+    setApplying(true)
+    setError(null)
+    const result = await applyHotpepperImport(DEMO_STORE_ID)
+    setApplying(false)
+    if (!result.success || !result.report) {
+      setError(result.error ?? 'hotpepper_apply_failed')
+      return
+    }
+    setReport(result.report)
+    setApplied(true)
+    onApplied()
+  }
+
+  const hasChanges = !!report && (
+    report.newItems.length > 0 || report.priceChanges.length > 0 || report.backfills.length > 0
+  )
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(92,64,51,0.35)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+      <div style={{ background: '#fff', borderRadius: '16px', padding: '20px', width: '100%', maxWidth: '480px', maxHeight: '85vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <h2 style={{ fontSize: '16px', fontWeight: 700, color: '#5C4033' }}>Hot Pepperから取込</h2>
+
+        {loading && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '30px 0', color: '#C8A8B0' }}>
+            <Loader2 size={18} className="animate-spin" style={{ marginRight: '8px' }} />
+            Hot Pepperのページを取得中...
+          </div>
+        )}
+
+        {error && <p style={{ fontSize: '13px', color: '#D14F4F' }}>取得に失敗しました: {error}</p>}
+
+        {!loading && report && (
+          <>
+            <p style={{ fontSize: '12px', color: '#9F7E6C' }}>
+              {report.pagesFetched}ページ・{report.totalParsedItems}件を取得({new Date(report.fetchedAt).toLocaleString('ja-JP')}時点)
+              {applied && <span style={{ color: '#5C9E6B', fontWeight: 700 }}>・反映済み</span>}
+            </p>
+
+            {!hasChanges && (
+              <p style={{ fontSize: '13px', color: '#5C9E6B', padding: '12px 0' }}>変更はありません(登録済みメニューと一致しています)</p>
+            )}
+
+            {report.newItems.length > 0 && (
+              <section>
+                <p style={{ fontSize: '12px', fontWeight: 700, color: '#5C4033', marginBottom: '6px' }}>
+                  新規({report.newItems.length}件)
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {report.newItems.map((item) => (
+                    <div key={item.hotpepperItemId} style={{ fontSize: '12px', color: '#5C4033', background: '#FAFAFA', borderRadius: '8px', padding: '6px 10px', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                      <span>{item.name}</span>
+                      <span style={{ flexShrink: 0, color: '#9F7E6C' }}>{item.price !== null ? `¥${item.price.toLocaleString('ja-JP')}` : '価格不明(登録対象外)'}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {report.priceChanges.length > 0 && (
+              <section>
+                <p style={{ fontSize: '12px', fontWeight: 700, color: '#5C4033', marginBottom: '6px' }}>
+                  価格変更({report.priceChanges.length}件)
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {report.priceChanges.map((c) => (
+                    <div key={c.menuId} style={{ fontSize: '12px', color: '#5C4033', background: '#FAFAFA', borderRadius: '8px', padding: '6px 10px', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                      <span>{c.name}</span>
+                      <span style={{ flexShrink: 0, color: '#D98292' }}>¥{c.oldPrice.toLocaleString('ja-JP')} → ¥{c.newPrice.toLocaleString('ja-JP')}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {report.backfills.length > 0 && (
+              <section>
+                <p style={{ fontSize: '12px', fontWeight: 700, color: '#5C4033', marginBottom: '6px' }}>
+                  既存メニューとID紐付け({report.backfills.length}件、名称一致)
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {report.backfills.map((b) => (
+                    <div key={b.menuId} style={{ fontSize: '12px', color: '#5C4033', background: '#FAFAFA', borderRadius: '8px', padding: '6px 10px' }}>
+                      <span>{b.name}</span>
+                      {b.priceChange && (
+                        <span style={{ marginLeft: '8px', color: '#D98292' }}>
+                          ¥{b.priceChange.oldPrice.toLocaleString('ja-JP')} → ¥{b.priceChange.newPrice.toLocaleString('ja-JP')}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {report.possiblyDiscontinued.length > 0 && (
+              <section>
+                <p style={{ fontSize: '12px', fontWeight: 700, color: '#B8860B', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <AlertTriangle size={13} /> 掲載終了の可能性({report.possiblyDiscontinued.length}件、自動削除はしません)
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {report.possiblyDiscontinued.map((d) => (
+                    <div key={d.menuId} style={{ fontSize: '12px', color: '#9F7E6C', background: '#FFF8F1', borderRadius: '8px', padding: '6px 10px' }}>
+                      {d.name}(¥{d.price.toLocaleString('ja-JP')})
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {report.excludedNoPrice.length > 0 && (
+              <p style={{ fontSize: '11px', color: '#C8A8B0' }}>
+                ほか{report.excludedNoPrice.length}件(¥0の予約導線案内等、施術メニューではないため提案対象外)
+              </p>
+            )}
+          </>
+        )}
+
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '4px' }}>
+          <button
+            onClick={onClose}
+            disabled={applying}
+            style={{ fontSize: '13px', fontWeight: 600, padding: '9px 16px', borderRadius: '10px', border: '1px solid #F5EEF0', background: '#fff', color: '#9F7E6C', cursor: 'pointer' }}
+          >
+            閉じる
+          </button>
+          {!applied && hasChanges && (
+            <button
+              onClick={handleApply}
+              disabled={loading || applying || !report}
+              style={{ fontSize: '13px', fontWeight: 700, padding: '9px 16px', borderRadius: '10px', border: 'none', background: '#D98292', color: '#fff', cursor: 'pointer' }}
+            >
+              {applying ? '反映中...' : '反映する'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function MenuMasterScreen() {
   const { menus, isLoading, error, fetchMenus, createMenu, updateMenu } = useMenuMasterStore()
   const [modalMode, setModalMode] = useState<'none' | 'create' | 'edit'>('none')
   const [editingMenu, setEditingMenu] = useState<MenuMasterRow | null>(null)
+  const [importModalOpen, setImportModalOpen] = useState(false)
 
   useEffect(() => {
     fetchMenus(DEMO_STORE_ID)
@@ -286,19 +471,34 @@ export default function MenuMasterScreen() {
         <p style={{ fontSize: '10px', fontWeight: 700, color: '#C8A8B0', letterSpacing: '0.1em', marginBottom: '2px' }}>
           メニューマスタ管理
         </p>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
           <h1 style={{ fontSize: '18px', fontWeight: 700, color: '#5C4033' }}>メニュー管理</h1>
-          <button
-            onClick={openCreate}
-            style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', fontWeight: 700, padding: '8px 14px', borderRadius: '10px', border: 'none', background: '#D98292', color: '#fff', cursor: 'pointer' }}
-          >
-            <Plus size={14} /> 新規メニュー
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={() => setImportModalOpen(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', fontWeight: 700, padding: '8px 14px', borderRadius: '10px', border: '1px solid #D98292', background: '#fff', color: '#D98292', cursor: 'pointer' }}
+            >
+              <Download size={14} /> Hot Pepperから取込
+            </button>
+            <button
+              onClick={openCreate}
+              style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', fontWeight: 700, padding: '8px 14px', borderRadius: '10px', border: 'none', background: '#D98292', color: '#fff', cursor: 'pointer' }}
+            >
+              <Plus size={14} /> 新規メニュー
+            </button>
+          </div>
         </div>
         <p style={{ fontSize: '12px', color: '#9F7E6C', marginTop: '4px' }}>
           「CSV未マッチ(保護対象)」行は編集・削除できません。来店履歴が紐づくメニューも削除できません。
         </p>
       </div>
+
+      {importModalOpen && (
+        <HotpepperImportModal
+          onClose={() => setImportModalOpen(false)}
+          onApplied={() => { /* applyHotpepperImport内でストアのmenusは既に最新化済み */ }}
+        />
+      )}
 
       {isLoading && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 0', color: '#C8A8B0' }}>

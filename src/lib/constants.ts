@@ -54,3 +54,11 @@ export const STAFF_TAG_EXCLUDED_IDS: string[] = [
  * (VoiceMemoSection.tsx参照)。VM-8実装完了後にfalseへ戻す。
  */
 export const VOICE_MEMO_DISABLED = true
+
+/**
+ * Hot Pepper Beauty自動取込機能(2026-09-22ユーザー承認)の既定取込元URL。
+ * DEMO_STORE_ID/ADMIN_EMAILと同じ「クライアントに含まれてよい公開識別子」方針
+ * (サロン自身の公開クーポンページであり秘匿情報ではない)。
+ * 複数店舗対応時は店舗ごとの設定値に置き換える想定(現状は単一店舗のため定数)。
+ */
+export const HOTPEPPER_MENU_URL = 'https://beauty.hotpepper.jp/kr/slnH000808958/coupon/'

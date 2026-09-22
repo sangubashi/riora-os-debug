@@ -430,6 +430,9 @@ export interface MenuCreateInput {
   contraindicationTags?: string[];
   recommendedHomecareProducts?: string[];
   aiTags?: string[];
+  /** Hot Pepper Beauty自動取込機能(2026-09-22)。取込元の固有ID・確認日時(optional)。 */
+  hotpepperItemId?: string | null;
+  hotpepperSyncedAt?: string | null;
 }
 
 /** brain_menus部分更新入力(メニューマスタ管理画面専用)。指定したフィールドのみSET。 */
@@ -447,6 +450,9 @@ export interface MenuUpdateInput {
   contraindicationTags?: string[];
   recommendedHomecareProducts?: string[];
   aiTags?: string[];
+  /** Hot Pepper Beauty自動取込機能(2026-09-22)。取込元の固有ID・確認日時(optional)。 */
+  hotpepperItemId?: string | null;
+  hotpepperSyncedAt?: string | null;
 }
 
 export interface IMenuRepo {

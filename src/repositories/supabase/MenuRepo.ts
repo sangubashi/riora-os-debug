@@ -4,9 +4,11 @@ import type { IMenuRepo, MenuCreateInput, MenuUpdateInput } from '../interfaces'
 import { toMenu, fromMenuCreateInput, fromMenuUpdateInput, type BrainMenuRow } from './mappers';
 
 // PHASE MENU-AI-1: AI提案向け詳細情報の列を追加(brain_menusへのADD COLUMNのみ・新規テーブルなし)。
+// Hot Pepper Beauty自動取込機能(2026-09-22): hotpepper_item_id/hotpepper_synced_atを追加。
 const MENU_COLUMNS = 'id, store_id, name, price, role, target_types, ' +
   'duration_minutes, skin_concern_tags, expected_effects, recommended_cycle_days, ' +
-  'contraindication_tags, recommended_homecare_products, ai_tags';
+  'contraindication_tags, recommended_homecare_products, ai_tags, ' +
+  'hotpepper_item_id, hotpepper_synced_at';
 
 export class MenuRepo implements IMenuRepo {
   constructor(private readonly client: SupabaseClient) {}
