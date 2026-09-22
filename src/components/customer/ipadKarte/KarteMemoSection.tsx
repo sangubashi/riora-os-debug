@@ -181,12 +181,12 @@ export default function KarteMemoSection({
                 <textarea
                   value={editContent}
                   onChange={e => setEditContent(e.target.value)}
-                  rows={10}
+                  rows={14}
                   autoFocus
                   style={{
-                    width: '100%', boxSizing: 'border-box', resize: 'vertical', minHeight: '220px',
-                    fontSize: '13px', color: PALETTE.text, lineHeight: 1.7,
-                    border: `1px solid ${PALETTE.border}`, borderRadius: '8px', padding: '8px',
+                    width: '100%', boxSizing: 'border-box', resize: 'vertical', minHeight: '340px',
+                    fontSize: '15px', color: PALETTE.text, lineHeight: 1.8,
+                    border: `1px solid ${PALETTE.border}`, borderRadius: '8px', padding: '10px',
                     outline: 'none', fontFamily: 'inherit',
                   }}
                 />
@@ -229,7 +229,7 @@ export default function KarteMemoSection({
                 background: PALETTE.card, display: 'flex', flexDirection: 'column', gap: '6px',
               }}
             >
-              <p style={{ margin: 0, fontSize: '13px', color: PALETTE.text, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+              <p style={{ margin: 0, fontSize: '15px', color: PALETTE.text, lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                 {m.content}
               </p>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
@@ -296,7 +296,7 @@ export default function KarteMemoSection({
               <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px', borderTop: `1px solid ${PALETTE.border}` }}>
                 <div>
                   <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: 700, color: PALETTE.muted }}>前回の施術メモ</p>
-                  <p style={{ margin: 0, fontSize: '13px', color: PALETTE.text, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  <p style={{ margin: 0, fontSize: '15px', color: PALETTE.text, lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                     {previousTreatmentMemo?.trim() ? previousTreatmentMemo : '記録がありません'}
                   </p>
                 </div>
@@ -304,7 +304,7 @@ export default function KarteMemoSection({
                   <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: 700, color: PALETTE.muted }}>前回のカルテメモ</p>
                   {previousMemo ? (
                     <>
-                      <p style={{ margin: 0, fontSize: '13px', color: PALETTE.text, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      <p style={{ margin: 0, fontSize: '15px', color: PALETTE.text, lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                         {previousMemo.content}
                       </p>
                       <p style={{ margin: '4px 0 0', fontSize: '10px', color: PALETTE.muted }}>
@@ -313,7 +313,7 @@ export default function KarteMemoSection({
                       </p>
                     </>
                   ) : (
-                    <p style={{ margin: 0, fontSize: '13px', color: PALETTE.text }}>記録がありません</p>
+                    <p style={{ margin: 0, fontSize: '15px', color: PALETTE.text }}>記録がありません</p>
                   )}
                 </div>
               </div>
@@ -326,13 +326,13 @@ export default function KarteMemoSection({
             <textarea
               value={newContent}
               onChange={e => setNewContent(e.target.value)}
-              rows={10}
+              rows={14}
               autoFocus
               placeholder="今日の接客で気づいたこと、施術中の様子など自由に記録してください"
               style={{
-                width: '100%', boxSizing: 'border-box', resize: 'vertical', minHeight: '220px',
-                fontSize: '13px', color: PALETTE.text, lineHeight: 1.7,
-                border: `1px solid ${PALETTE.border}`, borderRadius: '8px', padding: '8px',
+                width: '100%', boxSizing: 'border-box', resize: 'vertical', minHeight: '340px',
+                fontSize: '15px', color: PALETTE.text, lineHeight: 1.8,
+                border: `1px solid ${PALETTE.border}`, borderRadius: '8px', padding: '10px',
                 outline: 'none', fontFamily: 'inherit',
               }}
             />

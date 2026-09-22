@@ -91,10 +91,11 @@ interface Props {
   onClose: () => void
   /**
    * iPad専用カルテ入口(PHASE IPAD-KARTE-ENTRY-1・2026-09-20ユーザー承認)用の任意コールバック。
-   * 指定時のみ、ヘッダーの「Salon Riora」ロゴをタップすると4桁PIN入力モーダル
-   * (StaffPinModal、2026-09-22ユーザー承認)が開き、正しいPINを入力するとスタッフ用カルテへ
-   * 切り替わる。未指定時(CustomerBottomSheet経由の既存呼び出し)はロゴは従来通り
-   * 非インタラクティブな装飾のまま、一切変更なし。
+   * 指定時のみ、ヘッダー右側に「Staff Karte」ボタンを表示する。タップすると4桁PIN入力
+   * モーダル(StaffPinModal)が開き、正しいPINを入力するとスタッフ用カルテへ切り替わる
+   * (2026-09-22ユーザー承認: 従来のロゴ1000ms長押し→ロゴタップ→現在の明示的なボタン、
+   * と改修を重ねてきた)。未指定時(CustomerBottomSheet経由の既存呼び出し)はボタン自体を
+   * 描画せず、ロゴも非インタラクティブな装飾のまま。
    */
   onSwitchToStaffView?: () => void
 }
@@ -350,17 +351,11 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
         }}
       >
         <div>
-          {/* ロゴタップでスタッフ用カルテへ切替(2026-09-22ユーザー承認)。onSwitchToStaffView
-              未指定時(CustomerBottomSheet経由の既存呼び出し)はonClickを一切付与せず、
-              従来通りただの装飾テキストのまま(見た目も無変更)。指定時はPIN入力モーダルを
-              開き、正しいPINが入力された場合のみonSwitchToStaffViewを呼ぶ。 */}
-          <div
-            {...(onSwitchToStaffView ? { onClick: () => setStaffPinOpen(true) } : {})}
-            style={{
-              display: 'inline-block', borderRadius: '8px', margin: '-4px -6px', padding: '4px 6px',
-              cursor: onSwitchToStaffView ? 'pointer' : undefined,
-            }}
-          >
+          {/* ロゴは常に非インタラクティブな装飾のまま(2026-09-22ユーザー承認で、スタッフ用
+              カルテへの切替トリガーをロゴタップから右側の明示的な「Staff Karte」ボタンへ
+              移した。見つけにくいロゴタップより、はっきりラベル付きのボタンの方が
+              分かりやすいため)。 */}
+          <div style={{ display: 'inline-block' }}>
             <p
               style={{
                 margin: 0, display: 'flex', alignItems: 'center', gap: '6px',
@@ -391,6 +386,25 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
           お肌の変化を一緒に確認しましょう
         </p>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '14px' }}>
+          {/* スタッフ用カルテへの切替ボタン(2026-09-22ユーザー承認)。旧CustomerBottomSheet.tsx
+              の「🗂 iPadカルテ(β)」ボタンと同じ位置づけ(スタッフ向けの明示的な切替導線)だが、
+              こちらはお客様に見えている画面上にあるため英語表記「Staff Karte」にし、タップで
+              直接切り替わらず4桁PIN入力モーダル(StaffPinModal)を挟む。onSwitchToStaffView
+              未指定時(CustomerBottomSheet経由の既存呼び出し)は描画しない。 */}
+          {onSwitchToStaffView && (
+            <button
+              type="button"
+              onClick={() => setStaffPinOpen(true)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '5px',
+                padding: '6px 14px', borderRadius: '999px', cursor: 'pointer',
+                border: `1px solid ${PALETTE.gold}`, background: 'transparent', color: PALETTE.gold,
+                fontSize: '11px', fontWeight: 700, letterSpacing: '0.04em', whiteSpace: 'nowrap', flexShrink: 0,
+              }}
+            >
+              Staff Karte
+            </button>
+          )}
           <StaffTagBar
             isSharedLogin={isSharedLogin}
             tag={staffTagSession.tag}

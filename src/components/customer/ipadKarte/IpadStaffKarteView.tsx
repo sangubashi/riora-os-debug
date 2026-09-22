@@ -6,10 +6,13 @@
  * CustomerBottomSheet本体のstate/useEffectには一切触れず、customerId/customerNameのみを
  * 受け取る自己完結コンポーネント(CustomerModeViewと同じ設計方針)。
  *
- * 2カラムレイアウト(2026-09-20時点):
- *   左カラム: 重要事項・カルテメモ
- *   右カラム: 顧客ステータス・肌の特徴タグ(簡易版)・今日の施術(自由記述、手順
- *             テンプレート化はしない)・今回のホームケア・次回の目安
+ * レイアウト(2026-09-22時点):
+ *   左カラム: 重要事項
+ *   右カラム: 肌の特徴タグ(簡易版)・今日の施術(自由記述、手順テンプレート化はしない)・
+ *             今回のホームケア・次回の目安
+ *   全幅行(左右カラムの下、上から順): カルテメモ・顔シェーマ・顧客ステータス
+ *   (カルテメモ・顔シェーマ・顧客ステータスはいずれも2026-09-22ユーザー要望により、
+ *   狭い片カラムから左右カラムをまたぐ全幅行へ順次移動した)。
  * 前回の施術・AI接客ポイント・次回提案は次フェーズ(🟡項目)のため、この画面にはまだ無い。
  *
  * 写真カルテ(正面/左45/右45、前回|今回比較)はPHASE IPAD-KARTE-PHOTO-REMOVE-1
@@ -510,17 +513,6 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
                   </div>
                 </Card>
               )}
-
-              {/* カルテメモ(PHASE IPAD-KARTE-DETAIL-UI-1 UI刷新・2026-09-20ユーザー承認で
-                  写真カルテの上へ移動)。重要事項(安全情報)は最優先のため上に維持し、
-                  カルテメモはその直下・写真カルテの直上に配置する。 */}
-              <KarteMemoSection
-                customerId={customerId}
-                previousVisitDate={data.previousVisitDate}
-                previousMenuName={data.previousMenuName}
-                previousTreatmentMemo={data.previousTreatmentMemo}
-                staffIdOverride={isSharedLogin ? staffTagSession.tag?.id ?? null : null}
-              />
             </div>
 
             {/* ── 右カラム ── */}
@@ -609,6 +601,22 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
                   レンダリングごと止める(NextVisitCard内部のuseNextVisit呼び出しも実行されない
                   ため、無駄なAPI呼び出しも発生しない)。 */}
               {SHOW_NEXT_VISIT_ESTIMATE && <NextVisitCard customerId={customerId} />}
+            </div>
+
+            {/* カルテメモ(PHASE IPAD-KARTE-DETAIL-UI-1 UI刷新・2026-09-20ユーザー承認で写真カルテの
+                上へ移動)。2026-09-22ユーザー要望(表示領域拡大)により、左カラム内(重要事項直下)
+                から左右カラムをまたぐ全幅行へ移動した(gridColumn:'1 / -1'、FacialSchemaSection・
+                CustomerStatusPanelと同じパターン)。KarteMemoSection自体のprops・内部ロジックは
+                位置移動以外変更していない(文字サイズ・入力欄高さの拡大はKarteMemoSection.tsx側で
+                対応)。 */}
+            <div style={{ gridColumn: '1 / -1' }}>
+              <KarteMemoSection
+                customerId={customerId}
+                previousVisitDate={data.previousVisitDate}
+                previousMenuName={data.previousMenuName}
+                previousTreatmentMemo={data.previousTreatmentMemo}
+                staffIdOverride={isSharedLogin ? staffTagSession.tag?.id ?? null : null}
+              />
             </div>
 
             {/* 顔シェーマ(顔シェーマ機能READ ONLY設計・Phase 0、2026-09-21ユーザー承認・Phase 5)。
