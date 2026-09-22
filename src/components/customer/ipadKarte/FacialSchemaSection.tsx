@@ -17,7 +17,7 @@ import { RotateCcw, Trash2, Check, History, Eraser } from 'lucide-react'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, Card } from '@/components/customer/shared/PhotoCompareKit'
 import {
-  FACIAL_SCHEMA_TEMPLATE_ASPECT_RATIO, FACIAL_SCHEMA_TEMPLATE_SRC,
+  FACIAL_SCHEMA_TEMPLATE_ASPECT_RATIO, FACIAL_SCHEMA_TEMPLATE_SRC, facialSchemaTemplateImgStyle,
   FacialSchemaSubHeading, FacialSchemaThumbnail,
 } from '@/components/customer/shared/FacialSchemaKit'
 import { useFacialSchemaCanvas } from '@/lib/facialSchema/useFacialSchemaCanvas'
@@ -259,7 +259,7 @@ export default function FacialSchemaSection({ customerId, visitId, staffIdOverri
                 src={FACIAL_SCHEMA_TEMPLATE_SRC}
                 alt="顔シェーマ(正面)テンプレート"
                 draggable={false}
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none', userSelect: 'none' }}
+                style={facialSchemaTemplateImgStyle}
               />
               <canvas
                 ref={canvasElRef}
