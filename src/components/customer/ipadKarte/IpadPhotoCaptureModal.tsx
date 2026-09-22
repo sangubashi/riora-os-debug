@@ -71,6 +71,7 @@ import { useFaceGuide } from '@/hooks/useFaceGuide'
 import { useDeviceTilt } from '@/hooks/useDeviceTilt'
 import {
   useGhostOverlay, formatGhostDateLabel, GHOST_SCALE_MIN_PERCENT, GHOST_SCALE_MAX_PERCENT,
+  GHOST_OPACITY_MAX_PERCENT,
 } from '@/hooks/useGhostOverlay'
 import { useGhostImageFaceDetection } from '@/hooks/useGhostImageFaceDetection'
 import { pickFaceGuideMessage, type FaceGuideMode } from '@/lib/photos/faceGuide'
@@ -402,9 +403,14 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
       ) : intent === 'camera' ? (
         <>
           {/* ── 本体: カメラ映像(写真カルテUI改善 Part 1・2026-09-18ユーザー承認により
-              全幅化。ゴースト調整UIは画面下部のゴーストパネルへ移動した) ── */}
-          <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-            <div ref={setVideoContainerRef} style={{ flex: 1, position: 'relative', background: '#000', minWidth: 0 }}>
+              全幅化。ゴースト調整UIは画面下部のゴーストパネルへ移動した)。
+              プレビュー画角の縦長化(2026-09-22ユーザー承認): 従来はflex:1で残り領域を
+              そのまま埋めていたため画面比率次第で四角く見えていた。顔の輪郭が収まりやすい
+              縦長(3:4)のaspect-ratioを明示し、幅方向はポスト撮影プレビュー(上の520px cap)と
+              揃え、高さ方向は行の残り高さを超えないようmaxHeightで制限する(横並びの
+              シャッター・ガイド要素はこのコンテナの外側=画面固定基準の絶対配置のため無影響)。 ── */}
+          <div style={{ flex: 1, display: 'flex', overflow: 'hidden', justifyContent: 'center' }}>
+            <div ref={setVideoContainerRef} style={{ position: 'relative', width: '100%', maxWidth: '520px', maxHeight: '100%', aspectRatio: '3 / 4', background: '#000' }}>
               {capture.cameraStatus === 'error' ? (
                 <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
                   <div style={{ textAlign: 'center', maxWidth: '360px' }}>
@@ -654,7 +660,7 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
                     <input
                       type="range"
                       min={0}
-                      max={100}
+                      max={GHOST_OPACITY_MAX_PERCENT}
                       value={ghost.opacityPercent}
                       onChange={e => ghost.setOpacityPercent(Number(e.target.value))}
                       style={{ width: '100%', accentColor: PALETTE.gold }}

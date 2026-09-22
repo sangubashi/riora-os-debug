@@ -21,6 +21,11 @@ const GHOST_OPACITY_STORAGE_KEY = 'riora.photoKarte.ghostOpacityPercent'
 /** ゴーストの初期不透明度(%)。デザイン確定値(IMG_1448.JPG)。 */
 export const GHOST_DEFAULT_OPACITY_PERCENT = 30
 /**
+ * ゴースト不透明度スライダーの上限(%)。現場での誤操作防止のため、2026-09-22ユーザー承認
+ * により100%から引き下げた。既定値(30%)自体は変更していない。
+ */
+export const GHOST_OPACITY_MAX_PERCENT = 60
+/**
  * ゴーストの初期倍率(%、100=等倍)。写真カルテ Phase 2 追加調整
  * (小宮山様の実機フィードバック「ゴーストが大きすぎる」対応、2026-09-18)。
  *
@@ -71,7 +76,9 @@ function readStoredOpacity(): number {
   try {
     const raw = window.localStorage.getItem(GHOST_OPACITY_STORAGE_KEY)
     const n = raw === null ? NaN : Number(raw)
-    if (Number.isFinite(n) && n >= 0 && n <= 100) return n
+    // 上限引き下げ前(旧100%上限時代)に保存された値が新上限を超える場合は、既定値へ
+    // フォールバックする(スライダーmaxとの不整合を避けるため)。
+    if (Number.isFinite(n) && n >= 0 && n <= GHOST_OPACITY_MAX_PERCENT) return n
   } catch {
     // localStorage不可の環境(プライベートモード等)は既定値のまま進める
   }
@@ -138,7 +145,7 @@ export function useGhostOverlay({
   }, [])
 
   const setOpacityPercent = useCallback((v: number) => {
-    const clamped = Math.max(0, Math.min(100, Math.round(v)))
+    const clamped = Math.max(0, Math.min(GHOST_OPACITY_MAX_PERCENT, Math.round(v)))
     setOpacityPercentState(clamped)
     try {
       window.localStorage.setItem(GHOST_OPACITY_STORAGE_KEY, String(clamped))
