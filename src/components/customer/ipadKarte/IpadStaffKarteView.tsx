@@ -430,9 +430,6 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
           >
             <Flower2 size={16} strokeWidth={1.4} color={PALETTE.gold} />
             Salon Riora
-            <span style={{ fontSize: '11px', color: PALETTE.muted, marginLeft: '8px', fontWeight: 400 }}>
-              iPadカルテ(β)
-            </span>
           </p>
           {/* お客様用カルテへ戻る(PHASE IPAD-KARTE-ENTRY-1・2026-09-20ユーザー承認)。
               長押し不要・常時表示の明示的ボタン(ブラウザの戻る操作には依存しない)。
