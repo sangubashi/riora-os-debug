@@ -1454,8 +1454,12 @@ export default function CustomerBottomSheet({
                   <div className="w-12 h-[5px] rounded-full bg-[#E8D5D8]" />
                 </div>
                 {/* お客様モード導線(PHASE GUEST-MODE-1)・iPadカルテ導線(PHASE IPAD-1)。
-                    既存レイアウトへの追加はこの2ボタンのみ。 */}
-                <div className="absolute flex items-center gap-1.5" style={{ top: '2px', left: '8px' }}>
+                    既存レイアウトへの追加はこの2ボタンのみ。
+                    スマホ幅非表示化(2026-09-22ユーザー承認): 768px未満(既存の--app-max-width
+                    切り替えと同じ基準)ではhidden、768px以上(iPad幅)ではmd:flexで従来通り表示する。
+                    onClick・state・CustomerModeView/IpadStaffKarteViewのロジックには一切手を
+                    加えていない(表示のみのCSS切り替え)。 */}
+                <div className="absolute hidden items-center gap-1.5 md:flex" style={{ top: '2px', left: '8px' }}>
                   <button
                     type="button"
                     onClick={() => setShowCustomerMode(true)}
