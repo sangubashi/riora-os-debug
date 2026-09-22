@@ -20,7 +20,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Playfair_Display } from 'next/font/google'
-import { X, Leaf, CalendarDays, Flower2, ImageOff, SlidersHorizontal, Camera, ImagePlus, Trash2 } from 'lucide-react'
+import { X, Leaf, CalendarDays, Flower2, ImageOff, SlidersHorizontal, Camera, ImagePlus, Trash2, Loader2 } from 'lucide-react'
 import {
   useCustomerModeData,
   CUSTOMER_MODE_ANGLES,
@@ -95,10 +95,25 @@ interface Props {
   onSwitchToStaffView?: () => void
 }
 
+/** ライトボックスの下部キャプション用。サムネイル一覧のcaptionTextと同じロジック
+ *  (撮影日があれば日付、無ければ来店回数)。撮影メモは写真に紐づく項目が無いため
+ *  表示対象外(カルテメモは別テーブル・別画面の情報のため、ここでは扱わない)。 */
+function buildLightboxCaption(
+  photo: { visitDate?: string | null; takenAt?: string | null; visitCountAt?: number | null } | null | undefined
+): string | null {
+  if (!photo) return null
+  const dateLabel = formatVisitDateLabel(photo.visitDate ?? photo.takenAt ?? null)
+  if (dateLabel) return dateLabel
+  if (photo.visitCountAt != null) return photo.visitCountAt === 1 ? '初回' : `${photo.visitCountAt}回目`
+  return null
+}
+
 export default function CustomerModeView({ customerId, customerName, onClose, onSwitchToStaffView }: Props) {
   const data = useCustomerModeData(customerId)
   const [angle, setAngle] = useState<CustomerModeAngleId>('face_front')
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+  /** ライトボックス表示中の写真。撮影日・来店回数のキャプションも合わせて保持する
+   *  (2026-09-22ユーザー要望: 拡大表示にメタデータも表示する)。 */
+  const [lightboxPhoto, setLightboxPhoto] = useState<{ url: string; caption: string | null } | null>(null)
   // スクロール領域への参照。「過去の写真」サムネイルタップ時に拡大モードの表示(上部)まで
   // スクロールを戻すために使う(お客様用カルテ再構成・2026-09-14)。
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -237,13 +252,24 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
    */
   async function openOccasionInLightbox(o: PhotoOccasion) {
     const photo = representativePhoto(o)
+    const caption = buildLightboxCaption(photo)
     const cached = data.photoUrls[photo.id] ?? thumbUrls[photo.id]
     if (cached) {
-      setLightboxUrl(cached)
+      setLightboxPhoto({ url: cached, caption })
       return
     }
+    // 'detail'品質のURL取得を試みている間、サムネイルが既にあればそれをフォールバック表示し
+    // (読み込み中に真っ黒/空白にならないようにする)、取得できた時点で高画質URLへ差し替える。
+    const fallbackThumb = thumbUrls[photo.id]
+    if (fallbackThumb) setLightboxPhoto({ url: fallbackThumb, caption })
     const url = await getPhotoSignedUrl(customerId, photo.id, 'detail')
-    if (url) setLightboxUrl(url)
+    if (url) {
+      setLightboxPhoto({ url, caption })
+    } else if (!fallbackThumb) {
+      // detail取得に失敗し、フォールバックできるサムネイルも無い場合は
+      // モーダルを開かない(何も表示できないまま開いてしまうことを防ぐ)。
+      setLightboxPhoto(null)
+    }
   }
 
   /**
@@ -517,7 +543,7 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
                   visitCountAt={leftPhoto?.visitCountAt ?? null}
                   visitDate={leftPhoto?.visitDate ?? leftPhoto?.takenAt ?? null}
                   emptyText={leftEmptyText}
-                  onExpand={leftUrl ? () => setLightboxUrl(leftUrl) : undefined}
+                  onExpand={leftUrl ? () => setLightboxPhoto({ url: leftUrl, caption: buildLightboxCaption(leftPhoto) }) : undefined}
                   aspectRatio="4 / 5"
                 />
                 <PhotoPanel
@@ -526,7 +552,7 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
                   visitCountAt={rightPhoto?.visitCountAt ?? null}
                   visitDate={rightPhoto?.visitDate ?? rightPhoto?.takenAt ?? null}
                   emptyText={rightEmptyText}
-                  onExpand={rightUrl ? () => setLightboxUrl(rightUrl) : undefined}
+                  onExpand={rightUrl ? () => setLightboxPhoto({ url: rightUrl, caption: buildLightboxCaption(rightPhoto) }) : undefined}
                   aspectRatio="4 / 5"
                 />
               </div>
@@ -772,23 +798,34 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
         </div>
       </div>
 
-      {/* ── 拡大表示(ピンチズーム対応、拡大モード廃止・2026-09-20ユーザー承認) ── */}
-      {lightboxUrl && (
+      {/* ── 拡大表示(ピンチズーム対応、拡大モード廃止・2026-09-20ユーザー承認)。
+          2026-09-22ユーザー要望により、撮影日等のキャプション表示と読み込み中/
+          失敗時のフォールバックを追加(いずれも既存のタップ→起動・背景タップ/×で閉じる
+          という導線自体には手を加えていない、表示内容の拡充のみ)。 ── */}
+      {lightboxPhoto && (
         <div
-          onClick={() => setLightboxUrl(null)}
+          onClick={() => setLightboxPhoto(null)}
           style={{
             position: 'fixed', inset: 0, zIndex: 320, background: 'rgba(30,24,16,0.85)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '32px',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px',
           }}
         >
           {/* 画像自体へのタップはズーム操作(ピンチ/ダブルタップ)のため、背景への
               クリックとして閉じてしまわないようstopPropagationする。 */}
-          <div onClick={e => e.stopPropagation()} style={{ maxWidth: '100%', maxHeight: '100%' }}>
-            <ZoomableLightboxImage url={lightboxUrl} />
+          <div onClick={e => e.stopPropagation()} style={{ maxWidth: '100%', maxHeight: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+            <ZoomableLightboxImage url={lightboxPhoto.url} />
+            {lightboxPhoto.caption && (
+              <span style={{
+                fontSize: '13px', fontWeight: 700, color: '#fff',
+                background: 'rgba(255,255,255,0.15)', padding: '6px 16px', borderRadius: '999px',
+              }}>
+                {lightboxPhoto.caption}
+              </span>
+            )}
           </div>
           <button
             type="button"
-            onClick={() => setLightboxUrl(null)}
+            onClick={() => setLightboxPhoto(null)}
             aria-label="閉じる"
             style={{
               position: 'absolute', top: 'max(20px, env(safe-area-inset-top))', right: '24px',
@@ -919,27 +956,49 @@ function ShortcutButton({
  */
 function ZoomableLightboxImage({ url }: { url: string }) {
   const zoom = usePinchZoom()
+  // 読み込み中/失敗時のフォールバック表示(2026-09-22ユーザー要望)。urlが切り替わる
+  // (別の写真を開き直す・fetch中のサムネイル→detail品質への差し替え)たびに状態を
+  // リセットし、直前の写真の表示が一瞬残ることを防ぐ。
+  const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading')
 
   useEffect(() => {
     zoom.reset()
-    // urlが切り替わるたび(=別の写真をタップして開き直すたび)にズーム状態をリセットする。
+    setStatus('loading')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url])
 
   return (
     <div
-      style={{ width: '100%', height: '100%', touchAction: 'none' }}
+      style={{ width: '100%', height: '100%', touchAction: 'none', position: 'relative', minWidth: '120px', minHeight: '120px' }}
       onTouchStart={zoom.handlers.onTouchStart}
       onTouchMove={zoom.handlers.onTouchMove}
       onTouchEnd={zoom.handlers.onTouchEnd}
     >
+      {status !== 'loaded' && (
+        <div style={{
+          position: status === 'loading' ? 'absolute' : 'static', inset: 0,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          gap: '8px', color: 'rgba(255,255,255,0.85)', padding: '40px',
+        }}>
+          {status === 'loading' ? (
+            <Loader2 size={28} className="animate-spin" />
+          ) : (
+            <>
+              <ImageOff size={28} />
+              <span style={{ fontSize: '13px' }}>画像を読み込めませんでした</span>
+            </>
+          )}
+        </div>
+      )}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={url}
         alt=""
+        onLoad={() => setStatus('loaded')}
+        onError={() => setStatus('error')}
         style={{
           maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '8px',
-          display: 'block', margin: '0 auto',
+          display: status === 'loaded' ? 'block' : 'none', margin: '0 auto',
           transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})`,
           transformOrigin: 'center',
           transition: zoom.scale === 1 ? 'transform 0.2s ease' : 'none',
