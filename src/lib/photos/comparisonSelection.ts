@@ -50,7 +50,11 @@ export function groupPhotosByBodyPart(photos: TimelinePhoto[]): BodyPartPhotoGro
  * - visit_idがあれば `visit:${visitId}`
  * - visit_idがnullなら `date:${YYYY-MM-DD}`(taken_atのUTC日付部分)
  */
-function occasionKey(photo: TimelinePhoto): string {
+/**
+ * 2026-09-22: お客様モードの「同日写真一覧(ギャラリー)」機能で、角度をまたいで
+ * 同一撮影機会の写真を集める用途にexportした(ロジック自体は無変更)。
+ */
+export function occasionKey(photo: TimelinePhoto): string {
   return photo.visitId ? `visit:${photo.visitId}` : `date:${photo.takenAt.slice(0, 10)}`
 }
 

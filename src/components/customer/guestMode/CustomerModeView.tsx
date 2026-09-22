@@ -32,11 +32,13 @@ import {
   buildPreviousComparison,
   buildFirstComparison,
   hasDistinctFirstOccasion,
+  occasionKey,
   type BodyPartPhotoGroup,
   type ComparisonBasis,
   type PhotoOccasion,
 } from '@/lib/photos/comparisonSelection'
 import { getPhotoSignedUrl, getBatchSignedUrls, type TimelinePhoto } from '@/lib/photos/photoApiClient'
+import { bodyPartLabel } from '@/lib/photos/bodyParts'
 import { usePinchZoom } from './usePinchZoom'
 import { useLongPress } from './useLongPress'
 import PhotoCompareScreen from '@/components/customer/photoCompare/PhotoCompareScreen'
@@ -114,6 +116,15 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
   /** ライトボックス表示中の写真。撮影日・来店回数のキャプションも合わせて保持する
    *  (2026-09-22ユーザー要望: 拡大表示にメタデータも表示する)。 */
   const [lightboxPhoto, setLightboxPhoto] = useState<{ url: string; caption: string | null } | null>(null)
+  /** 「過去の写真」タップ時の同日写真一覧(ギャラリー、2026-09-22ユーザー要望)。
+   *  角度(正面/右斜め/左斜め/額)をまたいで同一撮影機会の写真をすべて集めたもの。
+   *  グリッド内の個別写真をタップするとlightboxPhotoが別途開く(ギャラリー自体は
+   *  閉じない。ライトボックスを閉じればギャラリーへ戻れる)。 */
+  const [galleryOccasion, setGalleryOccasion] = useState<{
+    dateLabel: string | null
+    visitCountAt: number | null
+    photos: TimelinePhoto[]
+  } | null>(null)
   // スクロール領域への参照。「過去の写真」サムネイルタップ時に拡大モードの表示(上部)まで
   // スクロールを戻すために使う(お客様用カルテ再構成・2026-09-14)。
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -245,27 +256,21 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
   const rightEmptyText = freeSelectMode ? '「過去の写真」から2枚目をタップして選んでください' : 'まだ写真がありません'
 
   /**
-   * 「過去の写真」サムネイルタップ: 拡大モード切替を廃止し、ライトボックス(ピンチズーム対応)で
-   * その撮影機会の代表写真を直接開く(拡大モード廃止・比較モード常時表示化・2026-09-20
-   * ユーザー承認)。事前取得済み(photoUrls/thumbUrls)のURLはサムネイル品質のことがあるため、
-   * 無ければ'detail'品質のsigned URLを都度取得する(旧enlargedPhoto用の取得ロジックを踏襲)。
+   * ギャラリー内(グリッド)の個別写真タップ: ライトボックス(ピンチズーム対応)で単独拡大表示する
+   * (2026-09-20ユーザー承認のライトボックス機構をそのまま踏襲)。事前取得済み(photoUrls/
+   * thumbUrls)のURLはサムネイル品質のことがあるため、無ければ'detail'品質のsigned URLを
+   * 都度取得する。
    */
-  async function openOccasionInLightbox(o: PhotoOccasion) {
-    const photo = representativePhoto(o)
+  async function openPhotoInLightbox(photo: TimelinePhoto) {
     const caption = buildLightboxCaption(photo)
     const cached = data.photoUrls[photo.id] ?? thumbUrls[photo.id]
-    if (cached) {
-      setLightboxPhoto({ url: cached, caption })
-      return
-    }
+    if (cached) setLightboxPhoto({ url: cached, caption })
     // 'detail'品質のURL取得を試みている間、サムネイルが既にあればそれをフォールバック表示し
     // (読み込み中に真っ黒/空白にならないようにする)、取得できた時点で高画質URLへ差し替える。
-    const fallbackThumb = thumbUrls[photo.id]
-    if (fallbackThumb) setLightboxPhoto({ url: fallbackThumb, caption })
     const url = await getPhotoSignedUrl(customerId, photo.id, 'detail')
     if (url) {
       setLightboxPhoto({ url, caption })
-    } else if (!fallbackThumb) {
+    } else if (!cached) {
       // detail取得に失敗し、フォールバックできるサムネイルも無い場合は
       // モーダルを開かない(何も表示できないまま開いてしまうことを防ぐ)。
       setLightboxPhoto(null)
@@ -273,15 +278,47 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
   }
 
   /**
+   * 「過去の写真」サムネイルタップ: 単独拡大ではなく、同一撮影機会(同じvisit、無ければ
+   * 同じ日付)の写真を角度(正面/右斜め/左斜め/額)を問わず全て集めた一覧(ギャラリー)を開く
+   * (2026-09-22ユーザー要望: 「その日に撮影された写真が一目でまとめて確認できること」を
+   * 優先)。photosByAngleは既にlistCustomerPhotosTimeline()で取得済みの全角度分の写真を
+   * 角度別に振り分けたものなので、新規APIコールは不要でクライアント側の絞り込みのみで済む。
+   * ギャラリー内の個別写真タップでさらにライトボックス拡大する(openPhotoInLightbox)。
+   */
+  function openSameDayGallery(o: PhotoOccasion) {
+    const repPhoto = representativePhoto(o)
+    const key = occasionKey(repPhoto)
+    const allPhotos = Object.values(data.photosByAngle).flat()
+    const order = new Map(CUSTOMER_MODE_ANGLES.map((a, i) => [a.id as string, i]))
+    const samePhotos = allPhotos
+      .filter(p => occasionKey(p) === key)
+      .sort((a, b) => (order.get(a.bodyPart) ?? 99) - (order.get(b.bodyPart) ?? 99))
+
+    setGalleryOccasion({
+      dateLabel: formatVisitDateLabel(repPhoto.visitDate ?? repPhoto.takenAt),
+      visitCountAt: repPhoto.visitCountAt,
+      photos: samePhotos,
+    })
+
+    // グリッド表示に必要なサムネイルURLのうち、未取得のものだけまとめて取りに行く。
+    const missingIds = samePhotos.map(p => p.id).filter(id => !data.photoUrls[id] && !thumbUrls[id])
+    if (missingIds.length > 0) {
+      void getBatchSignedUrls(customerId, missingIds, 'thumbnail').then(urls => {
+        if (Object.keys(urls).length > 0) setThumbUrls(prev => ({ ...prev, ...urls }))
+      })
+    }
+  }
+
+  /**
    * 「過去の写真」サムネイルタップ: 自由選択モード中は比較対象へのピン留め/解除、
-   * それ以外はライトボックス表示(お客様用カルテ自由選択比較・2026-09-15・設計確定、
-   * 拡大モード廃止に伴い2026-09-20更新)。3枚目のタップは先入れ先出し(1枚目を追い出し、
+   * それ以外は同日写真一覧(ギャラリー)表示(お客様用カルテ自由選択比較・2026-09-15・
+   * 設計確定、2026-09-22ギャラリー化)。3枚目のタップは先入れ先出し(1枚目を追い出し、
    * 2枚目だった写真を1枚目へ繰り上げ、新しい写真を2枚目にする)で「常に直近タップした2枚」
    * を維持する。
    */
   function onThumbnailTap(o: PhotoOccasion) {
     if (!freeSelectMode) {
-      void openOccasionInLightbox(o)
+      openSameDayGallery(o)
       return
     }
     const photo = representativePhoto(o)
@@ -686,8 +723,10 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
               )}
 
               {/* 過去の写真 — 現在選択中の角度タブに連動したサムネイル一覧(お客様用カルテ
-                  再構成・2026-09-14)。タップするとライトボックス(ピンチズーム対応)でその回の
-                  写真を表示する(拡大モード廃止・2026-09-20ユーザー承認)。 */}
+                  再構成・2026-09-14)。タップすると同日写真一覧(ギャラリー、角度をまたいで
+                  同一撮影機会の写真を全て表示)を開く(拡大モード廃止・2026-09-20ユーザー承認、
+                  ギャラリー化・2026-09-22ユーザー要望)。ギャラリー内の個別写真タップで
+                  さらにライトボックス(ピンチズーム対応)の単独拡大表示を開く。 */}
               {occasions.length > 0 && (
                 <Card title="過去の写真">
                   <div
@@ -715,7 +754,7 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
                             aria-label={
                               freeSelectMode
                                 ? (pinSlot ? `${dateLabel ?? ''}の写真の選択を解除` : `${dateLabel ?? ''}の写真を比較対象に選ぶ`)
-                                : `${dateLabel ?? ''}の写真を拡大表示`
+                                : `${dateLabel ?? ''}に撮影した写真の一覧を表示`
                             }
                             style={{
                               position: 'relative', aspectRatio: '1 / 1', borderRadius: '10px', overflow: 'hidden',
@@ -797,6 +836,97 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
           )}
         </div>
       </div>
+
+      {/* ── 同日写真一覧(ギャラリー、2026-09-22ユーザー要望)。「過去の写真」サムネイルタップ時に
+          単独拡大ではなくまず開く一覧。角度(正面/右斜め/左斜め/額)をまたいで同一撮影機会の
+          写真をグリッドで並べ、ひと目で比較できるようにする。グリッド内の個別写真タップで
+          さらにlightboxPhoto(下記、ピンチズーム対応の全画面拡大)を開く(zIndexはこちらが
+          下・ライトボックスが上なので、ライトボックスを閉じればこのギャラリーへ戻る)。 ── */}
+      {galleryOccasion && (
+        <div
+          onClick={() => setGalleryOccasion(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 310, background: 'rgba(30,24,16,0.85)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: PALETTE.bg, borderRadius: '18px', width: '100%', maxWidth: '720px',
+              maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            }}
+          >
+            <div style={{
+              flexShrink: 0, padding: '16px 20px', borderBottom: `1px solid ${PALETTE.border}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
+            }}>
+              <div>
+                <p style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: PALETTE.text, fontFamily: headingFont.style.fontFamily }}>
+                  {galleryOccasion.dateLabel ?? '撮影日不明'}
+                  {galleryOccasion.visitCountAt != null && (
+                    <span style={{ fontSize: '13px', fontWeight: 700, marginLeft: '8px' }}>
+                      ({galleryOccasion.visitCountAt === 1 ? '初回のご来店' : `第${galleryOccasion.visitCountAt}回ご来店`})
+                    </span>
+                  )}
+                </p>
+                <p style={{ margin: '2px 0 0', fontSize: '12px', color: PALETTE.muted }}>
+                  撮影枚数: {galleryOccasion.photos.length}枚
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGalleryOccasion(null)}
+                aria-label="閉じる"
+                style={{
+                  flexShrink: 0, width: '36px', height: '36px', borderRadius: '50%',
+                  background: PALETTE.card, border: `1px solid ${PALETTE.border}`, color: PALETTE.text,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div style={{
+              padding: '16px 20px', overflowY: 'auto',
+              display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '12px',
+            }}>
+              {galleryOccasion.photos.map(photo => {
+                const url = data.photoUrls[photo.id] ?? thumbUrls[photo.id]
+                return (
+                  <button
+                    key={photo.id}
+                    type="button"
+                    onClick={() => { void openPhotoInLightbox(photo) }}
+                    aria-label={`${bodyPartLabel(photo.bodyPart)}の写真を拡大表示`}
+                    style={{
+                      position: 'relative', aspectRatio: '4 / 5', borderRadius: '10px', overflow: 'hidden',
+                      padding: 0, cursor: 'pointer', background: '#EFE8DA', border: `1px solid ${PALETTE.border}`,
+                    }}
+                  >
+                    {url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                    ) : (
+                      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <ImageOff size={18} strokeWidth={1.3} color={PALETTE.gold} />
+                      </div>
+                    )}
+                    <span style={{
+                      position: 'absolute', left: 0, right: 0, bottom: 0,
+                      background: 'rgba(20,16,12,0.65)', color: '#fff', fontSize: '11px', fontWeight: 600,
+                      padding: '4px 6px', textAlign: 'center',
+                    }}>
+                      {bodyPartLabel(photo.bodyPart)}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── 拡大表示(ピンチズーム対応、拡大モード廃止・2026-09-20ユーザー承認)。
           2026-09-22ユーザー要望により、撮影日等のキャプション表示と読み込み中/
