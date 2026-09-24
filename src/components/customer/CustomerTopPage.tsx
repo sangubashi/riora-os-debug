@@ -7,13 +7,11 @@
  * 「接客ログ / AI Timeline」ボタンから同じprops(customer/reservation)でそのまま
  * 呼び出せるようにする(機能を失わないための導線、CustomerBottomSheet自体は無改修)。
  *
- * 基本情報について: 現行の brain_customers テーブルには生年月日(birth_date)列が
- * 存在せず、CSV取込(salonBoardParser.ts)ではむしろ生年月日をPII(個人情報)として
- * 意図的に除去する方針が既に取られている(piiSanitizer.ts)。そのため本画面では
- * 「生年月日・年齢」の代わりに、既存の age_group(年代、例:「30代」)のみを表示する。
- * 正確な生年月日・年齢を表示するには、このPII除去方針を見直した上でのスキーマ変更
- * (brain_customersへのbirth_date列追加)とデータ入力導線の新設が別途必要になるため、
- * 今回は実装していない(要ユーザー判断、詳細はCLAUDE.md追記を参照)。
+ * 基本情報について(2026-09-24ユーザー承認・PII方針の例外化): 現場スタッフ運用の
+ * 要望により、brain_customers.birth_date列を新設し、生年月日・年齢を正確に表示する
+ * (以前はage_group「年代」のみの表示だったが、これに置き換えた)。生年月日が未登録の
+ * 顧客は「未設定」と表示する。年齢は満年齢(誕生日を迎えていなければ1引く)で算出する。
+ * 電話・メール・住所等、生年月日以外のPII除外方針は変更していない。
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -38,7 +36,32 @@ interface QuestionnaireState {
 
 interface CustomerDetailResponse {
   success:  boolean
-  customer?: { ageGroup?: string | null }
+  customer?: { birthDate?: string | null }
+}
+
+/** 満年齢を計算する(誕生日を迎えていなければ1引く)。 */
+function calculateAge(birthDate: string): number | null {
+  const m = birthDate.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!m) return null
+  const [, y, mo, d] = m
+  const birth = new Date(Number(y), Number(mo) - 1, Number(d))
+  if (Number.isNaN(birth.getTime())) return null
+
+  const now = new Date()
+  let age = now.getFullYear() - birth.getFullYear()
+  const hasHadBirthdayThisYear =
+    now.getMonth() > birth.getMonth() ||
+    (now.getMonth() === birth.getMonth() && now.getDate() >= birth.getDate())
+  if (!hasHadBirthdayThisYear) age -= 1
+  return age
+}
+
+/** "YYYY-MM-DD" → "1987年5月22日"。 */
+function formatBirthDateJapanese(birthDate: string): string | null {
+  const m = birthDate.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!m) return null
+  const [, y, mo, d] = m
+  return `${y}年${Number(mo)}月${Number(d)}日`
 }
 
 interface QuestionnaireResponse {
@@ -50,7 +73,7 @@ interface QuestionnaireResponse {
 
 export default function CustomerTopPage({ customer, reservation, onClose }: Props) {
   const router = useRouter()
-  const [ageGroup, setAgeGroup] = useState<string | null>(null)
+  const [birthDate, setBirthDate] = useState<string | null>(null)
   const [questionnaire, setQuestionnaire] = useState<QuestionnaireState | null>(null)
   const [questionnaireLoading, setQuestionnaireLoading] = useState(true)
   const [showEnlarged, setShowEnlarged]     = useState(false)
@@ -85,10 +108,10 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
         const res = await authedFetch(`/api/customers/${customer.id}`)
         if (res.ok) {
           const json = await res.json() as CustomerDetailResponse
-          if (!cancelled) setAgeGroup(json.customer?.ageGroup ?? null)
+          if (!cancelled) setBirthDate(json.customer?.birthDate ?? null)
         }
       } catch {
-        /* 取得失敗時は年代欄を空のまま(致命的にしない) */
+        /* 取得失敗時は生年月日欄を空のまま(致命的にしない) */
       }
     })()
     return () => { cancelled = true }
@@ -129,7 +152,13 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
             {customer.name} さま
           </p>
           <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>
-            {ageGroup ? `年代: ${ageGroup}` : '年代: 未登録'}
+            {(() => {
+              if (!birthDate) return '生年月日: 未設定'
+              const formatted = formatBirthDateJapanese(birthDate)
+              const age = calculateAge(birthDate)
+              if (!formatted || age === null) return '生年月日: 未設定'
+              return `${formatted}（${age}歳）`
+            })()}
           </p>
         </div>
 

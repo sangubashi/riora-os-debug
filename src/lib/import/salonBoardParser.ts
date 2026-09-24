@@ -2,9 +2,15 @@
  * salonBoardParser.ts  — SalonBoard CSV パーサー
  *
  * 設計原則:
- *   - PII（電話・メール・住所・生年月日）は最初の段階で除去
+ *   - PII（電話・メール・住所）は最初の段階で除去
  *   - カラム名の揺れ（全半角・スペース・大文字小文字）を吸収
  *   - 不正行は skip して errors に記録（処理は止めない）
+ *
+ * 生年月日について(2026-09-24ユーザー承認・PII方針の例外化): 従来は
+ * 「生年月日」列名もPIIブラックリストに含めて自動スキップしていたが、
+ * 現場スタッフ運用の要望により、生年月日に限りPII除外方針を解除し、
+ * brain_customers.birth_dateへ取り込めるようにした。電話・メール・住所は
+ * 従来通り除去対象のまま変更していない。
  */
 
 import type { SalonBoardRawRow, SalonBoardColumnMap } from '@/types'
@@ -29,9 +35,6 @@ const PII_COLUMN_PATTERNS = [
   /住所/,
   /address/i,
   /番地/,
-  /生年月日/,
-  /birthday/i,
-  /birth.?date/i,
 ]
 
 function isPiiColumn(colName: string): boolean {
@@ -60,6 +63,7 @@ const COLUMN_ALIASES: Record<keyof SalonBoardColumnMap, string[]> = {
   isDesignated:  ['指名', '指名有無', 'designated'],
   ageGroup:      ['年齢', '年代', '年齢層', 'age', 'agegroup'],
   birthMonth:    ['誕生月', '誕生日月', 'birthmonth'],
+  birthDate:     ['生年月日', '誕生日', 'birthdate', 'birthday', 'dob'],
 }
 
 function detectColumnMap(headers: string[]): SalonBoardColumnMap {
@@ -196,6 +200,7 @@ export function parseSalonBoardCsv(
       customerName:  normalizeCustomerName(customerName),
       ageGroup:      get(colMap.ageGroup)    || undefined,
       birthMonth:    parseBirthMonth(get(colMap.birthMonth)),
+      birthDate:     parseDate(get(colMap.birthDate)) || undefined,
       visitDate,
       sales:         parseSales(get(colMap.sales)),
       treatment:     normalizeTreatmentName(get(colMap.treatment) || '不明'),

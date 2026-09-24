@@ -4,10 +4,16 @@
  * 設計根拠: docs/architecture/CSVImportSecurityArchitecture.md §3-1
  *
  * salonBoardDetailParser.tsが読み取るSalonBoard売上明細CSVには電話番号/メール/郵便番号/
- * 住所/生年月日の列が存在しない(HEADER_MAPに未定義のため、そもそもパース時点で読み取られ
+ * 住所の列が存在しない(HEADER_MAPに未定義のため、そもそもパース時点で読み取られ
  * ない=DROPが構造的に保証されている)。本モジュールが担うのは2点のみ:
  *   1. 会員番号(お客様番号) → sha256ハッシュ化(store.anonSalt併用・原値は保持しない)
  *   2. KEEP列(氏名・カナ・スタッフ名)への残存PII混入の走査(最終防衛線・pure・throwしない)
+ *
+ * 生年月日について(2026-09-24ユーザー承認・PII方針の例外化): 本モジュール自体は
+ * 生年月日を扱っていない(そもそも本モジュールの対象外)。実際に生年月日列を
+ * PII扱いで自動スキップしていたのは別モジュールのsalonBoardParser.ts(isPiiColumn・
+ * PII_COLUMN_PATTERNS)であり、今回の方針変更はそちら側で実施した
+ * (COLUMN_ALIASES.birthDate追加・ブラックリストから除外)。
  */
 
 import { createHash } from 'crypto'

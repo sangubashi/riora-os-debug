@@ -67,6 +67,7 @@ function aggregateCustomers(
         displayName:      toDisplayName(row.customerName),
         ageGroup:         row.ageGroup,
         birthMonth:       row.birthMonth,
+        birthDate:        row.birthDate,
         visits:           0,
         totalSales:       0,
         retailSales:      0,
@@ -103,9 +104,10 @@ function aggregateCustomers(
       c.assignedStaff.push(row.staffName)
     }
 
-    // birthMonth / ageGroup は後勝ち
+    // birthMonth / ageGroup / birthDate は後勝ち
     if (row.birthMonth) c.birthMonth = row.birthMonth
     if (row.ageGroup)   c.ageGroup   = row.ageGroup
+    if (row.birthDate)  c.birthDate  = row.birthDate
   })
 
   return map

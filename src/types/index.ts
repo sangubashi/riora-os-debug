@@ -914,6 +914,7 @@ export interface SalonBoardRawRow {
   customerName:    string
   ageGroup?:       string        // 例: '30代'
   birthMonth?:     number        // 1〜12
+  birthDate?:      string        // YYYY-MM-DD(2026-09-24ユーザー承認・PII方針の例外化)
   visitDate:       string        // YYYY-MM-DD
   sales:           number        // 売上（円）
   treatment:       string        // 施術名
@@ -929,6 +930,7 @@ export interface SalonBoardCustomer {
   displayName:     string        // 表示用（苗字のみ or 匿名化）
   ageGroup?:       string
   birthMonth?:     number
+  birthDate?:      string        // YYYY-MM-DD
   visits:          number
   totalSales:      number
   retailSales:     number
@@ -965,6 +967,7 @@ export interface SalonBoardColumnMap {
   isDesignated?:  string
   ageGroup?:      string
   birthMonth?:    string
+  birthDate?:     string
 }
 
 // ─── SalonBoard CSV 保存結果 ──────────────────────────────────────────────────

@@ -4,7 +4,7 @@ import type { ICustomerRepo } from '../interfaces';
 import { toBrainCustomerInsert, toCustomer, type BrainCustomerRow } from './mappers';
 
 const CUSTOMER_COLUMNS =
-  'id, store_id, name, age_group, customer_type, type_confidence, goal_note, wedding_date, ' +
+  'id, store_id, name, age_group, birth_date, customer_type, type_confidence, goal_note, wedding_date, ' +
   'acquisition_channel, first_visit_date, assigned_staff_id, is_subscriber, subscribed_at, ' +
   'churn_score, churn_reason, consent_anonymized_learning, prefecture, city, external_key_hash';
 
@@ -59,6 +59,7 @@ export class CustomerRepo implements ICustomerRepo {
     storeId: UUID;
     name: string;
     ageGroup: string | null;
+    birthDate?: string | null;
     firstVisitDate: string | null;
     prefecture: string | null;
     city: string | null;
@@ -66,7 +67,7 @@ export class CustomerRepo implements ICustomerRepo {
   }): Promise<Customer> {
     const { data, error } = await this.client
       .from('brain_customers')
-      .insert(toBrainCustomerInsert(input))
+      .insert(toBrainCustomerInsert({ ...input, birthDate: input.birthDate ?? null }))
       .select(CUSTOMER_COLUMNS)
       .single();
 
@@ -78,6 +79,7 @@ export class CustomerRepo implements ICustomerRepo {
 
   async patchFromImport(id: UUID, input: {
     ageGroup: string | null;
+    birthDate?: string | null;
     firstVisitDate: string | null;
     prefecture: string | null;
     city: string | null;
@@ -91,6 +93,7 @@ export class CustomerRepo implements ICustomerRepo {
       .from('brain_customers')
       .update({
         age_group: existing.ageGroup ?? input.ageGroup,
+        birth_date: existing.birthDate ?? input.birthDate ?? null,
         first_visit_date: existing.firstVisitDate ?? input.firstVisitDate,
         prefecture: existing.prefecture ?? input.prefecture,
         city: existing.city ?? input.city,

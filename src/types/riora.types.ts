@@ -46,6 +46,12 @@ export interface Customer {
   storeId: string;
   name: string;
   ageGroup: string | null;
+  /**
+   * YYYY-MM-DD。2026-09-24ユーザー承認によりPII除外方針を例外化して追加。
+   * 既存の大量のテストフィクスチャ(Customer型の完全リテラル)を壊さないよう
+   * optionalにしている(未指定時はnull相当として扱うこと)。
+   */
+  birthDate?: string | null;
   customerType: CustomerType | null;
   typeConfidence: number;
   goalNote: string | null;

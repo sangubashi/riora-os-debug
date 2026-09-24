@@ -205,6 +205,7 @@ export interface BrainCustomerRow {
   store_id: string;
   name: string;
   age_group: string | null;
+  birth_date?: string | null;
   customer_type: CustomerType | null;
   type_confidence: number | string;
   goal_note: string | null;
@@ -228,6 +229,7 @@ export function toCustomer(row: BrainCustomerRow): Customer {
     storeId: row.store_id,
     name: row.name,
     ageGroup: row.age_group,
+    birthDate: row.birth_date ?? null,
     customerType: row.customer_type,
     typeConfidence: Number(row.type_confidence),
     goalNote: row.goal_note,
@@ -251,6 +253,7 @@ export function toBrainCustomerInsert(input: {
   storeId: string;
   name: string;
   ageGroup: string | null;
+  birthDate: string | null;
   firstVisitDate: string | null;
   prefecture: string | null;
   city: string | null;
@@ -260,6 +263,7 @@ export function toBrainCustomerInsert(input: {
     store_id: input.storeId,
     name: input.name,
     age_group: input.ageGroup,
+    birth_date: input.birthDate,
     first_visit_date: input.firstVisitDate,
     prefecture: input.prefecture,
     city: input.city,

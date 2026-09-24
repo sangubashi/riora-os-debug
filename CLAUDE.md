@@ -1300,6 +1300,60 @@ CSV取込(`salonBoardParser.ts`)ではむしろ生年月日をPII(個人情報)�
 `brain_customer_photos`のphoto_type制約は今回一切変更していない。5タブ構成・TL-5構成・
 AI提案の会話トーン・LINE領域・admin領域については引き続き凍結を継続する。
 
+### v1.0.1 着手済み事項（生年月日・年齢の正確表示・PII方針の例外化のみ・2026-09-24ユーザー承認）
+
+直前のエントリで「要ユーザー判断」として保留していた生年月日・年齢の実データ表示について、
+現場スタッフ運用上の要望によりユーザーから明示的に承認を得たため、PII除外方針を生年月日に
+限り例外化して実装した。電話番号・メール・住所等、生年月日以外のPII除外方針は変更していない。
+
+- **マイグレーション(レビュー用に作成のみ、未適用)**:
+  `supabase/migrations/20260924010000_brain_customers_birth_date.sql`
+  — `brain_customers`に`birth_date`(date, nullable)を追加。
+- **`src/lib/import/salonBoardParser.ts`**: 実際に生年月日を自動スキップしていた箇所
+  (`PII_COLUMN_PATTERNS`の`/生年月日/`・`/birthday/i`・`/birth.?date/i`)を削除し、
+  `COLUMN_ALIASES.birthDate`(`生年月日`/`誕生日`/`birthdate`/`birthday`/`dob`)を追加。
+  行データへの`birthDate`(既存`parseDate()`を再利用、YYYY-MM-DD)の取込も実装した。
+  電話・メール・住所のブラックリストは変更していない。
+  **重要な事実確認**: `piiSanitizer.ts`自体は生年月日を扱っておらず(会員番号ハッシュ化・
+  KEEP列の残存PII走査のみが役割)、実際の除去ロジックは本ファイル(`isPiiColumn`)側に
+  あったため、`piiSanitizer.ts`は説明コメントの訂正のみ行い、ロジック変更はしていない。
+  `docs/security/PII_POLICY_V1.md`にも追記済み。
+- **配線経路**: `SalonBoardImportEngine.ts`(`aggregateCustomers`の後勝ちロジックに
+  `birthDate`追加)→`src/types/index.ts`(`SalonBoardRawRow`/`SalonBoardCustomer`/
+  `SalonBoardColumnMap`に`birthDate`追加)。ただし**現行の本番CSV取込パイプライン
+  (`csvImportPipeline.ts`、売上明細CSVを処理する側)は生年月日に相当する列が
+  そもそもCSV仕様に存在しないため、この経路からは自動で入力されない**
+  (`csvImportPipeline.ts`自体は無変更。将来、生年月日列を持つ別形式の顧客マスタCSVに
+  対応する場合の受け皿として`salonBoardParser.ts`側のみ先行整備した、という位置づけ)。
+- **リポジトリ層**: `src/types/riora.types.ts`の`Customer`型に`birthDate?: string | null`
+  を追加(既存の大量のテストフィクスチャ(`Customer`型の完全リテラル)を壊さないよう
+  あえてoptionalにした)。`CustomerRepo.ts`(`CUSTOMER_COLUMNS`に`birth_date`追加、
+  `create`/`patchFromImport`の入力に`birthDate?`追加)・`mappers.ts`
+  (`BrainCustomerRow`/`toCustomer`/`toBrainCustomerInsert`)・`interfaces.ts`
+  (`ICustomerRepo`)に配線した。`GET /api/customers/[id]`は`customer`オブジェクトを
+  そのまま返す既存実装のため、ルート自体の変更は不要だった。
+- **`CustomerTopPage.tsx`**: 前回追加した「年代(age_group)」表示を、`birthDate`から
+  算出する正確な生年月日・満年齢表示に置き換えた(例:「1987年5月22日（39歳）」)。
+  未設定時は「生年月日: 未設定」と表示する。年齢計算は満年齢(誕生日を迎えていなければ
+  1引く)。
+- **手動入力導線は今回新設していない**: リポジトリ全体を確認したところ、
+  `customerRepo.create()`の呼び出し元はCSV取込パイプライン(`csvImportPipeline.ts`・
+  `reservationImportPipeline.ts`)のみで、顧客情報を個別に手入力する画面(顧客新規登録・
+  編集フォーム)は現状存在しない。そのため、上記CSV経路(将来の顧客マスタCSV対応時)以外で
+  `birth_date`を設定する手段は今回実装していない(直接DB更新以外に入力経路が無い状態)。
+  必要であれば別途、手動編集UIの新設について指示を仰ぐこと。
+- **検証結果**: `npm run typecheck`・`npm run build`ともにパス(既存の無関係な失敗のみ、
+  今回の変更による新規エラーは無い)。`next-env.d.ts`のbuild副作用は復元済み。
+  マイグレーション未適用のため、実データでの動作(生年月日入りCSVの取込・表示)は
+  実地検証していない。
+
+**この解除は上記(`brain_customers.birth_date`カラム追加、`salonBoardParser.ts`の
+生年月日PII方針例外化、`CustomerTopPage.tsx`の表示変更、および関連する型・リポジトリ層の
+配線)に限る。** 都道府県・市区町村(住所)・LINE User IDに関するPII方針、写真4アングル表示・
+撮影日付表示、`IpadPhotoCaptureModal.tsx`本体・`ghostSelection.ts`/`comparisonSelection.ts`・
+`brain_customer_photos`のphoto_type制約は今回一切変更していない。5タブ構成・TL-5構成・
+AI提案の会話トーン・LINE領域・admin領域については引き続き凍結を継続する。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

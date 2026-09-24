@@ -145,17 +145,20 @@ export interface ICustomerRepo {
     storeId: UUID;
     name: string;
     ageGroup: string | null;
+    /** YYYY-MM-DD。2026-09-24ユーザー承認によりPII除外方針を例外化して追加(省略可)。 */
+    birthDate?: string | null;
     firstVisitDate: string | null;
     prefecture: string | null;
     city: string | null;
     externalKeyHash: string | null;
   }): Promise<Customer>;
   /**
-   * 既存顧客のprefecture/city/age_group/first_visit_dateを空欄補完する(COALESCE方向・
+   * 既存顧客のprefecture/city/age_group/birth_date/first_visit_dateを空欄補完する(COALESCE方向・
    * 既存の手入力値は上書きしない)。CSV Import再取込時の更新に使用。
    */
   patchFromImport(id: UUID, input: {
     ageGroup: string | null;
+    birthDate?: string | null;
     firstVisitDate: string | null;
     prefecture: string | null;
     city: string | null;
