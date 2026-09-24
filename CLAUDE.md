@@ -1384,6 +1384,57 @@ AI提案の会話トーン・LINE領域・admin領域については引き続き
 **この解除は`KarteEntryScreen.tsx`の顧客タップ導線修正に限る。** `CustomerTopPage.tsx`・
 `CustomerBottomSheet.tsx`・`Phase1Screen.tsx`・`CustomersScreen.tsx`自体には一切触れていない。
 
+### v1.0.1 着手済み事項（スマホアプリ側と`/karte`専用領域の完全分離・CustomerTopPage表示調整のみ・2026-09-24ユーザー承認）
+
+直前の2エントリで「本日の予約」「顧客タブ」(Phase1Screen.tsx/CustomersScreen.tsx、
+スマホでも使う一般的なスタッフアプリ画面)にも`CustomerTopPage`経由の遷移を導入していたが、
+ユーザーから「スマホアプリとカルテ(`/karte`)は別物であるべき」との明確な指摘を受け、
+以下の通り切り分けた。
+
+- **`src/components/phase1/Phase1Screen.tsx`・`CustomersScreen.tsx`**: お客様名タップ時の
+  遷移を、`CustomerTopPage`経由から**元通りCustomerBottomSheetを直接開く挙動に完全に戻した**
+  (import・JSXともにcommit cc0ef4d以前の状態へ復元)。スマホアプリ側には顧客トップページ・
+  `/karte/[customerId]`への自動遷移は一切含まれない。
+- **`src/components/karte/KarteEntryScreen.tsx`**: 変更なし。「顧客トップページ→詳細ページ
+  (`/karte/[customerId]`)」の導線は`/karte`専用入口(このファイル)のみに限定される
+  (ファイル冒頭コメントに経緯を追記)。
+- **`src/components/customer/CustomerTopPage.tsx`**(`/karte`専用領域でのみ使用):
+  - 「接客ログ / AI Timeline」ボタン(CustomerBottomSheetへの導線)を削除した。
+    `showBottomSheet` state・関連render・`CustomerBottomSheet`のimportも合わせて削除
+    (呼び出し元が無くなったため。CustomerBottomSheet自体は無改修)。
+  - 敬称を「さま」(ひらがな)から「様」(漢字)に変更した(例:「杉原 良和 様」)。
+- **検証結果**: `npm run typecheck`・`npm run build`ともにパス(既存の無関係な失敗のみ)。
+  `next-env.d.ts`のbuild副作用は復元済み。
+
+**この解除は上記(スマホアプリ側2ファイルの遷移復元、CustomerTopPage.tsxのボタン削除・
+敬称変更)に限る。** `KarteEntryScreen.tsx`・`CustomerBottomSheet.tsx`自体には触れていない。
+
+#### 生年月日CSV取込の再確認結果(要ユーザー判断・未対応)
+
+ユーザー依頼により、`salonBoardParser.ts`のPII方針例外化(2026-09-24)が実際に
+`brain_customers.birth_date`へ取り込まれる状態になっているか再確認した。**結論:
+現状のCSV取込では生年月日は一切取り込まれない。** 前回のCLAUDE.md記載
+(「将来の顧客マスタCSV対応時の受け皿として先行整備」)は不正確だったため訂正する。
+
+- 実際に本番で使われているCSV取込は`app/api/admin/csv/import/route.ts`
+  → `csvImportPipeline.ts`(`runImportPipeline`)の1系統のみ。これは「売上明細CSV」
+  (`salonboard_utf8.csv`と同形式、列: 会計日/会計時間/お客様名/お客様番号/性別/
+  新規再来...)を処理し、`customerRepo.create()`/`patchFromImport()`経由で
+  `brain_customers`へ書き込む。**このCSV形式には生年月日に相当する列がそもそも
+  存在しない**(`csvImportPipeline.ts`冒頭コメントに元々明記されていた事実)。
+- 一方、生年月日PII例外化を行った`salonBoardParser.ts`は、`SalonBoardImportEngine.ts`
+  (`aggregateCustomers`)・`SalonBoardSaveEngine.ts`(`saveSalonBoardImport`、
+  **legacy `customers`テーブルへ書き込む別系統**、`brain_customers`ではない)からのみ
+  参照されており、**この一連(`SalonBoardImportEngine.ts`/`SalonBoardSaveEngine.ts`)を
+  呼び出すAPIルートがリポジトリ内に存在しない**(grep確認済み、`app/`配下に呼び出し元0件)。
+  実質的に現在使われていないコード経路であり、仮に呼ばれても書き込み先が
+  `brain_customers`ではなく別テーブルのため、いずれにせよ生年月日は反映されない。
+- **つまり現時点で`brain_customers.birth_date`を入力する経路はCSV取込・画面入力
+  いずれも存在せず、直接DB操作以外に設定手段が無い。** CSV経由で生年月日を取り込みたい
+  場合は、(a)売上明細CSVとは別に生年月日を含む顧客マスタCSVを用意しその専用取込を
+  新設するか、(b)顧客編集画面(現状存在しない)を新設するか、方針決定が必要
+  (今回はコード変更をせず、事実確認のみ実施)。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

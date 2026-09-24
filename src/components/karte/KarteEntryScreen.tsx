@@ -9,11 +9,17 @@
  * 自体はこの画面専用に新規実装・既存ファイルには触れない)を併設する。
  *
  * 顧客タップ時の遷移(2026-09-24ユーザー承認・不具合修正): 当初「顧客をタップすると
- * `/karte/[customerId]`へ直接遷移する」設計だったが、Phase1Screen.tsx/CustomersScreen.tsx
- * と同様に顧客トップページ(CustomerTopPage.tsx)を挟むよう修正した。CustomerTopPage内の
- * 「詳細ページを見る→」ボタンが`/karte/[customerId]`へのrouter.pushを担う(このファイル
- * 自体はrouter.pushを直接呼ばなくなった)。CustomerBottomSheetは既存通りimportしない
- * (CustomerTopPage内の「接客ログ/AI Timeline」ボタン経由でのみ間接的に開く)。
+ * `/karte/[customerId]`へ直接遷移する」設計だったが、顧客トップページ(CustomerTopPage.tsx)
+ * を挟むよう修正した。CustomerTopPage内の「詳細ページを見る→」ボタンが
+ * `/karte/[customerId]`へのrouter.pushを担う(このファイル自体はrouter.pushを直接
+ * 呼ばなくなった)。
+ *
+ * この「顧客トップページ→詳細ページ」の導線は`/karte`専用領域(このファイル)に限定する
+ * (2026-09-24ユーザー承認・スマホアプリ側との分離): Phase1Screen.tsx/CustomersScreen.tsx
+ * (スマホアプリ側の今日タブ/顧客タブ)は元通りCustomerBottomSheetを直接開く挙動に
+ * 差し戻し済み(顧客トップページ・`/karte`への自動遷移は含まない)。スマホアプリと
+ * カルテ専用画面は別物という前提のため、CustomerTopPageはこの`/karte`領域専用の
+ * コンポーネントとして扱う。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Search, Calendar } from 'lucide-react'

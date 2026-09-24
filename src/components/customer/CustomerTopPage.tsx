@@ -3,9 +3,10 @@
  * CustomerTopPage.tsx — 顧客トップページ(2026-09-24ユーザー承認)。
  *
  * 「本日の予約」「顧客タブ検索結果」でお客様名をタップした際の新しい遷移先。
- * 従来ここで直接開いていたCustomerBottomSheetは置き換えず、このページ内の
- * 「接客ログ / AI Timeline」ボタンから同じprops(customer/reservation)でそのまま
- * 呼び出せるようにする(機能を失わないための導線、CustomerBottomSheet自体は無改修)。
+ *
+ * 「接客ログ / AI Timeline」ボタン(CustomerBottomSheetへの導線)は2026-09-24
+ * ユーザー承認により削除した。CustomerBottomSheet自体は無改修のまま(呼び出し元が
+ * このファイルから無くなっただけ)。
  *
  * 基本情報について(2026-09-24ユーザー承認・PII方針の例外化): 現場スタッフ運用の
  * 要望により、brain_customers.birth_date列を新設し、生年月日・年齢を正確に表示する
@@ -18,7 +19,6 @@ import { useRouter } from 'next/navigation'
 import { X, ChevronRight, Camera } from 'lucide-react'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, headingFont } from '@/components/customer/shared/PhotoCompareKit'
-import CustomerBottomSheet from '@/components/customer/CustomerBottomSheet'
 import InitialQuestionnaireCaptureModal from '@/components/customer/ipadKarte/InitialQuestionnaireCaptureModal'
 import type { Customer, Reservation } from '@/types'
 
@@ -78,7 +78,6 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
   const [questionnaireLoading, setQuestionnaireLoading] = useState(true)
   const [showEnlarged, setShowEnlarged]     = useState(false)
   const [showCaptureModal, setShowCaptureModal] = useState(false)
-  const [showBottomSheet, setShowBottomSheet]   = useState(false)
 
   const fetchQuestionnaire = useCallback(async () => {
     setQuestionnaireLoading(true)
@@ -149,7 +148,7 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
         {/* 基本情報 */}
         <div style={cardStyle}>
           <p style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: PALETTE.text, fontFamily: headingFont.style.fontFamily }}>
-            {customer.name} さま
+            {customer.name} 様
           </p>
           <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>
             {(() => {
@@ -195,20 +194,6 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
             <Camera size={16} /> {questionnaire?.url ? '撮り直す・差し替える' : '撮影・登録する'}
           </button>
         </div>
-
-        {/* 既存機能への導線 */}
-        <button
-          type="button"
-          onClick={() => setShowBottomSheet(true)}
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-            padding: '14px 20px', borderRadius: '14px', border: `1.5px solid ${PALETTE.border}`,
-            background: 'none', color: PALETTE.text, fontSize: '14px', fontWeight: 700, cursor: 'pointer',
-            fontFamily: headingFont.style.fontFamily,
-          }}
-        >
-          接客ログ / AI Timeline
-        </button>
 
         {/* 詳細ページ導線 */}
         <button
@@ -258,16 +243,6 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
           onClose={() => setShowCaptureModal(false)}
           onSaved={() => { setShowCaptureModal(false); void fetchQuestionnaire() }}
         />
-      )}
-
-      {showBottomSheet && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 80 }}>
-          <CustomerBottomSheet
-            customer={customer}
-            reservation={reservation}
-            onClose={() => setShowBottomSheet(false)}
-          />
-        </div>
       )}
     </div>
   )
