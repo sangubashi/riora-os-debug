@@ -8,11 +8,19 @@
  *   2. 詳細版:  「お客様情報詳細」ページ全文(基本情報・来店情報・メッセージ配信先情報の
  *      見出しやヘルプ文言を含む、実際のコピペ結果)
  *
- * 電話番号は個人情報方針(docs/security/PII_POLICY_V1.md)により一切抽出しない
- * (このパーサー自体に電話番号用の正規表現を持たせない)。氏名(漢字)は既存顧客への
- * 追記対象ではなく確認表示専用(brain_customers.nameを上書きしない、誤表記で既存の
- * 正しい名前を壊すリスクを避けるため)。氏名(カナ)は2026-09-24ユーザー承認により
- * brain_customers.name_kanaへ保存する(フリガナ表示用、電話番号のような機微情報ではない)。
+ * 電話番号について(2026-09-24ユーザー承認・PII方針の例外化): 従来は個人情報方針
+ * (docs/security/PII_POLICY_V1.md、「電話番号は保存しない」)により一切抽出しない
+ * 設計だったが、現場運用上の要望により今回ユーザー承認のうえ「電話番号1」欄のみ
+ * 抽出するよう変更した(電話番号2は対象外)。生年月日と同じ「個別フィールド単位での
+ * 方針例外化」パターン。表示先はPIN保護されたスタッフモード側に限定する
+ * (アプリ側の実装方針、このパーサー自体はデータの抽出のみを担う)。
+ *
+ * 氏名(漢字)は既存顧客への追記対象ではなく確認表示専用(brain_customers.nameを
+ * 上書きしない、誤表記で既存の正しい名前を壊すリスクを避けるため)。氏名(カナ)は
+ * brain_customers.name_kanaへ保存する(フリガナ表示用)。
+ *
+ * 「はがき送付許諾」「メッセージ配信先情報」は2026-09-24ユーザー承認により
+ * パース対象から完全に除外した(不要項目)。
  */
 import { parseFlexibleBirthDateInput } from './birthDate'
 
@@ -22,10 +30,13 @@ export interface SalonBoardParsedFields {
   /** brain_customers.name_kanaへ保存する(フリガナ表示用)。 */
   nameKana:           string | null
   birthDate:          string | null // YYYY-MM-DD
+  /** 「電話番号1」欄のみ(電話番号2は対象外)。2026-09-24ユーザー承認によるPII方針例外化。 */
+  phoneNumber:        string | null
+  /** 「お客様情報の性別」欄(HOT PEPPER Beauty会員性別ではなくこちらを採用)。 */
+  gender:             string | null
   firstVisitDate:     string | null // YYYY-MM-DD
   visitCount:         number | null
   acquisitionChannel: string | null
-  postcardConsent:    string | null
 }
 
 /** 「-」「―」「未設定」等、SalonBoard側の「値なし」表現を空とみなす。 */
@@ -61,24 +72,34 @@ function extractVisitCount(value: string | null): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+/** 電話番号として妥当そうな値か(数字・ハイフンのみで構成、最低8桁程度)を緩く検証する。 */
+function extractPhoneNumber(value: string | null): string | null {
+  if (!value || isEmptyValue(value)) return null
+  const trimmed = value.trim()
+  if (!/^[\d\-ー]{8,}$/.test(trimmed)) return null
+  return trimmed
+}
+
 export function parseSalonBoardDetailText(rawText: string): SalonBoardParsedFields {
   const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0)
 
   const nameRaw = extractLineValue(lines, '氏名 \\(漢字\\)')
   const nameKanaRaw = extractLineValue(lines, '氏名 \\(カナ\\)')
   const birthDateRaw = extractLineValue(lines, '誕生日')
+  const phoneRaw = extractLineValue(lines, '電話番号1')
+  const genderRaw = extractLineValue(lines, 'お客様情報の性別')
   const firstVisitRaw = extractLineValue(lines, '初回来店日')
   const visitCountRaw = extractLineValue(lines, '来店回数')
   const acquisitionRaw = extractLineValue(lines, '来店きっかけ')
-  const postcardRaw = extractLineValue(lines, 'はがき送付許諾')
 
   return {
     name:               nameRaw && !isEmptyValue(nameRaw) ? nameRaw : null,
     nameKana:           nameKanaRaw && !isEmptyValue(nameKanaRaw) ? nameKanaRaw.trim() : null,
     birthDate:          extractDate(birthDateRaw),
+    phoneNumber:        extractPhoneNumber(phoneRaw),
+    gender:             genderRaw && !isEmptyValue(genderRaw) ? genderRaw.trim() : null,
     firstVisitDate:     extractDate(firstVisitRaw),
     visitCount:         extractVisitCount(visitCountRaw),
     acquisitionChannel: acquisitionRaw && !isEmptyValue(acquisitionRaw) ? acquisitionRaw.trim() : null,
-    postcardConsent:    postcardRaw && !isEmptyValue(postcardRaw) ? postcardRaw.trim() : null,
   }
 }

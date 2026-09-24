@@ -25,15 +25,26 @@
  * 見る可能性があるこの画面に出さないよう、PIN保護されたスタッフモード側
  * (IpadStaffKarteView.tsx、顧客ステータスパネルの下)へ移設した。このファイルには
  * 導線を一切残していない(生年月日の手動編集のみ、引き続きこの画面が担当)。
+ *
+ * 「契約書・その他資料」写真枠(2026-09-24ユーザー承認): 「詳細ページを見る→」の下に
+ * 4枠のサムネイルを配置し、各枠で撮影・選択による登録・差し替え・拡大表示ができる。
+ * brain_customer_documents(customer_id×slot_index 1〜4)へ保存する独立機能で、
+ * 初回問診票(initial_questionnaire_photo_path)・brain_customer_photosのいずれにも
+ * 一切関わらない。撮影・選択UIはDocumentSlotCaptureModal.tsx(初回問診票用モーダルと
+ * 同じ設計をスロット分パラメータ化したもの)を再利用する。
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, ChevronRight, Camera, Pencil, Check } from 'lucide-react'
+import { X, ChevronRight, Camera, Pencil, Check, Plus } from 'lucide-react'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, headingFont } from '@/components/customer/shared/PhotoCompareKit'
 import InitialQuestionnaireCaptureModal from '@/components/customer/ipadKarte/InitialQuestionnaireCaptureModal'
+import DocumentSlotCaptureModal from '@/components/customer/ipadKarte/DocumentSlotCaptureModal'
 import { calculateAge, formatBirthDateJapanese, formatBirthDateSlash } from '@/lib/customer/birthDate'
 import type { Customer, Reservation } from '@/types'
+
+type DocumentSlot = 1 | 2 | 3 | 4
+const DOCUMENT_SLOTS: DocumentSlot[] = [1, 2, 3, 4]
 
 interface Props {
   customer:     Customer
@@ -49,7 +60,7 @@ interface QuestionnaireState {
 
 interface CustomerDetailResponse {
   success:  boolean
-  customer?: { birthDate?: string | null; nameKana?: string | null }
+  customer?: { birthDate?: string | null; nameKana?: string | null; gender?: string | null }
 }
 
 interface QuestionnaireResponse {
@@ -63,6 +74,7 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
   const router = useRouter()
   const [birthDate, setBirthDate] = useState<string | null>(null)
   const [nameKana, setNameKana] = useState<string | null>(null)
+  const [gender, setGender] = useState<string | null>(null)
   const [editingBirthDate, setEditingBirthDate] = useState(false)
   const [birthDateInput, setBirthDateInput]     = useState('')
   const [birthDateSaving, setBirthDateSaving]   = useState(false)
@@ -71,6 +83,10 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
   const [questionnaireLoading, setQuestionnaireLoading] = useState(true)
   const [showEnlarged, setShowEnlarged]     = useState(false)
   const [showCaptureModal, setShowCaptureModal] = useState(false)
+  const [documents, setDocuments] = useState<Record<number, { url: string | null; uploadedAt: string | null }>>({})
+  const [documentsLoading, setDocumentsLoading] = useState(true)
+  const [captureSlot, setCaptureSlot] = useState<DocumentSlot | null>(null)
+  const [enlargedSlot, setEnlargedSlot] = useState<DocumentSlot | null>(null)
 
   const fetchQuestionnaire = useCallback(async () => {
     setQuestionnaireLoading(true)
@@ -93,6 +109,29 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
 
   useEffect(() => { void fetchQuestionnaire() }, [fetchQuestionnaire])
 
+  const fetchDocuments = useCallback(async () => {
+    setDocumentsLoading(true)
+    try {
+      const res = await authedFetch(`/api/customers/${customer.id}/documents`)
+      if (res.ok) {
+        const json = await res.json() as {
+          documents?: { slotIndex: number; url: string | null; uploadedAt: string | null }[]
+        }
+        const next: Record<number, { url: string | null; uploadedAt: string | null }> = {}
+        for (const doc of json.documents ?? []) {
+          next[doc.slotIndex] = { url: doc.url, uploadedAt: doc.uploadedAt }
+        }
+        setDocuments(next)
+      }
+    } catch {
+      /* 取得失敗時は各枠「未登録」相当のまま(致命的にしない) */
+    } finally {
+      setDocumentsLoading(false)
+    }
+  }, [customer.id])
+
+  useEffect(() => { void fetchDocuments() }, [fetchDocuments])
+
   useEffect(() => {
     let cancelled = false
     void (async () => {
@@ -103,6 +142,7 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
           if (!cancelled) {
             setBirthDate(json.customer?.birthDate ?? null)
             setNameKana(json.customer?.nameKana ?? null)
+            setGender(json.customer?.gender ?? null)
           }
         }
       } catch {
@@ -252,6 +292,10 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
               </button>
             </div>
           )}
+
+          {gender && (
+            <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>性別: {gender}</p>
+          )}
         </div>
 
         {/* 初回問診票 */}
@@ -301,6 +345,41 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
         >
           詳細ページを見る <ChevronRight size={18} />
         </button>
+
+        {/* 契約書・その他資料(2026-09-24ユーザー承認・4枠) */}
+        <div style={cardStyle}>
+          <p style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: PALETTE.text, fontFamily: headingFont.style.fontFamily }}>
+            契約書・その他資料
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+            {DOCUMENT_SLOTS.map(slot => {
+              const doc = documents[slot]
+              return (
+                <button
+                  key={slot}
+                  type="button"
+                  onClick={() => doc?.url ? setEnlargedSlot(slot) : setCaptureSlot(slot)}
+                  disabled={documentsLoading}
+                  style={{
+                    padding: 0, border: `1px solid ${PALETTE.border}`, borderRadius: '10px', overflow: 'hidden',
+                    cursor: documentsLoading ? 'default' : 'pointer', background: PALETTE.card ?? 'none',
+                    aspectRatio: '3 / 4', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  {doc?.url ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- signed URL(署名付き一時URL)のためnext/imageは不要
+                    <img src={doc.url} alt={`資料${slot}サムネイル`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', color: PALETTE.muted }}>
+                      <Plus size={16} />
+                      <span style={{ fontSize: '10px' }}>資料{slot}</span>
+                    </div>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </div>
       </div>
 
       {showEnlarged && questionnaire?.url && (
@@ -335,6 +414,55 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
           customerId={customer.id}
           onClose={() => setShowCaptureModal(false)}
           onSaved={() => { setShowCaptureModal(false); void fetchQuestionnaire() }}
+        />
+      )}
+
+      {enlargedSlot !== null && documents[enlargedSlot]?.url && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}
+          onClick={() => setEnlargedSlot(null)}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- 拡大表示のみでnext/imageの最適化は不要 */}
+          <img
+            src={documents[enlargedSlot]?.url ?? undefined}
+            alt="資料"
+            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '8px' }}
+            onClick={e => e.stopPropagation()}
+          />
+          <button
+            type="button"
+            onClick={() => { const slot = enlargedSlot; setEnlargedSlot(null); setCaptureSlot(slot) }}
+            style={{
+              position: 'absolute', bottom: 'max(20px, env(safe-area-inset-bottom))',
+              display: 'flex', alignItems: 'center', gap: '6px',
+              padding: '10px 20px', borderRadius: '999px', border: 'none',
+              background: PALETTE.gold, color: '#fff', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
+            }}
+          >
+            <Camera size={14} /> 差し替える
+          </button>
+          <button
+            type="button"
+            onClick={() => setEnlargedSlot(null)}
+            aria-label="閉じる"
+            style={{
+              position: 'absolute', top: 'max(16px, env(safe-area-inset-top))', right: '16px',
+              background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '50%',
+              width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+            }}
+          >
+            <X size={20} />
+          </button>
+        </div>
+      )}
+
+      {captureSlot !== null && (
+        <DocumentSlotCaptureModal
+          customerId={customer.id}
+          slot={captureSlot}
+          title={`資料${captureSlot}`}
+          onClose={() => setCaptureSlot(null)}
+          onSaved={() => { setCaptureSlot(null); void fetchDocuments() }}
         />
       )}
     </div>

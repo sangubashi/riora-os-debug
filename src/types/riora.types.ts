@@ -60,8 +60,14 @@ export interface Customer {
    * 生値であることに注意(optionalは既存テストフィクスチャ保護のため)。
    */
   salonboardVisitCount?: number | null;
-  /** SalonBoard「はがき送付許諾」欄の原文をそのまま保持(2026-09-24ユーザー承認)。 */
-  postcardConsent?: string | null;
+  /**
+   * 電話番号。2026-09-24ユーザー承認によりPII除外方針を例外化して追加
+   * (SalonBoardテキスト取込の「電話番号1」欄のみ)。表示はPIN保護されたスタッフ
+   * モード側に限定する運用(アプリ側の実装方針、この型自体には制約を持たせない)。
+   */
+  phoneNumber?: string | null;
+  /** 性別。SalonBoardテキスト貼り付け取込(2026-09-24ユーザー承認)で追加。 */
+  gender?: string | null;
   customerType: CustomerType | null;
   typeConfidence: number;
   goalNote: string | null;

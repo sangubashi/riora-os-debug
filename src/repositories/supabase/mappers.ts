@@ -209,9 +209,13 @@ export interface BrainCustomerRow {
   /** SalonBoardテキスト貼り付け取込(2026-09-24ユーザー承認)。brain_visits由来の
    *  実測来店回数とは別物のためあえて汎用の"visitCount"にしない。 */
   salonboard_visit_count?: number | null;
-  postcard_consent?: string | null;
   /** フリガナ(2026-09-24ユーザー承認、SalonBoardテキスト取込)。 */
   name_kana?: string | null;
+  /** 電話番号(2026-09-24ユーザー承認・PII方針例外化、SalonBoardテキスト取込)。
+   *  スタッフモード側でのみ表示する運用(アプリ側の実装方針)。 */
+  phone_number?: string | null;
+  /** 性別(2026-09-24ユーザー承認、SalonBoardテキスト取込)。 */
+  gender?: string | null;
   customer_type: CustomerType | null;
   type_confidence: number | string;
   goal_note: string | null;
@@ -237,8 +241,9 @@ export function toCustomer(row: BrainCustomerRow): Customer {
     ageGroup: row.age_group,
     birthDate: row.birth_date ?? null,
     nameKana: row.name_kana ?? null,
+    phoneNumber: row.phone_number ?? null,
+    gender: row.gender ?? null,
     salonboardVisitCount: row.salonboard_visit_count ?? null,
-    postcardConsent: row.postcard_consent ?? null,
     customerType: row.customer_type,
     typeConfidence: Number(row.type_confidence),
     goalNote: row.goal_note,

@@ -3,13 +3,16 @@
  * SalonBoardImportModal.tsx — 「サロンボード情報を取り込む」モーダル(2026-09-24ユーザー承認)。
  *
  * SalonBoard「お客様情報詳細」ページのテキストをそのまま貼り付けて、既存顧客
- * (CustomerTopPage.tsxで選択中の顧客)の生年月日・初回来店日・来店回数・来店きっかけ・
- * はがき送付許諾を一括更新する。新規顧客の作成は対象外(名前が一致する既存顧客への
- * 情報補完のみ)。パース・DB更新はサーバー側(PATCH /api/customers/[id]/import-salonboard-text)
- * で行い、このモーダルは貼り付けUIと結果表示のみを担う。
+ * (このモーダルの呼び出し元で選択中の顧客)の生年月日・フリガナ・電話番号・性別・
+ * 初回来店日・来店回数・来店きっかけを一括更新する。新規顧客の作成は対象外
+ * (既存顧客への情報補完のみ)。パース・DB更新はサーバー側
+ * (PATCH /api/customers/[id]/import-salonboard-text)で行い、このモーダルは
+ * 貼り付けUIと結果表示のみを担う。
  *
- * 個人情報方針により電話番号は解析対象に含めない(サーバー側パーサー自体が
- * 電話番号を一切抽出しない)。
+ * 電話番号は個人情報方針の例外化(2026-09-24ユーザー承認)により取り込む。
+ * このモーダル自体はPIN保護されたスタッフモード(IpadStaffKarteView.tsx)からのみ
+ * 呼び出す運用のため、電話番号を含む結果表示をそのままここに出す。
+ * 「はがき送付許諾」「メッセージ配信先情報」は取込対象から除外済み(不要項目)。
  */
 import { useState } from 'react'
 import { X, ClipboardPaste, Check } from 'lucide-react'
@@ -29,10 +32,11 @@ interface ImportResponse {
   birthDate?:         string | null
   age?:               number | null
   nameKana?:          string | null
+  phoneNumber?:       string | null
+  gender?:            string | null
   firstVisitDate?:    string | null
   visitCount?:        number | null
   acquisitionChannel?: string | null
-  postcardConsent?:   string | null
   error?:             string
 }
 
@@ -56,7 +60,7 @@ export default function SalonBoardImportModal({ customerId, onClose, onImported 
       const json = await res.json() as ImportResponse
       if (!res.ok || !json.success) {
         setError(json.error === 'no_recognizable_fields'
-          ? 'この文章から読み取れる項目がありませんでした(誕生日・初回来店日・来店回数・来店きっかけ・はがき送付許諾のいずれか)'
+          ? 'この文章から読み取れる項目がありませんでした(誕生日・電話番号・性別・初回来店日・来店回数・来店きっかけのいずれか)'
           : '取込に失敗しました')
         return
       }
@@ -86,8 +90,8 @@ export default function SalonBoardImportModal({ customerId, onClose, onImported 
 
         <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted, lineHeight: 1.6 }}>
           SalonBoardの「お客様情報詳細」ページをコピーしてそのまま貼り付けてください。
-          誕生日・初回来店日・来店回数・来店きっかけ・はがき送付許諾を読み取って更新します
-          (電話番号は個人情報方針により取り込みません)。
+          フリガナ・誕生日・電話番号・性別・初回来店日・来店回数・来店きっかけを
+          読み取って更新します。
         </p>
 
         <textarea
@@ -119,10 +123,11 @@ export default function SalonBoardImportModal({ customerId, onClose, onImported 
             {result.birthDate && (
               <p style={{ margin: 0, fontSize: '12px', color: PALETTE.text }}>生年月日: {result.birthDate}{result.age !== null && result.age !== undefined ? `（${result.age}歳）` : ''}</p>
             )}
+            {result.phoneNumber && <p style={{ margin: 0, fontSize: '12px', color: PALETTE.text }}>電話番号: {result.phoneNumber}</p>}
+            {result.gender && <p style={{ margin: 0, fontSize: '12px', color: PALETTE.text }}>性別: {result.gender}</p>}
             {result.firstVisitDate && <p style={{ margin: 0, fontSize: '12px', color: PALETTE.text }}>初回来店日: {result.firstVisitDate}</p>}
             {result.visitCount !== null && result.visitCount !== undefined && <p style={{ margin: 0, fontSize: '12px', color: PALETTE.text }}>来店回数: {result.visitCount}回</p>}
             {result.acquisitionChannel && <p style={{ margin: 0, fontSize: '12px', color: PALETTE.text }}>来店きっかけ: {result.acquisitionChannel}</p>}
-            {result.postcardConsent && <p style={{ margin: 0, fontSize: '12px', color: PALETTE.text }}>はがき送付許諾: {result.postcardConsent}</p>}
           </div>
         )}
 

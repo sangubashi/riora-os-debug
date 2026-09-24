@@ -1580,6 +1580,57 @@ CSV取込パイプライン(`csvImportPipeline.ts`・`salonBoardParser.ts`)・�
 
 **この解除は上記(フリガナ取込・保存・表示の追加)に限る。**
 
+### v1.0.1 着手済み事項（SalonBoard取込項目の見直し(電話番号追加・性別追加・はがき送付許諾廃止)＋顧客トップページへの資料写真4枠追加・2026-09-24ユーザー承認）
+
+現場からの追加要望2件への対応。
+
+**1. 取込項目の見直し**
+- **電話番号(PII方針の例外化・ユーザー承認)**: `salonBoardTextParser.ts`に
+  「電話番号1」欄(電話番号2は対象外)の抽出を追加した。生年月日と同じ「個別フィールド
+  単位での方針例外化」パターン。表示はPIN保護されたスタッフモード側
+  (`IpadStaffKarteView.tsx`「📋 サロンボード情報」カード)にのみ追加した
+  (顧客トップページ・お客様モードには一切表示しない)。
+- **性別(新規)**: SalonBoardの「お客様情報の性別」欄(「HOT PEPPER Beauty会員性別」
+  ではなくこちら)を抽出し、`brain_customers.gender`へ保存。顧客トップページ
+  (`CustomerTopPage.tsx`)の基本情報カードに表示する(ユーザー指示通り)。
+- **はがき送付許諾の廃止**: パース・保存・表示のいずれからも完全に削除した
+  (`salonBoardTextParser.ts`のフィールド自体を削除、`postcard_consent`カラムは
+  未使用のまま残置・DROP COLUMNはしていない)。「メッセージ配信先情報」は元々
+  パース対象に含めていなかったため対応不要だった。
+- **マイグレーション(ユーザー承認のうえ本番適用済み)**:
+  `supabase/migrations/20260924040000_brain_customers_phone_gender.sql`
+  — `brain_customers`に`phone_number`(text)・`gender`(text)を追加。
+
+**2. 「契約書・その他資料」写真枠(4枚)の新設**
+- **マイグレーション(ユーザー承認のうえ本番適用済み)**:
+  `supabase/migrations/20260924050000_brain_customer_documents.sql`
+  — 新規テーブル`brain_customer_documents`(customer_id×slot_index 1〜4で一意、
+  RLSはservice_role限定、`brain_customer_facial_schemas`と同じ運用)。
+  当初「3枚」の依頼だったが、ユーザーの追加コメント「4枚追加できるようにしたら
+  よいかも」を受けて4スロットとした。1〜4は「契約書」「その他」等の固定カテゴリ
+  分けはせず、汎用の「資料1」〜「資料4」ラベルにしている(要件に固定カテゴリの
+  指定は無かったため)。
+- **`app/api/customers/[id]/documents/route.ts`(新規、GETのみ)**: 登録済み
+  スロットの一覧とsigned URLを返す。
+- **`app/api/customers/[id]/documents/[slot]/route.ts`(新規、PUTのみ)**: 指定
+  スロット(1〜4)への登録・差し替え(常に上書き、`brain_customer_photos`とは無関係の
+  独立テーブル)。
+- **`src/components/customer/ipadKarte/DocumentSlotCaptureModal.tsx`(新規)**:
+  `InitialQuestionnaireCaptureModal.tsx`と同一設計(ゴースト・顔検出ガイド等は
+  持たない撮影/選択→レビュー→保存のみ)をスロット分パラメータ化して再利用。
+- **`CustomerTopPage.tsx`**: 「詳細ページを見る→」ボタンの下(ユーザー指定の配置)に
+  4枠のサムネイルグリッドを追加。空枠タップで撮影・選択モーダル、登録済み枠タップで
+  拡大表示(拡大表示内に「差し替える」ボタンも配置)。
+- **検証結果**: `npm run typecheck`・`npm run build`ともにパス(既存の無関係な失敗のみ、
+  新規APIルート4件がビルド出力に含まれることを確認)。マイグレーション適用後の
+  セキュリティアドバイザーに新規の指摘は無い。`next-env.d.ts`のbuild副作用は復元済み。
+  実機での実際の撮影・アップロード動作、SalonBoard実データでの電話番号・性別の
+  解析精度は未検証。
+
+**この解除は上記(SalonBoard取込項目の見直し・資料写真4枠機能の新設)に限る。**
+`csvImportPipeline.ts`・既存の写真カルテ(`brain_customer_photos`)・初回問診票機能には
+一切触れていない。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

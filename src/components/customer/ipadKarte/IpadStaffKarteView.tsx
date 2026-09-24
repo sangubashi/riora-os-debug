@@ -413,14 +413,16 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
   // パターン)。入力はCustomerTopPage.tsx側で行うため、この画面では表示のみ(読み取り専用)。
   //
   // SalonBoard取込情報の表示・取込導線(2026-09-24ユーザー承認・配置変更): 当初
-  // CustomerTopPage.tsxに置いていたが、はがき送付許諾・来店きっかけ等の内部情報を
-  // お客様と一緒に見る画面に出さないため、PIN保護されたスタッフモード側(この画面)の
-  // 顧客ステータスパネルの下へ移設した。CustomerTopPage.tsx側の当該表示・ボタンは削除済み。
+  // CustomerTopPage.tsxに置いていたが、来店きっかけ等の内部情報をお客様と一緒に
+  // 見る画面に出さないため、PIN保護されたスタッフモード側(この画面)の顧客ステータス
+  // パネルの下へ移設した。CustomerTopPage.tsx側の当該表示・ボタンは削除済み。
+  // 電話番号(2026-09-24ユーザー承認・PII方針例外化)もこの画面にのみ表示する。
+  // 「はがき送付許諾」は2026-09-24ユーザー承認により取込・表示対象から除外した。
   const [age, setAge] = useState<number | null>(null)
   const [firstVisitDate, setFirstVisitDate] = useState<string | null>(null)
   const [salonboardVisitCount, setSalonboardVisitCount] = useState<number | null>(null)
   const [acquisitionChannel, setAcquisitionChannel] = useState<string | null>(null)
-  const [postcardConsent, setPostcardConsent] = useState<string | null>(null)
+  const [phoneNumber, setPhoneNumber] = useState<string | null>(null)
   const [showSalonBoardImport, setShowSalonBoardImport] = useState(false)
 
   const fetchCustomerDetail = useCallback(async () => {
@@ -433,7 +435,7 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
             firstVisitDate?:      string | null
             salonboardVisitCount?: number | null
             acquisitionChannel?:  string | null
-            postcardConsent?:     string | null
+            phoneNumber?:         string | null
           }
         }
         const birthDate = json.customer?.birthDate ?? null
@@ -441,7 +443,7 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
         setFirstVisitDate(json.customer?.firstVisitDate ?? null)
         setSalonboardVisitCount(json.customer?.salonboardVisitCount ?? null)
         setAcquisitionChannel(json.customer?.acquisitionChannel ?? null)
-        setPostcardConsent(json.customer?.postcardConsent ?? null)
+        setPhoneNumber(json.customer?.phoneNumber ?? null)
       }
     } catch {
       /* 取得失敗時は各欄を出さないまま(致命的にしない) */
@@ -689,13 +691,17 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
             </div>
 
             {/* サロンボード情報取込(2026-09-24ユーザー承認・顧客ステータスの下に配置)。
-                はがき送付許諾・来店きっかけ等の内部情報を含むため、PIN保護されたスタッフ
-                モード側にのみ置く(お客様モード・顧客トップページには一切表示しない)。 */}
+                電話番号・来店きっかけ等の内部情報を含むため、PIN保護されたスタッフ
+                モード側にのみ置く(お客様モード・顧客トップページには一切表示しない)。
+                「はがき送付許諾」は2026-09-24ユーザー承認により取込・表示対象から除外した。 */}
             <div style={{ gridColumn: '1 / -1' }}>
               <Card title="📋 サロンボード情報">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {(firstVisitDate || salonboardVisitCount !== null || acquisitionChannel || postcardConsent) && (
+                  {(firstVisitDate || salonboardVisitCount !== null || acquisitionChannel || phoneNumber) && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      {phoneNumber && (
+                        <p style={{ margin: 0, fontSize: '13px', color: PALETTE.text }}>電話番号: {phoneNumber}</p>
+                      )}
                       {firstVisitDate && (
                         <p style={{ margin: 0, fontSize: '13px', color: PALETTE.text }}>初回来店日: {firstVisitDate}</p>
                       )}
@@ -704,9 +710,6 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
                       )}
                       {acquisitionChannel && (
                         <p style={{ margin: 0, fontSize: '13px', color: PALETTE.text }}>来店きっかけ: {acquisitionChannel}</p>
-                      )}
-                      {postcardConsent && (
-                        <p style={{ margin: 0, fontSize: '13px', color: PALETTE.text }}>はがき送付許諾: {postcardConsent}</p>
                       )}
                     </div>
                   )}
