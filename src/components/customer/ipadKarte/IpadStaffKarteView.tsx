@@ -30,6 +30,7 @@ import { Flower2, X, Pencil, EyeOff, ChevronDown, ClipboardPaste } from 'lucide-
 import { useIpadKarteData, type RetailProductStatus } from './ipadKarteData'
 import KarteMemoSection from './KarteMemoSection'
 import FacialSchemaSection from './FacialSchemaSection'
+import VisitHistorySection from './VisitHistorySection'
 import StaffTagBar from './StaffTagBar'
 import { PALETTE, headingFont, Card, SkinTagRow } from '@/components/customer/shared/PhotoCompareKit'
 import { useNextVisit } from '@/lib/nextVisit/useNextVisit'
@@ -674,6 +675,14 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
                 visitId={data.todayVisitId}
                 staffIdOverride={isSharedLogin ? staffTagSession.tag?.id ?? null : null}
               />
+            </div>
+
+            {/* 来店履歴(2026-09-24ユーザー承認・スタッフモードへの新設)。各来店日をタップすると
+                その日のカルテメモ・顔シェーマを展開・参照できる(閲覧専用)。お客様モード側の
+                「来店履歴」カード(タップ不可)とは別コンポーネントで、内部メモが誤って
+                お客様モードに漏れる設計にはなっていない。 */}
+            <div style={{ gridColumn: '1 / -1' }}>
+              <VisitHistorySection customerId={customerId} />
             </div>
 
             {/* 顧客ステータス(購買・来店周期データ管理 Phase1・2026-09-12)。すべて自動計算・

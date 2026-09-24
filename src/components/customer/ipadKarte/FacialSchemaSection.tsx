@@ -13,7 +13,7 @@
  * src/lib/facialSchema/canvasRenderer.tsに委譲する(このファイルはUIの組み立てのみ)。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { RotateCcw, Trash2, Check, History, Eraser } from 'lucide-react'
+import { RotateCcw, Trash2, Check, History, Eraser, ChevronDown } from 'lucide-react'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, Card } from '@/components/customer/shared/PhotoCompareKit'
 import {
@@ -65,6 +65,11 @@ export default function FacialSchemaSection({ customerId, visitId, staffIdOverri
   const [saveError, setSaveError] = useState<string | null>(null)
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null)
   const [previousOpen, setPreviousOpen] = useState(false)
+  // セクション自体の折りたたみ(2026-09-24ユーザー承認)。以前はスタッフモードで常時展開
+  // だったが、画面の縦スペースを圧迫するため他のセクション(カルテメモ等)と同様に
+  // デフォルト折りたたみ・タップで開閉するアコーディオンにした。展開時は従来通り
+  // フル編集可能(お客様モード側のFacialSchemaViewer.tsxとは異なり閲覧専用にはしない)。
+  const [sectionExpanded, setSectionExpanded] = useState(false)
 
   const canvas = useFacialSchemaCanvas()
   const canvasElRef    = useRef<HTMLCanvasElement | null>(null)
@@ -96,6 +101,13 @@ export default function FacialSchemaSection({ customerId, visitId, staffIdOverri
 
   // canvas実寸の追従(高DPI対応)。containerElRefとuseFacialSchemaCanvasのcontainerRefは
   // 同じ要素を指す(下のref callback参照)。
+  //
+  // sectionExpandedを依存配列に含める理由(折りたたみ化・2026-09-24ユーザー承認):
+  // 折りたたみ中はcanvas要素自体がDOMに存在せずcontainerElRef/canvasElRefがnullのため、
+  // この時点でeffectが実行されてもReturnするだけで何もしない。sectionExpandedがfalse→true
+  // に変わった時点でこのeffectを再実行しない限り、展開後にcanvas要素が実際にマウントされても
+  // ResizeObserverが一切セットアップされず、キャンバスが描画されない(サイズ0のまま)不具合が
+  // 起きるため、明示的に依存配列へ加えて展開のたびに再セットアップする。
   useEffect(() => {
     const container = containerElRef.current
     const el = canvasElRef.current
@@ -115,7 +127,7 @@ export default function FacialSchemaSection({ customerId, visitId, staffIdOverri
     })
     observer.observe(container)
     return () => observer.disconnect()
-  }, [redraw])
+  }, [redraw, sectionExpanded])
 
   // 確定済みストロークが変わるたび(Undo/Clear/コミット/履歴読み込み)に再描画する。
   useEffect(() => { redraw() }, [canvas.strokesData, redraw])
@@ -193,6 +205,25 @@ export default function FacialSchemaSection({ customerId, visitId, staffIdOverri
         {loading && <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>読み込み中…</p>}
 
         {!loading && (
+          <button
+            type="button"
+            onClick={() => setSectionExpanded(v => !v)}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+              padding: '10px 12px', borderRadius: '10px', border: `1px solid ${PALETTE.border}`,
+              background: PALETTE.card, color: PALETTE.text, fontSize: '13px', fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            {sectionExpanded ? '顔シェーマを閉じる' : '顔シェーマを表示する'}
+            <ChevronDown
+              size={16}
+              style={{ transform: sectionExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }}
+            />
+          </button>
+        )}
+
+        {!loading && sectionExpanded && (
           <>
             {/* 色鉛筆風の原色パレット(2026-09-22ユーザー要望: タブ廃止・原色から直接選択、
                 黒/赤必須の8色)+消しゴム。以前はカテゴリ(ニキビ/赤み等)ごとの意味付き

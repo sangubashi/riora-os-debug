@@ -1631,6 +1631,41 @@ CSV取込パイプライン(`csvImportPipeline.ts`・`salonBoardParser.ts`)・�
 `csvImportPipeline.ts`・既存の写真カルテ(`brain_customer_photos`)・初回問診票機能には
 一切触れていない。
 
+### v1.0.1 着手済み事項（スタッフモードの顔シェーマ折りたたみ化＋来店履歴からの日付別カルテメモ参照機能の新設・2026-09-24ユーザー承認）
+
+**1. 顔シェーマの折りたたみ化**
+- **`FacialSchemaSection.tsx`**: セクション全体を覆う`sectionExpanded` state(初期値
+  `false`)を新設し、「顔シェーマを表示する ∨」トグルボタンをCard内先頭に追加した
+  (`FacialSchemaViewer.tsx`(お客様モード)と同じ見た目のトグルだが、こちらは展開時
+  従来通りフル編集可能・閲覧専用にはしない)。**重要な修正**: canvas要素は折りたたみ中
+  DOMに存在しないため、ResizeObserverセットアップ用useEffectの依存配列に
+  `sectionExpanded`を追加した(追加しないと、展開後にcanvas要素が実際にマウントされても
+  ResizeObserverが再セットアップされず、キャンバスがサイズ0のまま描画されない不具合が
+  起きるため)。それ以外の描画・保存・Undo・前回シェーマ読み込みロジックには一切
+  手を加えていない。
+
+**2. 来店履歴からの日付別カルテメモ参照(スタッフモード新設)**
+- **`src/components/customer/ipadKarte/VisitHistorySection.tsx`(新規)**: 既存の3つの
+  API(`GET /api/customers/[id]/visit-history`・`GET /api/customer-karte-memos`・
+  `GET /api/customers/[id]/facial-schemas`、いずれも新規APIは追加せず再利用のみ)を
+  自己完結で呼び、来店日ごとの行を表示する。行をタップすると展開し、その来店日と
+  同じ暦日(ローカル時刻基準)に作成されたカルテメモ、および`schema_date`が一致する
+  顔シェーマ(`FacialSchemaThumbnail`で閲覧専用表示)を参照できる。編集機能は持たない
+  (編集は既存の常時展開カルテメモ欄・顔シェーマ欄が担当)。
+- **`IpadStaffKarteView.tsx`**: `FacialSchemaSection`の直下・`CustomerStatusPanel`の
+  上に配置した。
+- **お客様モード側は無変更**: `CustomerModeView.tsx`の「来店履歴」カード(`data.visits`
+  をそのまま`<div>`で列挙するだけの表示)は元々タップ操作(onClick等)を一切持たない
+  閲覧専用リストであることを確認済み(この機能追加以前から)。`VisitHistorySection.tsx`は
+  `CustomerModeView.tsx`から一切importされておらず、お客様モードに内部メモが表示される
+  経路は無い。
+- **検証結果**: `npm run typecheck`・`npm run build`ともにパス(既存の無関係な失敗のみ)。
+  `next-env.d.ts`のbuild副作用は復元済み。実機での折りたたみ→展開後の描画復帰・
+  来店履歴からのメモ参照動作は未検証。
+
+**この解除は上記(顔シェーマの折りたたみ化・来店履歴セクションの新設)に限る。**
+`CustomerModeView.tsx`・`KarteMemoSection.tsx`本体には一切触れていない。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。
