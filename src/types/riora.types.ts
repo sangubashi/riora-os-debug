@@ -52,6 +52,8 @@ export interface Customer {
    * optionalにしている(未指定時はnull相当として扱うこと)。
    */
   birthDate?: string | null;
+  /** フリガナ。SalonBoardテキスト貼り付け取込(2026-09-24ユーザー承認)で追加。 */
+  nameKana?: string | null;
   /**
    * SalonBoardテキスト貼り付け取込(2026-09-24ユーザー承認)で追加。
    * brain_visits由来の実測来店回数(集計値)とは別物の、SalonBoard「来店回数」欄の

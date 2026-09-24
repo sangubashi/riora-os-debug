@@ -28,6 +28,7 @@ interface ImportResponse {
   detectedName?:      string | null
   birthDate?:         string | null
   age?:               number | null
+  nameKana?:          string | null
   firstVisitDate?:    string | null
   visitCount?:        number | null
   acquisitionChannel?: string | null
@@ -111,6 +112,9 @@ export default function SalonBoardImportModal({ customerId, onClose, onImported 
             </p>
             {result.detectedName && (
               <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>検出した氏名: {result.detectedName}(表示確認用・保存はしません)</p>
+            )}
+            {result.nameKana && (
+              <p style={{ margin: 0, fontSize: '12px', color: PALETTE.text }}>フリガナ: {result.nameKana}</p>
             )}
             {result.birthDate && (
               <p style={{ margin: 0, fontSize: '12px', color: PALETTE.text }}>生年月日: {result.birthDate}{result.age !== null && result.age !== undefined ? `（${result.age}歳）` : ''}</p>

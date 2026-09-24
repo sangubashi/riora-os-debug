@@ -1554,6 +1554,32 @@ CSV取込パイプライン(`csvImportPipeline.ts`・`salonBoardParser.ts`)・�
 への移設)に限る。** `SalonBoardImportModal.tsx`本体・API・パーサー・マイグレーション・
 `CustomerModeView.tsx`には一切触れていない。
 
+### v1.0.1 着手済み事項（SalonBoard取込へのフリガナ(氏名カナ)追加のみ・2026-09-24ユーザー承認）
+
+ユーザーから「フリガナ欲しい」との依頼を受け、SalonBoardテキスト取込の対象に
+「氏名 (カナ)」を追加した。氏名(漢字)とは異なり、フリガナは既存の`brain_customers.name`
+(漢字表記)を上書きするものではなく独立カラムのため、確認表示専用にせず実際に
+保存する(電話番号のような機微情報ではないと判断)。
+
+- **マイグレーション(ユーザー承認のうえ本番適用済み)**:
+  `supabase/migrations/20260924030000_brain_customers_name_kana.sql`
+  — `brain_customers`に`name_kana`(text)を追加。
+- **`src/lib/customer/salonBoardTextParser.ts`**: 「氏名 (カナ)」行を抽出し
+  `nameKana`として返す(`SalonBoardParsedFields`に追加)。
+- **`app/api/customers/[id]/import-salonboard-text/route.ts`**: `nameKana`が
+  見つかった場合のみ`brain_customers.name_kana`を更新(他項目と同じ「見つかった
+  項目だけ上書き」方針)。レスポンスにも`nameKana`を追加。
+- **リポジトリ層**: `CustomerRepo.ts`(`CUSTOMER_COLUMNS`に`name_kana`追加)・
+  `mappers.ts`(`BrainCustomerRow`/`toCustomer`)・`riora.types.ts`(`Customer`型に
+  `nameKana`をoptional追加)。
+- **`CustomerTopPage.tsx`**: 基本情報カードの氏名の上にフリガナを小さく表示する
+  (フリガナは内部情報ではないため、はがき送付許諾等とは異なりこの画面に残した)。
+- **`SalonBoardImportModal.tsx`**: 取込結果プレビューに「フリガナ: ◯◯」を追加。
+- **検証結果**: `npm run typecheck`・`npm run build`ともにパス(既存の無関係な失敗のみ)。
+  `next-env.d.ts`のbuild副作用は復元済み。
+
+**この解除は上記(フリガナ取込・保存・表示の追加)に限る。**
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

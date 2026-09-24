@@ -210,6 +210,8 @@ export interface BrainCustomerRow {
    *  実測来店回数とは別物のためあえて汎用の"visitCount"にしない。 */
   salonboard_visit_count?: number | null;
   postcard_consent?: string | null;
+  /** フリガナ(2026-09-24ユーザー承認、SalonBoardテキスト取込)。 */
+  name_kana?: string | null;
   customer_type: CustomerType | null;
   type_confidence: number | string;
   goal_note: string | null;
@@ -234,6 +236,7 @@ export function toCustomer(row: BrainCustomerRow): Customer {
     name: row.name,
     ageGroup: row.age_group,
     birthDate: row.birth_date ?? null,
+    nameKana: row.name_kana ?? null,
     salonboardVisitCount: row.salonboard_visit_count ?? null,
     postcardConsent: row.postcard_consent ?? null,
     customerType: row.customer_type,

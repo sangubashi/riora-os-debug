@@ -49,7 +49,7 @@ interface QuestionnaireState {
 
 interface CustomerDetailResponse {
   success:  boolean
-  customer?: { birthDate?: string | null }
+  customer?: { birthDate?: string | null; nameKana?: string | null }
 }
 
 interface QuestionnaireResponse {
@@ -62,6 +62,7 @@ interface QuestionnaireResponse {
 export default function CustomerTopPage({ customer, reservation, onClose }: Props) {
   const router = useRouter()
   const [birthDate, setBirthDate] = useState<string | null>(null)
+  const [nameKana, setNameKana] = useState<string | null>(null)
   const [editingBirthDate, setEditingBirthDate] = useState(false)
   const [birthDateInput, setBirthDateInput]     = useState('')
   const [birthDateSaving, setBirthDateSaving]   = useState(false)
@@ -99,7 +100,10 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
         const res = await authedFetch(`/api/customers/${customer.id}`)
         if (res.ok) {
           const json = await res.json() as CustomerDetailResponse
-          if (!cancelled) setBirthDate(json.customer?.birthDate ?? null)
+          if (!cancelled) {
+            setBirthDate(json.customer?.birthDate ?? null)
+            setNameKana(json.customer?.nameKana ?? null)
+          }
         }
       } catch {
         /* 取得失敗時は生年月日欄を空のまま(致命的にしない) */
@@ -171,6 +175,11 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
       <div style={{ flex: 1, padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '640px', width: '100%', margin: '0 auto' }}>
         {/* 基本情報 */}
         <div style={cardStyle}>
+          {nameKana && (
+            <p style={{ margin: '0 0 -8px', fontSize: '11px', letterSpacing: '0.04em', color: PALETTE.muted }}>
+              {nameKana}
+            </p>
+          )}
           <p style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: PALETTE.text, fontFamily: headingFont.style.fontFamily }}>
             {customer.name} 様
           </p>

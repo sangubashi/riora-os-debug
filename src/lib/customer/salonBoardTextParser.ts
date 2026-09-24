@@ -9,14 +9,18 @@
  *      見出しやヘルプ文言を含む、実際のコピペ結果)
  *
  * 電話番号は個人情報方針(docs/security/PII_POLICY_V1.md)により一切抽出しない
- * (このパーサー自体に電話番号用の正規表現を持たせない)。氏名は既存顧客への
- * 追記対象ではなく確認表示専用(brain_customers.nameを上書きしない)。
+ * (このパーサー自体に電話番号用の正規表現を持たせない)。氏名(漢字)は既存顧客への
+ * 追記対象ではなく確認表示専用(brain_customers.nameを上書きしない、誤表記で既存の
+ * 正しい名前を壊すリスクを避けるため)。氏名(カナ)は2026-09-24ユーザー承認により
+ * brain_customers.name_kanaへ保存する(フリガナ表示用、電話番号のような機微情報ではない)。
  */
 import { parseFlexibleBirthDateInput } from './birthDate'
 
 export interface SalonBoardParsedFields {
   /** 確認表示専用。brain_customers.nameへの書き込みには使わない。 */
   name:               string | null
+  /** brain_customers.name_kanaへ保存する(フリガナ表示用)。 */
+  nameKana:           string | null
   birthDate:          string | null // YYYY-MM-DD
   firstVisitDate:     string | null // YYYY-MM-DD
   visitCount:         number | null
@@ -61,6 +65,7 @@ export function parseSalonBoardDetailText(rawText: string): SalonBoardParsedFiel
   const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0)
 
   const nameRaw = extractLineValue(lines, '氏名 \\(漢字\\)')
+  const nameKanaRaw = extractLineValue(lines, '氏名 \\(カナ\\)')
   const birthDateRaw = extractLineValue(lines, '誕生日')
   const firstVisitRaw = extractLineValue(lines, '初回来店日')
   const visitCountRaw = extractLineValue(lines, '来店回数')
@@ -69,6 +74,7 @@ export function parseSalonBoardDetailText(rawText: string): SalonBoardParsedFiel
 
   return {
     name:               nameRaw && !isEmptyValue(nameRaw) ? nameRaw : null,
+    nameKana:           nameKanaRaw && !isEmptyValue(nameKanaRaw) ? nameKanaRaw.trim() : null,
     birthDate:          extractDate(birthDateRaw),
     firstVisitDate:     extractDate(firstVisitRaw),
     visitCount:         extractVisitCount(visitCountRaw),
