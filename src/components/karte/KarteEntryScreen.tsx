@@ -8,20 +8,105 @@
  * 中心に、顧客検索(useCustomerStore、CustomersScreen.tsxと同じストアだが検索ロジック
  * 自体はこの画面専用に新規実装・既存ファイルには触れない)を併設する。
  *
- * 顧客をタップすると`/karte/[customerId]`へ遷移する(このコンポーネント自体は
- * CustomerBottomSheetを一切importしない)。
+ * 顧客タップ時の遷移(2026-09-24ユーザー承認・不具合修正): 当初「顧客をタップすると
+ * `/karte/[customerId]`へ直接遷移する」設計だったが、Phase1Screen.tsx/CustomersScreen.tsx
+ * と同様に顧客トップページ(CustomerTopPage.tsx)を挟むよう修正した。CustomerTopPage内の
+ * 「詳細ページを見る→」ボタンが`/karte/[customerId]`へのrouter.pushを担う(このファイル
+ * 自体はrouter.pushを直接呼ばなくなった)。CustomerBottomSheetは既存通りimportしない
+ * (CustomerTopPage内の「接客ログ/AI Timeline」ボタン経由でのみ間接的に開く)。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Search, Calendar } from 'lucide-react'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useHomeStore } from '@/store/useHomeStore'
-import { useCustomerStore } from '@/store/useCustomerStore'
+import { useCustomerStore, type CustomerRow } from '@/store/useCustomerStore'
 import { PALETTE, headingFont } from '@/components/customer/shared/PhotoCompareKit'
+import CustomerTopPage from '@/components/customer/CustomerTopPage'
+import type { ReservationWithBrainCustomer } from '@/types/database'
+import type { Customer as BSCustomer, Reservation as BSReservation, CustomerType } from '@/types'
+
+// ─── CustomerRow(検索結果) → CustomerTopPage 用マッパー ─────────────────────────
+// CustomersScreen.tsxのtoCustomer/toReservationと同一の変換(既存ファイルには触れず、
+// この画面専用に複製する。MyStatsScreen.tsx等でも同じ複製パターンが既に採られている)。
+function toCustomerFromRow(c: CustomerRow): BSCustomer {
+  return {
+    id:                    c.id,
+    name:                  c.name,
+    visits:                c.visitCount,
+    visit_count:           c.visitCount,
+    total_sales:           c.totalSpent,
+    avg_price:             c.visitCount > 0 ? Math.round(c.totalSpent / c.visitCount) : 0,
+    last_visit:            c.lastVisitDate ?? new Date(Date.now() - c.lastVisit * 86400000).toISOString().slice(0, 10),
+    customer_type:         c.type,
+    skinConcernType:       c.skinConcernType,
+    vip_rank:              c.isVip ? 4 : 1,
+    churn_risk:            c.churnRisk,
+    line_response_rate:    c.lineResponseRate,
+    next_visit_prediction: '',
+    skin_tags:             [],
+    recommended_cycle_days: undefined,
+  }
+}
+
+function toReservationFromRow(c: CustomerRow): BSReservation {
+  return {
+    id:                    null,   // 検索結果起動時は実予約を持たない
+    customer_id:           null,
+    customer_hash_id:      null,
+    staff_id:              c.assignedStaffId ?? '',
+    menu:                  c.treatments[0] ?? '施術履歴未設定',
+    scheduled_at:          new Date().toISOString(),
+    status:                'confirmed',
+    customer_name:         c.name,
+    is_vip:                c.isVip,
+    churn_risk:            c.churnRisk,
+    days_since_last_visit: c.lastVisit,
+    customer_type:         c.type,
+  }
+}
+
+// ─── ReservationWithBrainCustomer(本日の予約) → CustomerTopPage 用マッパー ──────
+function toCustomerFromReservation(r: ReservationWithBrainCustomer): BSCustomer {
+  const bc = r.brain_customer
+  return {
+    id:                    r.brain_customer_id,
+    name:                  bc.name,
+    visits:                bc.visit_count ?? 0,
+    visit_count:           bc.visit_count ?? 0,
+    total_sales:           bc.total_spent ?? 0,
+    avg_price:             bc.visit_count ? Math.round((bc.total_spent ?? 0) / bc.visit_count) : 0,
+    last_visit:            bc.last_visit_date ?? new Date().toISOString().slice(0, 10),
+    customer_type:         (bc.customer_type as CustomerType) || 'VIP型',
+    skinConcernType:       null,
+    vip_rank:              bc.is_vip ? 4 : 1,
+    churn_risk:            bc.churn_score,
+    line_response_rate:    0,
+    next_visit_prediction: '',
+    skin_tags:             bc.skin_tags ?? [],
+    recommended_cycle_days: undefined,
+  }
+}
+
+function toReservationFromReservation(r: ReservationWithBrainCustomer): BSReservation {
+  return {
+    id:                    r.id,
+    customer_id:           null,
+    customer_hash_id:      null,
+    staff_id:              r.staff_id,
+    menu:                  r.menu,
+    scheduled_at:          r.scheduled_at,
+    status:                'confirmed',
+    customer_name:         r.brain_customer.name,
+    is_vip:                r.brain_customer.is_vip ?? false,
+    churn_risk:            r.brain_customer.churn_score,
+    days_since_last_visit: 0,
+    customer_type:         (r.brain_customer.customer_type as CustomerType) || 'VIP型',
+  }
+}
 
 export default function KarteEntryScreen() {
-  const router = useRouter()
   const session = useAuthStore(s => s.session)
+  const [selected, setSelected] = useState<{ customer: BSCustomer; reservation?: BSReservation } | null>(null)
   const { reservations, isLoading: reservationsLoading, fetchTodayReservations } = useHomeStore()
   const { customers, isLoading: customersLoading, fetchCustomers } = useCustomerStore()
   const [query, setQuery] = useState('')
@@ -49,7 +134,10 @@ export default function KarteEntryScreen() {
     return customers.filter(c => c.name.toLowerCase().includes(q)).slice(0, 30)
   }, [customers, query])
 
-  const openCustomer = (customerId: string) => router.push(`/karte/${customerId}`)
+  const openCustomerFromSearch = (c: CustomerRow) =>
+    setSelected({ customer: toCustomerFromRow(c), reservation: toReservationFromRow(c) })
+  const openCustomerFromReservation = (r: ReservationWithBrainCustomer) =>
+    setSelected({ customer: toCustomerFromReservation(r), reservation: toReservationFromReservation(r) })
 
   // 本日のJST日付を「2026/09/20 (日)」形式で表示する(PHASE IPAD-KARTE-ENTRY-1 UI刷新・
   // 2026-09-20ユーザー承認)。サーバー側todayJst()とは独立(表示専用・クエリには使わない)。
@@ -121,7 +209,7 @@ export default function KarteEntryScreen() {
                   <button
                     key={c.id}
                     type="button"
-                    onClick={() => openCustomer(c.id)}
+                    onClick={() => openCustomerFromSearch(c)}
                     style={{
                       textAlign: 'left', padding: '14px 16px', borderRadius: '12px',
                       border: `1px solid ${PALETTE.border}`, background: PALETTE.card,
@@ -164,7 +252,7 @@ export default function KarteEntryScreen() {
                   <button
                     key={r.id}
                     type="button"
-                    onClick={() => openCustomer(r.brain_customer_id)}
+                    onClick={() => openCustomerFromReservation(r)}
                     style={{
                       display: 'flex', alignItems: 'center',
                       textAlign: 'left', padding: '14px 16px', borderRadius: '12px',
@@ -191,6 +279,14 @@ export default function KarteEntryScreen() {
           )}
         </div>
       </div>
+
+      {selected && (
+        <CustomerTopPage
+          customer={selected.customer}
+          reservation={selected.reservation}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </div>
   )
 }

@@ -1354,6 +1354,36 @@ AI提案の会話トーン・LINE領域・admin領域については引き続き
 `brain_customer_photos`のphoto_type制約は今回一切変更していない。5タブ構成・TL-5構成・
 AI提案の会話トーン・LINE領域・admin領域については引き続き凍結を継続する。
 
+**追記(2026-09-24): 本番マイグレーション適用・デプロイ完了。** 上記の
+`20260924000000_brain_customers_initial_questionnaire.sql`・
+`20260924010000_brain_customers_birth_date.sql`をユーザー承認のうえ本番Supabase
+(ohszxgajckzphhfhdrsv)へ適用し、`git push`・Vercel本番デプロイ(commit `b729582`)まで
+完了した。適用後のセキュリティアドバイザーに新規の指摘は無い(既存の無関係な指摘のみ)。
+
+### v1.0.1 着手済み事項（`/karte`トップ画面の顧客タップ導線修正のみ・2026-09-24ユーザー承認）
+
+上記「顧客トップページ新設」の対応漏れの修正。「本日の予約」「顧客タブ」
+(Phase1Screen.tsx/CustomersScreen.tsx)は`CustomerTopPage`経由に変更済みだったが、
+`/karte`専用入口(`KarteEntryScreen.tsx`、PHASE IPAD-KARTE-ENTRY-1)は別画面のため
+見落としており、顧客タップで`CustomerTopPage`を経由せず直接`/karte/[customerId]`へ
+遷移する不具合が本番で発生していた。ユーザーからの本番動作確認報告を受けて修正した。
+
+- **`src/components/karte/KarteEntryScreen.tsx`**: `openCustomer(customerId)`
+  (`router.push('/karte/${customerId}')`直呼び)を廃止し、`CustomerTopPage`をportal表示する
+  `selected` stateに置き換えた。検索結果(`CustomerRow`)・本日の予約
+  (`ReservationWithBrainCustomer`)それぞれについて、`CustomersScreen.tsx`/`Phase1Screen.tsx`
+  と同型の`toCustomer*/toReservation*`変換関数をこのファイル専用に複製した(既存ファイルは
+  無変更、このプロジェクトで既に採られている複製パターンを踏襲)。`/karte/[customerId]`への
+  遷移は`CustomerTopPage`内の「詳細ページを見る→」ボタンが担う(変更不要、既存のまま)。
+  `customer_type`のstring→`CustomerType`変換は`Phase1Screen.tsx`の
+  `(bc.customer_type as CustomerType) || 'VIP型'`と同じ既存パターンを踏襲した。
+- **検証結果**: `npm run typecheck`・`npm run build`ともにパス(既存の無関係な失敗のみ)。
+  `next-env.d.ts`のbuild副作用は復元済み。iPad実機での再現確認は未実施(コードレベルの
+  修正のみ、ユーザー側での本番再確認を推奨)。
+
+**この解除は`KarteEntryScreen.tsx`の顧客タップ導線修正に限る。** `CustomerTopPage.tsx`・
+`CustomerBottomSheet.tsx`・`Phase1Screen.tsx`・`CustomersScreen.tsx`自体には一切触れていない。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。
