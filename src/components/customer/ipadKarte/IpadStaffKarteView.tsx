@@ -25,7 +25,7 @@
  *
  * 写真比較UIはCustomerModeViewと共有(src/components/customer/shared/PhotoCompareKit.tsx)。
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Flower2, X, Pencil, EyeOff, ChevronDown } from 'lucide-react'
 import { useIpadKarteData, type RetailProductStatus } from './ipadKarteData'
 import KarteMemoSection from './KarteMemoSection'
@@ -37,6 +37,8 @@ import { formatWeeksLabel, formatApproxDateLabel } from '@/lib/nextVisit/nextVis
 import { useAuthStore } from '@/store/useAuthStore'
 import { SHARED_IPAD_STAFF_USER_ID } from '@/lib/constants'
 import { useStaffTagSession } from '@/lib/staffTag/useStaffTagSession'
+import { authedFetch } from '@/lib/api/authedFetch'
+import { calculateAge } from '@/lib/customer/birthDate'
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
 /** クイック選択の候補(本日起点の週数)。 */
@@ -405,6 +407,27 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
   const isSharedLogin = useAuthStore(s => s.user?.id) === SHARED_IPAD_STAFF_USER_ID
   const staffTagSession = useStaffTagSession(isSharedLogin)
 
+  // 年齢表示(2026-09-24ユーザー承認)。既存API(GET /api/customers/[id])をこの画面専用に
+  // 直接呼ぶ(useIpadKarteData()は経由しない、CustomerModeView.tsxと同じ「自己完結fetch」
+  // パターン)。入力はCustomerTopPage.tsx側で行うため、この画面では表示のみ(読み取り専用)。
+  const [age, setAge] = useState<number | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await authedFetch(`/api/customers/${customerId}`)
+        if (res.ok) {
+          const json = await res.json() as { customer?: { birthDate?: string | null } }
+          const birthDate = json.customer?.birthDate ?? null
+          if (!cancelled) setAge(birthDate ? calculateAge(birthDate) : null)
+        }
+      } catch {
+        /* 取得失敗時は年齢欄を出さないまま(致命的にしない) */
+      }
+    })()
+    return () => { cancelled = true }
+  }, [customerId])
+
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: PALETTE.bg, display: 'flex', flexDirection: 'column' }}>
       {/* ── ヘッダー ── */}
@@ -459,7 +482,7 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
             onRequestChange={staffTagSession.clearTag}
           />
           <p style={{ margin: 0, fontSize: '13px', letterSpacing: '0.04em', color: PALETTE.text, whiteSpace: 'nowrap' }}>
-            {customerName}様
+            {customerName}様{age !== null ? `（${age}歳）` : ''}
           </p>
           <button
             type="button"

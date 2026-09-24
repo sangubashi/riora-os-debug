@@ -68,6 +68,8 @@ import { useNextVisit } from '@/lib/nextVisit/useNextVisit'
 import { formatWeeksLabel, type NextVisitResult } from '@/lib/nextVisit/nextVisitEngine'
 import FacialSchemaViewer from './FacialSchemaViewer'
 import StaffPinModal from './StaffPinModal'
+import { authedFetch } from '@/lib/api/authedFetch'
+import { calculateAge } from '@/lib/customer/birthDate'
 
 // ロゴ用: エレガントな欧文セリフ体(イタリック)。高級サロンのブランドロゴらしい質感のため
 // システム標準フォントのitalic指定をやめ、専用フォントを読み込む(PHASE GUEST-MODE-1-DESIGN)。
@@ -152,6 +154,28 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
   // 次回目安エンジン(PHASE NEXT-VISIT-1・2026-09-11)。お客様モードでは具体的な日付は出さず、
   // 「約◯週間後」のみ表示する(次回予約が既にある場合のみ日付を表示)。
   const nextVisit = useNextVisit(customerId)
+
+  // 年齢表示(2026-09-24ユーザー承認)。既存API(GET /api/customers/[id]、CustomerBottomSheet等が
+  // 既に使っているもの)をこの画面専用に直接呼ぶ(customerModeData.tsは経由しない、
+  // FacialSchemaViewer.tsxと同じ「自己完結fetch」パターン)。入力はCustomerTopPage.tsx側で
+  // 行うため、この画面では表示のみ(読み取り専用)。
+  const [age, setAge] = useState<number | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await authedFetch(`/api/customers/${customerId}`)
+        if (res.ok) {
+          const json = await res.json() as { customer?: { birthDate?: string | null } }
+          const birthDate = json.customer?.birthDate ?? null
+          if (!cancelled) setAge(birthDate ? calculateAge(birthDate) : null)
+        }
+      } catch {
+        /* 取得失敗時は年齢欄を出さないまま(致命的にしない) */
+      }
+    })()
+    return () => { cancelled = true }
+  }, [customerId])
 
   const [compareBasis, setCompareBasis] = useState<ComparisonBasis>('previous')
   // スライダー比較(PhotoCompareScreen、2026-09-17導線変更): 撮影用ゴースト/ジャイロ画面
@@ -413,7 +437,7 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
             onRequestChange={staffTagSession.clearTag}
           />
           <p style={{ margin: 0, fontSize: '11px', letterSpacing: '0.06em', color: PALETTE.muted, whiteSpace: 'nowrap' }}>
-            {customerName}様
+            {customerName}様{age !== null ? `（${age}歳）` : ''}
           </p>
           {/* 「終了」ボタンの長押し化(誤操作防止・2026-09-20ユーザー承認)。押している間は
               リングで進捗を可視化し、下に常時ヒントを添えて「タップでは閉じない」ことを

@@ -1435,6 +1435,37 @@ AI提案の会話トーン・LINE領域・admin領域については引き続き
   新設するか、(b)顧客編集画面(現状存在しない)を新設するか、方針決定が必要
   (今回はコード変更をせず、事実確認のみ実施)。
 
+### v1.0.1 着手済み事項（生年月日の手動入力・年齢の自動計算表示のみ・2026-09-24ユーザー承認）
+
+直前のエントリで判明した「生年月日の入力経路が存在しない」ギャップへの対応。SalonBoardの
+CSV出力に生年月日が無いため、上記(b)の方針(顧客トップページからの手動入力)を実装した。
+
+- **`src/lib/customer/birthDate.ts`(新規)**: 生年月日まわりのロジックを集約する共通
+  ユーティリティ。`parseFlexibleBirthDateInput()`(「1986/05/30」「1986-5-30」
+  「1986年5月30日」等の表記ゆれをISO(YYYY-MM-DD)へ正規化、無効日・未来日はnull)・
+  `calculateAge()`・`formatBirthDateJapanese()`・`formatBirthDateSlash()`。
+  従来`CustomerTopPage.tsx`にあった`calculateAge`/`formatBirthDateJapanese`の重複定義は
+  ここへ統合し、`CustomerTopPage.tsx`側は削除した。
+- **`app/api/customers/[id]/birth-date/route.ts`(新規、PATCHのみ)**: `goal/route.ts`と
+  同一の認証・アクセス制御パターン(`extractStaffFromRequest`+`canAccessCustomer`)。
+  入力文字列を`parseFlexibleBirthDateInput()`でパースし、失敗時は400
+  (`invalid_birth_date_format`)を返す。空文字/nullは「未設定に戻す」としてNULLへ正規化。
+  GETは追加していない(既存の`GET /api/customers/[id]`が`birthDate`を含めて返すため不要)。
+- **`CustomerTopPage.tsx`**: 生年月日表示の右に鉛筆アイコンを追加し、タップで
+  テキスト入力(コピペ対応・`inputMode="numeric"`)→保存/キャンセルのインライン編集UIを
+  実装。保存時は上記PATCHを呼び、成功時は表示を即座に更新する。
+- **`CustomerModeView.tsx`・`IpadStaffKarteView.tsx`**: いずれもヘッダーの
+  「{customerName}様」表示に`（38歳）`のような年齢を追記した(**表示のみ・編集UIは
+  無し**。入力は`CustomerTopPage.tsx`に一本化)。取得は既存の`GET /api/customers/[id]`を
+  この画面専用に直接呼ぶ自己完結fetch(`FacialSchemaViewer.tsx`と同じパターン)で、
+  `useCustomerModeData`/`useIpadKarteData`という大きな共有フックには一切手を加えていない。
+- **検証結果**: `npm run typecheck`・`npm run build`ともにパス(既存の無関係な失敗のみ、
+  新規APIルート`/api/customers/[id]/birth-date`もビルド出力に含まれることを確認)。
+  `next-env.d.ts`のbuild副作用は復元済み。実機での実際の保存・コピペ動作は未検証。
+
+**この解除は上記(生年月日の手動入力UI新設・共通ユーティリティ新設・年齢表示追加)に限る。**
+CSV取込(`csvImportPipeline.ts`・`salonBoardParser.ts`)には一切触れていない。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

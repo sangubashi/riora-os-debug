@@ -13,13 +13,20 @@
  * (以前はage_group「年代」のみの表示だったが、これに置き換えた)。生年月日が未登録の
  * 顧客は「未設定」と表示する。年齢は満年齢(誕生日を迎えていなければ1引く)で算出する。
  * 電話・メール・住所等、生年月日以外のPII除外方針は変更していない。
+ *
+ * 生年月日の手動入力(2026-09-24ユーザー承認): SalonBoardのCSV出力に生年月日列が
+ * 無いため、この画面の鉛筆アイコンから手動入力・コピペ入力できるようにした
+ * (PATCH /api/customers/[id]/birth-date)。表記ゆれ(「1986/05/30」「1986年5月30日」等)の
+ * 吸収はsrc/lib/customer/birthDate.tsに集約し、CustomerModeView.tsx・
+ * IpadStaffKarteView.tsxの表示(読み取り専用)とロジックを共用する。
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, ChevronRight, Camera } from 'lucide-react'
+import { X, ChevronRight, Camera, Pencil, Check } from 'lucide-react'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, headingFont } from '@/components/customer/shared/PhotoCompareKit'
 import InitialQuestionnaireCaptureModal from '@/components/customer/ipadKarte/InitialQuestionnaireCaptureModal'
+import { calculateAge, formatBirthDateJapanese, formatBirthDateSlash } from '@/lib/customer/birthDate'
 import type { Customer, Reservation } from '@/types'
 
 interface Props {
@@ -39,31 +46,6 @@ interface CustomerDetailResponse {
   customer?: { birthDate?: string | null }
 }
 
-/** 満年齢を計算する(誕生日を迎えていなければ1引く)。 */
-function calculateAge(birthDate: string): number | null {
-  const m = birthDate.match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (!m) return null
-  const [, y, mo, d] = m
-  const birth = new Date(Number(y), Number(mo) - 1, Number(d))
-  if (Number.isNaN(birth.getTime())) return null
-
-  const now = new Date()
-  let age = now.getFullYear() - birth.getFullYear()
-  const hasHadBirthdayThisYear =
-    now.getMonth() > birth.getMonth() ||
-    (now.getMonth() === birth.getMonth() && now.getDate() >= birth.getDate())
-  if (!hasHadBirthdayThisYear) age -= 1
-  return age
-}
-
-/** "YYYY-MM-DD" → "1987年5月22日"。 */
-function formatBirthDateJapanese(birthDate: string): string | null {
-  const m = birthDate.match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (!m) return null
-  const [, y, mo, d] = m
-  return `${y}年${Number(mo)}月${Number(d)}日`
-}
-
 interface QuestionnaireResponse {
   success:  boolean
   path?:    string | null
@@ -74,6 +56,10 @@ interface QuestionnaireResponse {
 export default function CustomerTopPage({ customer, reservation, onClose }: Props) {
   const router = useRouter()
   const [birthDate, setBirthDate] = useState<string | null>(null)
+  const [editingBirthDate, setEditingBirthDate] = useState(false)
+  const [birthDateInput, setBirthDateInput]     = useState('')
+  const [birthDateSaving, setBirthDateSaving]   = useState(false)
+  const [birthDateError, setBirthDateError]     = useState<string | null>(null)
   const [questionnaire, setQuestionnaire] = useState<QuestionnaireState | null>(null)
   const [questionnaireLoading, setQuestionnaireLoading] = useState(true)
   const [showEnlarged, setShowEnlarged]     = useState(false)
@@ -118,6 +104,38 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
 
   const goToDetailPage = () => router.push(`/karte/${customer.id}`)
 
+  function startEditBirthDate() {
+    setBirthDateInput(birthDate ? formatBirthDateSlash(birthDate) ?? '' : '')
+    setBirthDateError(null)
+    setEditingBirthDate(true)
+  }
+
+  async function saveBirthDate() {
+    if (birthDateSaving) return
+    setBirthDateSaving(true)
+    setBirthDateError(null)
+    try {
+      const res = await authedFetch(`/api/customers/${customer.id}/birth-date`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ birthDate: birthDateInput.trim() || null }),
+      })
+      if (!res.ok) {
+        setBirthDateError(res.status === 400
+          ? '日付を認識できませんでした(例: 1986/05/30)'
+          : '保存に失敗しました')
+        return
+      }
+      const json = await res.json() as { birthDate: string | null }
+      setBirthDate(json.birthDate)
+      setEditingBirthDate(false)
+    } catch {
+      setBirthDateError('保存に失敗しました')
+    } finally {
+      setBirthDateSaving(false)
+    }
+  }
+
   const cardStyle: React.CSSProperties = {
     borderRadius: '16px', border: `1px solid ${PALETTE.border}`, padding: '20px',
     display: 'flex', flexDirection: 'column', gap: '14px',
@@ -150,15 +168,75 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
           <p style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: PALETTE.text, fontFamily: headingFont.style.fontFamily }}>
             {customer.name} 様
           </p>
-          <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>
-            {(() => {
-              if (!birthDate) return '生年月日: 未設定'
-              const formatted = formatBirthDateJapanese(birthDate)
-              const age = calculateAge(birthDate)
-              if (!formatted || age === null) return '生年月日: 未設定'
-              return `${formatted}（${age}歳）`
-            })()}
-          </p>
+
+          {editingBirthDate ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={birthDateInput}
+                onChange={e => setBirthDateInput(e.target.value)}
+                placeholder="1986/05/30"
+                autoFocus
+                style={{
+                  width: '160px', boxSizing: 'border-box', padding: '8px 10px', borderRadius: '8px',
+                  border: `1px solid ${PALETTE.border}`, fontSize: '14px', color: PALETTE.text, outline: 'none',
+                }}
+              />
+              {birthDateError && (
+                <p style={{ margin: 0, fontSize: '11px', color: '#B85050' }}>{birthDateError}</p>
+              )}
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => void saveBirthDate()}
+                  disabled={birthDateSaving}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '4px',
+                    fontSize: '12px', fontWeight: 700, padding: '6px 14px', borderRadius: '999px',
+                    border: 'none', background: birthDateSaving ? PALETTE.border : PALETTE.gold, color: '#fff',
+                    cursor: birthDateSaving ? 'default' : 'pointer',
+                  }}
+                >
+                  <Check size={12} />{birthDateSaving ? '保存中…' : '保存する'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingBirthDate(false)}
+                  style={{
+                    fontSize: '12px', padding: '6px 14px', borderRadius: '999px',
+                    border: `1px solid ${PALETTE.border}`, background: 'none', color: PALETTE.muted, cursor: 'pointer',
+                  }}
+                >
+                  キャンセル
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>
+                {(() => {
+                  if (!birthDate) return '生年月日: 未設定'
+                  const formatted = formatBirthDateJapanese(birthDate)
+                  const age = calculateAge(birthDate)
+                  if (!formatted || age === null) return '生年月日: 未設定'
+                  return `${formatted}（${age}歳）`
+                })()}
+              </p>
+              <button
+                type="button"
+                onClick={startEditBirthDate}
+                aria-label="生年月日を編集"
+                style={{
+                  width: '24px', height: '24px', borderRadius: '50%', border: `1px solid ${PALETTE.border}`,
+                  background: 'none', color: PALETTE.gold, display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', cursor: 'pointer', flexShrink: 0,
+                }}
+              >
+                <Pencil size={11} />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* 初回問診票 */}
