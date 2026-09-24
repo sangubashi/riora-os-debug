@@ -4,7 +4,8 @@ import type { ICustomerRepo } from '../interfaces';
 import { toBrainCustomerInsert, toCustomer, type BrainCustomerRow } from './mappers';
 
 const CUSTOMER_COLUMNS =
-  'id, store_id, name, age_group, birth_date, customer_type, type_confidence, goal_note, wedding_date, ' +
+  'id, store_id, name, age_group, birth_date, salonboard_visit_count, postcard_consent, ' +
+  'customer_type, type_confidence, goal_note, wedding_date, ' +
   'acquisition_channel, first_visit_date, assigned_staff_id, is_subscriber, subscribed_at, ' +
   'churn_score, churn_reason, consent_anonymized_learning, prefecture, city, external_key_hash';
 

@@ -1481,6 +1481,48 @@ CSV取込(`csvImportPipeline.ts`・`salonBoardParser.ts`)には一切触れて�
 
 **この解除は上記`adding`初期値・保存後の挙動変更に限る。**
 
+### v1.0.1 着手済み事項（SalonBoard「お客様情報詳細」テキスト貼り付け取込機能の新設のみ・2026-09-24ユーザー承認）
+
+SalonBoardのCSV出力に生年月日等が無い問題(前々回のエントリ参照)への追加対応。
+CSV経由ではなく、SalonBoardの「お客様情報詳細」ページをテキストとしてそのまま
+コピペし、既存顧客(顧客トップページで選択中の顧客)へ一括反映する方式を新設した。
+**新規顧客の作成は対象外(既存顧客への情報補完のみ)。** 電話番号は個人情報方針により
+解析・保存いずれも行わない(ユーザー承認済み)。
+
+- **マイグレーション(レビュー用に作成のみ→ユーザー承認のうえ本番適用済み)**:
+  `supabase/migrations/20260924020000_brain_customers_salonboard_import_fields.sql`
+  — `brain_customers`に`salonboard_visit_count`(integer)・`postcard_consent`(text)を追加。
+  「初回来店日」(`first_visit_date`)・「来店きっかけ」(`acquisition_channel`)は既存カラムを
+  再利用した(重複追加していない)。`salonboard_visit_count`は`brain_visits`由来の実測
+  集計値とは別物(SalonBoard「来店回数」欄の生値)であることを明示するため、あえて
+  汎用の"visit_count"にしていない。
+- **`src/lib/customer/salonBoardTextParser.ts`(新規)**: 行ベースの緩いラベル一致で
+  「氏名(漢字)」「誕生日」「初回来店日」「来店回数」「来店きっかけ」「はがき送付許諾」を
+  抽出する(区切り文字の有無を問わない)。日付は既存の`parseFlexibleBirthDateInput()`
+  (birthDate.ts)を再利用。「-」等の空値表現は空として扱う。**電話番号用の正規表現は
+  一切実装していない**(パーサー自体が電話番号を認識しない設計)。氏名は確認表示専用
+  (`brain_customers.name`へは書き込まない、既存の顧客名を誤って上書きするリスクを
+  避けるため)。
+- **`app/api/customers/[id]/import-salonboard-text/route.ts`(新規、PATCHのみ)**:
+  `goal/route.ts`と同一の認証パターン。貼り付けテキストに含まれていない項目は
+  更新対象から除外する(見つかった項目だけを上書き、既存値をnull化しない)。
+  該当項目が1つも見つからなければ400(`no_recognizable_fields`)を返す。
+- **`src/components/customer/SalonBoardImportModal.tsx`(新規)**: 「サロンボード情報を
+  取り込む」ボタン(顧客トップページの基本情報カード内)から開くモーダル。テキスト
+  貼り付け→取込→検出項目のプレビュー表示という流れ。取込成功時は
+  `CustomerTopPage.tsx`側の生年月日等の表示を再取得し、年齢を即座に再計算する。
+- **リポジトリ層**: `CustomerRepo.ts`(`CUSTOMER_COLUMNS`に2カラム追加)・
+  `mappers.ts`(`BrainCustomerRow`/`toCustomer`)・`riora.types.ts`(`Customer`型に
+  `salonboardVisitCount`/`postcardConsent`をoptional追加、既存テストフィクスチャ保護)。
+- **検証結果**: `npm run typecheck`・`npm run build`ともにパス(既存の無関係な失敗のみ、
+  新規APIルートもビルド出力に含まれることを確認)。マイグレーション適用後のセキュリティ
+  アドバイザーに新規の指摘は無い。`next-env.d.ts`のbuild副作用は復元済み。実機での
+  実際のコピペ動作(SalonBoard実データでの解析精度)は未検証。
+
+**この解除は上記(SalonBoardテキスト貼り付け取込機能の新設・関連カラム追加)に限る。**
+CSV取込パイプライン(`csvImportPipeline.ts`・`salonBoardParser.ts`)・電話番号PII方針には
+一切触れていない。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。
