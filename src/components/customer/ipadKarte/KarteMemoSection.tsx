@@ -68,7 +68,9 @@ export default function KarteMemoSection({
   // 画面上部へ移動したことに伴い初期表示から見えるようにした。開閉ボタン自体は無変更)。
   const [previousOpen, setPreviousOpen] = useState(true)
 
-  const [adding, setAdding] = useState(false)
+  // 追加欄は常時展開(2026-09-24ユーザー承認: 「＋カルテメモを追加」ボタンを押さないと
+  // 入力欄が出ない仕様だと一手間かかるため、初期状態から入力欄を表示する)。
+  const [adding, setAdding] = useState(true)
   const [newContent, setNewContent] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -105,7 +107,7 @@ export default function KarteMemoSection({
       })
       if (!res.ok) throw new Error()
       setNewContent('')
-      setAdding(false)
+      // 追加欄は常時展開のため、保存後もsetAdding(false)で閉じない(連続で書き込める)。
       await load()
     } catch { /* 失敗時は入力内容を保持したままにする */ }
     finally { setSaving(false) }
