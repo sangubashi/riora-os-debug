@@ -20,20 +20,18 @@
  * 吸収はsrc/lib/customer/birthDate.tsに集約し、CustomerModeView.tsx・
  * IpadStaffKarteView.tsxの表示(読み取り専用)とロジックを共用する。
  *
- * サロンボード情報のテキスト貼り付け取込(2026-09-24ユーザー承認): SalonBoard
- * 「お客様情報詳細」ページをそのままコピペするだけで、既存顧客(この画面で選択中の
- * 顧客)の初回来店日・来店回数・来店きっかけ・はがき送付許諾・生年月日を一括更新できる
- * (SalonBoardImportModal.tsx、PATCH /api/customers/[id]/import-salonboard-text)。
- * 新規顧客の作成は対象外(既存顧客への情報補完のみ)。電話番号は個人情報方針により
- * 取り込まない(サーバー側パーサーが電話番号を一切抽出しない)。
+ * サロンボード情報のテキスト貼り付け取込(2026-09-24ユーザー承認・配置変更): 当初
+ * この画面に置いていたが、はがき送付許諾・来店きっかけ等の内部情報をお客様と一緒に
+ * 見る可能性があるこの画面に出さないよう、PIN保護されたスタッフモード側
+ * (IpadStaffKarteView.tsx、顧客ステータスパネルの下)へ移設した。このファイルには
+ * 導線を一切残していない(生年月日の手動編集のみ、引き続きこの画面が担当)。
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, ChevronRight, Camera, Pencil, Check, ClipboardPaste } from 'lucide-react'
+import { X, ChevronRight, Camera, Pencil, Check } from 'lucide-react'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, headingFont } from '@/components/customer/shared/PhotoCompareKit'
 import InitialQuestionnaireCaptureModal from '@/components/customer/ipadKarte/InitialQuestionnaireCaptureModal'
-import SalonBoardImportModal from '@/components/customer/SalonBoardImportModal'
 import { calculateAge, formatBirthDateJapanese, formatBirthDateSlash } from '@/lib/customer/birthDate'
 import type { Customer, Reservation } from '@/types'
 
@@ -51,13 +49,7 @@ interface QuestionnaireState {
 
 interface CustomerDetailResponse {
   success:  boolean
-  customer?: {
-    birthDate?:           string | null
-    firstVisitDate?:      string | null
-    salonboardVisitCount?: number | null
-    acquisitionChannel?:  string | null
-    postcardConsent?:     string | null
-  }
+  customer?: { birthDate?: string | null }
 }
 
 interface QuestionnaireResponse {
@@ -74,11 +66,6 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
   const [birthDateInput, setBirthDateInput]     = useState('')
   const [birthDateSaving, setBirthDateSaving]   = useState(false)
   const [birthDateError, setBirthDateError]     = useState<string | null>(null)
-  const [firstVisitDate, setFirstVisitDate]     = useState<string | null>(null)
-  const [salonboardVisitCount, setSalonboardVisitCount] = useState<number | null>(null)
-  const [acquisitionChannel, setAcquisitionChannel]     = useState<string | null>(null)
-  const [postcardConsent, setPostcardConsent]   = useState<string | null>(null)
-  const [showSalonBoardImport, setShowSalonBoardImport] = useState(false)
   const [questionnaire, setQuestionnaire] = useState<QuestionnaireState | null>(null)
   const [questionnaireLoading, setQuestionnaireLoading] = useState(true)
   const [showEnlarged, setShowEnlarged]     = useState(false)
@@ -105,23 +92,21 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
 
   useEffect(() => { void fetchQuestionnaire() }, [fetchQuestionnaire])
 
-  const fetchCustomerDetail = useCallback(async () => {
-    try {
-      const res = await authedFetch(`/api/customers/${customer.id}`)
-      if (res.ok) {
-        const json = await res.json() as CustomerDetailResponse
-        setBirthDate(json.customer?.birthDate ?? null)
-        setFirstVisitDate(json.customer?.firstVisitDate ?? null)
-        setSalonboardVisitCount(json.customer?.salonboardVisitCount ?? null)
-        setAcquisitionChannel(json.customer?.acquisitionChannel ?? null)
-        setPostcardConsent(json.customer?.postcardConsent ?? null)
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await authedFetch(`/api/customers/${customer.id}`)
+        if (res.ok) {
+          const json = await res.json() as CustomerDetailResponse
+          if (!cancelled) setBirthDate(json.customer?.birthDate ?? null)
+        }
+      } catch {
+        /* 取得失敗時は生年月日欄を空のまま(致命的にしない) */
       }
-    } catch {
-      /* 取得失敗時は各欄を空のまま(致命的にしない) */
-    }
+    })()
+    return () => { cancelled = true }
   }, [customer.id])
-
-  useEffect(() => { void fetchCustomerDetail() }, [fetchCustomerDetail])
 
   const goToDetailPage = () => router.push(`/karte/${customer.id}`)
 
@@ -258,35 +243,6 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
               </button>
             </div>
           )}
-
-          {(firstVisitDate || salonboardVisitCount !== null || acquisitionChannel || postcardConsent) && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              {firstVisitDate && (
-                <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>初回来店日: {firstVisitDate}</p>
-              )}
-              {salonboardVisitCount !== null && (
-                <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>来店回数: {salonboardVisitCount}回</p>
-              )}
-              {acquisitionChannel && (
-                <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>来店きっかけ: {acquisitionChannel}</p>
-              )}
-              {postcardConsent && (
-                <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>はがき送付許諾: {postcardConsent}</p>
-              )}
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={() => setShowSalonBoardImport(true)}
-            style={{
-              alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '6px',
-              padding: '9px 16px', borderRadius: '999px', border: `1.5px solid ${PALETTE.gold}`,
-              background: 'none', color: PALETTE.gold, fontSize: '13px', fontWeight: 700, cursor: 'pointer',
-            }}
-          >
-            <ClipboardPaste size={16} /> サロンボード情報を取り込む
-          </button>
         </div>
 
         {/* 初回問診票 */}
@@ -370,14 +326,6 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
           customerId={customer.id}
           onClose={() => setShowCaptureModal(false)}
           onSaved={() => { setShowCaptureModal(false); void fetchQuestionnaire() }}
-        />
-      )}
-
-      {showSalonBoardImport && (
-        <SalonBoardImportModal
-          customerId={customer.id}
-          onClose={() => setShowSalonBoardImport(false)}
-          onImported={() => void fetchCustomerDetail()}
         />
       )}
     </div>

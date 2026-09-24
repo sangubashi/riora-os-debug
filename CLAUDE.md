@@ -1523,6 +1523,37 @@ CSV経由ではなく、SalonBoardの「お客様情報詳細」ページをテ�
 CSV取込パイプライン(`csvImportPipeline.ts`・`salonBoardParser.ts`)・電話番号PII方針には
 一切触れていない。
 
+### v1.0.1 着手済み事項（SalonBoard取込導線をスタッフモード側へ移設のみ・2026-09-24ユーザー承認）
+
+直前のエントリで顧客トップページ(`CustomerTopPage.tsx`)に置いたSalonBoard取込機能
+について、「お客様と一緒に見る画面にはがき送付許諾・来店きっかけ等の内部情報を
+出したくない」というユーザー指摘を受け、配置を変更した。
+
+- **`src/components/customer/CustomerTopPage.tsx`**: 「サロンボード情報を取り込む」
+  ボタン・初回来店日/来店回数/来店きっかけ/はがき送付許諾の表示・`SalonBoardImportModal`
+  の呼び出し・関連state(`firstVisitDate`/`salonboardVisitCount`/`acquisitionChannel`/
+  `postcardConsent`/`showSalonBoardImport`)を全て削除した。生年月日の表示・鉛筆編集
+  機能はこのファイルに残したまま(ユーザー指示は「はがき送付許諾・来店きっかけ等の
+  内部情報」が対象で、生年月日/年齢は「お客様に見せても問題ない項目」として明示的に
+  対象外とされたため)。
+- **`src/components/customer/ipadKarte/IpadStaffKarteView.tsx`(PIN保護されたスタッフ
+  モード)**: 「📋 サロンボード情報」Cardを新設し、`CustomerStatusPanel`(顧客ステータス)
+  の直下(ユーザー指定の配置)に追加した。初回来店日/来店回数/来店きっかけ/はがき送付
+  許諾の表示と「サロンボード情報を取り込む」ボタン(`SalonBoardImportModal`を開く)を
+  ここに集約した。年齢表示は既存のヘッダー表示(`{customerName}様（38歳）`)をそのまま
+  維持(変更なし)。`fetchCustomerDetail`を`useCallback`化し、取込成功時
+  (`onImported`)にこの画面の表示を再取得する。
+- **`SalonBoardImportModal.tsx`本体・`import-salonboard-text`API・パーサー・
+  マイグレーションには一切手を加えていない**(呼び出し元(props: `customerId`/
+  `onClose`/`onImported`)が変わっただけ)。
+- **お客様モード(`CustomerModeView.tsx`)**: 元々SalonBoard関連の表示は一切実装して
+  いなかった(今回変更なし)。年齢表示のみ既存通り残る。
+- **検証結果**: `npm run typecheck`・`npm run build`ともにパス(既存の無関係な失敗のみ)。
+
+**この解除は上記(SalonBoard取込導線の`CustomerTopPage.tsx`→`IpadStaffKarteView.tsx`
+への移設)に限る。** `SalonBoardImportModal.tsx`本体・API・パーサー・マイグレーション・
+`CustomerModeView.tsx`には一切触れていない。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

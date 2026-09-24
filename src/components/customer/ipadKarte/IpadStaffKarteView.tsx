@@ -25,8 +25,8 @@
  *
  * 写真比較UIはCustomerModeViewと共有(src/components/customer/shared/PhotoCompareKit.tsx)。
  */
-import { useEffect, useState } from 'react'
-import { Flower2, X, Pencil, EyeOff, ChevronDown } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { Flower2, X, Pencil, EyeOff, ChevronDown, ClipboardPaste } from 'lucide-react'
 import { useIpadKarteData, type RetailProductStatus } from './ipadKarteData'
 import KarteMemoSection from './KarteMemoSection'
 import FacialSchemaSection from './FacialSchemaSection'
@@ -39,6 +39,7 @@ import { SHARED_IPAD_STAFF_USER_ID } from '@/lib/constants'
 import { useStaffTagSession } from '@/lib/staffTag/useStaffTagSession'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { calculateAge } from '@/lib/customer/birthDate'
+import SalonBoardImportModal from '@/components/customer/SalonBoardImportModal'
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
 /** クイック選択の候補(本日起点の週数)。 */
@@ -410,23 +411,44 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
   // 年齢表示(2026-09-24ユーザー承認)。既存API(GET /api/customers/[id])をこの画面専用に
   // 直接呼ぶ(useIpadKarteData()は経由しない、CustomerModeView.tsxと同じ「自己完結fetch」
   // パターン)。入力はCustomerTopPage.tsx側で行うため、この画面では表示のみ(読み取り専用)。
+  //
+  // SalonBoard取込情報の表示・取込導線(2026-09-24ユーザー承認・配置変更): 当初
+  // CustomerTopPage.tsxに置いていたが、はがき送付許諾・来店きっかけ等の内部情報を
+  // お客様と一緒に見る画面に出さないため、PIN保護されたスタッフモード側(この画面)の
+  // 顧客ステータスパネルの下へ移設した。CustomerTopPage.tsx側の当該表示・ボタンは削除済み。
   const [age, setAge] = useState<number | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      try {
-        const res = await authedFetch(`/api/customers/${customerId}`)
-        if (res.ok) {
-          const json = await res.json() as { customer?: { birthDate?: string | null } }
-          const birthDate = json.customer?.birthDate ?? null
-          if (!cancelled) setAge(birthDate ? calculateAge(birthDate) : null)
+  const [firstVisitDate, setFirstVisitDate] = useState<string | null>(null)
+  const [salonboardVisitCount, setSalonboardVisitCount] = useState<number | null>(null)
+  const [acquisitionChannel, setAcquisitionChannel] = useState<string | null>(null)
+  const [postcardConsent, setPostcardConsent] = useState<string | null>(null)
+  const [showSalonBoardImport, setShowSalonBoardImport] = useState(false)
+
+  const fetchCustomerDetail = useCallback(async () => {
+    try {
+      const res = await authedFetch(`/api/customers/${customerId}`)
+      if (res.ok) {
+        const json = await res.json() as {
+          customer?: {
+            birthDate?:           string | null
+            firstVisitDate?:      string | null
+            salonboardVisitCount?: number | null
+            acquisitionChannel?:  string | null
+            postcardConsent?:     string | null
+          }
         }
-      } catch {
-        /* 取得失敗時は年齢欄を出さないまま(致命的にしない) */
+        const birthDate = json.customer?.birthDate ?? null
+        setAge(birthDate ? calculateAge(birthDate) : null)
+        setFirstVisitDate(json.customer?.firstVisitDate ?? null)
+        setSalonboardVisitCount(json.customer?.salonboardVisitCount ?? null)
+        setAcquisitionChannel(json.customer?.acquisitionChannel ?? null)
+        setPostcardConsent(json.customer?.postcardConsent ?? null)
       }
-    })()
-    return () => { cancelled = true }
+    } catch {
+      /* 取得失敗時は各欄を出さないまま(致命的にしない) */
+    }
   }, [customerId])
+
+  useEffect(() => { void fetchCustomerDetail() }, [fetchCustomerDetail])
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: PALETTE.bg, display: 'flex', flexDirection: 'column' }}>
@@ -665,10 +687,54 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
                 retailProducts={data.retailProducts}
               />
             </div>
+
+            {/* サロンボード情報取込(2026-09-24ユーザー承認・顧客ステータスの下に配置)。
+                はがき送付許諾・来店きっかけ等の内部情報を含むため、PIN保護されたスタッフ
+                モード側にのみ置く(お客様モード・顧客トップページには一切表示しない)。 */}
+            <div style={{ gridColumn: '1 / -1' }}>
+              <Card title="📋 サロンボード情報">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {(firstVisitDate || salonboardVisitCount !== null || acquisitionChannel || postcardConsent) && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      {firstVisitDate && (
+                        <p style={{ margin: 0, fontSize: '13px', color: PALETTE.text }}>初回来店日: {firstVisitDate}</p>
+                      )}
+                      {salonboardVisitCount !== null && (
+                        <p style={{ margin: 0, fontSize: '13px', color: PALETTE.text }}>来店回数: {salonboardVisitCount}回</p>
+                      )}
+                      {acquisitionChannel && (
+                        <p style={{ margin: 0, fontSize: '13px', color: PALETTE.text }}>来店きっかけ: {acquisitionChannel}</p>
+                      )}
+                      {postcardConsent && (
+                        <p style={{ margin: 0, fontSize: '13px', color: PALETTE.text }}>はがき送付許諾: {postcardConsent}</p>
+                      )}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowSalonBoardImport(true)}
+                    style={{
+                      alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '6px',
+                      padding: '9px 16px', borderRadius: '999px', border: `1.5px solid ${PALETTE.gold}`,
+                      background: 'none', color: PALETTE.gold, fontSize: '13px', fontWeight: 700, cursor: 'pointer',
+                    }}
+                  >
+                    <ClipboardPaste size={16} /> サロンボード情報を取り込む
+                  </button>
+                </div>
+              </Card>
+            </div>
           </div>
         )}
       </div>
 
+      {showSalonBoardImport && (
+        <SalonBoardImportModal
+          customerId={customerId}
+          onClose={() => setShowSalonBoardImport(false)}
+          onImported={() => void fetchCustomerDetail()}
+        />
+      )}
     </div>
   )
 }
