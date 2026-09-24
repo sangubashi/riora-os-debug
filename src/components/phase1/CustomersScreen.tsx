@@ -6,7 +6,7 @@ import Image from 'next/image'
 import AppBottomNav from './AppBottomNav'
 import { useCustomerStore, type CustomerRow } from '@/store/useCustomerStore'
 import { useAuthStore } from '@/store/useAuthStore'
-import CustomerBottomSheet from '@/components/customer/CustomerBottomSheet'
+import CustomerTopPage from '@/components/customer/CustomerTopPage'
 import { authedFetch } from '@/lib/api/authedFetch'
 import type { Customer, Reservation } from '@/types'
 
@@ -449,15 +449,13 @@ export default function CustomersScreen() {
 
       <AppBottomNav />
 
-      {/* ── 詳細シート（今日タブと同一のCustomerBottomSheetを使用） ── */}
+      {/* ── 顧客トップページ（今日タブと同一のCustomerTopPageを使用） ── */}
       {selectedCustomer && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 60 }}>
-          <CustomerBottomSheet
-            customer={toCustomer(selectedCustomer)}
-            reservation={toReservation(selectedCustomer)}
-            onClose={() => setSelectedCustomer(null)}
-          />
-        </div>
+        <CustomerTopPage
+          customer={toCustomer(selectedCustomer)}
+          reservation={toReservation(selectedCustomer)}
+          onClose={() => setSelectedCustomer(null)}
+        />
       )}
     </div>
   )

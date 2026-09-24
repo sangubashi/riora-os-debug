@@ -42,7 +42,7 @@ import NotificationSheet                      from '@/components/notifications/N
 import { useNotificationsStore }              from '@/store/useNotificationsStore'
 import { Bell } from 'lucide-react'
 
-import CustomerBottomSheet from '@/components/customer/CustomerBottomSheet'
+import CustomerTopPage from '@/components/customer/CustomerTopPage'
 import { useNewCustomerSheetStore } from '@/store/useNewCustomerSheetStore'
 
 // ─── DB行 → Phase1Reservation 変換 ───────────────────────────────────────────
@@ -433,13 +433,11 @@ export default function Phase1Screen() {
       />
 
       {newSheetOpen && newSheetCustomer && newSheetReservation && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 60 }}>
-          <CustomerBottomSheet
-            customer={newSheetCustomer}
-            reservation={newSheetReservation}
-            onClose={closeNewSheet}
-          />
-        </div>
+        <CustomerTopPage
+          customer={newSheetCustomer}
+          reservation={newSheetReservation}
+          onClose={closeNewSheet}
+        />
       )}
 
       <AnimatePresence>

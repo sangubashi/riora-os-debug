@@ -10,10 +10,15 @@
  * 誤操作防止のため完全に読み取り専用(pointerハンドラ・編集UIを一切持たない)。
  * 描画は共有部品(FacialSchemaThumbnail、src/components/customer/shared/FacialSchemaKit.tsx)を
  * スタッフ編集画面(FacialSchemaSection.tsx)とそのまま共用し、見た目が2画面で食い違わないようにする。
+ *
+ * 折りたたみ表示(2026-09-24ユーザー承認): お客様モードでは施術内容を伴う画像を不用意に
+ * 見せないよう、初期状態は折りたたみ(非表示)とし、「顔シェーマを表示する ∨」ボタンで
+ * 展開する。展開後も編集UIは元々存在しないため、引き続き閲覧専用のまま変わらない。
  */
 import { useEffect, useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { authedFetch } from '@/lib/api/authedFetch'
-import { PALETTE, Card } from '@/components/customer/shared/PhotoCompareKit'
+import { PALETTE, Card, headingFont } from '@/components/customer/shared/PhotoCompareKit'
 import { FacialSchemaThumbnail } from '@/components/customer/shared/FacialSchemaKit'
 import { sortRecordsDesc } from '@/lib/facialSchema/facialSchemaSelection'
 import type { FacialSchemaApiShape } from '@/lib/facialSchema/facialSchemaApiMapping'
@@ -36,6 +41,7 @@ function formatDateOnly(dateStr: string): string {
 export default function FacialSchemaViewer({ customerId }: Props) {
   const [schemas, setSchemas] = useState<FacialSchemaApiShape[]>([])
   const [loading, setLoading] = useState(true)
+  const [expanded, setExpanded] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -66,29 +72,48 @@ export default function FacialSchemaViewer({ customerId }: Props) {
   return (
     <Card title="顔シェーマ">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-        <div
+        <button
+          type="button"
+          onClick={() => setExpanded(v => !v)}
           style={{
-            display: 'grid',
-            gridTemplateColumns: previous ? '1fr 1fr' : '1fr',
-            gap: '12px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+            padding: '10px 12px', borderRadius: '10px', border: `1px solid ${PALETTE.border}`,
+            background: 'none', color: PALETTE.text, fontSize: '13px', fontWeight: 700,
+            fontFamily: headingFont.style.fontFamily, cursor: 'pointer',
           }}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <p style={{ margin: 0, fontSize: '11px', fontWeight: 700, color: PALETTE.gold }}>
-              今回({formatDateOnly(latest.schemaDate)})
-            </p>
-            <FacialSchemaThumbnail strokesData={latest.strokesData} />
-          </div>
+          {expanded ? '顔シェーマを閉じる' : '顔シェーマを表示する'}
+          <ChevronDown
+            size={16}
+            style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }}
+          />
+        </button>
 
-          {previous && (
+        {expanded && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: previous ? '1fr 1fr' : '1fr',
+              gap: '12px',
+            }}
+          >
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <p style={{ margin: 0, fontSize: '11px', fontWeight: 700, color: PALETTE.muted }}>
-                前回({formatDateOnly(previous.schemaDate)})
+              <p style={{ margin: 0, fontSize: '11px', fontWeight: 700, color: PALETTE.gold }}>
+                今回({formatDateOnly(latest.schemaDate)})
               </p>
-              <FacialSchemaThumbnail strokesData={previous.strokesData} />
+              <FacialSchemaThumbnail strokesData={latest.strokesData} />
             </div>
-          )}
-        </div>
+
+            {previous && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <p style={{ margin: 0, fontSize: '11px', fontWeight: 700, color: PALETTE.muted }}>
+                  前回({formatDateOnly(previous.schemaDate)})
+                </p>
+                <FacialSchemaThumbnail strokesData={previous.strokesData} />
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </Card>
   )

@@ -1196,6 +1196,110 @@ Phase 5・6のUI実機相当確認はPlaywright(本番Supabase・実顧客「小
 会話トーン・LINE領域・admin領域、およびそれ以外の顧客タブ/iPadカルテ画面の仕様については
 引き続き凍結を継続する。
 
+### v1.0.1 着手済み事項（顧客トップページ新設・詳細ページ調整のみ・2026-09-24ユーザー承認）
+
+「本日の予約」「顧客タブ検索結果」でお客様名をタップした際の遷移先を、現行の
+`CustomerBottomSheet`直接表示から新設の「顧客トップページ」へ差し替え、そこから
+「詳細ページ」(`/karte/[customerId]`、`KarteCustomerSwitcher.tsx`)へ進む2段階構成にした。
+写真4アングル表示・撮影日付表示は今回の指示で明示的に保留(スコープ外)とされたため未実装。
+
+#### 新設: `src/components/customer/CustomerTopPage.tsx`
+
+`Phase1Screen.tsx`・`CustomersScreen.tsx`(いずれも凍結ファイル、今回の指示範囲に限り
+解除)の該当箇所で、従来`<CustomerBottomSheet customer={...} reservation={...} .../>`を
+直接開いていたのを`<CustomerTopPage customer={...} reservation={...} .../>`に差し替えた
+(propsの形は同一、両ファイルの他の変更は一切していない)。
+
+- 表示: 顧客名、年代(下記参照)、初回問診票サムネイル(タップで拡大モーダル・閉じるボタン付き)、
+  「接客ログ / AI Timeline」ボタン、「詳細ページを見る→」ボタン。
+- 「接客ログ / AI Timeline」ボタン: 受け取った`customer`/`reservation`をそのまま渡して
+  `CustomerBottomSheet`を内部でportal表示する。**CustomerBottomSheet自体には一切手を
+  加えていない**(既存機能を何も失わない導線)。
+- 「詳細ページを見る→」ボタン: `router.push(`/karte/${customer.id}`)`。「詳細ページ」の
+  実体は`KarteCustomerSwitcher.tsx`(`/karte/[customerId]`、2026-09-20新設のiPad専用入口。
+  お客様モード⇔スタッフモード(PIN 1234)を同一画面内で切り替える設計)である。CustomerBottomSheet
+  の「🗂 iPadカルテ(β)」ボタンが担う別の独立ポータル(`IpadStaffKarteView`単体を直接開く方式)
+  とは別物であり、混同しないよう本項に明記する。
+
+**要ユーザー判断・未実装(生年月日・年齢の表示)**: 依頼の「基本情報」には生年月日・年齢の
+表示が含まれていたが、調査の結果`brain_customers`には生年月日を保持する列が存在せず、
+CSV取込(`salonBoardParser.ts`)ではむしろ生年月日をPII(個人情報)として意図的に除去する方針が
+既に取られている(`piiSanitizer.ts`)ことを確認した。この方針を無断で覆すのは今回の指示範囲を
+超えると判断し、代わりに既存の`age_group`(年代、例:「30代」)のみを`GET /api/customers/[id]`
+経由で取得・表示するに留めた。正確な生年月日・年齢を表示するには、PII除去方針の見直し・
+`brain_customers`への`birth_date`列追加・入力導線の新設が別途必要であり、ユーザーの明示的な
+判断を仰ぐこと。
+
+#### 新設: 初回問診票の保存(既存写真カルテとは独立)
+
+初回問診票(紙の問診票のスキャン画像1枚、顧客ごとに1件のみ・上書き更新)は、既存の
+`brain_customer_photos`(`photo_type` CHECK制約が`before`/`after`/`progress`固定、
+`ghostSelection.ts`/`comparisonSelection.ts`と密結合)とは意図的に分離した独立の保存先とした。
+写真カルテ側のロジック・DB制約には一切触れていない。
+
+- マイグレーション(レビュー用に作成のみ、**未適用**。顔シェーマ機能新設時と同じ運用で、
+  適用は別途明示的な承認を得てから行うこと):
+  `supabase/migrations/20260924000000_brain_customers_initial_questionnaire.sql`
+  — `brain_customers`に`initial_questionnaire_photo_path`(text)・
+  `initial_questionnaire_uploaded_at`(timestamptz)を追加。
+- API: `app/api/customers/[id]/initial-questionnaire/route.ts`(GET/PUT新設)。認証・認可は
+  既存API(`extractStaffFromRequest`→`canAccessCustomer`)と同一パターン。画像は既存の
+  `PHOTO_BUCKET`(`customer-photos`)の`initial-questionnaires/{customerId}/questionnaire.{ext}`
+  に**常に上書き保存**(`upsert:true`)し、拡張子が変わった場合のみ旧パスを削除する。
+  MIME/サイズ検証は`src/lib/photos/constants.ts`の既存定数をそのまま再利用(この定数ファイル
+  自体は変更していない)。
+- モーダル新設: `src/components/customer/ipadKarte/InitialQuestionnaireCaptureModal.tsx`。
+  依頼では「既存の`IpadPhotoCaptureModal.tsx`から登録・更新可能にする」とあったが、同モーダルは
+  ゴースト重ね合わせ・顔検出ガイド・傾きガイド・部位タブ等、前回|今回比較専用の機能と密結合
+  しており、そこへ手を加えると`ghostSelection.ts`等の凍結・フラジャイルな既存ロジックに
+  影響するリスクがあったため、**`IpadPhotoCaptureModal.tsx`自体は一切変更せず**、撮影/選択→
+  プレビュー確認→保存という同じ操作感のみを持つ専用の軽量モーダルを新設する方針に切り替えた
+  (低レベル関数`captureFrame.ts`・`fileToWebpBlob.ts`は再利用、配色`PALETTE`・
+  `headingFont`は`PhotoCompareKit.tsx`から再利用し見た目を統一)。プレビューobject URLは
+  `URL.revokeObjectURL()`で都度解放する(iPadでのメモリ解放対策)。
+
+#### 顔シェーマの表示調整
+
+- `src/components/customer/shared/FacialSchemaKit.tsx`:
+  `FACIAL_SCHEMA_TEMPLATE_MARGIN_PERCENT`を12→19に変更(表示スケールは`100-19*2=62%`、
+  依頼の「60〜65%程度」の範囲内)。スタッフ編集画面・お客様/前回閲覧の両方に同じ定数を
+  経由して適用されるため、2画面で見た目が食い違うことはない。canvas(描画レイヤー・
+  ストローク座標の正規化基準)自体は従来通りコンテナ全面のままで変更していない。
+- `src/components/customer/guestMode/FacialSchemaViewer.tsx`: お客様モードでの初期折りたたみ
+  (`expanded`state、既定`false`)と「顔シェーマを表示する ∨」ボタンを新設。展開後もこれまで
+  通りpointerハンドラ・編集UIを一切持たない読み取り専用のまま(元々編集不可だったため、
+  折りたたみ以外の変更は無い)。
+- スタッフ側(`FacialSchemaSection.tsx`、`IpadStaffKarteView.tsx`経由)のデフォルト展開・
+  編集可能という挙動は現状のまま(コード確認のみ、変更していない)。
+
+#### iPadパフォーマンス対策について(判断・見送り)
+
+依頼にあった「Canvas描画イベント(pointermove等)の間引き処理」について、
+`useFacialSchemaCanvas.ts`の実装を確認したところ、pointermove自体は既に配列へ座標を
+追記するだけの軽い処理であり、実際の再描画は呼び出し側(`FacialSchemaSection.tsx`)の
+`requestAnimationFrame`ループ側で既に1フレーム1回に間引かれている設計だった(ファイル冒頭
+コメントに明記された既存の意図的な設計)。追加の間引きを入れても効果が薄く、逆にパーム
+リジェクション判定(`decidePointerDown`/`decidePointerEnd`、複数回の実機不具合調査を経て
+確定した既存ロジック)に影響するリスクがあるため、**このフックへの変更は見送った**。
+画像メモリ解放(`URL.revokeObjectURL`)は上記の新設モーダルで徹底した。
+
+#### 検証結果
+
+`npm run typecheck`・`npm run build`ともにパス(既存の無関係な失敗10件は今回の変更前から
+存在する別ファイル(e2e仕様・一部ユニットテスト)のものであり、今回の変更による新規エラーは
+無い)。`next-env.d.ts`のbuild副作用は確認後に`git checkout`で復元済み。
+
+**実機/E2E未確認**: 上記マイグレーション未適用のため、初回問診票のアップロード・表示は
+本番Supabaseに対して実地検証していない(コードレビューレベルの確認に留まる)。顔シェーマの
+表示スケール変更・折りたたみボタンもiPad実機(Safari)では未確認。
+
+**この解除は上記(顧客トップページ新設、`Phase1Screen.tsx`/`CustomersScreen.tsx`の遷移先
+差し替えのみ、初回問診票の保存機構新設、顔シェーマの表示スケール・お客様モード折りたたみ)に
+限る。** 写真4アングル表示・撮影日付表示、生年月日・年齢の実データ表示、
+`IpadPhotoCaptureModal.tsx`本体・`ghostSelection.ts`/`comparisonSelection.ts`・
+`brain_customer_photos`のphoto_type制約は今回一切変更していない。5タブ構成・TL-5構成・
+AI提案の会話トーン・LINE領域・admin領域については引き続き凍結を継続する。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

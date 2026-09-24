@@ -17,8 +17,9 @@ export const FACIAL_SCHEMA_TEMPLATE_SRC = '/facial-schema/face-front.jpg'
 export const FACIAL_SCHEMA_TEMPLATE_ASPECT_RATIO = '784 / 1168'
 
 /**
- * テンプレート画像の表示スケール(2026-09-22ユーザー要望: 顔の周りに書き込み余白を
- * 作るため、イラスト自体をひとまわり小さく表示する)。canvas(描画レイヤー・
+ * テンプレート画像の表示スケール(2026-09-22ユーザー要望を継続、2026-09-24追加調整:
+ * 照射出力(J数・ライン数)やアプローチ順①②③を顔の真横に書き込めるよう、イラスト自体を
+ * 表示幅60〜65%程度までさらに縮小し、左右の書き込み余白を拡大した)。canvas(描画レイヤー・
  * ストローク座標の正規化基準となるbox)は従来通りコンテナ全面(inset:0)のまま一切
  * 変更しない — 顔画像の見た目のみを縮小し、書き込み可能領域(余白部分を含む)は
  * コンテナ全体のまま変わらない。編集画面(FacialSchemaSection.tsx)・お客様/前回
@@ -27,7 +28,7 @@ export const FACIAL_SCHEMA_TEMPLATE_ASPECT_RATIO = '784 / 1168'
  * width/heightをすべて同じ%にする。コンテナのaspect-ratioがテンプレート画像自身の
  * 比率と一致しているため、縦横均等に縮小しても画像の縦横比は保たれる)。
  */
-const FACIAL_SCHEMA_TEMPLATE_MARGIN_PERCENT = 12
+const FACIAL_SCHEMA_TEMPLATE_MARGIN_PERCENT = 19
 export const facialSchemaTemplateImgStyle: React.CSSProperties = {
   position: 'absolute',
   top: `${FACIAL_SCHEMA_TEMPLATE_MARGIN_PERCENT}%`,
