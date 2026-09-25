@@ -16,7 +16,8 @@
  * facial-schemas)を再利用するのみで新規APIは追加しない。
  */
 import { useEffect, useState } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, Quote } from 'lucide-react'
+import { toast } from 'sonner'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, Card } from '@/components/customer/shared/PhotoCompareKit'
 import { FacialSchemaThumbnail } from '@/components/customer/shared/FacialSchemaKit'
@@ -53,6 +54,22 @@ function isSameLocalDate(iso: string, visitDate: string): boolean {
   return a.getFullYear() === b.getFullYear()
     && a.getMonth() === b.getMonth()
     && a.getDate() === b.getDate()
+}
+
+/**
+ * 過去カルテメモの引用機能(2026-09-25ユーザー承認): このセクションは
+ * customerId以外を受け取らない自己完結設計(ファイル冒頭コメント参照)のため、
+ * 上部の常時展開カルテメモ欄(KarteMemoSection.tsx、別コンポーネント)の入力欄へ
+ * 直接挿入する経路は持たない。代わりにクリップボードへコピーし、スタッフが
+ * 手動で貼り付けられるようにする(Toast表示で完了を伝える)。
+ */
+async function copyMemoToClipboard(content: string) {
+  try {
+    await navigator.clipboard.writeText(content)
+    toast.success('カルテメモをコピーしました', { duration: 1500 })
+  } catch {
+    toast.error('コピーに失敗しました')
+  }
 }
 
 export default function VisitHistorySection({ customerId }: Props) {
@@ -151,9 +168,22 @@ export default function VisitHistorySection({ customerId }: Props) {
                             <p style={{ margin: 0, fontSize: '14px', color: PALETTE.text, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                               {memo.content}
                             </p>
-                            <p style={{ margin: '4px 0 0', fontSize: '10px', color: PALETTE.muted }}>
-                              {formatTime(memo.created_at)}{memo.staffName ? ` ・ ${memo.staffName}` : ''}
-                            </p>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '4px' }}>
+                              <p style={{ margin: 0, fontSize: '10px', color: PALETTE.muted }}>
+                                {formatTime(memo.created_at)}{memo.staffName ? ` ・ ${memo.staffName}` : ''}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => void copyMemoToClipboard(memo.content)}
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0,
+                                  fontSize: '11px', fontWeight: 700, padding: '6px 12px', borderRadius: '999px',
+                                  border: `1px solid ${PALETTE.gold}`, background: 'none', color: PALETTE.gold, cursor: 'pointer',
+                                }}
+                              >
+                                <Quote size={11} />引用(コピー)
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>

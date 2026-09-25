@@ -14,7 +14,8 @@
  * (src/types/customerKarteMemo.tsの絶対ルールに準拠)。
  */
 import { useCallback, useEffect, useState } from 'react'
-import { ChevronDown, ChevronRight, Pencil, Plus, Trash2, Check, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Pencil, Plus, Trash2, Check, X, Quote } from 'lucide-react'
+import { toast } from 'sonner'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, Card } from '@/components/customer/shared/PhotoCompareKit'
 import type { CustomerKarteMemo } from '@/types/customerKarteMemo'
@@ -139,6 +140,21 @@ export default function KarteMemoSection({
     finally { setUpdating(false) }
   }
 
+  /**
+   * 過去カルテメモの引用機能(2026-09-25ユーザー承認): タップした過去メモの本文を
+   * 「今回のカルテメモ」入力欄(newContent)へ挿入する。すでに入力中のテキストがある
+   * 場合は上書きせず末尾に改行して追記する安全設計。保存処理・DB構造には触れない
+   * (フロントエンドの入力欄操作のみ)。
+   */
+  function insertQuote(content: string) {
+    setAdding(true)
+    setNewContent(prev => {
+      const trimmed = prev.trimEnd()
+      return trimmed.length > 0 ? `${trimmed}\n${content}` : content
+    })
+    toast.success('カルテメモを引用しました', { duration: 1500 })
+  }
+
   async function handleDelete(id: string) {
     const res = await authedFetch(`/api/customer-karte-memos/${id}?customer_id=${encodeURIComponent(customerId)}`, {
       method: 'DELETE',
@@ -243,27 +259,39 @@ export default function KarteMemoSection({
                 <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                   <button
                     type="button"
-                    onClick={() => startEdit(m)}
-                    aria-label="編集"
+                    onClick={() => insertQuote(m.content)}
+                    aria-label="このメモを引用"
                     style={{
-                      width: '26px', height: '26px', borderRadius: '50%', border: `1px solid ${PALETTE.border}`,
+                      width: '30px', height: '30px', borderRadius: '50%', border: `1px solid ${PALETTE.border}`,
                       background: PALETTE.bg, color: PALETTE.gold, display: 'flex', alignItems: 'center',
                       justifyContent: 'center', cursor: 'pointer',
                     }}
                   >
-                    <Pencil size={11} />
+                    <Quote size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => startEdit(m)}
+                    aria-label="編集"
+                    style={{
+                      width: '30px', height: '30px', borderRadius: '50%', border: `1px solid ${PALETTE.border}`,
+                      background: PALETTE.bg, color: PALETTE.gold, display: 'flex', alignItems: 'center',
+                      justifyContent: 'center', cursor: 'pointer',
+                    }}
+                  >
+                    <Pencil size={13} />
                   </button>
                   <button
                     type="button"
                     onClick={() => void handleDelete(m.id)}
                     aria-label="削除"
                     style={{
-                      width: '26px', height: '26px', borderRadius: '50%', border: '1px solid rgba(196,90,90,0.3)',
+                      width: '30px', height: '30px', borderRadius: '50%', border: '1px solid rgba(196,90,90,0.3)',
                       background: 'rgba(196,90,90,0.08)', color: '#B85050', display: 'flex', alignItems: 'center',
                       justifyContent: 'center', cursor: 'pointer',
                     }}
                   >
-                    <Trash2 size={11} />
+                    <Trash2 size={13} />
                   </button>
                 </div>
               </div>
@@ -309,10 +337,23 @@ export default function KarteMemoSection({
                       <p style={{ margin: 0, fontSize: '15px', color: PALETTE.text, lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                         {previousMemo.content}
                       </p>
-                      <p style={{ margin: '4px 0 0', fontSize: '10px', color: PALETTE.muted }}>
-                        {formatDateTime(previousMemo.created_at)}
-                        {previousMemo.staffName ? ` ・ ${previousMemo.staffName}` : ''}
-                      </p>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '4px' }}>
+                        <p style={{ margin: 0, fontSize: '10px', color: PALETTE.muted }}>
+                          {formatDateTime(previousMemo.created_at)}
+                          {previousMemo.staffName ? ` ・ ${previousMemo.staffName}` : ''}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => insertQuote(previousMemo.content)}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0,
+                            fontSize: '11px', fontWeight: 700, padding: '6px 12px', borderRadius: '999px',
+                            border: `1px solid ${PALETTE.gold}`, background: 'none', color: PALETTE.gold, cursor: 'pointer',
+                          }}
+                        >
+                          <Quote size={11} />引用する
+                        </button>
+                      </div>
                     </>
                   ) : (
                     <p style={{ margin: 0, fontSize: '15px', color: PALETTE.text }}>記録がありません</p>
