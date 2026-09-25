@@ -35,11 +35,13 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { X, ChevronRight, Camera, Pencil, Check, Plus } from 'lucide-react'
+import { X, ChevronRight, Camera, Pencil, Check, Plus, MessageCircle } from 'lucide-react'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, headingFont } from '@/components/customer/shared/PhotoCompareKit'
 import InitialQuestionnaireCaptureModal from '@/components/customer/ipadKarte/InitialQuestionnaireCaptureModal'
 import DocumentSlotCaptureModal from '@/components/customer/ipadKarte/DocumentSlotCaptureModal'
+import LineLinkModal from '@/components/customer/LineLinkModal'
+import LineThreadModal from '@/components/customer/LineThreadModal'
 import { calculateAge, formatBirthDateJapanese, formatBirthDateSlash } from '@/lib/customer/birthDate'
 import type { Customer, Reservation } from '@/types'
 
@@ -87,6 +89,13 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
   const [documentsLoading, setDocumentsLoading] = useState(true)
   const [captureSlot, setCaptureSlot] = useState<DocumentSlot | null>(null)
   const [enlargedSlot, setEnlargedSlot] = useState<DocumentSlot | null>(null)
+  const [lineLoading, setLineLoading]   = useState(true)
+  const [lineLinked, setLineLinked]     = useState(false)
+  const [lineUserId, setLineUserId]     = useState<string | null>(null)
+  const [lineDisplayName, setLineDisplayName] = useState<string | null>(null)
+  const [lineLastMessage, setLineLastMessage] = useState<string | null>(null)
+  const [showLineLinkModal, setShowLineLinkModal]     = useState(false)
+  const [showLineThreadModal, setShowLineThreadModal] = useState(false)
 
   const fetchQuestionnaire = useCallback(async () => {
     setQuestionnaireLoading(true)
@@ -131,6 +140,28 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
   }, [customer.id])
 
   useEffect(() => { void fetchDocuments() }, [fetchDocuments])
+
+  const fetchLineStatus = useCallback(async () => {
+    setLineLoading(true)
+    try {
+      const res = await authedFetch(`/api/customers/${customer.id}/line-link`)
+      if (res.ok) {
+        const json = await res.json() as {
+          linked?: boolean; lineUserId?: string | null; displayName?: string | null; lastMessage?: string | null
+        }
+        setLineLinked(json.linked ?? false)
+        setLineUserId(json.lineUserId ?? null)
+        setLineDisplayName(json.displayName ?? null)
+        setLineLastMessage(json.lastMessage ?? null)
+      }
+    } catch {
+      /* 取得失敗時は未紐付け相当の表示のまま(致命的にしない) */
+    } finally {
+      setLineLoading(false)
+    }
+  }, [customer.id])
+
+  useEffect(() => { void fetchLineStatus() }, [fetchLineStatus])
 
   useEffect(() => {
     let cancelled = false
@@ -346,38 +377,104 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
           詳細ページを見る <ChevronRight size={18} />
         </button>
 
-        {/* 契約書・その他資料(2026-09-24ユーザー承認・4枠) */}
-        <div style={cardStyle}>
-          <p style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: PALETTE.text, fontFamily: headingFont.style.fontFamily }}>
-            契約書・その他資料
-          </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
-            {DOCUMENT_SLOTS.map(slot => {
-              const doc = documents[slot]
-              return (
+        {/* LINE(左)・契約書・その他資料(右、2026-09-24ユーザー承認・4枠)の2カラム */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '20px' }}>
+          {/* LINE(カルテアプリSTEP 1新設) */}
+          <div style={cardStyle}>
+            <p style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: PALETTE.text, fontFamily: headingFont.style.fontFamily, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <MessageCircle size={15} style={{ color: PALETTE.gold }} /> LINE
+            </p>
+
+            {lineLoading ? (
+              <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>読み込み中…</p>
+            ) : lineLinked ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <p style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: PALETTE.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {lineDisplayName || 'LINEアカウント'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowLineLinkModal(true)}
+                    aria-label="LINEの紐付けを変更"
+                    style={{
+                      width: '20px', height: '20px', borderRadius: '50%', border: `1px solid ${PALETTE.border}`,
+                      background: 'none', color: PALETTE.gold, display: 'flex', alignItems: 'center',
+                      justifyContent: 'center', cursor: 'pointer', flexShrink: 0, padding: 0,
+                    }}
+                  >
+                    <Pencil size={9} />
+                  </button>
+                </div>
+                <p style={{
+                  margin: 0, fontSize: '12px', color: PALETTE.muted, overflow: 'hidden', textOverflow: 'ellipsis',
+                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                }}>
+                  {lineLastMessage || 'まだメッセージのやり取りがありません'}
+                </p>
                 <button
-                  key={slot}
                   type="button"
-                  onClick={() => doc?.url ? setEnlargedSlot(slot) : setCaptureSlot(slot)}
-                  disabled={documentsLoading}
+                  onClick={() => setShowLineThreadModal(true)}
                   style={{
-                    padding: 0, border: `1px solid ${PALETTE.border}`, borderRadius: '10px', overflow: 'hidden',
-                    cursor: documentsLoading ? 'default' : 'pointer', background: PALETTE.card ?? 'none',
-                    aspectRatio: '3 / 4', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '6px',
+                    padding: '9px 16px', borderRadius: '999px', border: 'none',
+                    background: PALETTE.gold, color: '#fff', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
                   }}
                 >
-                  {doc?.url ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- signed URL(署名付き一時URL)のためnext/imageは不要
-                    <img src={doc.url} alt={`資料${slot}サムネイル`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', color: PALETTE.muted }}>
-                      <Plus size={16} />
-                      <span style={{ fontSize: '10px' }}>資料{slot}</span>
-                    </div>
-                  )}
+                  LINEを開く
                 </button>
-              )
-            })}
+              </>
+            ) : (
+              <>
+                <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>LINEアカウントと未紐付けです</p>
+                <button
+                  type="button"
+                  onClick={() => setShowLineLinkModal(true)}
+                  style={{
+                    alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '6px',
+                    padding: '9px 16px', borderRadius: '999px', border: `1.5px solid ${PALETTE.gold}`,
+                    background: 'none', color: PALETTE.gold, fontSize: '13px', fontWeight: 700, cursor: 'pointer',
+                  }}
+                >
+                  LINEアカウントと紐付ける
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* 契約書・その他資料 */}
+          <div style={cardStyle}>
+            <p style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: PALETTE.text, fontFamily: headingFont.style.fontFamily }}>
+              契約書・その他資料
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+              {DOCUMENT_SLOTS.map(slot => {
+                const doc = documents[slot]
+                return (
+                  <button
+                    key={slot}
+                    type="button"
+                    onClick={() => doc?.url ? setEnlargedSlot(slot) : setCaptureSlot(slot)}
+                    disabled={documentsLoading}
+                    style={{
+                      padding: 0, border: `1px solid ${PALETTE.border}`, borderRadius: '10px', overflow: 'hidden',
+                      cursor: documentsLoading ? 'default' : 'pointer', background: PALETTE.card ?? 'none',
+                      aspectRatio: '3 / 4', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    {doc?.url ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- signed URL(署名付き一時URL)のためnext/imageは不要
+                      <img src={doc.url} alt={`資料${slot}サムネイル`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', color: PALETTE.muted }}>
+                        <Plus size={16} />
+                        <span style={{ fontSize: '10px' }}>資料{slot}</span>
+                      </div>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
           </div>
         </div>
       </div>
@@ -463,6 +560,29 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
           title={`資料${captureSlot}`}
           onClose={() => setCaptureSlot(null)}
           onSaved={() => { setCaptureSlot(null); void fetchDocuments() }}
+        />
+      )}
+
+      {showLineLinkModal && (
+        <LineLinkModal
+          customerId={customer.id}
+          currentLineUserId={lineUserId}
+          onClose={() => setShowLineLinkModal(false)}
+          onChanged={({ linked, lineUserId: nextLineUserId, displayName }) => {
+            setLineLinked(linked)
+            setLineUserId(nextLineUserId)
+            setLineDisplayName(displayName)
+            setLineLastMessage(null)
+            void fetchLineStatus()
+          }}
+        />
+      )}
+
+      {showLineThreadModal && (
+        <LineThreadModal
+          customerId={customer.id}
+          customerName={customer.name}
+          onClose={() => { setShowLineThreadModal(false); void fetchLineStatus() }}
         />
       )}
     </div>
