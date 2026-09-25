@@ -13,9 +13,8 @@
  * TodayFocusCardのいずれにもimportしないこと。content参照禁止
  * (src/types/customerKarteMemo.tsの絶対ルールに準拠)。
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, Pencil, Plus, Trash2, Check, X, ClipboardPaste } from 'lucide-react'
-import { toast } from 'sonner'
+import { useCallback, useEffect, useState } from 'react'
+import { ChevronDown, ChevronRight, Pencil, Plus, Trash2, Check, X } from 'lucide-react'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, Card } from '@/components/customer/shared/PhotoCompareKit'
 import type { CustomerKarteMemo } from '@/types/customerKarteMemo'
@@ -79,8 +78,6 @@ export default function KarteMemoSection({
   const [editContent, setEditContent] = useState('')
   const [updating, setUpdating] = useState(false)
 
-  const newContentRef = useRef<HTMLTextAreaElement | null>(null)
-
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -140,50 +137,6 @@ export default function KarteMemoSection({
       await load()
     } catch { /* 失敗時は編集状態を維持する */ }
     finally { setUpdating(false) }
-  }
-
-  /**
-   * サロンボード等の過去メモ貼り付け機能(2026-09-25ユーザー承認・仕様変更):
-   * 移行期でアプリ内に過去メモがまだ存在しないため、当初実装した「アプリ内の過去メモを
-   * 引用する」ボタンは廃止し、スタッフがホットペッパービューティー(サロンボード)側で
-   * コピーしたテキストをクリップボードから直接貼り付けられる方式に置き換えた。
-   * 追記先は「今回のカルテメモ」入力欄(newContent)。すでに入力中のテキストがある場合は
-   * 上書きせず末尾に改行して追記する安全設計。保存処理・DB構造には触れない
-   * (フロントエンドの入力欄操作のみ)。
-   */
-  function appendToNewContent(text: string) {
-    setAdding(true)
-    setNewContent(prev => {
-      const trimmed = prev.trimEnd()
-      return trimmed.length > 0 ? `${trimmed}\n${text}` : text
-    })
-    // setNewContentの反映(再描画)後にフォーカス・カーソルを末尾へ移動する。
-    requestAnimationFrame(() => {
-      const el = newContentRef.current
-      if (el) {
-        el.focus()
-        el.setSelectionRange(el.value.length, el.value.length)
-      }
-    })
-  }
-
-  async function handlePasteFromClipboard() {
-    try {
-      const text = await navigator.clipboard.readText()
-      if (!text.trim()) {
-        toast.error('クリップボードにテキストがありません')
-        return
-      }
-      appendToNewContent(text)
-      toast.success('クリップボードから貼り付けました', { duration: 1500 })
-    } catch {
-      // iPad Safari等でクリップボード読み取り権限が無い場合はここに到達する。
-      // 入力欄自体はネイティブのペースト(長押し→貼り付け)にそのまま対応しているため、
-      // その操作を促す(onPaste等の横取りは一切行っていない)。
-      toast.error('自動貼り付けができませんでした。入力欄を長押しして貼り付けてください')
-      setAdding(true)
-      requestAnimationFrame(() => newContentRef.current?.focus())
-    }
   }
 
   async function handleDelete(id: string) {
@@ -293,24 +246,24 @@ export default function KarteMemoSection({
                     onClick={() => startEdit(m)}
                     aria-label="編集"
                     style={{
-                      width: '30px', height: '30px', borderRadius: '50%', border: `1px solid ${PALETTE.border}`,
+                      width: '26px', height: '26px', borderRadius: '50%', border: `1px solid ${PALETTE.border}`,
                       background: PALETTE.bg, color: PALETTE.gold, display: 'flex', alignItems: 'center',
                       justifyContent: 'center', cursor: 'pointer',
                     }}
                   >
-                    <Pencil size={13} />
+                    <Pencil size={11} />
                   </button>
                   <button
                     type="button"
                     onClick={() => void handleDelete(m.id)}
                     aria-label="削除"
                     style={{
-                      width: '30px', height: '30px', borderRadius: '50%', border: '1px solid rgba(196,90,90,0.3)',
+                      width: '26px', height: '26px', borderRadius: '50%', border: '1px solid rgba(196,90,90,0.3)',
                       background: 'rgba(196,90,90,0.08)', color: '#B85050', display: 'flex', alignItems: 'center',
                       justifyContent: 'center', cursor: 'pointer',
                     }}
                   >
-                    <Trash2 size={13} />
+                    <Trash2 size={11} />
                   </button>
                 </div>
               </div>
@@ -372,27 +325,12 @@ export default function KarteMemoSection({
 
         {adding ? (
           <div style={{ border: `1.5px solid ${PALETTE.gold}`, borderRadius: '12px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {/* サロンボード等の過去メモ貼り付け(2026-09-25ユーザー承認)。押しやすいよう
-                入力欄のすぐ上、幅いっぱいに配置する(iPadタッチ操作を考慮しpaddingを広めに)。 */}
-            <button
-              type="button"
-              onClick={() => void handlePasteFromClipboard()}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                fontSize: '13px', fontWeight: 700, padding: '10px', borderRadius: '10px',
-                border: `1.5px dashed ${PALETTE.gold}`, background: 'transparent', color: PALETTE.gold,
-                cursor: 'pointer',
-              }}
-            >
-              <ClipboardPaste size={15} />サロンボードのメモを貼り付け
-            </button>
             <textarea
-              ref={newContentRef}
               value={newContent}
               onChange={e => setNewContent(e.target.value)}
               rows={14}
               autoFocus
-              placeholder="今日の接客で気づいたこと、施術中の様子など自由に記録してください(上のボタンでクリップボードから貼り付け、または直接長押しして貼り付けできます)"
+              placeholder="今日の接客で気づいたこと、施術中の様子など自由に記録してください"
               style={{
                 width: '100%', boxSizing: 'border-box', resize: 'vertical', minHeight: '340px',
                 fontSize: '15px', color: PALETTE.text, lineHeight: 1.8,
