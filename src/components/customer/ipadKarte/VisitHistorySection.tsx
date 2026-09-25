@@ -15,8 +15,9 @@
  * 同じ設計方針)。既存の3つのAPI(visit-history・customer-karte-memos・
  * facial-schemas)を再利用するのみで新規APIは追加しない。
  */
-import { useEffect, useState } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ChevronDown, ChevronRight, Plus, ClipboardPaste, Check, X } from 'lucide-react'
+import { toast } from 'sonner'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, Card } from '@/components/customer/shared/PhotoCompareKit'
 import { FacialSchemaThumbnail } from '@/components/customer/shared/FacialSchemaKit'
@@ -62,6 +63,14 @@ export default function VisitHistorySection({ customerId }: Props) {
   const [loading, setLoading] = useState(true)
   const [expandedVisitId, setExpandedVisitId] = useState<string | null>(null)
 
+  // 過去カルテメモの遡及登録(2026-09-25ユーザー承認): 移行期でアプリ導入前の来店には
+  // カルテメモが一件も無いため、サロンボード等からコピーした過去メモを、その来店日付きで
+  // 直接ここから登録できるようにする。addingForVisitId===visit.idの間だけ入力欄を表示する。
+  const [addingForVisitId, setAddingForVisitId] = useState<string | null>(null)
+  const [draftContent, setDraftContent] = useState('')
+  const [saving, setSaving] = useState(false)
+  const draftRef = useRef<HTMLTextAreaElement | null>(null)
+
   useEffect(() => {
     let cancelled = false
     setLoading(true)
@@ -94,6 +103,70 @@ export default function VisitHistorySection({ customerId }: Props) {
     })()
     return () => { cancelled = true }
   }, [customerId])
+
+  function openAddForm(visitId: string) {
+    setAddingForVisitId(visitId)
+    setDraftContent('')
+  }
+
+  function closeAddForm() {
+    setAddingForVisitId(null)
+    setDraftContent('')
+  }
+
+  function appendDraft(text: string) {
+    setDraftContent(prev => {
+      const trimmed = prev.trimEnd()
+      return trimmed.length > 0 ? `${trimmed}\n${text}` : text
+    })
+    requestAnimationFrame(() => {
+      const el = draftRef.current
+      if (el) {
+        el.focus()
+        el.setSelectionRange(el.value.length, el.value.length)
+      }
+    })
+  }
+
+  async function handlePasteFromClipboard() {
+    try {
+      const text = await navigator.clipboard.readText()
+      if (!text.trim()) {
+        toast.error('クリップボードにテキストがありません')
+        return
+      }
+      appendDraft(text)
+      toast.success('クリップボードから貼り付けました', { duration: 1500 })
+    } catch {
+      toast.error('自動貼り付けができませんでした。入力欄を長押しして貼り付けてください')
+      requestAnimationFrame(() => draftRef.current?.focus())
+    }
+  }
+
+  async function handleSaveDraft(visit: VisitHistoryEntry) {
+    if (!draftContent.trim() || saving) return
+    setSaving(true)
+    try {
+      const res = await authedFetch('/api/customer-karte-memos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_id: customerId,
+          content: draftContent.trim(),
+          memo_date: visit.visitDate,
+        }),
+      })
+      if (!res.ok) throw new Error()
+      const json = await res.json() as { memo?: CustomerKarteMemo }
+      if (json.memo) setMemos(prev => [json.memo as CustomerKarteMemo, ...prev])
+      toast.success('この来店日のカルテメモを登録しました', { duration: 1500 })
+      closeAddForm()
+    } catch {
+      toast.error('保存に失敗しました')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -142,9 +215,83 @@ export default function VisitHistorySection({ customerId }: Props) {
                 <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px', borderTop: `1px solid ${PALETTE.border}` }}>
                   <div>
                     <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: 700, color: PALETTE.muted }}>この日のカルテメモ</p>
-                    {dayMemos.length === 0 ? (
-                      <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>記録がありません</p>
-                    ) : (
+                    {dayMemos.length === 0 && addingForVisitId !== visit.id && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>記録がありません</p>
+                        <button
+                          type="button"
+                          onClick={() => openAddForm(visit.id)}
+                          style={{
+                            alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '6px',
+                            fontSize: '12px', fontWeight: 700, padding: '8px 14px', borderRadius: '999px',
+                            border: `1.5px dashed ${PALETTE.gold}`, background: 'transparent', color: PALETTE.gold,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <Plus size={13} strokeWidth={2.4} />この来店日のメモを追加(サロンボードから貼り付け)
+                        </button>
+                      </div>
+                    )}
+
+                    {addingForVisitId === visit.id && (
+                      <div style={{ border: `1.5px solid ${PALETTE.gold}`, borderRadius: '12px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <button
+                          type="button"
+                          onClick={() => void handlePasteFromClipboard()}
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                            fontSize: '13px', fontWeight: 700, padding: '10px', borderRadius: '10px',
+                            border: `1.5px dashed ${PALETTE.gold}`, background: 'transparent', color: PALETTE.gold,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <ClipboardPaste size={15} />サロンボードのメモを貼り付け
+                        </button>
+                        <textarea
+                          ref={draftRef}
+                          value={draftContent}
+                          onChange={e => setDraftContent(e.target.value)}
+                          rows={8}
+                          autoFocus
+                          placeholder={`${formatDateOnly(visit.visitDate)}のカルテメモ(サロンボードからコピーした内容を貼り付け、または直接入力)`}
+                          style={{
+                            width: '100%', boxSizing: 'border-box', resize: 'vertical', minHeight: '160px',
+                            fontSize: '14px', color: PALETTE.text, lineHeight: 1.7,
+                            border: `1px solid ${PALETTE.border}`, borderRadius: '8px', padding: '10px',
+                            outline: 'none', fontFamily: 'inherit',
+                          }}
+                        />
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                          <button
+                            type="button"
+                            onClick={closeAddForm}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '4px',
+                              fontSize: '11px', padding: '6px 12px', borderRadius: '999px',
+                              border: `1px solid ${PALETTE.border}`, background: PALETTE.card, color: PALETTE.muted,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <X size={11} />キャンセル
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleSaveDraft(visit)}
+                            disabled={saving || !draftContent.trim()}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '4px',
+                              fontSize: '11px', fontWeight: 700, padding: '6px 14px', borderRadius: '999px',
+                              border: 'none', background: (saving || !draftContent.trim()) ? PALETTE.border : PALETTE.gold, color: '#fff',
+                              cursor: (saving || !draftContent.trim()) ? 'default' : 'pointer',
+                            }}
+                          >
+                            <Check size={11} />{saving ? '保存中…' : 'この日のメモとして保存する'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {dayMemos.length > 0 && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {dayMemos.map(memo => (
                           <div key={memo.id} style={{ border: `1px solid ${PALETTE.border}`, borderRadius: '8px', padding: '10px', background: PALETTE.bg }}>

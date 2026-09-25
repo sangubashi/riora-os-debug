@@ -9,6 +9,15 @@
  *
  * staff_idはクライアントから受け取らず、常にサーバー側でトークンから解決した
  * authUserIdを使う(なりすまし防止)。
+ *
+ * memo_date(任意・2026-09-25ユーザー承認・過去カルテメモの遡及登録機能): "YYYY-MM-DD"を
+ * 渡すと、created_atをその日付の正午(JST)に設定してINSERTする(通常は省略時どおり
+ * DBのデフォルトnow()が使われる)。移行期でアプリ導入前の来店(brain_visits)には
+ * カルテメモが一件も無いため、スタッフがサロンボード等からコピーした過去メモを、
+ * VisitHistorySection.tsx(来店履歴の各来店日)からその来店日付きで登録できるように
+ * するための拡張。テーブル構造(migration)は変更していない(created_at列は元々
+ * timestamptzで任意の値をINSERT可能、DEFAULT now()を明示値で上書きするだけ)。
+ * 未来日は拒否する。
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '../../lib/repos'
@@ -73,7 +82,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
 
-  let body: { customer_id: string; content: string; staff_id?: string }
+  let body: { customer_id: string; content: string; staff_id?: string; memo_date?: string }
   try {
     body = await req.json()
   } catch {
@@ -82,6 +91,24 @@ export async function POST(req: NextRequest) {
 
   if (!body.customer_id || !body.content?.trim()) {
     return NextResponse.json({ error: 'customer_id and content are required' }, { status: 400 })
+  }
+
+  // memo_date(過去カルテメモの遡及登録・任意): "YYYY-MM-DD"のみ許可し、正午(JST)の
+  // timestamptzへ変換する。未来日・不正な形式は拒否する。
+  let createdAtOverride: string | undefined
+  if (body.memo_date !== undefined) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(body.memo_date)) {
+      return NextResponse.json({ error: 'invalid_memo_date' }, { status: 400 })
+    }
+    const candidate = `${body.memo_date}T12:00:00+09:00`
+    const parsedMs = new Date(candidate).getTime()
+    if (Number.isNaN(parsedMs)) {
+      return NextResponse.json({ error: 'invalid_memo_date' }, { status: 400 })
+    }
+    if (parsedMs > Date.now()) {
+      return NextResponse.json({ error: 'memo_date_in_future' }, { status: 400 })
+    }
+    createdAtOverride = candidate
   }
 
   const accessible = await canAccessCustomer(staff.staffBrainId, body.customer_id, staff.isAdmin)
@@ -103,6 +130,7 @@ export async function POST(req: NextRequest) {
       customer_id: body.customer_id,
       staff_id:    override?.authUserId ?? staff.authUserId,
       content:     body.content.trim(),
+      ...(createdAtOverride ? { created_at: createdAtOverride } : {}),
     })
     .select('id, customer_id, staff_id, content, created_at, updated_at')
     .single()
