@@ -378,9 +378,10 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
         </button>
 
         {/* LINE(左)・契約書・その他資料(右、2026-09-24ユーザー承認・4枠)の2カラム */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '20px' }}>
+        {/* alignItems:'start'でLINEカードの高さが右の写真4枠カードに引き伸ばされないようにする */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 3fr)', gap: '20px', alignItems: 'start' }}>
           {/* LINE(カルテアプリSTEP 1新設) */}
-          <div style={cardStyle}>
+          <div style={{ ...cardStyle, padding: '16px', gap: '10px' }}>
             <p style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: PALETTE.text, fontFamily: headingFont.style.fontFamily, display: 'flex', alignItems: 'center', gap: '6px' }}>
               <MessageCircle size={15} style={{ color: PALETTE.gold }} /> LINE
             </p>
