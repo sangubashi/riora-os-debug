@@ -16,12 +16,11 @@
  * facial-schemas)を再利用するのみで新規APIは追加しない。
  */
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, Plus, ClipboardPaste, Check, X, ImagePlus } from 'lucide-react'
+import { ChevronDown, ChevronRight, Plus, ClipboardPaste, Check, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, Card } from '@/components/customer/shared/PhotoCompareKit'
 import { FacialSchemaThumbnail } from '@/components/customer/shared/FacialSchemaKit'
-import FacialSchemaPhotoUploadModal from '@/components/customer/ipadKarte/FacialSchemaPhotoUploadModal'
 import type { CustomerKarteMemo } from '@/types/customerKarteMemo'
 import type { FacialSchemaApiShape } from '@/lib/facialSchema/facialSchemaApiMapping'
 
@@ -71,10 +70,6 @@ export default function VisitHistorySection({ customerId }: Props) {
   const [draftContent, setDraftContent] = useState('')
   const [saving, setSaving] = useState(false)
   const draftRef = useRef<HTMLTextAreaElement | null>(null)
-
-  // 過去来店の顔シェーマ写真アップロード(2026-09-25ユーザー承認): 対象来店(VisitHistoryEntry)を
-  // 保持している間だけモーダルを表示する。
-  const [uploadTargetVisit, setUploadTargetVisit] = useState<VisitHistoryEntry | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -316,24 +311,10 @@ export default function VisitHistorySection({ customerId }: Props) {
                     <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: 700, color: PALETTE.muted }}>この日の顔シェーマ</p>
                     {daySchema ? (
                       <div style={{ maxWidth: '200px' }}>
-                        <FacialSchemaThumbnail strokesData={daySchema.strokesData} photoUrl={daySchema.photoUrl} />
+                        <FacialSchemaThumbnail strokesData={daySchema.strokesData} />
                       </div>
                     ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>記録がありません</p>
-                        <button
-                          type="button"
-                          onClick={() => setUploadTargetVisit(visit)}
-                          style={{
-                            alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '6px',
-                            fontSize: '12px', fontWeight: 700, padding: '8px 14px', borderRadius: '999px',
-                            border: `1.5px dashed ${PALETTE.gold}`, background: 'transparent', color: PALETTE.gold,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          <ImagePlus size={13} strokeWidth={2.4} />写真をアップロード(サロンボードの紙カルテ等)
-                        </button>
-                      </div>
+                      <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>記録がありません</p>
                     )}
                   </div>
                 </div>
@@ -342,20 +323,6 @@ export default function VisitHistorySection({ customerId }: Props) {
           )
         })}
       </div>
-
-      {uploadTargetVisit && (
-        <FacialSchemaPhotoUploadModal
-          customerId={customerId}
-          visitId={uploadTargetVisit.id}
-          visitLabel={formatDateOnly(uploadTargetVisit.visitDate)}
-          onClose={() => setUploadTargetVisit(null)}
-          onSaved={(schema) => {
-            setSchemas(prev => [schema, ...prev.filter(s => s.id !== schema.id)])
-            toast.success('顔シェーマ写真を登録しました', { duration: 1500 })
-            setUploadTargetVisit(null)
-          }}
-        />
-      )}
     </Card>
   )
 }

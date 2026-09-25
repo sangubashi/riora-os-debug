@@ -53,17 +53,11 @@ export function FacialSchemaSubHeading({ children }: { children: ReactNode }) {
  * 読み取り専用(静止画)の顔シェーマ表示。テンプレート画像+確定済みストロークのみを描画し、
  * pointerハンドラは一切持たない(スタッフ編集画面の「前回のシェーマ」プレビュー・
  * お客様モードの閲覧の両方から使う。見た目が2画面で食い違わないよう共通化している)。
- *
- * photoUrl(2026-09-25追加・過去来店の写真アップロード機能): 指定時はテンプレート+
- * ストローク描画を行わず、アップロードされた写真をそのまま表示する
- * (strokesDataは空のダミー値で構わない。呼び出し元がphotoUrlの有無で描画方式を
- * 切り替える必要が無いよう、分岐をこのコンポーネント内に閉じ込めている)。
  */
-export function FacialSchemaThumbnail({ strokesData, photoUrl = null }: { strokesData: StrokesData; photoUrl?: string | null }) {
+export function FacialSchemaThumbnail({ strokesData }: { strokesData: StrokesData }) {
   const canvasElRef = useRef<HTMLCanvasElement | null>(null)
 
   useEffect(() => {
-    if (photoUrl) return
     const el = canvasElRef.current
     if (!el) return
     const observer = new ResizeObserver(entries => {
@@ -81,16 +75,7 @@ export function FacialSchemaThumbnail({ strokesData, photoUrl = null }: { stroke
     })
     observer.observe(el)
     return () => observer.disconnect()
-  }, [strokesData, photoUrl])
-
-  if (photoUrl) {
-    return (
-      <div style={{ position: 'relative', width: '100%', aspectRatio: FACIAL_SCHEMA_TEMPLATE_ASPECT_RATIO, borderRadius: '10px', overflow: 'hidden', border: `1px solid ${PALETTE.border}` }}>
-        {/* eslint-disable-next-line @next/next/no-img-element -- signed URL(署名付き一時URL)のためnext/imageは不要 */}
-        <img src={photoUrl} alt="顔シェーマ(アップロード写真)" style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }} />
-      </div>
-    )
-  }
+  }, [strokesData])
 
   return (
     <div style={{ position: 'relative', width: '100%', aspectRatio: FACIAL_SCHEMA_TEMPLATE_ASPECT_RATIO, borderRadius: '10px', overflow: 'hidden', border: `1px solid ${PALETTE.border}` }}>
