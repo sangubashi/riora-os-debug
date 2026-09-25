@@ -13,8 +13,8 @@
  * TodayFocusCardのいずれにもimportしないこと。content参照禁止
  * (src/types/customerKarteMemo.tsの絶対ルールに準拠)。
  */
-import { useCallback, useEffect, useState } from 'react'
-import { ChevronDown, ChevronRight, Pencil, Plus, Trash2, Check, X, Quote } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ChevronDown, ChevronRight, Pencil, Plus, Trash2, Check, X, ClipboardPaste } from 'lucide-react'
 import { toast } from 'sonner'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, Card } from '@/components/customer/shared/PhotoCompareKit'
@@ -79,6 +79,8 @@ export default function KarteMemoSection({
   const [editContent, setEditContent] = useState('')
   const [updating, setUpdating] = useState(false)
 
+  const newContentRef = useRef<HTMLTextAreaElement | null>(null)
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -141,18 +143,47 @@ export default function KarteMemoSection({
   }
 
   /**
-   * 過去カルテメモの引用機能(2026-09-25ユーザー承認): タップした過去メモの本文を
-   * 「今回のカルテメモ」入力欄(newContent)へ挿入する。すでに入力中のテキストがある
-   * 場合は上書きせず末尾に改行して追記する安全設計。保存処理・DB構造には触れない
+   * サロンボード等の過去メモ貼り付け機能(2026-09-25ユーザー承認・仕様変更):
+   * 移行期でアプリ内に過去メモがまだ存在しないため、当初実装した「アプリ内の過去メモを
+   * 引用する」ボタンは廃止し、スタッフがホットペッパービューティー(サロンボード)側で
+   * コピーしたテキストをクリップボードから直接貼り付けられる方式に置き換えた。
+   * 追記先は「今回のカルテメモ」入力欄(newContent)。すでに入力中のテキストがある場合は
+   * 上書きせず末尾に改行して追記する安全設計。保存処理・DB構造には触れない
    * (フロントエンドの入力欄操作のみ)。
    */
-  function insertQuote(content: string) {
+  function appendToNewContent(text: string) {
     setAdding(true)
     setNewContent(prev => {
       const trimmed = prev.trimEnd()
-      return trimmed.length > 0 ? `${trimmed}\n${content}` : content
+      return trimmed.length > 0 ? `${trimmed}\n${text}` : text
     })
-    toast.success('カルテメモを引用しました', { duration: 1500 })
+    // setNewContentの反映(再描画)後にフォーカス・カーソルを末尾へ移動する。
+    requestAnimationFrame(() => {
+      const el = newContentRef.current
+      if (el) {
+        el.focus()
+        el.setSelectionRange(el.value.length, el.value.length)
+      }
+    })
+  }
+
+  async function handlePasteFromClipboard() {
+    try {
+      const text = await navigator.clipboard.readText()
+      if (!text.trim()) {
+        toast.error('クリップボードにテキストがありません')
+        return
+      }
+      appendToNewContent(text)
+      toast.success('クリップボードから貼り付けました', { duration: 1500 })
+    } catch {
+      // iPad Safari等でクリップボード読み取り権限が無い場合はここに到達する。
+      // 入力欄自体はネイティブのペースト(長押し→貼り付け)にそのまま対応しているため、
+      // その操作を促す(onPaste等の横取りは一切行っていない)。
+      toast.error('自動貼り付けができませんでした。入力欄を長押しして貼り付けてください')
+      setAdding(true)
+      requestAnimationFrame(() => newContentRef.current?.focus())
+    }
   }
 
   async function handleDelete(id: string) {
@@ -259,18 +290,6 @@ export default function KarteMemoSection({
                 <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                   <button
                     type="button"
-                    onClick={() => insertQuote(m.content)}
-                    aria-label="このメモを引用"
-                    style={{
-                      width: '30px', height: '30px', borderRadius: '50%', border: `1px solid ${PALETTE.border}`,
-                      background: PALETTE.bg, color: PALETTE.gold, display: 'flex', alignItems: 'center',
-                      justifyContent: 'center', cursor: 'pointer',
-                    }}
-                  >
-                    <Quote size={13} />
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => startEdit(m)}
                     aria-label="編集"
                     style={{
@@ -337,23 +356,10 @@ export default function KarteMemoSection({
                       <p style={{ margin: 0, fontSize: '15px', color: PALETTE.text, lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                         {previousMemo.content}
                       </p>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '4px' }}>
-                        <p style={{ margin: 0, fontSize: '10px', color: PALETTE.muted }}>
-                          {formatDateTime(previousMemo.created_at)}
-                          {previousMemo.staffName ? ` ・ ${previousMemo.staffName}` : ''}
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => insertQuote(previousMemo.content)}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0,
-                            fontSize: '11px', fontWeight: 700, padding: '6px 12px', borderRadius: '999px',
-                            border: `1px solid ${PALETTE.gold}`, background: 'none', color: PALETTE.gold, cursor: 'pointer',
-                          }}
-                        >
-                          <Quote size={11} />引用する
-                        </button>
-                      </div>
+                      <p style={{ margin: '4px 0 0', fontSize: '10px', color: PALETTE.muted }}>
+                        {formatDateTime(previousMemo.created_at)}
+                        {previousMemo.staffName ? ` ・ ${previousMemo.staffName}` : ''}
+                      </p>
                     </>
                   ) : (
                     <p style={{ margin: 0, fontSize: '15px', color: PALETTE.text }}>記録がありません</p>
@@ -366,12 +372,27 @@ export default function KarteMemoSection({
 
         {adding ? (
           <div style={{ border: `1.5px solid ${PALETTE.gold}`, borderRadius: '12px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {/* サロンボード等の過去メモ貼り付け(2026-09-25ユーザー承認)。押しやすいよう
+                入力欄のすぐ上、幅いっぱいに配置する(iPadタッチ操作を考慮しpaddingを広めに)。 */}
+            <button
+              type="button"
+              onClick={() => void handlePasteFromClipboard()}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                fontSize: '13px', fontWeight: 700, padding: '10px', borderRadius: '10px',
+                border: `1.5px dashed ${PALETTE.gold}`, background: 'transparent', color: PALETTE.gold,
+                cursor: 'pointer',
+              }}
+            >
+              <ClipboardPaste size={15} />サロンボードのメモを貼り付け
+            </button>
             <textarea
+              ref={newContentRef}
               value={newContent}
               onChange={e => setNewContent(e.target.value)}
               rows={14}
               autoFocus
-              placeholder="今日の接客で気づいたこと、施術中の様子など自由に記録してください"
+              placeholder="今日の接客で気づいたこと、施術中の様子など自由に記録してください(上のボタンでクリップボードから貼り付け、または直接長押しして貼り付けできます)"
               style={{
                 width: '100%', boxSizing: 'border-box', resize: 'vertical', minHeight: '340px',
                 fontSize: '15px', color: PALETTE.text, lineHeight: 1.8,
