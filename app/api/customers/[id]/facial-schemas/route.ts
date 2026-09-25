@@ -22,6 +22,7 @@ import {
   mapFacialSchemaRow,
   type FacialSchemaRow,
 } from '@/lib/facialSchema/facialSchemaApiMapping'
+import { PHOTO_BUCKET, SIGNED_URL_EXPIRY_DETAIL_SEC } from '@/lib/photos/constants'
 
 export async function GET(
   req: NextRequest,
@@ -58,6 +59,20 @@ export async function GET(
 
   const rows = (data ?? []) as unknown as FacialSchemaRow[]
   const schemas = rows.map(mapFacialSchemaRow)
+
+  // 過去来店の写真アップロード機能(2026-09-25): photo_pathを持つ行だけsigned URLへ解決する。
+  const withPhoto = rows
+    .map((row, i) => ({ row, i }))
+    .filter(({ row }) => !!row.photo_path)
+  if (withPhoto.length > 0) {
+    const { data: signedUrls } = await supabase.storage
+      .from(PHOTO_BUCKET)
+      .createSignedUrls(withPhoto.map(({ row }) => row.photo_path as string), SIGNED_URL_EXPIRY_DETAIL_SEC)
+    withPhoto.forEach(({ i }, idx) => {
+      const signed = signedUrls?.[idx]
+      if (signed && !signed.error) schemas[i].photoUrl = signed.signedUrl
+    })
+  }
 
   return NextResponse.json({ success: true, schemas })
 }
