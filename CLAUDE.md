@@ -1694,6 +1694,66 @@ CSV取込パイプライン(`csvImportPipeline.ts`・`salonBoardParser.ts`)・�
 **この解除は`IpadPhotoManageModal.tsx`の上記バグ修正に限る。** 画像リサイズ(transform)の
 追加・他ファイルの変更は行っていない。
 
+### admin領域 着手済み事項（本日の売上の集計漏れ・JST日付ズレのバグ修正のみ・2026-09-26ユーザー承認）
+
+**背景**: 管理者ダッシュボードの「本日の売上」がCSV上の実額(¥49,000)より大幅に少なく
+（「1万円」）表示される不具合をコード追跡で調査した。`app/lib/adminDashboard.ts`ではなく
+`app/api/dashboard/top/route.ts`→`VisitRepo.sumSalesByStoreAndDate()`が実表示経路であることを
+特定した上で、2つの根本原因を確認・修正した(`app/admin/**`ではなく`src/components/admin/**`・
+`app/api/dashboard/**`配下だが、CLAUDE.md「承認なしに実行してはいけないこと」の管理者アプリ
+領域に準じるものとして、着手前にユーザーへ実装方針を確認した)。
+
+**1. 同一顧客・同日複数会計の売上欠落(`src/lib/import/csvImportPipeline.ts`)**
+- **原因**: `findByCustomerAndDate(customerId, visitDate)`が既存visitを見つけると、
+  会計IDが異なる「本当に別の新規会計」であっても`else if (existingVisit)`の冪等スキップ分岐
+  （旧CHECKOUT_ID_FOUNDATION_1、`sameDayDifferentCheckoutCount`で検知のみ・2026-09-13当時の
+  ユーザー承認スコープ「加算方式や複数行構造への変更は別途判断」により未実装のまま残っていた）
+  に落ち、`treatment_amount`/`retail_amount`が一切加算されず2件目以降の金額が丸ごと
+  消えていた。
+- **修正方針の選択（着手前にユーザーへ確認・承認済み）**: 「既存1行に金額を加算」案と
+  「別のvisit行として新規作成」案の2択を提示し、後者（別行として新規作成）を選択いただいた。
+  `idx_brain_visits_customer_date`は非ユニークindexのみ（`brain_visits`に
+  `customer_id+visit_date`のユニーク制約は無い、`supabase/migrations/20260612000001_core_tables.sql`
+  で確認済み）のため、同一顧客・同日でも複数行を安全に保持できる。
+- **変更内容**: `existingVisit.checkoutId`と`agg.checkoutId`が双方非NULLで不一致の場合のみ
+  `isDifferentCheckout`と確定判定し、`createSequenced`の新規作成分岐（既存の「visitなし」分岐と
+  共通化）に流すよう条件分岐を変更した。checkout_idがNULLの行（過去分・staff_input由来、
+  判定不能）は従来通り「同一会計の再取込(冪等)」側の扱いのまま変更していない
+  （混在期間の安全性を維持）。`sameDayDifferentCheckoutCount`のインクリメント位置を
+  スキップ分岐から新規作成分岐へ移しただけで、カウンタの意味・qualityReport/ops_logへの
+  記録形式自体は変更していない。
+- **影響範囲**: 同一顧客が同日に会計IDの異なる2回以上の会計を行った場合、`brain_visits`に
+  複数行が作られるようになる（従来は1行のみ）。これにより`sumSalesByStoreAndDate`
+  （store_id+visit_date単位の単純合計）が両方の会計を正しく含むようになる一方、
+  その日の来店回数・`visit_count_at`の採番も2件分進む点、`VisitHistorySection`等の表示で
+  「同日に複数回来店」として見える点は意図した挙動として承認済み。次回予約率・
+  リピート率など`brain_visits`の行数を分母/対象にする既存の集計への副次的な影響は
+  本フェーズのスコープ外（未検証）。
+
+**2. JST早朝帯(0:00〜8:59)の「本日」日付ズレ(`app/api/dashboard/top/route.ts`)**
+- **原因**: `todayIso()`が`new Date().toISOString().slice(0,10)`（サーバーのUTC時計基準）を
+  使用していたため、Vercelのサーバー時計がUTCで動く以上、JST 0:00〜8:59の間は「今日」が
+  実際のJST暦日より1日古く判定される潜在バグだった。
+- **修正**: `src/lib/facialSchema/facialSchemaSelection.ts`の`todayJstDateStr()`と同じ
+  「固定+09:00オフセット、タイムゾーンDB不要」という既存方針を踏襲し、
+  `new Date(Date.now() + JST_OFFSET_MS).toISOString().slice(0, 10)`に変更した。
+  `app/api/kpi/summary/route.ts`側の`isoToday()`等にも同型の潜在バグがあるが、
+  今回の依頼は`app/api/dashboard/top/route.ts`の`todayIso()`のみに限定されていたため
+  変更していない(別途判断が必要)。
+
+**検証結果**: `npx tsc --noEmit`パス。`tests/lib/import/csvImportPipeline.test.ts`
+（新方式に合わせて該当1件のテスト期待値を更新、全46件パス）・
+`tests/repositories/supabase/VisitRepo.test.ts`（34件パス）・`tests/api/dashboard.test.ts`
+（パス）を実行済み。`tests/api/dashboard-top.test.ts`は本修正と無関係に作業ツリーの
+既存の未コミット変更由来で12件失敗する状態が修正前から存在することを`git stash`による
+切り分けで確認済み(本修正が原因ではない)。**実機・本番データでの動作確認は未実施**
+（本番DBへの直接SELECTは自動モードの権限でブロックされたため、9/25分の実データによる
+最終確認はできていない）。
+
+**この解除は上記2点(同日複数会計の売上欠落・JST日付ズレ)のバグ修正に限る。**
+`app/api/kpi/summary/route.ts`・`formatYen`等の表示フォーマット・画像リサイズ等
+無関係な箇所には一切触れていない。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

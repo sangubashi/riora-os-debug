@@ -631,8 +631,10 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
   let proximityReviewCount = 0
   let stubZeroVisitMatchedCount = 0
   let menuUnresolvedSkippedCount = 0
-  // CHECKOUT_ID_FOUNDATION_1: 同日に既存visitと異なる会計IDが検出された件数
-  // (同日複数会計による会計欠落の実態を可視化するためのカウンタ。加算等の対応はまだしない)。
+  // CHECKOUT_ID_FOUNDATION_1 → SAME_DAY_CHECKOUT_SPLIT_1(2026-09-26ユーザー承認): 同日に
+  // 既存visitと異なる会計IDが検出された件数。以前は検知のみで金額を反映していなかったが、
+  // このフェーズから「同一顧客・同日でも会計IDが異なれば別のvisit行として新規作成する」
+  // 方式で売上を反映するようになった(下記isDifferentCheckoutの分岐を参照)。
   let sameDayDifferentCheckoutCount = 0
   // SUBSCRIPTION_VISIT_SPLIT_PHASE1: 純粋サブスク会計(brain_visitsの行を作らず
   // brain_subscription_paymentsのみに記録した会計)の件数。
@@ -753,6 +755,17 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
 
     const existingVisit = await repos.visitRepo.findByCustomerAndDate(customerId, visitDate)
 
+    // SAME_DAY_CHECKOUT_SPLIT_1(2026-09-26ユーザー承認): 既存visitが既にCSV取込由来
+    // (salonboard_import/reconciled)で、かつ会計IDが双方とも分かっていて一致しない場合のみ
+    // 「同一顧客・同日の別の新規会計」と確定判定する。checkout_idがNULLの行(過去分・
+    // staff_input由来。CHECKOUT_ID_FOUNDATION_1のコメント通り判定不能)は従来通り
+    // 「同一会計の再取込(冪等)」側の扱いのまま変更しない(安全側に倒す)。
+    const isDifferentCheckout =
+      existingVisit != null &&
+      existingVisit.checkoutId != null &&
+      agg.checkoutId != null &&
+      existingVisit.checkoutId !== agg.checkoutId
+
     // 顧客ステータス機能(PHASE RETAIL-ITEMS-1): 店販明細をbrain_visit_retail_itemsへ
     // 反映する入力に変換しておく。replaceRetailItems()は全削除→入れ直す冪等な置き換えのため、
     // 同一visitへ何度呼んでも安全(reconcile/createSequenced/既存visitスキップの3分岐すべてで
@@ -765,7 +778,7 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
       amount:      item.amount,
     }))
 
-    if (existingVisit && existingVisit.source !== 'reconciled' && existingVisit.source !== 'salonboard_import') {
+    if (existingVisit && !isDifferentCheckout && existingVisit.source !== 'reconciled' && existingVisit.source !== 'salonboard_import') {
       const reconciledVisit = await repos.visitRepo.reconcile(existingVisit.id, {
         staffId: staffRes.staffId,
         menuId: menuRes.menuId,
@@ -802,7 +815,8 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
       } catch (e) {
         console.warn('[proposal-outcome] record failed (non-fatal):', e)
       }
-    } else if (!existingVisit) {
+    } else if (!existingVisit || isDifferentCheckout) {
+      if (isDifferentCheckout) sameDayDifferentCheckoutCount += 1
       const createdVisit = await repos.visitRepo.createSequenced({
         storeId: input.storeId,
         customerId,
@@ -846,23 +860,13 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
         console.warn('[proposal-outcome] record failed (non-fatal):', e)
       }
     } else if (existingVisit) {
-      // 既存visitが既にreconciled/salonboard_import済み → 同一CSV再取込の冪等スキップ(増分ゼロ)。
+      // 既存visitが既にreconciled/salonboard_import済みで、かつisDifferentCheckoutが偽
+      // (=会計IDが一致 or 少なくとも一方がNULLで判定不能) → 同一会計の再取込とみなし
+      // 冪等スキップする(増分ゼロ。「本当に別の新規会計」の場合は上のisDifferentCheckout
+      // 分岐で既に新規visit行として処理済みなのでここには来ない・SAME_DAY_CHECKOUT_SPLIT_1)。
       // ただし店販明細(顧客ステータス機能)だけは、過去分の遡及移行(同一CSVの再取込)に
       // 対応するため常に置き換える(replaceRetailItemsは冪等・visitsImported等の他の
       // 冪等スキップ条件には一切影響しない)。
-      //
-      // CHECKOUT_ID_FOUNDATION_1(2026-09-13): 同日複数会計時、この分岐は「同一会計の
-      // 再取込(冪等)」と「本当に別の新規会計」を区別できず、後者も無条件でスキップして
-      // いた(docs/architecture/Riora_Management_Dashboard_Architecture_v2.1.md §6-1の
-      // 既知の制約)。両者とも会計IDが分かっている場合に限り不一致を検知し件数を記録する
-      // (加算等の挙動変更はスコープ外・このフェーズは検知・可視化のみ)。
-      if (
-        existingVisit.checkoutId != null &&
-        agg.checkoutId != null &&
-        existingVisit.checkoutId !== agg.checkoutId
-      ) {
-        sameDayDifferentCheckoutCount += 1
-      }
       await repos.visitRepo.replaceRetailItems(existingVisit.id, retailItemsInput)
       await repos.subscriptionPaymentRepo.replaceForCheckout(
         agg.checkoutId,

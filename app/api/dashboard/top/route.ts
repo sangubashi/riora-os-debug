@@ -42,8 +42,14 @@ function sumFixedCosts(fixedCosts: Record<string, unknown> | null | undefined): 
   return hasValue ? total : null;
 }
 
+// JST(UTC+9固定・DST無し)の暦日を返す。サーバー時計はUTCで動くため、単純に
+// new Date().toISOString()だけを使うとJST 0:00〜8:59の間「今日」が1日古くズレる
+// (src/lib/facialSchema/facialSchemaSelection.tsのtodayJstDateStr()と同じ
+// 「固定+09:00オフセット、タイムゾーンDB不要」の既存方針を踏襲)。
+const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return new Date(Date.now() + JST_OFFSET_MS).toISOString().slice(0, 10);
 }
 
 function lastDayOfMonth(yearMonth: string): string {

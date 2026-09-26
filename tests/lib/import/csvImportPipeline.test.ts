@@ -982,10 +982,11 @@ describe('csvImportPipeline', () => {
   });
 
   // ──────────────────────────────────────────────────────────────────────────
-  // CHECKOUT_ID_FOUNDATION_1(2026-09-13): 会計IDの保持・同日複数会計の検知
+  // CHECKOUT_ID_FOUNDATION_1(2026-09-13)→SAME_DAY_CHECKOUT_SPLIT_1(2026-09-26
+  // ユーザー承認): 会計IDの保持・同日複数会計の検知、および別visit行としての反映
   // ──────────────────────────────────────────────────────────────────────────
-  describe('runImportPipeline(CHECKOUT_ID_FOUNDATION_1: 会計ID保持・同日複数会計の検知)', () => {
-    it('同一顧客・同一来店日で異なる会計IDが検出されるとカウンタに記録される(このフェーズではまだ加算しない・既存のスキップ挙動を維持)', async () => {
+  describe('runImportPipeline(CHECKOUT_ID_FOUNDATION_1/SAME_DAY_CHECKOUT_SPLIT_1: 会計ID保持・同日複数会計の反映)', () => {
+    it('同一顧客・同一来店日で異なる会計IDが検出されると別のvisit行として新規作成され、売上に両方反映される', async () => {
       const repos = createFakeRepos();
       const csv = buildCsv([
         row({ checkoutId: 'A1', date: '2026-06-01', staff: '鈴木', customerName: '田中花子', customerNumber: 'C001', amount: 5000 }),
@@ -996,11 +997,18 @@ describe('csvImportPipeline', () => {
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      // 既存挙動を維持: 同日1件目(A1)のみがbrain_visitsに残る(2件目A2の会計はまだ加算されない)
-      expect(repos.state.visits).toHaveLength(1);
-      expect(repos.state.visits[0].treatmentAmount).toBe(5000);
-      expect(repos.state.visits[0].checkoutId).toBe('A1');
-      // 異なる会計ID(A2)が検出されたことがqualityReport/ops_logに記録される
+      // SAME_DAY_CHECKOUT_SPLIT_1: 会計IDが異なる2件目(A2)は既存行を上書き/スキップせず、
+      // 同一customer_id・同一visit_dateのまま別のvisit行として新規作成される(DB側に
+      // customer_id+visit_dateのユニーク制約は無い・idx_brain_visits_customer_dateは
+      // 非ユニークindexのみ)。これにより日次/月次の売上集計(store_id+visit_date単位の
+      // 単純合計)が両方の会計を正しく含むようになる。
+      expect(repos.state.visits).toHaveLength(2);
+      const sorted = [...repos.state.visits].sort((a, b) => (a.checkoutId ?? '').localeCompare(b.checkoutId ?? ''));
+      expect(sorted[0].checkoutId).toBe('A1');
+      expect(sorted[0].treatmentAmount).toBe(5000);
+      expect(sorted[1].checkoutId).toBe('A2');
+      expect(sorted[1].treatmentAmount).toBe(8000);
+      // 異なる会計ID(A2)が検出されたことは引き続きqualityReport/ops_logに記録される
       expect(result.report.qualityReport.sameDayDifferentCheckoutCount).toBe(1);
       expect(result.report.qualityReport.warnings).toContainEqual(
         expect.objectContaining({ type: 'same_day_new_checkout', count: 1, severity: 'warn' })
