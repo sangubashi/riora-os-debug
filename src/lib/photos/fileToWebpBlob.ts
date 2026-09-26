@@ -21,37 +21,92 @@
  * ブラウザのImage/canvas.toBlobに依存するためjsdomでは実行できず、
  * 本モジュールはユニットテスト対象外(実機確認が必要な事項として報告する)。
  */
-import { computeResizedDimensions, encodeCanvasWithFallback, type CaptureCanvas } from './captureFrame'
+import {
+  computeResizedDimensions,
+  encodeCanvasWithFallback,
+  MAX_CAPTURE_LONG_EDGE_PX,
+  MAX_THUMBNAIL_LONG_EDGE_PX,
+  THUMBNAIL_ENCODE_QUALITY,
+  type CaptureCanvas,
+} from './captureFrame'
+
+/** canvas.toBlob()をPromise化するアダプタ(captureFrame.tsのCanvasToBlobFn互換)。 */
+function canvasToBlobAdapter(c: CaptureCanvas, mimeType: string, q?: number): Promise<Blob> {
+  return new Promise<Blob>((resolve, reject) => {
+    (c as unknown as HTMLCanvasElement).toBlob(
+      (b) => (b ? resolve(b) : reject(new Error('canvas_to_blob_failed'))),
+      mimeType,
+      q
+    )
+  })
+}
+
+/**
+ * FileをHTMLImageElementへデコードする(HEIC/HEIFはSafariのネイティブ<img>デコードに
+ * 依存、iPad専用運用のため実害なし)。呼び出し側はfinallyでrevokeObjectURLすること。
+ */
+function decodeImageFile(file: File): Promise<{ img: HTMLImageElement; objectUrl: string }> {
+  const objectUrl = URL.createObjectURL(file)
+  return new Promise((resolve, reject) => {
+    const el = new Image()
+    el.onload  = () => resolve({ img: el, objectUrl })
+    el.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('image_decode_failed')) }
+    el.src = objectUrl
+  })
+}
+
+/** デコード済みのHTMLImageElementから、指定の長辺上限・品質でBlobを1つ生成する。 */
+function encodeImageToBlob(img: HTMLImageElement, maxLongEdge: number, quality: number): Promise<Blob> {
+  const { width, height } = computeResizedDimensions(img.naturalWidth, img.naturalHeight, maxLongEdge)
+  const canvas = document.createElement('canvas')
+  canvas.width  = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('canvas_context_unavailable')
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+
+  return encodeCanvasWithFallback(canvas as unknown as CaptureCanvas, canvasToBlobAdapter, quality)
+}
 
 export async function convertImageFileToWebpBlob(file: File, quality = 0.9): Promise<Blob> {
-  const objectUrl = URL.createObjectURL(file)
+  const { img, objectUrl } = await decodeImageFile(file)
   try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const el = new Image()
-      el.onload  = () => resolve(el)
-      el.onerror = () => reject(new Error('image_decode_failed'))
-      el.src = objectUrl
-    })
+    return await encodeImageToBlob(img, MAX_CAPTURE_LONG_EDGE_PX, quality)
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
+}
 
-    const { width, height } = computeResizedDimensions(img.naturalWidth, img.naturalHeight)
-    const canvas = document.createElement('canvas')
-    canvas.width  = width
-    canvas.height = height
-    const ctx = canvas.getContext('2d')
-    if (!ctx) throw new Error('canvas_context_unavailable')
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+/**
+ * 写真サムネイル機能③(2026-09-26ユーザー承認)。convertImageFileToWebpBlobと同じ
+ * デコード済みHTMLImageElementを再利用し、原本(従来と全く同じ仕様)に加えて
+ * 表示用の軽量サムネイル(長辺400px・quality 0.78)を追加生成する。Fileの
+ * デコード(Image要素のロード)は1回のみ行い、原本用・サムネイル用で二重に
+ * デコードしない。
+ *
+ * 原本の生成に失敗した場合はこの関数自体が例外を投げる(従来のconvertImage
+ * FileToWebpBlobと同じ挙動)。サムネイルの生成にのみ失敗した場合は原本の確定を
+ * 妨げないよう、ここで捕捉してthumbnail:nullを返す(最重要: 原本保存を最優先する
+ * という今回の設計方針を、Storage/DB書込み前のこのクライアント側生成段階でも
+ * 同様に適用する)。
+ */
+export async function convertImageFileToWebpBlobWithThumbnail(
+  file:             File,
+  quality           = 0.9,
+  thumbnailQuality  = THUMBNAIL_ENCODE_QUALITY,
+): Promise<{ full: Blob; thumbnail: Blob | null }> {
+  const { img, objectUrl } = await decodeImageFile(file)
+  try {
+    const full = await encodeImageToBlob(img, MAX_CAPTURE_LONG_EDGE_PX, quality)
 
-    return await encodeCanvasWithFallback(
-      canvas as unknown as CaptureCanvas,
-      (c, mimeType, q) => new Promise<Blob>((resolve, reject) => {
-        (c as unknown as HTMLCanvasElement).toBlob(
-          (b) => (b ? resolve(b) : reject(new Error('canvas_to_blob_failed'))),
-          mimeType,
-          q
-        )
-      }),
-      quality
-    )
+    let thumbnail: Blob | null = null
+    try {
+      thumbnail = await encodeImageToBlob(img, MAX_THUMBNAIL_LONG_EDGE_PX, thumbnailQuality)
+    } catch (e) {
+      console.error('[PHOTO_KARTE][thumbnail] file選択経路のサムネイル生成に失敗(非致命的、原本のみで続行):', e)
+    }
+
+    return { full, thumbnail }
   } finally {
     URL.revokeObjectURL(objectUrl)
   }

@@ -13,7 +13,12 @@ import {
   type CaptureConfirmPhase,
   type CapturePhotoType,
 } from '@/lib/photos/captureConfirmFlow'
-import { captureVideoFrameToBlob } from '@/lib/photos/captureFrame'
+import {
+  captureVideoFrameToBlob,
+  captureVideoFrameToBlobAt,
+  MAX_THUMBNAIL_LONG_EDGE_PX,
+  THUMBNAIL_ENCODE_QUALITY,
+} from '@/lib/photos/captureFrame'
 import { classifyCameraError, type CameraErrorKind } from '@/lib/photos/cameraError'
 import {
   selectGhostForAfter,
@@ -25,7 +30,7 @@ import {
   createUploadPhotoFn,
   getPhotoSignedUrl,
 } from '@/lib/photos/photoApiClient'
-import { convertImageFileToWebpBlob } from '@/lib/photos/fileToWebpBlob'
+import { convertImageFileToWebpBlobWithThumbnail } from '@/lib/photos/fileToWebpBlob'
 
 export type CameraStatus = 'idle' | 'requesting' | 'ready' | 'error'
 export type GhostOpacityLevel = 'off' | 'weak' | 'strong'
@@ -286,7 +291,7 @@ export function usePhotoCapture(options: UsePhotoCaptureOptions) {
   const isUnsupportedImageEncodingError = (e: unknown): boolean =>
     e instanceof Error && e.message.startsWith('unsupported_image_encoding')
 
-  const beginReview = useCallback((blob: Blob) => {
+  const beginReview = useCallback((blob: Blob, thumbnailBlob?: Blob | null) => {
     clearPreview()
     const url = URL.createObjectURL(blob)
     previewUrlRef.current = url
@@ -295,7 +300,7 @@ export function usePhotoCapture(options: UsePhotoCaptureOptions) {
     setJustSaved(false)
     setReviewPhase('reviewing')
 
-    ensureSession().capture({ blob, bodyPart, photoType, visitId, takenAt: takenAtOverride ?? undefined, staffId })
+    ensureSession().capture({ blob, thumbnailBlob, bodyPart, photoType, visitId, takenAt: takenAtOverride ?? undefined, staffId })
   }, [bodyPart, photoType, visitId, takenAtOverride, staffId, ensureSession, clearPreview])
 
   const shutter = useCallback(async () => {
@@ -303,22 +308,34 @@ export function usePhotoCapture(options: UsePhotoCaptureOptions) {
     if (!videoRef.current || cameraStatus !== 'ready') return
 
     const video = videoRef.current
+    const source = { element: video, width: video.videoWidth, height: video.videoHeight }
+    const deps = {
+      createCanvas: () => document.createElement('canvas'),
+      canvasToBlob: (canvas: unknown, mimeType: string, quality?: number) =>
+        new Promise<Blob>((resolve, reject) => {
+          (canvas as unknown as HTMLCanvasElement).toBlob(
+            (b) => (b ? resolve(b) : reject(new Error('canvas_to_blob_failed'))),
+            mimeType,
+            quality
+          )
+        }),
+    }
     try {
-      const blob = await captureVideoFrameToBlob(
-        { element: video, width: video.videoWidth, height: video.videoHeight },
-        {
-          createCanvas: () => document.createElement('canvas'),
-          canvasToBlob: (canvas, mimeType, quality) =>
-            new Promise<Blob>((resolve, reject) => {
-              (canvas as unknown as HTMLCanvasElement).toBlob(
-                (b) => (b ? resolve(b) : reject(new Error('canvas_to_blob_failed'))),
-                mimeType,
-                quality
-              )
-            }),
-        }
-      )
-      beginReview(blob)
+      const blob = await captureVideoFrameToBlob(source, deps)
+
+      // 写真サムネイル機能③(2026-09-26ユーザー承認): 同じvideoソースから追加で
+      // 軽量サムネイルを生成する。原本(blob)の確定には一切影響させない
+      // (失敗してもログのみでcatchし、thumbnailBlob=undefinedのまま続行する)。
+      let thumbnailBlob: Blob | undefined
+      try {
+        thumbnailBlob = await captureVideoFrameToBlobAt(
+          source, deps, MAX_THUMBNAIL_LONG_EDGE_PX, THUMBNAIL_ENCODE_QUALITY
+        )
+      } catch (e) {
+        console.error('[PHOTO_KARTE][thumbnail] カメラ撮影経路のサムネイル生成に失敗(非致命的、原本のみで続行):', e)
+      }
+
+      beginReview(blob, thumbnailBlob)
     } catch (e) {
       // 必須修正4(改訂): WebP→JPEGの順にフォールバックしても両方失敗した
       // (通常ほぼ起こらない)場合のみ、クライアント側で分かりやすいメッセージを出す。
@@ -340,8 +357,11 @@ export function usePhotoCapture(options: UsePhotoCaptureOptions) {
   const captureFromFile = useCallback(async (file: File) => {
     if (reviewPhase === 'reviewing') return
     try {
-      const blob = await convertImageFileToWebpBlob(file)
-      beginReview(blob)
+      // 写真サムネイル機能③(2026-09-26ユーザー承認): 同じデコード済み画像から
+      // 原本(full、従来と全く同じ仕様)とサムネイル(thumbnail、生成失敗時はnull)を
+      // 1回のデコードでまとめて生成する(fileToWebpBlob.ts側で二重デコードを回避)。
+      const { full, thumbnail } = await convertImageFileToWebpBlobWithThumbnail(file)
+      beginReview(full, thumbnail)
     } catch (e) {
       setUploadError(
         isUnsupportedImageEncodingError(e)

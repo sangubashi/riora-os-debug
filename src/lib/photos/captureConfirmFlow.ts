@@ -18,6 +18,12 @@ export type CapturePhotoType = 'before' | 'after' | 'progress'
 
 export interface CapturedPhotoPayload {
   blob:      Blob
+  /**
+   * 写真サムネイル機能③(2026-09-26ユーザー承認)。原本(blob)と同じ元画像から
+   * 追加生成した表示用の軽量サムネイル。生成に失敗した場合はnull/undefinedのまま
+   * 確定してよい(原本保存を妨げない。呼び出し側=usePhotoCapture.tsが非致命的に扱う)。
+   */
+  thumbnailBlob?: Blob | null
   bodyPart:  string
   photoType: CapturePhotoType
   visitId:   string | null

@@ -32,11 +32,23 @@ export interface CommitCustomerPhotoPayload {
   /** brain_staff.id。auth.users.idではない(PHOTO_KARTE_API_DESIGN_1.md 5-1節)。 */
   createdBy:    string | null
   file:         Blob
+  /**
+   * 写真サムネイル機能③(2026-09-26ユーザー承認)。原本(file)と同じ元画像から
+   * クライアント側で追加生成した表示用の軽量サムネイル。省略/nullの場合は
+   * thumbnail_storage_pathがNULLのまま原本保存のみ成功として扱う
+   * (最重要: 原本保存とサムネイル保存を同じ成功条件にしない)。
+   */
+  thumbnailFile?: Blob | null
 }
 
 export interface CustomerPhotoRecord {
   id:          string
   storagePath: string
+  /**
+   * 写真サムネイル機能③。既存のCustomerPhotoRecord生成箇所(テストのフェイク含む)を
+   * 壊さないよう任意項目にする。未設定/null=サムネイル未生成(原本へフォールバック)。
+   */
+  thumbnailStoragePath?: string | null
 }
 
 export type UploadPhotoResult =
@@ -72,6 +84,18 @@ export interface CommitCustomerPhotoRepo {
     takenAt:      string
     createdBy:    string | null
   }): Promise<InsertPhotoResult>
+  /**
+   * 写真サムネイル機能③(2026-09-26ユーザー承認)。サムネイル用Storageアップロード。
+   * 任意実装(未実装のRepoでもcommitCustomerPhotoは動作し、単にサムネイルを
+   * 生成しない)。原本のuploadPhotoと異なり、このメソッドの失敗はcommitCustomerPhoto
+   * 全体を失敗させない(最重要: 原本保存とサムネイル保存を同じ成功条件にしない)。
+   */
+  uploadThumbnail?(storagePath: string, file: Blob, opts: { upsert: boolean }): Promise<UploadPhotoResult>
+  /**
+   * 写真サムネイル機能③。原本insert後にthumbnail_storage_pathのみを更新する。
+   * 任意実装。失敗してもcommitCustomerPhoto全体は成功のまま返す(ログのみ)。
+   */
+  setThumbnailPath?(photoId: string, thumbnailStoragePath: string): Promise<{ ok: boolean; error?: string }>
 }
 
 export type CommitCustomerPhotoResult =
@@ -90,6 +114,20 @@ export function buildPhotoStoragePath(
   extension:       string,
 ): string {
   return `${storeId}/${customerId}/${clientRequestId}.${extension}`
+}
+
+/**
+ * 写真サムネイル機能③(2026-09-26ユーザー承認)。原本と同じclientRequestIdを起点に
+ * 決定的なサムネイルパスを生成する(1対1対応、`_thumb`サフィックスのみ既存の
+ * buildPhotoStoragePathと異なる)。原本のパス生成規則自体は変更しない。
+ */
+export function buildThumbnailStoragePath(
+  storeId:         string,
+  customerId:      string,
+  clientRequestId: string,
+  extension:       string,
+): string {
+  return `${storeId}/${customerId}/${clientRequestId}_thumb.${extension}`
 }
 
 /**
@@ -163,5 +201,40 @@ export async function commitCustomerPhoto(
     return { ok: false, reason: `db_insert_failed:${inserted.error}` }
   }
 
-  return { ok: true, idempotent: false, photo: inserted.record }
+  // ── サムネイル保存(写真サムネイル機能③・2026-09-26ユーザー承認、非致命的) ──
+  // ここまでのロジックは一切変更していない(原本のみ)。原本のINSERTが確定した
+  // 新規写真(idempotent:falseになる経路)に限り、ベストエフォートでサムネイルを
+  // 追加保存する。冪等応答(既存行の早期return・レース時のwinner合流)の各分岐では
+  // 実行しない(=同一clientRequestIdの再試行でサムネイルを重複生成しない設計。
+  // 既存の冪等性の仕組み自体は変更しない)。
+  //
+  // 最重要: 原本保存(上記まで)とサムネイル保存を同じ成功条件にしない。
+  // 失敗しても commitCustomerPhoto 全体は ok:true のまま返し、
+  // thumbnail_storage_path は NULL のまま(=signedUrl.ts側で原本へフォールバック)。
+  // 失敗時に原本Storageを削除する等のrollbackは行わない。
+  const photo: CustomerPhotoRecord = inserted.record
+  if (payload.thumbnailFile && repo.uploadThumbnail && repo.setThumbnailPath) {
+    try {
+      const thumbnailStoragePath = buildThumbnailStoragePath(
+        payload.storeId, payload.customerId, clientRequestId, extensionForFile(payload.thumbnailFile)
+      )
+      // upsert:trueで単純化する(原本のような孤児救済の3段階は不要。このアップロード自体が
+      // 「ベストエフォート・失敗してもNULLのまま許容」という前提のため)。
+      const thumbUpload = await repo.uploadThumbnail(thumbnailStoragePath, payload.thumbnailFile, { upsert: true })
+      if (!thumbUpload.ok) {
+        console.error(`[PHOTO_KARTE][thumbnail] storage upload failed (non-fatal, photo=${photo.id}):`, thumbUpload.error)
+      } else {
+        const setResult = await repo.setThumbnailPath(photo.id, thumbnailStoragePath)
+        if (!setResult.ok) {
+          console.error(`[PHOTO_KARTE][thumbnail] failed to persist thumbnail_storage_path (non-fatal, photo=${photo.id}):`, setResult.error)
+        } else {
+          photo.thumbnailStoragePath = thumbnailStoragePath
+        }
+      }
+    } catch (e) {
+      console.error(`[PHOTO_KARTE][thumbnail] unexpected error during thumbnail persistence (non-fatal, photo=${photo.id}):`, e)
+    }
+  }
+
+  return { ok: true, idempotent: false, photo }
 }

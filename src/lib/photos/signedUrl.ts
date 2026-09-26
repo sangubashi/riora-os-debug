@@ -24,11 +24,16 @@ function expirySecondsFor(purpose: SignedUrlPurpose): number {
 }
 
 /**
- * 所有権確認済みの { id, storagePath } の配列に対し、まとめてsigned URLを発行する。
+ * 所有権確認済みの写真配列に対し、まとめてsigned URLを発行する。
  * Storage側の createSignedUrls (バッチAPI) を使い、写真枚数分の逐次リクエストを避ける。
+ *
+ * 写真サムネイル機能③(2026-09-26ユーザー承認): purpose==='thumbnail'の場合、
+ * thumbnailStoragePathが設定されていればそれを使い、未生成(null/undefined、
+ * 既存データまたは生成失敗)であれば原本(storagePath)へフォールバックする。
+ * purpose==='detail'は従来通り常にstoragePath(原本)を使う(挙動を一切変更しない)。
  */
 export async function issueSignedUrlsForPhotos(
-  photos:  Array<{ id: string; storagePath: string }>,
+  photos:  Array<{ id: string; storagePath: string; thumbnailStoragePath?: string | null }>,
   purpose: SignedUrlPurpose,
 ): Promise<Record<string, SignedUrlEntry>> {
   if (photos.length === 0) return {}
@@ -36,9 +41,12 @@ export async function issueSignedUrlsForPhotos(
   const expiresInSec = expirySecondsFor(purpose)
   const supabase = getPhotoServiceClient()
 
+  const pathFor = (photo: { storagePath: string; thumbnailStoragePath?: string | null }): string =>
+    purpose === 'thumbnail' ? (photo.thumbnailStoragePath ?? photo.storagePath) : photo.storagePath
+
   const { data, error } = await supabase.storage
     .from(PHOTO_BUCKET)
-    .createSignedUrls(photos.map(p => p.storagePath), expiresInSec)
+    .createSignedUrls(photos.map(pathFor), expiresInSec)
 
   if (error || !data) {
     throw new Error(`signed_url_failed:${error?.message ?? 'unknown error'}`)
@@ -49,7 +57,7 @@ export async function issueSignedUrlsForPhotos(
 
   const result: Record<string, SignedUrlEntry> = {}
   for (const photo of photos) {
-    const url = pathToUrl.get(photo.storagePath)
+    const url = pathToUrl.get(pathFor(photo))
     if (url) {
       result[photo.id] = { url, expiresAt }
     }

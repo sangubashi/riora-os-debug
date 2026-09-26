@@ -173,6 +173,9 @@ export async function POST(
   }
 
   const file             = form.get('file')
+  // 写真サムネイル機能③(2026-09-26ユーザー承認): 任意項目。無くても既存の写真
+  // アップロード自体は今まで通り成功する(thumbnail_storage_pathはNULLのまま)。
+  const thumbnailFileRaw = form.get('thumbnailFile')
   const visitIdRaw       = form.get('visitId')
   const bodyPart         = form.get('bodyPart')
   const photoType        = form.get('photoType')
@@ -201,6 +204,25 @@ export async function POST(
 
   if (file.size > MAX_PHOTO_UPLOAD_BYTES) {
     return NextResponse.json({ success: false, error: 'file_too_large' }, { status: 400 })
+  }
+
+  // 写真サムネイル機能③(2026-09-26ユーザー承認): thumbnailFileは任意項目のため、
+  // 原本(file)と違い不正な値でも400にせず「サムネイル無し」として扱う(最重要:
+  // 原本保存とサムネイル保存を同じ成功条件にしない、という方針をリクエスト
+  // バリデーションの時点から一貫させる)。
+  let thumbnailFile: Blob | null = null
+  if (thumbnailFileRaw instanceof Blob) {
+    if (
+      ALLOWED_PHOTO_MIME_TYPES.includes(thumbnailFileRaw.type as AllowedPhotoMimeType) &&
+      thumbnailFileRaw.size > 0 &&
+      thumbnailFileRaw.size <= MAX_PHOTO_UPLOAD_BYTES
+    ) {
+      thumbnailFile = thumbnailFileRaw
+    } else {
+      console.error('[PHOTO_KARTE][thumbnail] thumbnailFile failed validation (non-fatal, ignored):', {
+        type: thumbnailFileRaw.type, size: thumbnailFileRaw.size,
+      })
+    }
   }
 
   const visitId = typeof visitIdRaw === 'string' && visitIdRaw.trim().length > 0 ? visitIdRaw : null
@@ -244,6 +266,7 @@ export async function POST(
     // 担当者タグへ上書きする。
     createdBy:  override?.staffBrainId ?? staff.staffBrainId,
     file,
+    thumbnailFile,
   }, clientRequestId)
 
   if (!result.ok) {
@@ -255,5 +278,8 @@ export async function POST(
     idempotent: result.idempotent,
     photoId:    result.photo.id,
     storagePath: result.photo.storagePath,
+    // 写真サムネイル機能③: 未生成/失敗時はnull。既存クライアントはこのフィールドを
+    // 参照しないため後方互換(未知フィールドは無視される)。
+    thumbnailStoragePath: result.photo.thumbnailStoragePath ?? null,
   })
 }

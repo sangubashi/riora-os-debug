@@ -37,6 +37,8 @@ export async function verifyVisitBelongsToCustomer(
 export interface PhotoOwnershipRecord {
   id:          string
   storagePath: string
+  /** 写真サムネイル機能③(2026-09-26ユーザー承認)。未生成(既存データ含む)ならnull。 */
+  thumbnailStoragePath?: string | null
 }
 
 /**
@@ -50,15 +52,24 @@ export async function verifyPhotoOwnership(
   customerId: string,
 ): Promise<PhotoOwnershipRecord | null> {
   const supabase = getPhotoServiceClient()
+  // 【デプロイ前提条件】thumbnail_storage_path列はmigration
+  // 20260926000000_brain_customer_photos_thumbnail.sql(未適用)で追加される想定。
+  // 適用前にこのコードをデプロイするとこのSELECTが列不存在エラーで失敗する
+  // (=写真のsigned URL発行・所有権確認全体が壊れる)。commitCustomerPhotoRepo.
+  // supabase.tsのfindPhotoByStoragePathと同じ注意点。
   const { data } = await supabase
     .from('brain_customer_photos')
-    .select('id, storage_path, customer_id')
+    .select('id, storage_path, thumbnail_storage_path, customer_id')
     .eq('id', photoId)
     .is('deleted_at', null)
     .maybeSingle()
 
   if (!data || data.customer_id !== customerId) return null
-  return { id: data.id as string, storagePath: data.storage_path as string }
+  return {
+    id:                   data.id as string,
+    storagePath:          data.storage_path as string,
+    thumbnailStoragePath: (data.thumbnail_storage_path as string | null) ?? null,
+  }
 }
 
 /**
@@ -73,9 +84,10 @@ export async function verifyPhotosOwnership(
   if (photoIds.length === 0) return null
 
   const supabase = getPhotoServiceClient()
+  // 【デプロイ前提条件】verifyPhotoOwnershipと同じ注意点(上記コメント参照)。
   const { data } = await supabase
     .from('brain_customer_photos')
-    .select('id, storage_path, customer_id')
+    .select('id, storage_path, thumbnail_storage_path, customer_id')
     .in('id', photoIds)
     .eq('customer_id', customerId)
     .is('deleted_at', null)
@@ -83,5 +95,9 @@ export async function verifyPhotosOwnership(
   const rows = data ?? []
   if (rows.length !== photoIds.length) return null
 
-  return rows.map(r => ({ id: r.id as string, storagePath: r.storage_path as string }))
+  return rows.map(r => ({
+    id:                   r.id as string,
+    storagePath:          r.storage_path as string,
+    thumbnailStoragePath: (r.thumbnail_storage_path as string | null) ?? null,
+  }))
 }

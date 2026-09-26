@@ -68,6 +68,8 @@ export interface UploadPhotoApiResult {
   photoId:     string
   storagePath: string
   idempotent:  boolean
+  /** 写真サムネイル機能③。未生成/失敗時はnull。 */
+  thumbnailStoragePath?: string | null
 }
 
 export async function uploadCustomerPhoto(
@@ -79,6 +81,13 @@ export async function uploadCustomerPhoto(
   // 信用せず、file.typeで独自に再検証する。ここではログ・デバッグ時の一貫性のため)。
   const extension = PHOTO_MIME_EXTENSIONS[payload.blob.type as AllowedPhotoMimeType] ?? 'webp'
   form.set('file', payload.blob, `${payload.clientRequestId}.${extension}`)
+  // 写真サムネイル機能③(2026-09-26ユーザー承認): 任意項目。生成に失敗している場合は
+  // payload.thumbnailBlobがnull/undefinedのままなので送らない(サーバー側もthumbnail
+  // Fileが無い場合は既存通り原本のみ保存する)。
+  if (payload.thumbnailBlob) {
+    const thumbExtension = PHOTO_MIME_EXTENSIONS[payload.thumbnailBlob.type as AllowedPhotoMimeType] ?? 'webp'
+    form.set('thumbnailFile', payload.thumbnailBlob, `${payload.clientRequestId}_thumb.${thumbExtension}`)
+  }
   form.set('bodyPart', payload.bodyPart)
   form.set('photoType', payload.photoType)
   form.set('clientRequestId', payload.clientRequestId)
@@ -106,7 +115,12 @@ export async function uploadCustomerPhoto(
     throw new Error(reason)
   }
 
-  return { photoId: body.photoId, storagePath: body.storagePath, idempotent: !!body.idempotent }
+  return {
+    photoId:     body.photoId,
+    storagePath: body.storagePath,
+    idempotent:  !!body.idempotent,
+    thumbnailStoragePath: body.thumbnailStoragePath ?? null,
+  }
 }
 
 /** captureConfirmFlow.ts の UploadPhotoFn 実装。customerIdをクロージャで固定する。 */
