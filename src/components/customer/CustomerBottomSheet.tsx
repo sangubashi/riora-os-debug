@@ -16,7 +16,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, ChevronLeft, X, Copy, Check, Trash2 } from 'lucide-react';
+import { ChevronRight, ChevronLeft, ChevronDown, X, Copy, Check, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 // ── Zustand ──────────────────────────────────────────────────────────────────
@@ -409,6 +409,11 @@ export default function CustomerBottomSheet({
 
   // ── 今日気をつけること（PHASE UX-1: 触れない話題） ─────────────────────────────
   const [ngTopics,   setNgTopics]   = useState<string[]>([]);
+  // 2026-09-26ユーザー承認: 縦に長く他の情報を圧迫するため、初期状態は1行に折りたたみ、
+  // タップで展開するアコーディオンにした(登録の有無に関係なく常に初期は折りたたみ)。
+  // 2026-09-11時点では「最重要・常時表示・折りたたみ不可」の安全設計だったが、
+  // 今回ユーザーに安全上のトレードオフを明示した上で変更の承認を得た。
+  const [ngWarningsExpanded, setNgWarningsExpanded] = useState(false);
 
   // ── ホームケア使用商品（PHASE HC-2B） ────────────────────────────────────────
   const [homecareProducts,        setHomecareProducts]        = useState<HomecareProductEntry[]>([]);
@@ -1523,28 +1528,43 @@ export default function CustomerBottomSheet({
                 </div>
               )}
 
-              {/* 今日気をつけること + NGワード — 2026-09-11仕様変更: 禁忌事項と同じく
-                  最重要・常時表示（スクロールで隠れない・折りたたみ不可）の固定ブロックへ統合。
+              {/* 今日気をつけること + NGワード — 2026-09-11仕様変更で「最重要・常時表示・
+                  折りたたみ不可」の固定ブロックへ統合したが、縦に長く他の情報を圧迫するため
+                  2026-09-26ユーザー承認で初期折りたたみ・タップ展開のアコーディオンに変更した
+                  (登録の有無に関係なく常に初期は1行。安全上のトレードオフはユーザーに明示済み)。
                   NGワードは旧AIProposalCard.tsx(今日の接客ポイントカード内)にあった顧客タイプ別
                   定型文(TYPE_COPY.ng)をそのまま移設したもの。 */}
               {c && (
                 <div className="flex-shrink-0 px-5 pb-2">
                   <div className="bg-[#FFF0F2] rounded-[22px] p-4 border border-[#F5D0D5]">
-                    <p className="text-[11px] tracking-[0.18em] text-[#C05060] font-semibold mb-2.5">
-                      ⚠️ 今日気をつけること
-                    </p>
-                    <div className="flex flex-col gap-2.5">
-                      {([
-                        { label: 'アレルギー',    value: allergyText },
-                        { label: '触れない話題',   value: ngTopics.length > 0 ? ngTopics.join('、') : null },
-                        { label: 'NGワード',      value: aiNg || null },
-                      ] as const).map(({ label, value }) => (
-                        <div key={label}>
-                          <p className="text-[10px] text-[#C8886E] tracking-[0.08em] mb-0.5">{label}</p>
-                          <p className="text-sm text-[#5C4033] leading-relaxed">{value || '登録なし'}</p>
-                        </div>
-                      ))}
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setNgWarningsExpanded(v => !v)}
+                      className="w-full flex items-center justify-between"
+                    >
+                      <p className="text-[11px] tracking-[0.18em] text-[#C05060] font-semibold">
+                        ⚠️ 今日気をつけること
+                      </p>
+                      <ChevronDown
+                        size={16}
+                        color="#C05060"
+                        style={{ transform: ngWarningsExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }}
+                      />
+                    </button>
+                    {ngWarningsExpanded && (
+                      <div className="flex flex-col gap-2.5 mt-2.5">
+                        {([
+                          { label: 'アレルギー',    value: allergyText },
+                          { label: '触れない話題',   value: ngTopics.length > 0 ? ngTopics.join('、') : null },
+                          { label: 'NGワード',      value: aiNg || null },
+                        ] as const).map(({ label, value }) => (
+                          <div key={label}>
+                            <p className="text-[10px] text-[#C8886E] tracking-[0.08em] mb-0.5">{label}</p>
+                            <p className="text-sm text-[#5C4033] leading-relaxed">{value || '登録なし'}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
