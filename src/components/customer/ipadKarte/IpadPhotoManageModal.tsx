@@ -21,6 +21,26 @@ import { Trash2, X } from 'lucide-react'
 import { listCustomerPhotosTimeline, getBatchSignedUrls, deletePhoto, type TimelinePhoto } from '@/lib/photos/photoApiClient'
 import { bodyPartLabel } from '@/lib/photos/bodyParts'
 import { PALETTE, headingFont, formatVisitDateLabel } from '@/components/customer/shared/PhotoCompareKit'
+import { BATCH_SIGNED_URL_MAX_IDS } from '@/lib/photos/constants'
+
+/**
+ * getBatchSignedUrls は1回のリクエストにつき BATCH_SIGNED_URL_MAX_IDS 件までしか
+ * 受け付けず、超過すると400(too_many_ids)を返しURLが1件も取れなくなる。このモーダルは
+ * 顧客の全登録写真を一覧取得するため件数が上限を超え得る。BATCH_SIGNED_URL_MAX_IDS件ずつに
+ * 分割して並行リクエストし、結果をマージすることで超過時も取得できるようにする。
+ */
+async function fetchAllSignedUrls(
+  customerId: string,
+  photoIds: string[],
+  purpose: 'thumbnail' | 'detail',
+): Promise<Record<string, string>> {
+  const chunks: string[][] = []
+  for (let i = 0; i < photoIds.length; i += BATCH_SIGNED_URL_MAX_IDS) {
+    chunks.push(photoIds.slice(i, i + BATCH_SIGNED_URL_MAX_IDS))
+  }
+  const results = await Promise.all(chunks.map(ids => getBatchSignedUrls(customerId, ids, purpose)))
+  return Object.assign({}, ...results)
+}
 
 interface Props {
   customerId: string
@@ -42,7 +62,7 @@ export default function IpadPhotoManageModal({ customerId, onClose, onDeleted }:
       const list = await listCustomerPhotosTimeline(customerId)
       if (cancelled) return
       setPhotos(list)
-      const urls = await getBatchSignedUrls(customerId, list.map(p => p.id), 'thumbnail')
+      const urls = await fetchAllSignedUrls(customerId, list.map(p => p.id), 'thumbnail')
       if (cancelled) return
       setPhotoUrls(urls)
     })()

@@ -1666,6 +1666,34 @@ CSV取込パイプライン(`csvImportPipeline.ts`・`salonBoardParser.ts`)・�
 **この解除は上記(顔シェーマの折りたたみ化・来店履歴セクションの新設)に限る。**
 `CustomerModeView.tsx`・`KarteMemoSection.tsx`本体には一切触れていない。
 
+### v1.0.1 着手済み事項（写真管理モーダルの50件制限バグ修正のみ・2026-09-26ユーザー承認）
+
+**背景**: パフォーマンス調査で、`IpadPhotoManageModal.tsx`が顧客の全登録写真ID
+（`PHOTO_LIST_DEFAULT_LIMIT=60`件まで）を1回の`getBatchSignedUrls`呼び出しに一括で
+渡していたのに対し、バッチAPIの上限が`BATCH_SIGNED_URL_MAX_IDS=50`件だったため、
+写真が51枚以上登録済みの顧客ではAPIが400(`too_many_ids`)を返し、`photoApiClient.ts`の
+`if (!res.ok) return {}`によりsigned URLが1件も取れず、モーダルの全サムネイルが
+無言で空白表示になるバグをコード追跡により確認した（読み取り専用の再検証込みで2回確認済み）。
+
+- **`IpadPhotoManageModal.tsx`のみ変更**: `getBatchSignedUrls`を直接呼ぶ代わりに、
+  同ファイル内に新設した`fetchAllSignedUrls()`が写真IDを`BATCH_SIGNED_URL_MAX_IDS`件ずつに
+  分割し、`Promise.all`で並行リクエストしてから結果をマージする。`BATCH_SIGNED_URL_MAX_IDS`は
+  `src/lib/photos/constants.ts`からimportして参照するのみで、同ファイル・APIルート
+  （`app/api/customers/[id]/photos/signed-urls/route.ts`）・`photoApiClient.ts`・
+  画像リサイズ(transform)には一切手を加えていない。
+- **調査で判明した関連事実(今回は対応せず)**: この不整合は`IpadPhotoManageModal.tsx`
+  以外の呼び出し箇所（`CustomerModeView.tsx`の「過去の写真」、`ipadKarteData.ts`等）では
+  一度に渡す件数が最大でも十数件程度のため実質的に該当しない。また写真のサムネイル/詳細
+  表示は署名URLのpurposeで有効期限のみを変えており原寸画像を返す点は今回未対応（別途、
+  Supabaseプランの制約(現状Free、Storage Image TransformationはPro以上限定)を踏まえた
+  検討が必要）。
+- **検証結果**: `npx tsc --noEmit`を実行し、当該ファイルに起因する型エラーが無いことを
+  確認。プロジェクトにlintスクリプトが無いためESLintでの確認は未実施。**実機
+  （iPad Safari、51枚以上の写真を持つ顧客での動作）は未検証**。
+
+**この解除は`IpadPhotoManageModal.tsx`の上記バグ修正に限る。** 画像リサイズ(transform)の
+追加・他ファイルの変更は行っていない。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。
