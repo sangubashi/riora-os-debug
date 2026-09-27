@@ -48,13 +48,14 @@ function formatJstTime(iso: string): string {
 }
 
 /**
- * 経営TOPのサマリー金額用（DASHBOARD_CURRENCY_IMPLEMENT_2）。
- * 金額の大小に関わらず万円単位（整数丸め）で統一表示する。
- * K表記（英語圏の千単位表記）は日本の商習慣に馴染まないため廃止。
+ * 経営TOPのサマリー金額用。
+ * 2026-09-27ユーザー承認により、万円単位（整数丸め・旧DASHBOARD_CURRENCY_IMPLEMENT_2）
+ * から1円単位のフル桁表示へ変更した(丸めにより実際の売上数字と一致して見えない
+ * という指摘のため)。集計値自体(monthlySales等)は元々丸めていない正確な値であり、
+ * 表示フォーマットのみの変更。
  */
 function formatYen(amount: number): string {
-  const man = Math.round(amount / 10000)
-  return `${man.toLocaleString('ja-JP')}万円`
+  return `¥${amount.toLocaleString('ja-JP')}`
 }
 
 /**
