@@ -22,7 +22,8 @@
  * コンポーネントとして扱う。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Search, Calendar } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Search, Calendar, HelpCircle } from 'lucide-react'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useHomeStore } from '@/store/useHomeStore'
 import { useCustomerStore, type CustomerRow } from '@/store/useCustomerStore'
@@ -112,6 +113,7 @@ function toReservationFromReservation(r: ReservationWithBrainCustomer): BSReserv
 }
 
 export default function KarteEntryScreen() {
+  const router = useRouter()
   const session = useAuthStore(s => s.session)
   const [selected, setSelected] = useState<{ customer: BSCustomer; reservation?: BSReservation } | null>(null)
   const { reservations, isLoading: reservationsLoading, fetchTodayReservations } = useHomeStore()
@@ -187,14 +189,28 @@ export default function KarteEntryScreen() {
         <p style={{ margin: 0, fontSize: '14px', color: PALETTE.text, letterSpacing: '0.02em', justifySelf: 'center', whiteSpace: 'nowrap' }}>
           {todayLabel}
         </p>
-        <p
-          style={{
-            margin: 0, fontSize: '11px', letterSpacing: '0.15em', color: PALETTE.gold, textTransform: 'uppercase',
-            justifySelf: 'end', paddingBottom: '4px', borderBottom: `1px solid ${PALETTE.gold}`,
-          }}
-        >
-          KARTE
-        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifySelf: 'end' }}>
+          {/* 使い方ガイド導線(2026-09-27ユーザー承認・第一弾)。/karte/guideへの入口。 */}
+          <button
+            type="button"
+            onClick={() => router.push('/karte/guide')}
+            aria-label="カルテ画面の使い方ガイドを開く"
+            style={{
+              display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 2px',
+              border: 'none', background: 'none', color: PALETTE.muted, fontSize: '11px', cursor: 'pointer',
+            }}
+          >
+            <HelpCircle size={14} />使い方
+          </button>
+          <p
+            style={{
+              margin: 0, fontSize: '11px', letterSpacing: '0.15em', color: PALETTE.gold, textTransform: 'uppercase',
+              paddingBottom: '4px', borderBottom: `1px solid ${PALETTE.gold}`,
+            }}
+          >
+            KARTE
+          </p>
+        </div>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '24px 32px 48px' }}>
