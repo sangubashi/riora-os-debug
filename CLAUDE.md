@@ -1805,7 +1805,23 @@ Supabaseクエリではなく`CustomersScreen.tsx`(178行目付近)のクライ�
   `next-env.d.ts`のbuild副作用は復元済み。`vitest run tests/lib/customer/kanaMatch.test.ts`
   7件パス。**実機での検索動作(iPad Safari)は未検証**。
 
-**この解除は上記(フリガナのAPI/store追加・検索条件追加)に限る。** 検索結果のソート順・
+**追記(2026-09-27・実機検証で判明した見落とし)**: 本番デプロイ後、`/karte`
+(iPad共通ログイン用のカルテホーム画面、`KarteEntryScreen.tsx`)で「こみやま」
+「コミヤマ」と検索しても0件になる不具合が報告された。調査の結果、`CustomerRow[]`に
+対する顧客名検索は本ファイルとは別に**画面ごとに独立実装**されており(ファイル冒頭の
+既存コメントにも明記の通り「検索ロジック自体はこの画面専用に新規実装・既存ファイルには
+触れない」という設計方針)、`KarteEntryScreen.tsx`(137行目付近)自身のfilterには
+上記のフリガナ対応が含まれていなかったことが原因と判明(`brain_customers.name_kana`
+自体・APIレスポンス・`kanaMatch.ts`のロジックはSupabase実データで直接検証し問題
+無かった)。`KarteEntryScreen.tsx`のfilterにも同じ`kanaIncludes(c.nameKana, ...)`を
+追加して解消した。**同じパターンの独立実装がもう1箇所ある
+(`src/components/customer/ipadKarte/IpadKarteSearchView.tsx`、43行目)**が、
+`CustomerBottomSheet.tsx`のボタン削除(2026-09-15)以降どこからもimportされていない
+到達不能コードのため、今回は対象外とした(将来再利用される場合は同様の追加が必要)。
+`npx tsc --noEmit`・`npm run build`ともにパス、`next-env.d.ts`復元済み。
+
+**この解除は上記(フリガナのAPI/store追加・検索条件追加、`KarteEntryScreen.tsx`への
+同様の追加)に限る。** 検索結果のソート順・
 `/api/customers/list`のフィルタ条件(在籍スタッフ判定等)・他の検索対象欄には
 一切触れていない。
 

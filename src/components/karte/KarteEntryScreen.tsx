@@ -30,6 +30,7 @@ import { PALETTE, headingFont } from '@/components/customer/shared/PhotoCompareK
 import CustomerTopPage from '@/components/customer/CustomerTopPage'
 import type { ReservationWithBrainCustomer } from '@/types/database'
 import type { Customer as BSCustomer, Reservation as BSReservation, CustomerType } from '@/types'
+import { kanaIncludes } from '@/lib/customer/kanaMatch'
 
 // ─── CustomerRow(検索結果) → CustomerTopPage 用マッパー ─────────────────────────
 // CustomersScreen.tsxのtoCustomer/toReservationと同一の変換(既存ファイルには触れず、
@@ -137,7 +138,9 @@ export default function KarteEntryScreen() {
   const filteredCustomers = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return []
-    return customers.filter(c => c.name.toLowerCase().includes(q)).slice(0, 30)
+    // フリガナ検索(2026-09-27ユーザー承認): CustomersScreen.tsxと同じkanaMatch.tsを使い、
+    // ひらがな・カタカナを無視した部分一致もこの画面(/karte)の検索に加える。
+    return customers.filter(c => c.name.toLowerCase().includes(q) || kanaIncludes(c.nameKana, query.trim())).slice(0, 30)
   }, [customers, query])
 
   const openCustomerFromSearch = (c: CustomerRow) =>
