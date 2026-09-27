@@ -1874,6 +1874,41 @@ CSV取込でのname_kana自動保存/バックフィル実装・ソート優先�
 メニュー解決・売上集計ロジック、`patchFromImport()`(既存の未使用メソッド、
 今回は触れていない)には一切触れていない。
 
+### `/karte` 着手済み事項（顧客検索を姓フリガナ前方一致のみに変更・2026-09-27ユーザー承認）
+
+**背景**: READ ONLY監査(同日実施)で、「あ」検索が漢字表記(`name`)に含まれる
+偶然の平仮名文字(「熊谷 **まり**あ」の「あ」)を拾ってしまうこと、`name_kana`が
+「姓 名」形式のフルネーム読みであり名(下の名前)のフリガナまで検索対象に
+含まれてしまうこと、一致方式が部分一致で前方一致ではないことを確認した。
+これを受け、`/karte`(`KarteEntryScreen.tsx`)の検索のみに限定して仕様変更した。
+
+- **`src/lib/customer/kanaMatch.ts`**: 既存の`toHiragana()`・`kanaIncludes()`は
+  無変更(`CustomersScreen.tsx`が引き続き使用するため)。新規に3関数を追加:
+  `isKanaOnly(input)`(入力がひらがな・カタカナのみか判定)、`surnameKana()`
+  (非export、`name_kana`の最初の半角スペースより前=姓の読みを取り出す)、
+  `kanaSurnameStartsWith(nameKana, query)`(姓フリガナへの前方一致、
+  `toHiragana`で正規化)。
+- **`KarteEntryScreen.tsx`**: `filteredCustomers`を分岐に変更。入力が
+  `isKanaOnly`(ひらがな・カタカナのみ)の場合は`kanaSurnameStartsWith(c.nameKana, ...)`
+  のみで検索し`name`(漢字表記)は見ない。それ以外(漢字等)の入力は従来通り
+  `name`への部分一致のみで検索する(漢字検索の仕様は今回変更していない)。
+- **`CustomersScreen.tsx`は無変更**(直前のエントリで実装したフリガナ部分一致・
+  ソート優先度のロジックのまま。今回の姓限定・前方一致化は`/karte`のみに適用)。
+- **検証**: `npx tsc --noEmit`パス(既存の無関係な失敗15件のみ、変更前と同一の
+  エラー集合)。`tests/lib/customer/kanaMatch.test.ts`7件パス(既存の
+  `toHiragana`/`kanaIncludes`テストへの影響なし)。`KarteEntryScreen.tsx`への
+  ユニット/コンポーネントテストは元々リポジトリに存在しない。`npm run build`・
+  **実機での検索動作確認は未実施**(依頼によりtypecheck/既存テストの確認のみで
+  一旦区切り、その後のユーザー承認を経てpush・本番デプロイした)。
+- **既知の制約(未解消)**: `name_kana`が未登録(現状153件中145件)の顧客は
+  この前方一致でも当然ヒットしない(直前のCSV取込バックフィル実装が実際の
+  CSV再取込で発火するまでは反映されない)。これはロジックではなくデータ側の
+  制約として別途認識済み。
+
+**この解除は上記(`/karte`の姓フリガナ前方一致化・`kanaMatch.ts`への追加関数)
+のみに限る。** `CustomersScreen.tsx`・`IpadKarteSearchView.tsx`・漢字検索の
+仕様・`name_kana`のデータ構造(専用姓カラムの新設等)には一切触れていない。
+
 ### 顧客タブ 着手済み事項（「初回問診票」表示名変更のみ・2026-09-27ユーザー承認）
 
 「初回問診票」という表記が医療的で硬いため「初回カウンセリング表」へ変更する依頼。

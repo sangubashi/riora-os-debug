@@ -30,7 +30,7 @@ import { PALETTE, headingFont } from '@/components/customer/shared/PhotoCompareK
 import CustomerTopPage from '@/components/customer/CustomerTopPage'
 import type { ReservationWithBrainCustomer } from '@/types/database'
 import type { Customer as BSCustomer, Reservation as BSReservation, CustomerType } from '@/types'
-import { kanaIncludes } from '@/lib/customer/kanaMatch'
+import { isKanaOnly, kanaSurnameStartsWith } from '@/lib/customer/kanaMatch'
 
 // ─── CustomerRow(検索結果) → CustomerTopPage 用マッパー ─────────────────────────
 // CustomersScreen.tsxのtoCustomer/toReservationと同一の変換(既存ファイルには触れず、
@@ -136,11 +136,18 @@ export default function KarteEntryScreen() {
   }, [session, fetchTodayReservations, fetchCustomers])
 
   const filteredCustomers = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return []
-    // フリガナ検索(2026-09-27ユーザー承認): CustomersScreen.tsxと同じkanaMatch.tsを使い、
-    // ひらがな・カタカナを無視した部分一致もこの画面(/karte)の検索に加える。
-    return customers.filter(c => c.name.toLowerCase().includes(q) || kanaIncludes(c.nameKana, query.trim())).slice(0, 30)
+    const rawQuery = query.trim()
+    if (!rawQuery) return []
+    // 姓フリガナ前方一致(PERF-KARTE-KANA-SURNAME-1・2026-09-27ユーザー承認): 入力が
+    // ひらがな・カタカナのみの場合は、name(漢字表記)は検索対象にせず、name_kanaの
+    // 姓部分(スペースより前)への前方一致でのみ検索する(名のフリガナ・漢字名への
+    // 誤ヒットを防ぐ)。それ以外(漢字等)の入力は従来通りname(漢字表記)への部分一致
+    // で検索する(漢字検索の仕様は今回変更しない)。
+    if (isKanaOnly(rawQuery)) {
+      return customers.filter(c => kanaSurnameStartsWith(c.nameKana, rawQuery)).slice(0, 30)
+    }
+    const q = rawQuery.toLowerCase()
+    return customers.filter(c => c.name.toLowerCase().includes(q)).slice(0, 30)
   }, [customers, query])
 
   const openCustomerFromSearch = (c: CustomerRow) =>
