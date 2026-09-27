@@ -98,15 +98,21 @@ interface AnalyticsMetrics {
   nominationRate: number | null
   repeatRate: number | null
   growthRate: number | null
+  subscriptionSales: number
+  totalSalesWithSubscription: number
 }
 
-/** 表示5項目(売上/店販売上/指名率/リピート率/客単価。PHASE STAFFANALYTICS-TOTAL)。
- *  個別スタッフカード・合計カードで共通利用する(デザイン統一のため)。 */
+/** 表示項目(売上/店販売上/サブスク売上/総売上/指名率/リピート率/客単価。PHASE STAFFANALYTICS-TOTAL、
+ *  サブスク売上・総売上は2026-09-27ユーザー承認で追加)。
+ *  個別スタッフカード・合計カードで共通利用する(デザイン統一のため)。
+ *  サブスク売上・総売上はmonthlySales・avgSpend(客単価)の計算式には影響しない参考値。 */
 function AnalyticsMetricGrid({ data, monthLabel }: { data: AnalyticsMetrics; monthLabel: string }) {
   return (
     <MetricGrid>
       <Metric label={`売上(${monthLabel})`} value={formatYen(data.monthlySales)} />
       <Metric label={`店販売上(${monthLabel})`} value={formatYen(data.retailSales)} />
+      <Metric label="サブスク売上" value={formatYen(data.subscriptionSales)} />
+      <Metric label="総売上(来店+サブスク)" value={formatYen(data.totalSalesWithSubscription)} />
       <Metric label="指名率" value={formatPercent(data.nominationRate)} />
       <Metric label="リピート率" value={formatPercent(data.repeatRate)} />
       <Metric label="客単価" value={data.avgSpend === null ? '—' : formatYen(data.avgSpend)} />

@@ -191,6 +191,21 @@ function CostBreakdownMini({ fixedCostTotal, laborCostTotal, adCostTotal }: { fi
   )
 }
 
+/**
+ * サブスク売上・総売上の内訳(2026-09-27ユーザー承認)。SalonBoardの合計金額とダッシュボードの
+ * 「今月売上」が一致しないという指摘を受け追加。monthlySales(来店ベース、brain_visits)には
+ * サブスク決済(brain_subscription_payments、SUBSCRIPTION_VISIT_SPLIT_PHASE1で意図的に分離済み)
+ * が含まれないため、客単価・着地予測の計算式には一切手を加えず、参考値として併記するのみ。
+ */
+function SubscriptionSalesBreakdown({ subscriptionSales, totalSalesWithSubscription }: { subscriptionSales: number; totalSalesWithSubscription: number }) {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '6px', paddingTop: '6px', borderTop: '1px solid #F5EEF0' }}>
+      <span style={{ fontSize: '10px', color: '#9F7E6C' }}>サブスク売上 <strong style={{ color: '#5C4033' }}>{formatYen(subscriptionSales)}</strong></span>
+      <span style={{ fontSize: '10px', color: '#9F7E6C' }}>総売上(来店+サブスク) <strong style={{ color: '#5C4033' }}>{formatYen(totalSalesWithSubscription)}</strong></span>
+    </div>
+  )
+}
+
 /** 「本日の売上」ヒーロー表示(PHASE ADMIN-UX-1)。最初の30秒で目に入る最優先情報。既存kpi4.todaySalesをそのまま表示するだけ。 */
 function TodaySalesHero({ amount }: { amount: number }) {
   return (
@@ -602,6 +617,7 @@ function DashboardHomeContent() {
           />
           <Stat label="着地予測" value={formatYen(required4.forecastSales)} />
         </StatGrid>
+        <SubscriptionSalesBreakdown subscriptionSales={required4.subscriptionSales} totalSalesWithSubscription={required4.totalSalesWithSubscription} />
         <CostBreakdownMini fixedCostTotal={required4.fixedCostTotal} laborCostTotal={laborCostTotal} adCostTotal={adCostTotal} />
         {!required4.fixedCostsConfigured && (
           <Link

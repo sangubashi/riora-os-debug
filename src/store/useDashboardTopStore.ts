@@ -19,6 +19,11 @@ export interface Required4 {
   fixedCostsConfigured: boolean
   /** APIは既に返しているが型定義に未反映だったフィールド(route.ts:137参照)。API変更ではなく型の是正。 */
   fixedCostTotal: number | null
+  /** サブスク決済合計(brain_subscription_payments、月初〜dateのMTD)。2026-09-27ユーザー承認。
+   *  monthlySales(来店ベース)には含まれない参考値(客単価・着地予測の計算式は変更していない)。 */
+  subscriptionSales: number
+  /** monthlySales + subscriptionSales(来店+サブスクの総売上)。2026-09-27ユーザー承認。 */
+  totalSalesWithSubscription: number
 }
 
 export interface Kpi4 {

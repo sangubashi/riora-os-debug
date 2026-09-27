@@ -52,4 +52,22 @@ export class SubscriptionPaymentRepo implements ISubscriptionPaymentRepo {
       paymentDate: row.payment_date as string,
     }));
   }
+
+  async listByStore(storeId: string): Promise<{ staffId: string | null; amount: number; paymentDate: string }[]> {
+    const { data, error } = await this.client
+      .from('brain_subscription_payments')
+      .select('staff_id, amount, payment_date')
+      .eq('store_id', storeId)
+      .is('deleted_at', null);
+
+    if (error) {
+      throw new Error(`SubscriptionPaymentRepo.listByStore failed: ${error.message}`);
+    }
+
+    return (data ?? []).map(row => ({
+      staffId:     (row.staff_id as string | null) ?? null,
+      amount:      row.amount as number,
+      paymentDate: row.payment_date as string,
+    }));
+  }
 }

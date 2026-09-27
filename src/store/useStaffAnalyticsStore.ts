@@ -25,6 +25,11 @@ export interface StaffAnalyticsRow {
   nominationRate: number | null
   repeatRate: number | null
   growthRate: number | null
+  /** サブスク決済合計(brain_subscription_payments、このスタッフ担当分・当月MTD)。
+   *  2026-09-27ユーザー承認。monthlySales・avgSpend(客単価)の計算式には含まれない参考値。 */
+  subscriptionSales: number
+  /** monthlySales + subscriptionSales。2026-09-27ユーザー承認。 */
+  totalSalesWithSubscription: number
 }
 
 export interface StaffAnalyticsTotal {
@@ -35,6 +40,10 @@ export interface StaffAnalyticsTotal {
   nominationRate: number | null
   repeatRate: number | null
   growthRate: number | null
+  /** サブスク決済合計(全スタッフ、当月MTD)。2026-09-27ユーザー承認。 */
+  subscriptionSales: number
+  /** monthlySales + subscriptionSales。2026-09-27ユーザー承認。 */
+  totalSalesWithSubscription: number
 }
 
 interface StaffAnalyticsState {

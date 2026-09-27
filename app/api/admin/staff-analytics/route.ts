@@ -17,8 +17,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getRepos } from '../../../lib/repos';
 import { staffAnalyticsQuerySchema } from '../../_schemas/query';
 import { toValidationErrorResponse } from '../../_schemas/common';
-import { computeStaffAnalytics, computeStaffAnalyticsTotal } from '@/lib/staffAnalytics/StaffAnalyticsEngine';
+import { computeStaffAnalytics, computeStaffAnalyticsTotal, monthRange } from '@/lib/staffAnalytics/StaffAnalyticsEngine';
 import { requireAdmin } from '@/lib/auth/requireAdmin';
+import { sumSubscriptionSales } from '@/lib/subscriptionSales/sumSubscriptionSales';
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -74,9 +75,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [staff, visits] = await Promise.all([
+    const [staff, visits, subscriptionPayments] = await Promise.all([
       repos.staffRepo.listByStore(storeId),
       repos.visitRepo.listByStore(storeId),
+      repos.subscriptionPaymentRepo.listByStore(storeId),
     ]);
 
     // month/dateの明示指定があればそれを最優先する(URLパラム優先・要件2)。
@@ -85,8 +87,20 @@ export async function GET(req: NextRequest) {
       ? { date: explicitDate, autoSelectedLatestMonth: false }
       : resolveDefaultAsOfDate(visits);
 
-    const staffAnalytics = computeStaffAnalytics({ asOfDate: date, staff, visits });
-    const total = computeStaffAnalyticsTotal({ asOfDate: date, staff, visits });
+    const staffAnalyticsBase = computeStaffAnalytics({ asOfDate: date, staff, visits });
+    const totalBase = computeStaffAnalyticsTotal({ asOfDate: date, staff, visits });
+
+    // サブスク売上・総売上(2026-09-27ユーザー承認): computeStaffAnalytics/
+    // computeStaffAnalyticsTotal(monthlySales・客単価・着地予測の元になる既存計算式)には
+    // 一切手を加えず、ここで別に集計して各行へ追加するだけに留める(客単価は来店ベースの
+    // ままにするため、サブスクをmonthlySales自体には混ぜない)。
+    const { start: curStart } = monthRange(date);
+    const staffAnalytics = staffAnalyticsBase.map(row => {
+      const subscriptionSales = sumSubscriptionSales(subscriptionPayments, curStart, date, row.staffId);
+      return { ...row, subscriptionSales, totalSalesWithSubscription: row.monthlySales + subscriptionSales };
+    });
+    const totalSubscriptionSales = sumSubscriptionSales(subscriptionPayments, curStart, date);
+    const total = { ...totalBase, subscriptionSales: totalSubscriptionSales, totalSalesWithSubscription: totalBase.monthlySales + totalSubscriptionSales };
 
     return NextResponse.json({ success: true, storeId, date, autoSelectedLatestMonth, staffAnalytics, total });
   } catch (e) {

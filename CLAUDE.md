@@ -2088,6 +2088,54 @@ KarteMemoSection.tsx/FacialSchemaSection.tsxの追加・編集・削除ロジッ
 スタッフ手動設定時はこの欄自体が算出されないこと)も追記した。いずれもガイド本文の
 訂正・追記のみで、対象機能のコード自体には触れていない。
 
+### admin領域 着手済み事項（経営TOP・スタッフ分析に「サブスク売上」「総売上」を追加・2026-09-27ユーザー承認）
+
+**背景**: 前段の「経営TOP画面の売上表示を万円単位からフル桁表示へ変更」対応後、ユーザーが
+サロンボードの合計金額(¥1,679,630)とダッシュボードの「売上(今月)」(¥1,259,080)を比較し
+差額を指摘。調査の結果、差額のほぼ全額(¥420,000)がサブスク決済(`brain_subscription_payments`、
+SUBSCRIPTION_VISIT_SPLIT_PHASE1で意図的に`brain_visits`から分離済み)であることが判明した。
+「客単価(monthlySales÷visitCount)・着地予測(来店ペース前提)にサブスクを混ぜると計算式が
+歪む」というリスクをユーザーへ説明した上で、**既存の集計式は一切変更せず、サブスク売上・
+総売上を別の参考値として追加表示する**方針で承認を得た。
+
+- **`src/lib/subscriptionSales/sumSubscriptionSales.ts`(新規・純粋関数)**: 期間内(両端含む)の
+  サブスク決済合計を算出する。`staffId`指定でそのスタッフ担当分のみに絞れる。
+  DashboardAggregator/StaffAnalyticsEngineと同じ「配列取得→JS側で集計」方針。
+  ユニットテスト`tests/lib/subscriptionSales/sumSubscriptionSales.test.ts`(5件)を追加。
+- **`ISubscriptionPaymentRepo`/`SubscriptionPaymentRepo`**: `listByStore(storeId)`を新設
+  (store_idの全サブスク決済を`deleted_at IS NULL`で取得)。既存の`replaceForCheckout`・
+  `listByCustomer`には触れていない。**この追加により`ISubscriptionPaymentRepo`のフェイクを
+  持つ既存テスト2件(`csvImportPipeline.test.ts`・`runMenuReclassification.test.ts`)に
+  `listByStore`スタブの追加が必要になったため対応した(いずれもテストの意図・既存アサーションは
+  無変更)。**
+- **`app/api/dashboard/top/route.ts`**: `subscriptionPaymentRepo.listByStore()`を並列取得に追加し、
+  `required4.subscriptionSales`・`required4.totalSalesWithSubscription`(=monthlySales+
+  subscriptionSales)を追加。`monthlySales`・`forecastSales`・`breakevenPoint`・
+  `monthProfitEst`の既存計算式には一切触れていない。
+- **`app/api/admin/staff-analytics/route.ts`**: 同様に`subscriptionPaymentRepo.listByStore()`を
+  取得し、`computeStaffAnalytics`/`computeStaffAnalyticsTotal`(既存の客単価・成長率等の
+  計算式)の**呼び出し結果に対して後から**`subscriptionSales`/`totalSalesWithSubscription`を
+  マージするだけに留めた(エンジン本体の入出力契約・既存テストへの影響を避けるため)。
+  `StaffAnalyticsEngine.ts`の`monthRange()`を`export`化してAPI側の期間集計に再利用した
+  (関数自体は無変更)。
+- **UI**: `DashboardHomeScreen.tsx`(経営TOP)に「サブスク売上」「総売上(来店+サブスク)」の
+  内訳行を追加(既存の`CostBreakdownMini`と同じ見た目のミニ内訳)。`StaffAnalyticsScreen.tsx`
+  (スタッフ分析)は既存5項目グリッドに「サブスク売上」「総売上(来店+サブスク)」の2項目を
+  追加(合計カード・各スタッフカードの両方、既存の客単価・指名率等の項目・計算式は無変更)。
+- **既存テストの更新**: `tests/api/staff-analytics.test.ts`・`tests/api/dashboard-top.test.ts`の
+  フェイクrepoに`subscriptionPaymentRepo`スタブを追加(実装が新たに呼ぶため必須)。
+  `staff-analytics.test.ts`の返却フィールド完全一致アサーションに新フィールド2件を追記。
+  `dashboard-top.test.ts`は元々(本改修と無関係に)12件失敗する状態だったが、スタブ追加後も
+  同じ12件のまま(新規の失敗は増えていないことを確認済み)。
+- **検証**: `npx tsc --noEmit`パス(既存の無関係な失敗15件のみ、変更前と同一のエラー集合)。
+  `npm run build`パス。`next-env.d.ts`のbuild副作用は復元済み。フルテストスイート実行で
+  93件失敗(変更前と同数、新規失敗0件)・新規追加分含め7件増の1381件パス。**実機での
+  表示確認は未検証**。
+
+**この解除は上記(サブスク売上・総売上の追加表示、関連repo/APIの拡張)のみに限る。**
+`monthlySales`/`avgSpend`/`forecastSales`/`breakevenPoint`/`monthProfitEst`等の既存計算式、
+`replaceForCheckout`/`listByCustomer`等の既存サブスク書込みロジックには一切触れていない。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

@@ -321,6 +321,8 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
           .slice()
           .sort((a, b) => a.paymentDate.localeCompare(b.paymentDate))
           .map(p => ({ itemName: p.itemName, amount: p.amount, paymentDate: p.paymentDate })),
+      listByStore: async () =>
+        state.subscriptionPayments.map(p => ({ staffId: p.staffId, amount: p.amount, paymentDate: p.paymentDate })),
     },
   };
 

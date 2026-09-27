@@ -299,6 +299,12 @@ export interface ISubscriptionPaymentRepo {
    * 既に保存済みの履歴も含めて解決できるようにするためDBから読む。
    */
   listByCustomer(customerId: UUID): Promise<{ itemName: string; amount: number; paymentDate: string }[]>;
+  /**
+   * store_idの全サブスク決済(deleted_at IS NULL)を取得する(2026-09-27ユーザー承認・
+   * 経営TOP/スタッフ分析への「サブスク売上」「総売上」表示追加)。DashboardAggregator/
+   * StaffAnalyticsEngineと同じ「配列を取得しJS側の純粋関数で期間集計する」方針を踏襲する。
+   */
+  listByStore(storeId: UUID): Promise<{ staffId: UUID | null; amount: number; paymentDate: string }[]>;
 }
 
 /**

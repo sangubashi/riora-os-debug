@@ -63,6 +63,7 @@ const mockRepos = {
   businessSettingsRepo: { findByStoreAndMonth: vi.fn(), findLatestBeforeOrAt: vi.fn() },
   visitRepo: { sumSalesByStoreAndDate: vi.fn() },
   opsLogRepo: { recentByStoreAndKind: vi.fn() },
+  subscriptionPaymentRepo: { listByStore: vi.fn() },
 };
 
 function buildUrl(qs: string) {
@@ -80,6 +81,7 @@ describe('GET /api/dashboard/top (GetDashboardTop)', () => {
     mockRepos.businessSettingsRepo.findLatestBeforeOrAt.mockResolvedValue(null);
     mockRepos.visitRepo.sumSalesByStoreAndDate.mockResolvedValue(98000);
     mockRepos.opsLogRepo.recentByStoreAndKind.mockResolvedValue([CSV_LOG]);
+    mockRepos.subscriptionPaymentRepo.listByStore.mockResolvedValue([]);
   });
 
   it('storeId未指定の場合は400(validation_error)を返す', async () => {

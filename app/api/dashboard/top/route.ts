@@ -13,6 +13,7 @@ import { getRepos } from '../../../lib/repos';
 import { dashboardTopQuerySchema } from '../../_schemas/query';
 import { toValidationErrorResponse } from '../../_schemas/common';
 import { requireAdmin } from '@/lib/auth/requireAdmin';
+import { sumSubscriptionSales } from '@/lib/subscriptionSales/sumSubscriptionSales';
 
 function firstOfMonth(date: string): string {
   return `${date.slice(0, 7)}-01`;
@@ -86,13 +87,14 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [snapshot, trend, settingsForMonth, todaySales, csvImportLogs, weeklyReservations] = await Promise.all([
+    const [snapshot, trend, settingsForMonth, todaySales, csvImportLogs, weeklyReservations, subscriptionPayments] = await Promise.all([
       repos.dashboardRepo.latestBeforeOrAt(storeId, date),
       repos.dashboardRepo.listSinceDate(storeId, month),
       repos.businessSettingsRepo.findByStoreAndMonth(storeId, month),
       repos.visitRepo.sumSalesByStoreAndDate(storeId, todayDate),
       repos.opsLogRepo.recentByStoreAndKind(storeId, 'csv_import', 1),
       repos.reservationRepo.weeklySummary(todayDate),
+      repos.subscriptionPaymentRepo.listByStore(storeId),
     ]);
 
     // 当月行が未存在の場合、または fixed_costs が全 null(未入力)の場合は
@@ -103,6 +105,11 @@ export async function GET(req: NextRequest) {
         ?? settingsForMonth;
 
     const monthlySales = snapshot?.monthlySales ?? 0;
+    // サブスク売上・総売上(2026-09-27ユーザー承認): monthlySales(来店ベース)とは別に
+    // 参考値として追加するのみ。monthlySales自体・着地予測/損益分岐点の計算式には
+    // 一切影響しない(客単価・着地予測はサブスクを含めると歪むため意図的に分離したまま)。
+    const subscriptionSales = sumSubscriptionSales(subscriptionPayments, month, date);
+    const totalSalesWithSubscription = monthlySales + subscriptionSales;
     const fixedCostTotal = sumFixedCosts(settings?.fixedCosts);
     const variableCostRate = settings?.variableCostRate ?? 0;
     // breakeven/profit はスナップショット(nightly)ではなく現在のsettingsからライブ計算。
@@ -141,6 +148,8 @@ export async function GET(req: NextRequest) {
         forecastSales,
         fixedCostsConfigured,
         fixedCostTotal,
+        subscriptionSales,
+        totalSalesWithSubscription,
       },
       kpi4: {
         todaySales,

@@ -29,6 +29,7 @@ function visit(id: string, staffId: string, customerId: string, visitDate: strin
 const mockRepos = {
   staffRepo: { listByStore: vi.fn() },
   visitRepo: { listByStore: vi.fn() },
+  subscriptionPaymentRepo: { listByStore: vi.fn() },
 };
 
 function buildUrl(qs: string) {
@@ -42,6 +43,7 @@ describe('GET /api/admin/staff-analytics (画面④スタッフ分析)', () => {
     vi.mocked(extractStaffFromRequest).mockResolvedValue(ADMIN_STAFF as never);
     mockRepos.staffRepo.listByStore.mockResolvedValue([staff('s1', '鈴木'), staff('s2', '亀山')]);
     mockRepos.visitRepo.listByStore.mockResolvedValue([visit('v1', 's1', 'c1', '2026-06-01')]);
+    mockRepos.subscriptionPaymentRepo.listByStore.mockResolvedValue([]);
   });
 
   it('storeId未指定の場合は400(validation_error)を返す', async () => {
@@ -63,7 +65,7 @@ describe('GET /api/admin/staff-analytics (画面④スタッフ分析)', () => {
       expect(row).not.toHaveProperty('ranking');
       expect(row).not.toHaveProperty('ltv');
       expect(Object.keys(row).sort()).toEqual(
-        ['staffId', 'staffName', 'monthlySales', 'retailSales', 'visitCount', 'avgSpend', 'nominationRate', 'repeatRate', 'growthRate'].sort()
+        ['staffId', 'staffName', 'monthlySales', 'retailSales', 'visitCount', 'avgSpend', 'nominationRate', 'repeatRate', 'growthRate', 'subscriptionSales', 'totalSalesWithSubscription'].sort()
       );
     });
   });
@@ -77,7 +79,7 @@ describe('GET /api/admin/staff-analytics (画面④スタッフ分析)', () => {
     expect(body.total).not.toHaveProperty('rank');
     expect(body.total).not.toHaveProperty('ltv');
     expect(Object.keys(body.total).sort()).toEqual(
-      ['monthlySales', 'retailSales', 'visitCount', 'avgSpend', 'nominationRate', 'repeatRate', 'growthRate'].sort()
+      ['monthlySales', 'retailSales', 'visitCount', 'avgSpend', 'nominationRate', 'repeatRate', 'growthRate', 'subscriptionSales', 'totalSalesWithSubscription'].sort()
     );
   });
 

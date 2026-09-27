@@ -51,7 +51,8 @@ export interface ComputeStaffAnalyticsInput {
   visits: Visit[];
 }
 
-function monthRange(date: string): { start: string; end: string } {
+/** 当月MTDの開始日を外部(route.ts、サブスク売上の期間集計)にも公開する(2026-09-27ユーザー承認)。 */
+export function monthRange(date: string): { start: string; end: string } {
   const year = Number(date.slice(0, 4));
   const month = Number(date.slice(5, 7));
   const start = `${date.slice(0, 7)}-01`;
