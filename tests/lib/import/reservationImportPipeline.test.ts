@@ -22,7 +22,7 @@ import type { ReservationRow, ReservationUpsertInput } from '../../../src/reposi
 
 const STORE_ID = 'store-1';
 
-const HEADER = 'ステータス,スタッフ名,来店日,開始時間,終了時間,所要時間,お名前,予約時合計金額';
+const HEADER = 'ステータス,スタッフ名,来店日,開始時間,終了時間,所要時間,フリガナ,お名前,予約時合計金額';
 
 function row(opts: {
   status?:  string;
@@ -31,14 +31,15 @@ function row(opts: {
   start?:   string;
   end?:     string;
   duration?: number;
+  kana?:    string;
   name:     string;
   amount?:  number;
 }): string {
   const {
     status = '受付待ち', staff = '鈴木', date = '20260601',
-    start = '1000', end = '1100', duration = 60, name, amount = 5000,
+    start = '1000', end = '1100', duration = 60, kana = '', name, amount = 5000,
   } = opts;
-  return [status, staff, date, start, end, duration, name, amount].join(',');
+  return [status, staff, date, start, end, duration, kana, name, amount].join(',');
 }
 
 function buildCsv(rows: string[]): string {
@@ -75,6 +76,7 @@ function createFakeRepos(opts: { staff?: Staff[] } = {}): ReservationPipelineRep
           id: `cust-${customerSeq}`,
           storeId: input.storeId,
           name: input.name,
+          nameKana: input.nameKana ?? null,
           ageGroup: input.ageGroup,
           customerType: null,
           typeConfidence: 0,
@@ -97,6 +99,13 @@ function createFakeRepos(opts: { staff?: Staff[] } = {}): ReservationPipelineRep
       },
       patchFromImport: async () => { throw new Error('not implemented in test fake'); },
       updateCustomerType: async () => { throw new Error('not implemented in test fake'); },
+      // PERF-KANA-BACKFILL-2: CustomerRepo.backfillNameKana(本番実装)と同じく、
+      // name_kanaが未登録(null/空文字)の顧客のみ更新する(冪等・既存値は上書きしない)。
+      backfillNameKana: async (id, nameKana) => {
+        const c = state.customers.find(x => x.id === id);
+        if (!c || (c.nameKana && c.nameKana !== '')) return;
+        c.nameKana = nameKana;
+      },
     },
     staffRepo: {
       listByStore: async () => staff,
@@ -173,6 +182,45 @@ describe('reservationImportPipeline', () => {
       expect(repos.state.customers).toHaveLength(1);
       expect(repos.state.reservations).toHaveLength(1);
       expect(repos.state.reservations[0].input.staffId).toBe('profile-1');
+    });
+
+    it('PERF-KANA-BACKFILL-2: 新規顧客作成時、CSVの「フリガナ」列がname_kanaとして保存される(予約のみのスタブ顧客対応)', async () => {
+      const repos = createFakeRepos();
+      const supabase = createFakeSupabase([{ id: 'staff-1', user_id: 'profile-1' }]);
+      const csv = buildCsv([row({ name: '黒田 和正', kana: 'クロダ カズマサ' })]);
+
+      const result = await runReservationImportPipeline(
+        { storeId: STORE_ID, csvText: csv, reviewDecisions: {} },
+        repos,
+        supabase
+      );
+
+      expect(result.ok).toBe(true);
+      expect(repos.state.customers).toHaveLength(1);
+      expect(repos.state.customers[0].nameKana).toBe('クロダ カズマサ');
+    });
+
+    it('PERF-KANA-BACKFILL-2: 既存顧客(氏名一致でmatched)のname_kanaが未登録の場合、CSVのフリガナでバックフィルされる', async () => {
+      const repos = createFakeRepos();
+      repos.state.customers.push({
+        id: 'cust-existing', storeId: STORE_ID, name: '黒田 和正', nameKana: null, ageGroup: null, customerType: null,
+        typeConfidence: 0, goalNote: null, weddingDate: null, acquisitionChannel: null,
+        firstVisitDate: null, assignedStaffId: null, isSubscriber: false, subscribedAt: null,
+        churnScore: 0, churnReason: null, consentAnonymizedLearning: false,
+        prefecture: null, city: null, externalKeyHash: null,
+      });
+      const supabase = createFakeSupabase([{ id: 'staff-1', user_id: 'profile-1' }]);
+      const csv = buildCsv([row({ name: '黒田 和正', kana: 'クロダ カズマサ' })]);
+
+      const result = await runReservationImportPipeline(
+        { storeId: STORE_ID, csvText: csv, reviewDecisions: {} },
+        repos,
+        supabase
+      );
+
+      expect(result.ok).toBe(true);
+      expect(repos.state.customers).toHaveLength(1);
+      expect(repos.state.customers[0].nameKana).toBe('クロダ カズマサ');
     });
 
     it('actorIdを指定した場合、brain_ops_logsのactorIdにその値が入る', async () => {

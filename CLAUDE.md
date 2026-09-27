@@ -1981,6 +1981,76 @@ KarteMemoSection.tsx/FacialSchemaSection.tsxの追加・編集・削除ロジッ
 `KarteMemoSection.tsx`/`FacialSchemaSection.tsx`本体のCRUDロジック・状態管理には
 一切触れていない(別途判断が必要)。
 
+### 顧客タブ 着手済み事項（予約一覧CSV取込(reservationImportPipeline.ts)にもname_kanaバックフィルを追加・2026-09-27ユーザー承認）
+
+**背景**: `/karte`の姓フリガナ前方一致対応後の実機確認で、黒田様(予約はあるが
+来店実績が1件も無い「予約のみのスタブ顧客」)のフリガナが依然埋まらないことが
+判明した。調査の結果、黒田様は`brain_visits`が0件で`brain_customers.created_at`が
+`予約(reservation)`経由での新規作成であり、**売上明細CSVには一度も登場しない**
+ため、直前に実装した`csvImportPipeline.ts`側のバックフィルでは原理的に到達
+できないことが分かった。デスクトップの実CSVを`decodeCsvBuffer`と同じ方式
+(iconv-lite・Shift_JIS対応)で直接読み、黒田様のフリガナ「クロダ カズマサ」が
+予約一覧CSVの「フリガナ」列(`reservationCsvParser.ts`の`customerKana`、
+`headerIndex.get('フリガナ')`)に実在することを確認した上で対応した。
+
+- **`src/lib/import/reservationImportPipeline.ts`**: `runReservationImportPipeline()`
+  の顧客解決ループに`customerKana = (row.customerKana ?? '').trim() || null`を
+  追加。新規顧客作成(needs_review→new・candidates 0件→new の2箇所)は
+  `nameKana: customerKana`を渡して作成時に保存、既存顧客(matched・
+  needs_review→merge)は`customerKana`がある場合のみ
+  `repos.customerRepo.backfillNameKana?()`を呼ぶ(`csvImportPipeline.ts`と
+  完全に同じCOALESCE方向の方針)。`decideReservationCustomerMatch`(氏名一致数
+  ベースの判定ポリシー)・予約自体の作成/更新ロジックには一切触れていない。
+- **テスト**: `tests/lib/import/reservationImportPipeline.test.ts`に2件追加
+  (新規スタブ顧客作成時の保存・既存顧客への未登録時バックフィル)、フェイク
+  `customerRepo`に`nameKana`/`backfillNameKana`を追加。全5件パス。
+  `npx tsc --noEmit`・`npm run build`ともにパス(既存の無関係な失敗のみ)。
+- **実行**: この変更を含むローカルスクリプト(`scripts/kana-backfill-import.ts`、
+  作業完了後にユーザー指示で削除済み・コミットもしていない)で、デスクトップ上の
+  過去CSV(売上明細67件+予約一覧49件、計122件)を全件Dry Run→needsReviewが
+  1件でもあるファイルは自動スキップ→残り84件をcommit実行した。結果:
+  売上明細35ファイル(newCustomers=0・updatedCustomers計328・visitsImported=0)、
+  予約一覧49ファイル全件(created=1・updated=1819)。本番DBの`name_kana`登録数は
+  8件→143件(153件中)まで改善し、黒田様の`name_kana`も`クロダ カズマサ`で
+  確認済み。
+
+**この解除は上記`reservationImportPipeline.ts`へのname_kana保存/バックフィル
+追加のみに限る。** `decideReservationCustomerMatch`・予約作成/更新ロジック・
+`csvImportPipeline.ts`(既に別途対応済み)には一切触れていない。
+
+### admin領域 着手済み事項（経営TOP画面の売上表示を万円単位からフル桁表示へ変更・2026-09-27ユーザー承認）
+
+**背景**: 「表示されている売上金額が四捨五入されていて実際の売上数字と一致しない」との
+指摘を受け調査した。`VisitRepo.sumSalesByStoreAndDate()`・`DashboardAggregator.ts`の
+`monthlySales`(103行目)はいずれも単純合算で丸めは無く、`brain_dashboard_daily`に
+保存される集計値自体は正確だった。丸めていたのは表示層のみ:
+`DashboardHomeScreen.tsx`(経営TOP・owner専用)の`formatYen()`が
+`Math.round(amount / 10000)`で万円単位に丸めて表示していた(旧
+`DASHBOARD_CURRENCY_IMPLEMENT_2`、`docs/DASHBOARD_CURRENCY_*`に一連の監査記録あり。
+偶発的なバグではなく過去に承認・レビュー済みの意図的な表示仕様だったため、
+変更前にユーザーへ「万円単位維持+フル桁併記」か「完全にフル桁へ変更」かを確認し、
+後者(完全にフル桁へ変更)の承認を得た)。
+
+- **`src/components/admin/dashboard/DashboardHomeScreen.tsx`**: `formatYen()`を
+  `Math.round(amount/10000)+'万円'`から`` `¥${amount.toLocaleString('ja-JP')}` ``
+  (`formatYenFull()`と同じ完全桁表示)へ変更。この関数を呼ぶ全箇所(今日売上・
+  今月売上・利益見込み・損益分岐点・損益分岐点まで残り・着地予測・固定費/人件費/
+  広告費内訳・売上推移チャートのツールチップ)に一律で適用される。
+- **`formatYenFull()`(客単価専用・変更禁止対象)には触れていない**(元々フル桁のため
+  今回の変更と実質的に同じ表示になるが、関数自体は独立のまま維持)。
+- **集計ロジック(`VisitRepo.sumSalesByStoreAndDate()`・`DashboardAggregator.ts`の
+  `monthlySales`/`forecastSales`/`breakevenPoint`/`monthProfitEst`)には一切
+  触れていない**(表示フォーマットのみの変更、予測値のMath.round自体は妥当なため
+  変更対象外)。
+- **検証**: `npx tsc --noEmit`・`npm run build`ともにパス(既存の無関係な失敗のみ、
+  変更前と同一のエラー集合)。`next-env.d.ts`のbuild副作用は復元済み。
+  `DashboardHomeScreen.tsx`への既存テストは無し。**実機での表示確認(数値が長く
+  なることによるレイアウト崩れの有無)は未検証**。
+
+**この解除は上記`formatYen()`の表示フォーマット変更のみに限る。** 他の管理画面
+(スタッフ分析・稼働率・メニューマスタ・顧客統合等、いずれも独自の`formatYen`を
+持つが元々フル桁表示)・`formatYenFull()`・集計ロジック本体には一切触れていない。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

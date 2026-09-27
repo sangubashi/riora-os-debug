@@ -269,17 +269,30 @@ export async function runReservationImportPipeline(
 
     let brainCustomerId: string
     const decision = decideReservationCustomerMatch(resolved.nameCandidates)
+    // フリガナ自動保存・バックフィル(PERF-KANA-BACKFILL-2・2026-09-27ユーザー承認):
+    // reservationCsvParser.tsが既にパース済みの「氏名(カナ)」列を、csvImportPipeline.ts
+    // (売上明細CSV)と同じ方針で保存する。予約のみでまだ来店(brain_visits)が無い
+    // スタブ顧客(黒田様のようなケース)は売上明細CSVには一度も登場しないため、
+    // この経路でのみフリガナを取得できる。
+    const customerKana = (row.customerKana ?? '').trim() || null
 
     if (decision.status === 'matched') {
       brainCustomerId = decision.customerId
+      if (customerKana) {
+        await repos.customerRepo.backfillNameKana?.(brainCustomerId, customerKana)
+      }
     } else if (decision.status === 'needs_review') {
       needsReviewCount += 1
       const choice = input.reviewDecisions[row.lineNumber] ?? 'new'
       if (choice === 'merge') {
         brainCustomerId = decision.candidates[0].customerId
+        if (customerKana) {
+          await repos.customerRepo.backfillNameKana?.(brainCustomerId, customerKana)
+        }
       } else {
         const createdCustomer = await repos.customerRepo.create({
           storeId: input.storeId, name: row.customerName, ageGroup: null,
+          nameKana: customerKana,
           firstVisitDate: resolved.status === 'completed' ? formatVisitDate(row.visitDate) : null,
           prefecture: null, city: null, externalKeyHash: null,
         })
@@ -289,6 +302,7 @@ export async function runReservationImportPipeline(
     } else {
       const createdCustomer = await repos.customerRepo.create({
         storeId: input.storeId, name: row.customerName, ageGroup: null,
+        nameKana: customerKana,
         firstVisitDate: resolved.status === 'completed' ? formatVisitDate(row.visitDate) : null,
         prefecture: null, city: null, externalKeyHash: null,
       })
