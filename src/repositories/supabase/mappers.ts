@@ -268,6 +268,7 @@ export function toBrainCustomerInsert(input: {
   name: string;
   ageGroup: string | null;
   birthDate: string | null;
+  nameKana?: string | null;
   firstVisitDate: string | null;
   prefecture: string | null;
   city: string | null;
@@ -278,6 +279,7 @@ export function toBrainCustomerInsert(input: {
     name: input.name,
     age_group: input.ageGroup,
     birth_date: input.birthDate,
+    name_kana: input.nameKana ?? null,
     first_visit_date: input.firstVisitDate,
     prefecture: input.prefecture,
     city: input.city,

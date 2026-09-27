@@ -27,16 +27,17 @@ function row(opts: {
   staff: string;
   customerName: string;
   customerNumber?: string;
+  customerKana?: string;
   menu?: string;
   amount?: number;
 }): string {
   const {
     checkoutId, date, time = '12:00', staff, customerName,
-    customerNumber = '', menu = 'カット', amount = 5000,
+    customerNumber = '', customerKana = '', menu = 'カット', amount = 5000,
   } = opts;
   return [
     date, time, checkoutId, '通常', 'メニュー', 'ヘア', 'カット', menu,
-    amount, '通常', 1, amount, staff, 'あり', customerName, customerNumber, '', 'LINE', '女性', '再来',
+    amount, '通常', 1, amount, staff, 'あり', customerName, customerNumber, customerKana, 'LINE', '女性', '再来',
   ].join(',');
 }
 
@@ -150,6 +151,7 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
           id: `cust-${customerSeq}`,
           storeId: input.storeId,
           name: input.name,
+          nameKana: input.nameKana ?? null,
           ageGroup: input.ageGroup,
           customerType: null,
           typeConfidence: 0,
@@ -169,6 +171,13 @@ function createFakeRepos(opts: { staff?: Staff[]; menus?: Menu[] } = {}): Pipeli
         };
         state.customers.push(created);
         return created;
+      },
+      // PERF-KANA-BACKFILL-1: CustomerRepo.backfillNameKana(本番実装)と同じく、
+      // name_kanaが未登録(null/空文字)の顧客のみ更新する(冪等・既存値は上書きしない)。
+      backfillNameKana: async (id, nameKana) => {
+        const c = state.customers.find(x => x.id === id);
+        if (!c || (c.nameKana && c.nameKana !== '')) return;
+        c.nameKana = nameKana;
       },
       patchFromImport: async (id, input) => {
         const c = state.customers.find(x => x.id === id);
@@ -413,6 +422,59 @@ describe('csvImportPipeline', () => {
         { rawMenuName: 'カット', resolvedMenuId: 'menu-1', resolvedMenuName: 'カット', resolutionMethod: 'exact_match', occurrenceCount: 1 },
       ]);
       expect(repos.state.opsLogs[0].detail.menuResolution).toEqual(result.report.menuResolution);
+    });
+
+    it('PERF-KANA-BACKFILL-1: 新規顧客作成時、CSVの「お客様名（フリガナ）」列がname_kanaとして保存される', async () => {
+      const repos = createFakeRepos();
+      const csv = buildCsv([
+        row({ checkoutId: 'A1', date: '2026-06-01', staff: '鈴木', customerName: '黒田 和正', customerNumber: 'C900', customerKana: 'クロダ カズマサ' }),
+      ]);
+
+      const result = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+
+      expect(result.ok).toBe(true);
+      expect(repos.state.customers).toHaveLength(1);
+      expect(repos.state.customers[0].nameKana).toBe('クロダ カズマサ');
+    });
+
+    it('PERF-KANA-BACKFILL-1: 既存顧客(会員番号一致)のname_kanaが未登録の場合、CSVのフリガナでバックフィルされる', async () => {
+      const repos = createFakeRepos();
+      const hash = hashExternalKey('C001', 'fixed-test-salt');
+      repos.state.customers.push({
+        id: 'cust-existing', storeId: STORE_ID, name: '田中花子', nameKana: null, ageGroup: null, customerType: null,
+        typeConfidence: 0, goalNote: null, weddingDate: null, acquisitionChannel: null,
+        firstVisitDate: '2026-01-01', assignedStaffId: null, isSubscriber: false, subscribedAt: null,
+        churnScore: 0, churnReason: null, consentAnonymizedLearning: false,
+        prefecture: null, city: null, externalKeyHash: hash,
+      });
+
+      const csv = buildCsv([
+        row({ checkoutId: 'A1', date: '2026-06-01', staff: '鈴木', customerName: '田中花子', customerNumber: 'C001', customerKana: 'タナカ ハナコ' }),
+      ]);
+      const result = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+
+      expect(result.ok).toBe(true);
+      expect(repos.state.customers.find(c => c.id === 'cust-existing')?.nameKana).toBe('タナカ ハナコ');
+    });
+
+    it('PERF-KANA-BACKFILL-1: 既存顧客のname_kanaが既に登録済みの場合は上書きしない(COALESCE方向)', async () => {
+      const repos = createFakeRepos();
+      const hash = hashExternalKey('C001', 'fixed-test-salt');
+      repos.state.customers.push({
+        id: 'cust-existing', storeId: STORE_ID, name: '田中花子', nameKana: 'タナカ ハナコ(手入力)', ageGroup: null, customerType: null,
+        typeConfidence: 0, goalNote: null, weddingDate: null, acquisitionChannel: null,
+        firstVisitDate: '2026-01-01', assignedStaffId: null, isSubscriber: false, subscribedAt: null,
+        churnScore: 0, churnReason: null, consentAnonymizedLearning: false,
+        prefecture: null, city: null, externalKeyHash: hash,
+      });
+
+      const csv = buildCsv([
+        row({ checkoutId: 'A1', date: '2026-06-01', staff: '鈴木', customerName: '田中花子', customerNumber: 'C001', customerKana: 'タナカ ハナコ(CSV由来・別表記)' }),
+      ]);
+      const result = await runImportPipeline({ storeId: STORE_ID, csvText: csv, reviewDecisions: {} }, repos);
+
+      expect(result.ok).toBe(true);
+      expect(repos.state.customers.find(c => c.id === 'cust-existing')?.nameKana).toBe('タナカ ハナコ(手入力)');
     });
 
     it('actorIdを指定した場合、brain_ops_logsのactorIdにその値が入る', async () => {

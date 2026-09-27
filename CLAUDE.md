@@ -1825,6 +1825,55 @@ Supabaseクエリではなく`CustomersScreen.tsx`(178行目付近)のクライ�
 `/api/customers/list`のフィルタ条件(在籍スタッフ判定等)・他の検索対象欄には
 一切触れていない。
 
+**追記2(2026-09-27・「くろだ」で0件になる不具合→データ欠落が根本原因と判明・
+CSV取込でのname_kana自動保存/バックフィル実装・ソート優先度修正)**:
+
+**調査結果**: Supabase実データで確認したところ、黒田様の`name_kana`は`NULL`。
+さらに有効顧客153件中`name_kana`が入っているのはわずか8件(残り145件がNULL、
+空文字は0件)だった。原因は、`name_kana`を書き込める経路が「SalonBoardテキスト
+貼り付け取込」1本のみで、ほぼ全顧客の主な登録経路である日次/月次CSV一括取込
+(`csvImportPipeline.ts`)は、取込元CSVの「お客様名（フリガナ）」列を
+`salonBoardDetailParser.ts`が既にパース済み(`customerKana`)であるにもかかわらず、
+顧客作成・更新時にそれを一切保存していなかったこと。**読みを漢字から推測する
+フォールバックは、日本人名の読みが辞書的に一意に決まらない(例:黒田→くろだ/
+こくでん)ため実装しない方針とし、既に手元にある実データを保存する対応のみを
+行った。**
+
+- **`src/repositories/interfaces.ts`**: `ICustomerRepo.create()`の入力に
+  `nameKana?: string | null`を追加。新規オプショナルメソッド
+  `backfillNameKana?(id, nameKana): Promise<void>`を追加(`markAsSubscriber?`と
+  同じ「既存実装/フェイクを壊さないオプショナル」方針)。
+- **`src/repositories/supabase/mappers.ts`**: `toBrainCustomerInsert()`に
+  `nameKana`を追加し`name_kana`へマッピング。
+- **`src/repositories/supabase/CustomerRepo.ts`**: `create()`が`nameKana`を
+  insertするよう変更。`backfillNameKana()`を新設(`markAsSubscriber()`と同じ
+  「事前読み取り不要・WHERE条件で対象を絞ったUPDATE」方式、
+  `name_kana IS NULL OR name_kana = ''`の行のみ更新するCOALESCE方向)。
+- **`src/lib/import/csvImportPipeline.ts`**: 顧客解決ループに
+  `customerKana = (agg.customerKana ?? '').trim() || null`を追加。新規顧客作成
+  (2箇所)は`nameKana: customerKana`を渡して作成時に保存、既存顧客(matched・
+  needs_review→merge)は`customerKana`がある場合のみ`backfillNameKana?()`を呼ぶ。
+  それ以外の顧客解決ロジック・冪等性判定・メニュー解決等には一切触れていない。
+- **既存145件の扱い**: 過去に取り込んだCSV自体は保存されていないため、今すぐ
+  一括で埋める手段は無い。該当月のCSVを再取込すれば埋まる(冪等)。日常的な
+  月次取込を続けることで自然に埋まっていく設計。
+- **ソート優先度の修正(`CustomersScreen.tsx`)**: 名前一致による上位表示判定
+  (`aNameMatch`/`bNameMatch`)が`name`(漢字)のみを見ておりname_kanaのみで
+  ヒットした顧客(例:黒田様を「くろだ」で検索)が優先表示されない見落としを
+  修正。`isNameMatch(c, lowerQ, rawQ)`ヘルパーへ集約し、filteredの検索条件・
+  sortedの優先判定の両方で`name`/`name_kana`いずれかの一致を同じ基準で扱う
+  よう統一した。
+- **テスト**: `tests/lib/import/csvImportPipeline.test.ts`に3件追加(新規作成時の
+  保存・既存顧客への未登録時バックフィル・登録済みの場合は上書きしないこと)、
+  全49件パス。`npx tsc --noEmit`・`npm run build`ともにパス(既存の無関係な
+  失敗のみ、変更前後で同一のエラー集合であることを確認済み)。`next-env.d.ts`
+  復元済み。**実機での検索動作・CSV再取込によるバックフィルの実地確認は未検証**。
+
+**この解除は上記(CSV取込でのname_kana保存/バックフィル、`CustomersScreen.tsx`の
+ソート優先度修正)に限る。** `csvImportPipeline.ts`の顧客解決・冪等性判定・
+メニュー解決・売上集計ロジック、`patchFromImport()`(既存の未使用メソッド、
+今回は触れていない)には一切触れていない。
+
 ### 顧客タブ 着手済み事項（「初回問診票」表示名変更のみ・2026-09-27ユーザー承認）
 
 「初回問診票」という表記が医療的で硬いため「初回カウンセリング表」へ変更する依頼。

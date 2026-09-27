@@ -673,20 +673,34 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
     if (proximityDeclined) proximityReviewCount += 1
     let customerId: string
 
+    // フリガナ自動保存・バックフィル(PERF-KANA-BACKFILL-1・2026-09-27ユーザー承認):
+    // salonBoardDetailParser.tsが既にパース済みの「お客様名（フリガナ）」列を、これまで
+    // 新規/既存いずれの顧客作成・更新でも保存していなかった。新規作成時はそのまま
+    // name_kanaへ設定し、既存顧客(matched/merge)には未登録の場合のみバックフィルする
+    // (手入力・SalonBoardテキスト取込で既に登録済みの値は上書きしない)。
+    const customerKana = (agg.customerKana ?? '').trim() || null
+
     if (decision.status === 'matched') {
       customerId = decision.customerId
       updatedCustomers += 1
+      if (customerKana) {
+        await repos.customerRepo.backfillNameKana?.(customerId, customerKana)
+      }
     } else if (decision.status === 'needs_review') {
       needsReviewCount += 1
       const choice = input.reviewDecisions[agg.lineNumber] ?? 'new'
       if (choice === 'merge') {
         customerId = decision.candidates[0].customerId
         updatedCustomers += 1
+        if (customerKana) {
+          await repos.customerRepo.backfillNameKana?.(customerId, customerKana)
+        }
       } else {
         const created = await repos.customerRepo.create({
           storeId: input.storeId,
           name: agg.customerName,
           ageGroup: null,
+          nameKana: customerKana,
           firstVisitDate: dateOnly(agg.visitDateTime),
           prefecture: null,
           city: null,
@@ -702,6 +716,7 @@ export async function runImportPipeline(input: ImportInput, repos: PipelineRepos
         storeId: input.storeId,
         name: agg.customerName,
         ageGroup: null,
+        nameKana: customerKana,
         firstVisitDate: dateOnly(agg.visitDateTime),
         prefecture: null,
         city: null,

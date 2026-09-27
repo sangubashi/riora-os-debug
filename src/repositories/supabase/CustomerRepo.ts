@@ -61,6 +61,7 @@ export class CustomerRepo implements ICustomerRepo {
     name: string;
     ageGroup: string | null;
     birthDate?: string | null;
+    nameKana?: string | null;
     firstVisitDate: string | null;
     prefecture: string | null;
     city: string | null;
@@ -68,7 +69,7 @@ export class CustomerRepo implements ICustomerRepo {
   }): Promise<Customer> {
     const { data, error } = await this.client
       .from('brain_customers')
-      .insert(toBrainCustomerInsert({ ...input, birthDate: input.birthDate ?? null }))
+      .insert(toBrainCustomerInsert({ ...input, birthDate: input.birthDate ?? null, nameKana: input.nameKana ?? null }))
       .select(CUSTOMER_COLUMNS)
       .single();
 
@@ -134,6 +135,21 @@ export class CustomerRepo implements ICustomerRepo {
 
     if (error) {
       throw new Error(`CustomerRepo.markAsSubscriber failed: ${error.message}`);
+    }
+  }
+
+  async backfillNameKana(id: UUID, nameKana: string): Promise<void> {
+    // markAsSubscriberと同じ「事前読み取り不要・WHERE条件で対象を絞ったUPDATE」方式。
+    // name_kanaが未登録(NULL/空文字)の行のみを対象にすることで、手入力・SalonBoard
+    // テキスト取込で既に登録済みの値を上書きしない(COALESCE方向)。
+    const { error } = await this.client
+      .from('brain_customers')
+      .update({ name_kana: nameKana })
+      .eq('id', id)
+      .or('name_kana.is.null,name_kana.eq.');
+
+    if (error) {
+      throw new Error(`CustomerRepo.backfillNameKana failed: ${error.message}`);
     }
   }
 }

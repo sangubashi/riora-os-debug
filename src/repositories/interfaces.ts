@@ -147,6 +147,11 @@ export interface ICustomerRepo {
     ageGroup: string | null;
     /** YYYY-MM-DD。2026-09-24ユーザー承認によりPII除外方針を例外化して追加(省略可)。 */
     birthDate?: string | null;
+    /**
+     * フリガナ。CSV取込(salonBoardDetailParser.tsの「お客様名（フリガナ）」列)由来。
+     * 未取得の場合は省略可(PERF-KANA-BACKFILL-1・2026-09-27ユーザー承認)。
+     */
+    nameKana?: string | null;
     firstVisitDate: string | null;
     prefecture: string | null;
     city: string | null;
@@ -178,6 +183,13 @@ export interface ICustomerRepo {
    * 新規機能のため、呼び出し側は呼び出し前に存在チェックする。
    */
   markAsSubscriber?(id: UUID, subscribedAt: string): Promise<void>;
+  /**
+   * 既存顧客のname_kanaが未登録(NULL/空文字)の場合のみ設定する(COALESCE方向・
+   * 既存の値は上書きしない)。CSV再取込時にフリガナをバックフィルするために使う
+   * (PERF-KANA-BACKFILL-1・2026-09-27ユーザー承認)。オプショナルメソッド:
+   * markAsSubscriber?と同じ理由で既存のICustomerRepo実装/フェイクを壊さないため。
+   */
+  backfillNameKana?(id: UUID, nameKana: string): Promise<void>;
 }
 
 export interface IVisitRepo {

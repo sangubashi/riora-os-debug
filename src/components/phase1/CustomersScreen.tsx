@@ -176,14 +176,17 @@ export default function CustomersScreen() {
     fetchCustomers()
   }, [authInitialized, fetchCustomers])
 
+  // 顧客名自体への一致判定(漢字表記(name)・フリガナ(name_kana)のいずれか)。
+  // filteredの検索条件・sortedの優先表示判定の両方で同じ基準を使う
+  // (2026-09-27ユーザー承認: name_kanaのみで一致した顧客も「名前一致」扱いにする)。
+  const isNameMatch = (c: CustomerRow, lowerQ: string, rawQ: string) =>
+    c.name.toLowerCase().includes(lowerQ) || kanaIncludes(c.nameKana, rawQ)
+
   const filtered = customers.filter(c => {
     if (!query.trim()) return true
     const q = query.trim().toLowerCase()
 
-    if (c.name.toLowerCase().includes(q)) return true
-    // フリガナ検索(2026-09-27ユーザー承認): 漢字表記の読み違い(齋藤/渡邊等)で
-    // 引っかからないケースに対応するため、ひらがな・カタカナを無視した部分一致で検索する。
-    if (kanaIncludes(c.nameKana, query.trim())) return true
+    if (isNameMatch(c, q, query.trim())) return true
     if (c.type.toLowerCase().includes(q)) return true
     if (c.staffName.toLowerCase().includes(q)) return true
     if (c.treatments.some(t => t.toLowerCase().includes(q))) return true
@@ -197,8 +200,8 @@ export default function CustomersScreen() {
   const q = query.trim().toLowerCase()
   const sorted = [...filtered].sort((a, b) => {
     if (q) {
-      const aNameMatch = a.name.toLowerCase().includes(q)
-      const bNameMatch = b.name.toLowerCase().includes(q)
+      const aNameMatch = isNameMatch(a, q, query.trim())
+      const bNameMatch = isNameMatch(b, q, query.trim())
       if (aNameMatch !== bNameMatch) return aNameMatch ? -1 : 1
     }
     return a.lastVisit - b.lastVisit
