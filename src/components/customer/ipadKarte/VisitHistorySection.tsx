@@ -11,9 +11,13 @@
  * 閲覧専用リストであり、この機能とは無関係(このファイルを一切importしない設計を
  * 維持する。内部メモを不用意に見せないため)。
  *
- * customerId以外を受け取らない自己完結セクション(FacialSchemaViewer.tsx等と
- * 同じ設計方針)。既存の3つのAPI(visit-history・customer-karte-memos・
- * facial-schemas)を再利用するのみで新規APIは追加しない。
+ * customerId以外に、来店履歴一覧(visits)をpropsで受け取る(PERF-KARTE-DEDUP-1・
+ * 2026-09-27ユーザー承認)。visitsは親のIpadStaffKarteViewが既にuseIpadKarteData()で
+ * 取得済みのため、このセクション側で同じ/api/customers/[id]/visit-historyを
+ * 再フェッチしない(旧設計は自己完結fetchだったため二重リクエストが発生していた)。
+ * customer-karte-memos・facial-schemasの2APIは、KarteMemoSection.tsx/
+ * FacialSchemaSection.tsx側のCRUD状態管理には触れない方針のため、このセクション
+ * 独自に引き続き取得する(この2件については二重フェッチが残る、既知のトレードオフ)。
  */
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, Plus, ClipboardPaste, Check, X } from 'lucide-react'
@@ -23,15 +27,11 @@ import { PALETTE, Card } from '@/components/customer/shared/PhotoCompareKit'
 import { FacialSchemaThumbnail } from '@/components/customer/shared/FacialSchemaKit'
 import type { CustomerKarteMemo } from '@/types/customerKarteMemo'
 import type { FacialSchemaApiShape } from '@/lib/facialSchema/facialSchemaApiMapping'
+import type { VisitHistoryEntry } from './ipadKarteData'
 
 interface Props {
   customerId: string
-}
-
-interface VisitHistoryEntry {
-  id:        string
-  visitDate: string
-  menuName:  string | null
+  visits:     VisitHistoryEntry[]
 }
 
 function formatDateOnly(dateStr: string): string {
@@ -56,8 +56,7 @@ function isSameLocalDate(iso: string, visitDate: string): boolean {
     && a.getDate() === b.getDate()
 }
 
-export default function VisitHistorySection({ customerId }: Props) {
-  const [visits, setVisits] = useState<VisitHistoryEntry[]>([])
+export default function VisitHistorySection({ customerId, visits }: Props) {
   const [memos, setMemos] = useState<CustomerKarteMemo[]>([])
   const [schemas, setSchemas] = useState<FacialSchemaApiShape[]>([])
   const [loading, setLoading] = useState(true)
@@ -76,17 +75,12 @@ export default function VisitHistorySection({ customerId }: Props) {
     setLoading(true)
     void (async () => {
       try {
-        const [visitsRes, memosRes, schemasRes] = await Promise.all([
-          authedFetch(`/api/customers/${customerId}/visit-history`),
+        const [memosRes, schemasRes] = await Promise.all([
           authedFetch(`/api/customer-karte-memos?customer_id=${encodeURIComponent(customerId)}`),
           authedFetch(`/api/customers/${customerId}/facial-schemas`),
         ])
         if (cancelled) return
 
-        if (visitsRes.ok) {
-          const json = await visitsRes.json() as { success: boolean; visits?: VisitHistoryEntry[] }
-          setVisits(json.visits ?? [])
-        }
         if (memosRes.ok) {
           const json = await memosRes.json() as { memos?: CustomerKarteMemo[] }
           setMemos(json.memos ?? [])

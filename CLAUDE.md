@@ -1781,6 +1781,106 @@ CSV取込パイプライン(`csvImportPipeline.ts`・`salonBoardParser.ts`)・�
 **この解除は「今日気をつけること」ブロックのアコーディオン化のみに限る。**
 禁忌事項ブロック・中身のロジック・他セクションには一切触れていない。
 
+### 顧客タブ 着手済み事項（顧客検索のフリガナ対応のみ・2026-09-27ユーザー承認）
+
+**背景**: 漢字表記の読み違い（齋藤/渡邊等）で検索に引っかからないケースがあるため、
+フリガナでも検索できるようにしたいとの依頼。調査の結果、顧客検索は`Search API`や
+Supabaseクエリではなく`CustomersScreen.tsx`(178行目付近)のクライアント側
+`Array.filter`によるメモリ内フィルタであることが判明した。また依頼文にあった
+`first_name_kana`/`last_name_kana`のような姓名分割カラムは存在せず、
+`brain_customers.name_kana`(単一カラム、`20260924030655`で追加済み)のみが実在する。
+
+- **`app/api/customers/list/route.ts`**: `select`に`name_kana`を追加し、レスポンスに
+  `nameKana`(未登録時null)を追加した。
+- **`src/store/useCustomerStore.ts`**: `CustomerRow`に`nameKana: string | null`を追加。
+- **`src/lib/customer/kanaMatch.ts`(新規)**: 全角カタカナ→ひらがな変換の`toHiragana`と、
+  双方を正規化してから部分一致させる`kanaIncludes`を実装(SalonBoard取込由来の
+  `name_kana`は全角カタカナ固定のため、半角カタカナ・全角/半角英数の正規化は対象外とした)。
+  ユニットテスト`tests/lib/customer/kanaMatch.test.ts`を追加。
+- **`src/components/phase1/CustomersScreen.tsx`**: 既存のfilter条件に
+  `kanaIncludes(c.nameKana, query.trim())`を追加(名前・タイプ・担当者・施術名の
+  既存条件はいずれも無変更)。名前一致を優先するソートロジック(193行目付近)には
+  触れていない(依頼は検索条件の追加のみのため)。
+- **検証**: `npx tsc --noEmit`・`npm run build`ともにパス(既存の無関係な失敗のみ)。
+  `next-env.d.ts`のbuild副作用は復元済み。`vitest run tests/lib/customer/kanaMatch.test.ts`
+  7件パス。**実機での検索動作(iPad Safari)は未検証**。
+
+**この解除は上記(フリガナのAPI/store追加・検索条件追加)に限る。** 検索結果のソート順・
+`/api/customers/list`のフィルタ条件(在籍スタッフ判定等)・他の検索対象欄には
+一切触れていない。
+
+### 顧客タブ 着手済み事項（「初回問診票」表示名変更のみ・2026-09-27ユーザー承認）
+
+「初回問診票」という表記が医療的で硬いため「初回カウンセリング表」へ変更する依頼。
+UI表示テキストのみで、DBカラム名(`initial_questionnaire_photo_path`)・APIパス
+(`/api/customers/[id]/initial-questionnaire`)・コンポーネント/ファイル名
+(`InitialQuestionnaireCaptureModal.tsx`)は変更していない(コード内コメントも
+旧名のまま残置)。
+
+- **`CustomerTopPage.tsx`**: 見出し・alt属性(2箇所)・未登録時テキストの計4箇所を変更。
+- **`InitialQuestionnaireCaptureModal.tsx`**: モーダル見出し1箇所を変更。
+- **補足**: CLAUDE.mdの2026-09-24付エントリには当時「マイグレーション未適用」と
+  記載されていたが、本番DB(Supabase MCP `list_migrations`)を確認したところ
+  `20260924030655_brain_customers_initial_questionnaire`は適用済みで、
+  `initial_questionnaire_photo_path`列も実在することを確認した(ドキュメントの
+  更新漏れと思われる。この点は今回のスコープ外のため追記に留める)。
+- **検証**: `npx tsc --noEmit`・`npm run build`ともにパス。`next-env.d.ts`の
+  build副作用は復元済み。**実機での表示確認は未検証**。
+
+**この解除は上記表示名変更のみに限る。** DBカラム名・API・ファイル名・
+`brain_customer_documents`(資料写真枠)機能には一切触れていない。
+
+### お客様モード 着手済み事項（「来店履歴」一覧の非表示化のみ・2026-09-27ユーザー承認）
+
+お客様モード(PIN認証解除前の顧客閲覧画面)でビフォーアフター写真・写真カルテを
+スッキリ見せるため、来店履歴一覧セクションを非表示にする依頼。
+
+- **`src/components/customer/guestMode/CustomerModeView.tsx`**: 「来店履歴」Cardの
+  JSXブロック(837〜864行目)を削除しレンダリング対象外にした。`data.visits`自体の
+  取得ロジック(`useCustomerModeData`)は他の表示(施術中の現在メニュー名の算出等)にも
+  使われているため無変更。
+- **スタッフモード側は無変更**: `IpadStaffKarteView.tsx`の`VisitHistorySection`
+  (タップで日別メモ・顔シェーマを参照できるスタッフ専用セクション)は本項の対象外。
+- **検証**: `npx tsc --noEmit`・`npm run build`ともにパス。`next-env.d.ts`の
+  build副作用は復元済み。**実機での表示確認は未検証**。
+
+**この解除は上記セクション削除のみに限る。** データ取得ロジック・他のカード
+(過去の写真・顔シェーマ・次回の目安等)には一切触れていない。
+
+### iPadカルテ画面 着手済み事項（IpadStaffKarteViewのvisit-history二重フェッチ解消のみ・2026-09-27ユーザー承認）
+
+**背景**: iPadスタッフカルテ画面表示時に「来店履歴」「カルテメモ」「顔シェーマ」の
+データが二重リクエストされ、ロード遅延の原因になっているとの報告。調査の結果、
+`IpadStaffKarteView.tsx`が同時マウントする4箇所(`useIpadKarteData`・
+`KarteMemoSection`・`FacialSchemaSection`・`VisitHistorySection`)のうち、
+2026-09-24新設の`VisitHistorySection.tsx`が既存3箇所と同じ3つのAPI
+(`visit-history`・`customer-karte-memos`・`facial-schemas`)を独自に再フェッチする
+設計になっていたことが根本原因と判明した。
+
+**修正方針の選択（着手前にユーザーへ(A)最小修正/(B)全面解消の2択を提示し、
+KarteMemoSection.tsx/FacialSchemaSection.tsxの追加・編集・削除ロジックに一切触れない
+安全性を優先し(A)を選択いただいた)**:
+
+- **`src/components/customer/ipadKarte/ipadKarteData.ts`**: `VisitHistoryEntry`型を
+  export化し、`useIpadKarteData`の戻り値(`IpadKarteData`)に既存の`visits`配列
+  (内部で既に取得・保持していたもの)を追加しただけ(新規フェッチは増やしていない)。
+- **`IpadStaffKarteView.tsx`**: `<VisitHistorySection customerId={customerId} />`に
+  `visits={data.visits}`を追加で渡すのみ。
+- **`VisitHistorySection.tsx`**: `visits`をpropsで受け取るよう変更し、内部の
+  `visits` state・`/api/customers/[id]/visit-history`への独自fetchを削除。
+  `customer-karte-memos`・`facial-schemas`の2APIは、`KarteMemoSection.tsx`/
+  `FacialSchemaSection.tsx`側の独立した状態管理(CRUD)に触れないという方針上、
+  このセクション独自の取得を維持した(**既知のトレードオフとして、この2件の
+  二重フェッチは今回未解消のまま残る**)。
+- **検証**: `npx tsc --noEmit`・`npm run build`ともにパス(既存の無関係な失敗のみ)。
+  `next-env.d.ts`のbuild副作用は復元済み。**実機でのネットワークリクエスト件数の
+  実地確認(iPad Safari)は未検証**。
+
+**この解除はvisit-historyの二重フェッチ解消(上記3ファイルの変更)のみに限る。**
+`customer-karte-memos`・`facial-schemas`の二重フェッチ解消(前述の(B)全面解消案)、
+`KarteMemoSection.tsx`/`FacialSchemaSection.tsx`本体のCRUDロジック・状態管理には
+一切触れていない(別途判断が必要)。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

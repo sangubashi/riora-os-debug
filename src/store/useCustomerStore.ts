@@ -13,6 +13,8 @@ export type CustomerType =
 export interface CustomerRow {
   id:               string
   name:             string
+  /** フリガナ(brain_customers.name_kana)。未登録の顧客はnull(2026-09-27・フリガナ検索対応)。 */
+  nameKana:         string | null
   type:             CustomerType
   /** brain_customers.customer_type の生値(PHASE HOMECARE-V12-MVP-1)。typeとは別物 */
   skinConcernType:  string | null

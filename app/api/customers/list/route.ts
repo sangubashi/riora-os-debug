@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
     const [custRes, visitRes, staffRes] = await Promise.allSettled([
       supabase
         .from('brain_customers')
-        .select('id, name, customer_type, churn_score, first_visit_date, is_subscriber, is_internal_user')
+        .select('id, name, name_kana, customer_type, churn_score, first_visit_date, is_subscriber, is_internal_user')
         .eq('store_id', STORE_ID)
         .is('deleted_at', null)
         .order('name'),
@@ -105,6 +105,9 @@ export async function GET(req: NextRequest) {
       return {
         id:               c.id,
         name:             c.name,
+        // フリガナ検索対応(2026-09-27ユーザー承認): brain_customers.name_kanaをそのまま返す。
+        // SalonBoard取込フィールド由来で無い顧客はnull(未フリガナ登録)。
+        nameKana:         c.name_kana ?? null,
         type,
         // PHASE HOMECARE-V12-MVP-1: brain_customers.customer_type の生値
         // ('A_acne'|'B_pore'|'C_sensitive'|'D_aging'|null)。上のtypeは

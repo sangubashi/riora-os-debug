@@ -834,34 +834,10 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
                   判定はFacialSchemaViewer内部で行う)。 */}
               <FacialSchemaViewer customerId={customerId} />
 
-              {/* 来店履歴 */}
-              {data.visits.length > 0 && (
-                <Card title="来店履歴">
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    {data.visits.map((visit, i) => {
-                      const visitNumber = data.visits.length - i
-                      const dateLabel = formatVisitDateLabel(visit.visitDate)
-                      return (
-                        <div
-                          key={visit.id}
-                          style={{
-                            display: 'flex', alignItems: 'baseline', gap: '10px',
-                            padding: '10px 4px',
-                            borderBottom: i < data.visits.length - 1 ? `1px solid ${PALETTE.border}` : 'none',
-                          }}
-                        >
-                          <span style={{ fontSize: '13px', fontWeight: 700, color: PALETTE.text }}>
-                            来店{visitNumber}回目
-                          </span>
-                          <span style={{ fontSize: '12px', color: PALETTE.muted }}>
-                            {[dateLabel, visit.menuName].filter(Boolean).join(' ・ ')}
-                          </span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </Card>
-              )}
+              {/* 来店履歴一覧は非表示化(2026-09-27ユーザー承認)。お客様モードではビフォーアフター
+                  写真・写真カルテをスッキリ見せるため、この一覧セクションはレンダリングしない。
+                  data.visits自体の取得(useCustomerModeData)は他の表示(次回目安等)にも使われて
+                  いるため、フェッチ処理には手を加えていない。 */}
             </div>
           )}
         </div>

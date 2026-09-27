@@ -56,7 +56,7 @@ export interface AnglePhotoPair {
   reference: TimelinePhoto | null
 }
 
-interface VisitHistoryEntry {
+export interface VisitHistoryEntry {
   id: string
   visitDate: string
   menuName: string | null
@@ -164,6 +164,13 @@ export interface IpadKarteData {
   previousVisitDate: string | null
   previousMenuName: string | null
   previousTreatmentMemo: string | null
+  /**
+   * 来店履歴の全件(visit_date DESC、既存API仕様のまま)。VisitHistorySection.tsxが
+   * このフックで既に取得済みのデータをpropsで受け取り、自前で同じ/api/customers/[id]/
+   * visit-historyを再フェッチしないようにするため公開する(PERF-KARTE-DEDUP-1・
+   * 2026-09-27ユーザー承認)。
+   */
+  visits: VisitHistoryEntry[]
 }
 
 const EMPTY_DATA: IpadKarteData = {
@@ -183,6 +190,7 @@ const EMPTY_DATA: IpadKarteData = {
   previousVisitDate: null,
   previousMenuName: null,
   previousTreatmentMemo: null,
+  visits: [],
 }
 
 export interface UseIpadKarteDataResult extends IpadKarteData {
@@ -341,6 +349,7 @@ export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
         previousVisitDate,
         previousMenuName,
         previousTreatmentMemo,
+        visits,
       })
     })()
 

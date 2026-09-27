@@ -185,7 +185,7 @@ export default function InitialQuestionnaireCaptureModal({ customerId, onClose, 
         }}
       >
         <p style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: PALETTE.text, fontFamily: headingFont.style.fontFamily }}>
-          初回問診票を登録
+          初回カウンセリング表を登録
         </p>
         <button
           type="button"

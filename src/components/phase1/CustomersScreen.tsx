@@ -8,6 +8,7 @@ import { useCustomerStore, type CustomerRow } from '@/store/useCustomerStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import CustomerBottomSheet from '@/components/customer/CustomerBottomSheet'
 import { authedFetch } from '@/lib/api/authedFetch'
+import { kanaIncludes } from '@/lib/customer/kanaMatch'
 import type { Customer, Reservation } from '@/types'
 
 // ─── 会話履歴検索（PHASE NOTES-SEARCH-1） ───────────────────────────────────────
@@ -180,6 +181,9 @@ export default function CustomersScreen() {
     const q = query.trim().toLowerCase()
 
     if (c.name.toLowerCase().includes(q)) return true
+    // フリガナ検索(2026-09-27ユーザー承認): 漢字表記の読み違い(齋藤/渡邊等)で
+    // 引っかからないケースに対応するため、ひらがな・カタカナを無視した部分一致で検索する。
+    if (kanaIncludes(c.nameKana, query.trim())) return true
     if (c.type.toLowerCase().includes(q)) return true
     if (c.staffName.toLowerCase().includes(q)) return true
     if (c.treatments.some(t => t.toLowerCase().includes(q))) return true

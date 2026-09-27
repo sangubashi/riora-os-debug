@@ -329,10 +329,10 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
           )}
         </div>
 
-        {/* 初回問診票 */}
+        {/* 初回カウンセリング表(表示名変更のみ・2026-09-27ユーザー承認。旧名「初回問診票」) */}
         <div style={cardStyle}>
           <p style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: PALETTE.text, fontFamily: headingFont.style.fontFamily }}>
-            初回問診票
+            初回カウンセリング表
           </p>
 
           {questionnaireLoading ? (
@@ -344,10 +344,10 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
               style={{ padding: 0, border: `1px solid ${PALETTE.border}`, borderRadius: '10px', overflow: 'hidden', cursor: 'pointer', background: 'none', width: '160px' }}
             >
               {/* eslint-disable-next-line @next/next/no-img-element -- signed URL(署名付き一時URL)のためnext/imageの永続キャッシュ最適化とは相性が悪く不要 */}
-              <img src={questionnaire.url} alt="初回問診票サムネイル" style={{ width: '100%', aspectRatio: '3 / 4', objectFit: 'cover', display: 'block' }} />
+              <img src={questionnaire.url} alt="初回カウンセリング表サムネイル" style={{ width: '100%', aspectRatio: '3 / 4', objectFit: 'cover', display: 'block' }} />
             </button>
           ) : (
-            <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>初回問診票は未登録</p>
+            <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>初回カウンセリング表は未登録</p>
           )}
 
           <button
@@ -488,7 +488,7 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
           {/* eslint-disable-next-line @next/next/no-img-element -- 拡大表示のみでnext/imageの最適化は不要 */}
           <img
             src={questionnaire.url}
-            alt="初回問診票"
+            alt="初回カウンセリング表"
             style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '8px' }}
             onClick={e => e.stopPropagation()}
           />

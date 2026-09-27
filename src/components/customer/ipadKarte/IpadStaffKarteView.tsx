@@ -680,9 +680,13 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
             {/* 来店履歴(2026-09-24ユーザー承認・スタッフモードへの新設)。各来店日をタップすると
                 その日のカルテメモ・顔シェーマを展開・参照できる(閲覧専用)。お客様モード側の
                 「来店履歴」カード(タップ不可)とは別コンポーネントで、内部メモが誤って
-                お客様モードに漏れる設計にはなっていない。 */}
+                お客様モードに漏れる設計にはなっていない。
+                visitsはuseIpadKarteData()が既に取得済みのものをpropsで渡し、同じ
+                /api/customers/[id]/visit-historyへの二重フェッチを解消する
+                (PERF-KARTE-DEDUP-1・2026-09-27ユーザー承認)。カルテメモ・顔シェーマの
+                取得(このセクション自身のCRUD)には触れていない。 */}
             <div style={{ gridColumn: '1 / -1' }}>
-              <VisitHistorySection customerId={customerId} />
+              <VisitHistorySection customerId={customerId} visits={data.visits} />
             </div>
 
             {/* 顧客ステータス(購買・来店周期データ管理 Phase1・2026-09-12)。すべて自動計算・
