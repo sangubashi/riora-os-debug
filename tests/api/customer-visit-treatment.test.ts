@@ -175,4 +175,34 @@ describe('PATCH /api/customers/[id]/visits/[visitId]/treatment', () => {
       course_options: ['スク→ポレ→炭酸', '背中ケア(内容カルテ記入)'],
     })
   })
+
+  // ── 過去来店の編集(2026-09-28ユーザー承認・/karte「来店履歴」VisitHistorySection.tsx) ──
+  // visit_dateによる制限が無いことを確認する(visitIdが対象customerに属する限り、
+  // 新旧を問わず同じPATCHでcourseOptions/optionItemsを更新できる)。
+  it('正常系: 過去visit(courseOptions・optionItems同時)もUPDATEできる(visit_dateによる制限は無い)', async () => {
+    mockExtractStaff.mockResolvedValue(STAFF)
+    mockCanAccess.mockResolvedValue(true)
+    mockVerifyVisit.mockResolvedValue(true)
+    const fake = createFakeSupabase({
+      brain_visits: {
+        data: {
+          id: 'visit-old-1', options: [], products_used: [], machine_settings: {}, treatment_memo: null,
+          course_options: ['スク→ポレ→炭酸'], option_items: ['リンパマッサージ'],
+        },
+        error: null,
+      },
+    })
+    mockGetClient.mockReturnValue(fake as never)
+
+    const res  = await patchRoute('cust-1', 'visit-old-1', {
+      courseOptions: ['スク→ポレ→炭酸'], optionItems: ['リンパマッサージ'],
+    })
+    const body = await res.json()
+    expect(res.status).toBe(200)
+    expect(body.treatment.courseOptions).toEqual(['スク→ポレ→炭酸'])
+    expect(body.treatment.optionItems).toEqual(['リンパマッサージ'])
+    expect(fake.chainFor('brain_visits').update).toHaveBeenCalledWith({
+      course_options: ['スク→ポレ→炭酸'], option_items: ['リンパマッサージ'],
+    })
+  })
 })

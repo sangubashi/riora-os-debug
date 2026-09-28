@@ -12,7 +12,14 @@
  * (brain_visitsは実際には翌日以降のSalonBoard CSVインポートで一括作成されるため、
  * 来店当日にはvisitが存在しないことがほとんどだった。「現場の入力が正である」という
  * 方針(ユーザー承認)のもと、visitIdを事前に知らなくても保存できるようにした)。
- * このモーダル自身はvisitIdを一切扱わない(customerIdのみで完結)。
+ * 過去来店の編集(2026-09-28ユーザー承認・/karte「来店履歴」): visitIdを指定した場合のみ、
+ * PUT /today-treatment-course(本日分を前提とする経路)の代わりに
+ * PATCH /api/customers/[id]/visits/[visitId]/treatment(任意のvisitIdに対応済み、
+ * visitId未指定時の挙動には一切影響しない)を使う。course_options/option_itemsは
+ * csvImportPipeline.ts の reconcile() が更新するフィールド(staffId/menuId/
+ * isNomination/treatmentAmount/retailAmount/checkoutId)に含まれないため、
+ * 過去来店(SalonBoard CSV取込由来)の行を編集してもsource列や他の値には一切影響せず、
+ * 翌日以降のCSV再取込で上書きされることもない(brain_visits.source列自体は変更しない)。
  */
 import { useState } from 'react'
 import { X, Check } from 'lucide-react'
@@ -47,6 +54,9 @@ interface Props {
   onClose:    () => void
   /** 保存成功時に呼ばれる(親側で今回の施術コース表示・todayVisitIdを更新する想定)。 */
   onSaved:    (visitId: string, courseOptions: string[]) => void
+  /** 指定時は過去来店の編集モード(PATCH /visits/[visitId]/treatment)になる。未指定時は
+   *  従来通り本日分(PUT /today-treatment-course)。 */
+  visitId?:   string
 }
 
 interface PutResponse {
@@ -56,12 +66,18 @@ interface PutResponse {
   error?:         string
 }
 
+interface PatchResponse {
+  success:    boolean
+  treatment?: { visitId: string; courseOptions?: unknown }
+  error?:     string
+}
+
 function toStringList(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return value.filter((v): v is string => typeof v === 'string')
 }
 
-export default function TreatmentCourseEditModal({ customerId, existing, onClose, onSaved }: Props) {
+export default function TreatmentCourseEditModal({ customerId, existing, onClose, onSaved, visitId }: Props) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set(existing))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -80,6 +96,22 @@ export default function TreatmentCourseEditModal({ customerId, existing, onClose
     setSaving(true)
     setError(null)
     try {
+      if (visitId) {
+        const res = await authedFetch(`/api/customers/${customerId}/visits/${visitId}/treatment`, {
+          method:  'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ courseOptions: Array.from(selected) }),
+        })
+        const json = await res.json() as PatchResponse
+        if (!res.ok || !json.success || !json.treatment) {
+          setError('保存に失敗しました')
+          return
+        }
+        onSaved(json.treatment.visitId, toStringList(json.treatment.courseOptions))
+        onClose()
+        return
+      }
+
       const res = await authedFetch(`/api/customers/${customerId}/today-treatment-course`, {
         method:  'PUT',
         headers: { 'Content-Type': 'application/json' },

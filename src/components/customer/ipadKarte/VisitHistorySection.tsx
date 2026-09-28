@@ -20,7 +20,7 @@
  * 独自に引き続き取得する(この2件については二重フェッチが残る、既知のトレードオフ)。
  */
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, Plus, ClipboardPaste, Check, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Plus, ClipboardPaste, Check, X, Pencil } from 'lucide-react'
 import { toast } from 'sonner'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, Card } from '@/components/customer/shared/PhotoCompareKit'
@@ -28,6 +28,19 @@ import { FacialSchemaThumbnail } from '@/components/customer/shared/FacialSchema
 import type { CustomerKarteMemo } from '@/types/customerKarteMemo'
 import type { FacialSchemaApiShape } from '@/lib/facialSchema/facialSchemaApiMapping'
 import type { VisitHistoryEntry } from './ipadKarteData'
+import TreatmentCourseEditModal from './TreatmentCourseEditModal'
+import TreatmentOptionEditModal from './TreatmentOptionEditModal'
+
+function toStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((v): v is string => typeof v === 'string')
+}
+
+interface VisitTreatmentInfo {
+  visitId:       string
+  courseOptions: string[]
+  optionItems:   string[]
+}
 
 interface Props {
   customerId: string
@@ -69,6 +82,44 @@ export default function VisitHistorySection({ customerId, visits }: Props) {
   const [draftContent, setDraftContent] = useState('')
   const [saving, setSaving] = useState(false)
   const draftRef = useRef<HTMLTextAreaElement | null>(null)
+
+  // 過去来店のコース・オプション編集(2026-09-28ユーザー承認): 展開中のvisitのみ、
+  // GET /visits/[visitId]/treatment で現在の選択状態を取得する(一覧全体を先読みはしない)。
+  const [treatmentInfo, setTreatmentInfo] = useState<VisitTreatmentInfo | null>(null)
+  const [treatmentLoading, setTreatmentLoading] = useState(false)
+  const [editingCourseVisitId, setEditingCourseVisitId] = useState<string | null>(null)
+  const [editingOptionVisitId, setEditingOptionVisitId] = useState<string | null>(null)
+
+  useEffect(() => {
+    setTreatmentInfo(null)
+    if (!expandedVisitId) return
+    let cancelled = false
+    setTreatmentLoading(true)
+    void (async () => {
+      try {
+        const res = await authedFetch(`/api/customers/${customerId}/visits/${expandedVisitId}/treatment`)
+        if (cancelled) return
+        if (res.ok) {
+          const json = await res.json() as {
+            success: boolean
+            treatment?: { visitId: string; courseOptions?: unknown; optionItems?: unknown }
+          }
+          if (json.success && json.treatment) {
+            setTreatmentInfo({
+              visitId:       json.treatment.visitId,
+              courseOptions: toStringList(json.treatment.courseOptions),
+              optionItems:   toStringList(json.treatment.optionItems),
+            })
+          }
+        }
+      } catch {
+        /* 取得失敗時は編集ボタンごと表示しない(致命的にしない) */
+      } finally {
+        if (!cancelled) setTreatmentLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [customerId, expandedVisitId])
 
   useEffect(() => {
     let cancelled = false
@@ -309,6 +360,61 @@ export default function VisitHistorySection({ customerId, visits }: Props) {
                   </div>
 
                   <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <p style={{ margin: 0, fontSize: '11px', fontWeight: 700, color: PALETTE.muted }}>この日の施術コース・オプション</p>
+                      {treatmentInfo && treatmentInfo.visitId === visit.id && (
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button
+                            type="button"
+                            onClick={() => setEditingCourseVisitId(visit.id)}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px',
+                              border: `1px solid ${PALETTE.border}`, borderRadius: '999px',
+                              background: 'none', color: PALETTE.muted, fontSize: '11px', cursor: 'pointer',
+                            }}
+                          >
+                            <Pencil size={11} strokeWidth={2} />メインコース
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingOptionVisitId(visit.id)}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px',
+                              border: `1px solid ${PALETTE.border}`, borderRadius: '999px',
+                              background: 'none', color: PALETTE.muted, fontSize: '11px', cursor: 'pointer',
+                            }}
+                          >
+                            <Pencil size={11} strokeWidth={2} />追加オプション
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    {treatmentLoading ? (
+                      <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>読み込み中…</p>
+                    ) : treatmentInfo && treatmentInfo.visitId === visit.id ? (
+                      (treatmentInfo.courseOptions.length === 0 && treatmentInfo.optionItems.length === 0) ? (
+                        <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>未選択です</p>
+                      ) : (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {[...treatmentInfo.courseOptions, ...treatmentInfo.optionItems].map((label, i) => (
+                            <span
+                              key={`${label}-${i}`}
+                              style={{
+                                fontSize: '11px', color: PALETTE.text, background: PALETTE.bg,
+                                border: `1px solid ${PALETTE.border}`, borderRadius: '999px', padding: '5px 12px',
+                              }}
+                            >
+                              {label}
+                            </span>
+                          ))}
+                        </div>
+                      )
+                    ) : (
+                      <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>取得できませんでした</p>
+                    )}
+                  </div>
+
+                  <div>
                     <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: 700, color: PALETTE.muted }}>この日の顔シェーマ</p>
                     {daySchema ? (
                       <div style={{ maxWidth: '200px' }}>
@@ -324,6 +430,31 @@ export default function VisitHistorySection({ customerId, visits }: Props) {
           )
         })}
       </div>
+
+      {editingCourseVisitId && treatmentInfo && treatmentInfo.visitId === editingCourseVisitId && (
+        <TreatmentCourseEditModal
+          customerId={customerId}
+          visitId={editingCourseVisitId}
+          existing={treatmentInfo.courseOptions}
+          onClose={() => setEditingCourseVisitId(null)}
+          onSaved={(_visitId, courseOptions) => {
+            setTreatmentInfo(prev => (prev ? { ...prev, courseOptions } : prev))
+            setEditingCourseVisitId(null)
+          }}
+        />
+      )}
+      {editingOptionVisitId && treatmentInfo && treatmentInfo.visitId === editingOptionVisitId && (
+        <TreatmentOptionEditModal
+          customerId={customerId}
+          visitId={editingOptionVisitId}
+          existing={treatmentInfo.optionItems}
+          onClose={() => setEditingOptionVisitId(null)}
+          onSaved={(_visitId, optionItems) => {
+            setTreatmentInfo(prev => (prev ? { ...prev, optionItems } : prev))
+            setEditingOptionVisitId(null)
+          }}
+        />
+      )}
     </Card>
   )
 }

@@ -2653,6 +2653,102 @@ VisitRepo.reconcile()・スマホアプリ側の呼び出し(onGoToDetail未指�
 ガイド文言の更新)のみに限る。** メインコース(14項目)・既存の追加オプション26項目自体の
 内容・順序、その他のバリデーション・保存ロジックには一切変更を加えていない。
 
+### `/karte` 着手済み事項（過去来店のコース・オプション編集機能の新設＋フォトカルテ同日写真比較の選択ロジック拡張・画像読み込みガード・2026-09-28ユーザー承認）
+
+**1. 過去の来店履歴(brain_visits)のコース・オプション編集機能**
+
+`app/api/customers/[id]/visits/[visitId]/treatment/route.ts`のGET/PATCHは、着手前の
+調査の結果、元々visit_dateによる制限を一切持たず、customerに属する任意のvisitId
+(過去分を含む)に対して既に動作することを確認した(`verifyVisitBelongsToCustomer`による
+所有権チェックのみ。コード変更は不要だったため、ドキュメントコメントの追記のみ行った)。
+実際の作業は「過去visitを編集するUIが無かった」というギャップを埋めることに限られる。
+
+- **`TreatmentCourseEditModal.tsx`・`TreatmentOptionEditModal.tsx`**: 任意propの
+  `visitId`を追加。指定時は従来の`PUT /today-treatment-course`(本日分を前提とし、
+  無ければその場で作成する経路)の代わりに`PATCH /visits/[visitId]/treatment`
+  (指定visitIdへ直接保存)を呼ぶ。`visitId`未指定時(既存の「今回の施術」✏️選択ボタンからの
+  呼び出し)の挙動は一切変更していない。
+- **`VisitHistorySection.tsx`(スタッフ用カルテ「来店履歴」)**: 展開中の来店行についてのみ
+  `GET /visits/[visitId]/treatment`でcourseOptions/optionItemsを取得し(一覧全体の
+  先読みはしない、既存のcustomer-karte-memos/facial-schemasと同じ「展開時のみ取得」
+  方針)、「この日の施術コース・オプション」欄にバッジ表示＋「✏️ メインコース」
+  「✏️ 追加オプション」ボタンを新設した。ボタンから開く編集モーダルは上記2ファイルを
+  `visitId`付きで再利用する(新規モーダルは作成していない)。
+- **SalonBoard CSV再取込時の保護について(ユーザー依頼の実装方針を変更した点)**:
+  依頼文では「手動編集されたレコードには`staff_input = true`を付与・保持」する
+  想定だったが、着手前の調査で以下が判明したため、`brain_visits.source`列を書き換える
+  実装は行っていない。
+  - `csvImportPipeline.ts`の`reconcile()`(および`toBrainVisitReconcileUpdate()`)が
+    更新するのは`staff_id`/`menu_id`/`is_nomination`/`treatment_amount`/
+    `retail_amount`/`source`/`checkout_id`のみで、`course_options`/`option_items`
+    には**sourceの値に関わらず一切触れない**(2026-09-28の「施術コース保存不可バグ」
+    エントリで既に確認済みの事実を再確認)。つまりこの2列は追加の保護を実装しなくても
+    既にCSV再取込に対して安全。
+  - 一方、既に`reconciled`/`salonboard_import`済みの過去visitのsourceを
+    `staff_input`に書き換えると、`csvImportPipeline.ts`776行目付近の分岐
+    (`existingVisit.source !== 'reconciled' && existingVisit.source !== 'salonboard_import'`)
+    により、翌日以降のCSV再取込でこの行が**再びreconcile()の対象に戻ってしまい**、
+    staff_id/menu_id/金額/checkout_idが再度上書きされ得る(=かえって危険)。
+    さらに274行目付近の重複顧客検出ロジックも`source`が`salonboard_import`/
+    `reconciled`であることを前提にしているため、意図しない副作用の懸念もある。
+  - 以上より、**「course_options/option_itemsは既に構造的に保護されているため、
+    source列は変更しない」を安全側の判断として採用した**。この判断はCLAUDE.mdへの
+    記載をもって報告に代える(ユーザー依頼の文言とは異なる実装だが、依頼の目的
+    (CSV再取込で手動修正内容が消えないこと)は達成されている)。
+- **テスト**: `tests/api/customer-visit-treatment.test.ts`に、visit_dateに関わらず
+  courseOptions/optionItemsを同時PATCHできることを確認する正常系テストを1件追加
+  (`visit-old-1`という過去visitを想定したID・データで検証)。既存9件と合わせ全10件パス。
+
+**2. フォトカルテ同日写真比較の選択ロジック拡張・画像読み込みガード**
+
+- **同日複数枚比較(お客様用カルテ「🔀自由選択」、`CustomerModeView.tsx`)**: 調査の結果、
+  「過去の写真」サムネイル一覧は撮影機会(occasion)単位でグルーピングされており
+  (`comparisonSelection.ts`のocasion概念、同一visit/同日の複数枚を1枚のサムネイルに
+  丸め込む表示)、従来の自由選択タップは常に`representativePhoto(o)`(その機会内で
+  最新の1枚)しか選べなかった(同日に施術前/施術後の2枚を撮っていても、片方しか
+  比較対象に選べない構造的な制約だった)。これが依頼にあった「同一訪問日の複数枚画像
+  同士でも比較できるように」の実体だったと判断した。
+  - `onThumbnailTap()`を改修: 自由選択モード中、タップした撮影機会に写真が2枚以上ある
+    場合は(従来から同日写真一覧として存在した)ギャラリーモーダルを開くようにした
+    (1枚のみの機会は従来通りその場で直接選択、不要な遷移を増やさない)。
+  - ギャラリーモーダル内の個別写真タップに分岐を追加: 自由選択モード中は
+    `selectPhotoForCompare()`(既存のピン留め/解除/先入れ先出しロジックを関数として
+    切り出したもの、ロジック自体は無変更)を呼び、通常モードでは従来通り
+    ライトボックス拡大を開く。選択中の写真にはサムネイル一覧と同じ金色の番号バッジ
+    (1/2)を表示する。
+  - 外側のサムネイル一覧側の選択バッジ判定も、代表写真自身との一致だけでなく
+    「その撮影機会内のいずれかの写真が選択中か」に修正した(ギャラリー経由で
+    代表写真以外を選んだ場合も、外側のサムネイルに選択状態が正しく反映されるようにする
+    ため)。
+  - `PhotoCompareScreen.tsx`(スライダー/並列比較モーダル)側は、2026-09-17の改訂
+    (`comparePairSelection.ts`)で既に個別写真単位の選択(同日複数枚を含む)に
+    対応済みであることをコードから確認済みのため、選択ロジック自体への変更は不要だった。
+- **画像読み込みガード**: `PhotoCompareScreen.tsx`に(a)`getBatchSignedUrls`/
+  `listCustomerPhotosTimeline`呼び出しへの`.catch()`追加(例外発生時にurls/photosが
+  更新されず画面が固まって見える問題への対処)、(b)`<img>`の`onError`検知＋
+  「取得試行は完了したがurlが無い」場合の両方で、PhotoPanelと同系統のプレースホルダー
+  (ImageOffアイコン)を表示する仕組みを追加した。スライダーのドラッグ操作自体
+  (`useSyncedZoomPan`・ハンドルのpointerイベント)は画像の読み込み状態に依存しない
+  構造であることをコード確認済みで、画像が無くても動かなくなることはない。
+  `src/components/customer/shared/PhotoCompareKit.tsx`の`PhotoPanel`(前回/今回
+  側並び比較で使われる共有部品、IpadStaffKarteView・CustomerModeView両方から利用)
+  にも同様に`onError`検知→空表示(既存のemptyText+ImageOffアイコン)へのフォールバックを
+  追加した。
+- **ガイド更新**: `app/karte/guide/page.tsx`のCard④(お客様用カルテ: 過去の写真の比較)に
+  同日複数枚選択の挙動と画像読み込み失敗時のプレースホルダーについてのNoteを追加。
+  Card⑦(カルテメモ・来店履歴)に過去来店のコース・オプション編集についての説明を追加。
+
+**検証**: `npx tsc --noEmit`パス(既存の無関係な失敗15件のみ、変更前と同一のエラー集合)。
+関連テスト(`customer-visit-treatment.test.ts`10件・`customer-today-treatment-course.test.ts`
+13件)全パス。`npm run build`パス。`next-env.d.ts`のbuild副作用は復元済み。
+`CustomerModeView.tsx`/`PhotoCompareScreen.tsx`/`VisitHistorySection.tsx`には元々
+ユニット/コンポーネントテストが存在しない。**実機(iPad)での動作確認は未検証。**
+
+**この解除は上記(過去来店のコース・オプション編集機能新設、フォトカルテ同日写真比較の
+選択ロジック拡張、PhotoCompareScreen.tsx/PhotoCompareKit.tsxの画像読み込みガード、
+関連するガイド更新)のみに限る。** `brain_visits.source`列・`csvImportPipeline.ts`の
+reconcile()判定ロジック・ゴースト機能・撮影/保存ロジックには一切触れていない。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

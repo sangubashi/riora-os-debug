@@ -18,9 +18,20 @@
  * 権限: listCustomerPhotosTimeline/getBatchSignedUrls は既存の認証付きAPI
  * (authedFetch経由、サーバー側でcanAccessCustomer等の既存チェックを通る)をそのまま使う。
  * このコンポーネント自身は権限チェックを一切実装しない(=既存のチェックに委ねる)。
+ *
+ * 画像読み込みガード(2026-09-28ユーザー承認): signed URL取得(getBatchSignedUrls)自体が
+ * 例外を投げた場合(ネットワーク断等)にキャッチせず放置すると、以後urlsが更新されず
+ * 画面が固まって見える問題があったため.catch()を追加した。また、signed URLの取得自体は
+ * 成功したが<img>のonErrorが発生した場合(署名URL期限切れ・Storageオブジェクト欠落等)も、
+ * 従来は`{url && <img/>}`のみで「取得できなかったIDは結果に含めない」
+ * (photoApiClient.tsのコメント通り)ため画像が無言で表示されないだけだった。
+ * 両ケースとも同じプレースホルダー(PhotoCompareKit.tsxのPhotoPanelと同系統の見た目)を
+ * 表示するようにし、スライダー・並列比較のドラッグ操作自体(useSyncedZoomPan/
+ * ハンドルのpointerイベント)は画像の読み込み状態に依存しないため、画像が無くても
+ * 動かなくなることはない(構造上安全であることをコード確認済み)。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Calendar, Maximize2, Minimize2, MoveHorizontal, Rows3, SlidersHorizontal, X } from 'lucide-react'
+import { Calendar, ImageOff, Maximize2, Minimize2, MoveHorizontal, Rows3, SlidersHorizontal, X } from 'lucide-react'
 import { listCustomerPhotosTimeline, getBatchSignedUrls, type TimelinePhoto } from '@/lib/photos/photoApiClient'
 import {
   pickInitialComparisonPair,
@@ -52,11 +63,32 @@ const imgBaseStyle: React.CSSProperties = {
   willChange: 'transform', userSelect: 'none', pointerEvents: 'none',
 }
 
+/** 画像取得エラー時のプレースホルダー(2026-09-28ユーザー承認、PhotoPanelの空表示と同系統)。 */
+function PhotoLoadErrorPlaceholder() {
+  return (
+    <div
+      style={{
+        position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', gap: '10px',
+        alignItems: 'center', justifyContent: 'center', background: '#14100c',
+        color: 'rgba(255,255,255,0.7)', fontSize: '12px', textAlign: 'center', padding: '16px',
+      }}
+    >
+      <ImageOff size={26} strokeWidth={1.3} color={PALETTE.gold} />
+      写真を読み込めませんでした
+    </div>
+  )
+}
+
 export default function PhotoCompareScreen({ customerId, initialBodyPart, onClose }: Props) {
   const [photos, setPhotos] = useState<TimelinePhoto[]>([])
   const [loading, setLoading] = useState(true)
   const [pair, setPair] = useState<ComparisonPair | null>(null)
   const [urls, setUrls] = useState<{ reference?: string; current?: string }>({})
+  // urlsの取得試行が完了したか(pairが変わるたびfalseへ戻す)。「まだ取得中」と
+  // 「取得したがurlが無い(=失敗)」を区別し、後者の時だけプレースホルダーを出すために使う。
+  const [urlsAttempted, setUrlsAttempted] = useState(false)
+  // <img>のonErrorで検知した読み込み失敗(署名URL自体は取得できたがStorage側で失敗した場合)。
+  const [imgError, setImgError] = useState<{ reference?: boolean; current?: boolean }>({})
 
   const [viewMode, setViewMode] = useState<ViewMode>('slider')
   const [sliderPercent, setSliderPercent] = useState(50)
@@ -72,29 +104,53 @@ export default function PhotoCompareScreen({ customerId, initialBodyPart, onClos
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    listCustomerPhotosTimeline(customerId).then(list => {
-      if (cancelled) return
-      setPhotos(list)
-      setPair(pickInitialComparisonPair(list, initialBodyPart ?? null))
-      setLoading(false)
-    })
+    listCustomerPhotosTimeline(customerId)
+      .then(list => {
+        if (cancelled) return
+        setPhotos(list)
+        setPair(pickInitialComparisonPair(list, initialBodyPart ?? null))
+      })
+      .catch(() => {
+        // 一覧取得自体が失敗した場合も「比較できる写真がまだありません」表示へフォールバック
+        // させる(loadingがtrueのまま固まらないようにするNULLチェック・ガード)。
+        if (cancelled) return
+        setPhotos([])
+        setPair(null)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId])
 
   // ペアが変わるたびに署名URLを取得し直し、ズーム・スライダー位置をリセットする。
   useEffect(() => {
+    setImgError({})
+    setUrlsAttempted(false)
     if (!pair) { setUrls({}); return undefined }
     let cancelled = false
-    getBatchSignedUrls(customerId, [pair.reference.id, pair.current.id], 'detail').then(map => {
-      if (cancelled) return
-      setUrls({ reference: map[pair.reference.id], current: map[pair.current.id] })
-    })
+    getBatchSignedUrls(customerId, [pair.reference.id, pair.current.id], 'detail')
+      .then(map => {
+        if (cancelled) return
+        setUrls({ reference: map[pair.reference.id], current: map[pair.current.id] })
+      })
+      .catch(() => {
+        if (cancelled) return
+        setUrls({})
+      })
+      .finally(() => {
+        if (!cancelled) setUrlsAttempted(true)
+      })
     zoomPan.reset()
     setSliderPercent(50)
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId, pair?.reference.id, pair?.current.id])
+
+  // 「読み込み失敗」= onErrorで検知 or (取得試行が完了したのにurlが無い)。
+  const referenceFailed = imgError.reference || (urlsAttempted && !urls.reference)
+  const currentFailed   = imgError.current   || (urlsAttempted && !urls.current)
 
   // ブラウザのFullscreen API(対応環境ではネイティブ全画面、非対応でもCSS側の全画面レイアウトは
   // 常に効くため見た目上は問題ない)。ユーザーがEsc等でネイティブ全画面を抜けた場合に同期する。
@@ -317,12 +373,26 @@ export default function PhotoCompareScreen({ customerId, initialBodyPart, onClos
             {...zoomPan.handlers}
             style={{ position: 'absolute', inset: 0, touchAction: 'none' }}
           >
-            {urls.current && <img src={urls.current} alt="今回" style={{ ...imgBaseStyle, ...zoomPan.style }} />}
-            {urls.reference && (
+            {currentFailed ? (
+              <PhotoLoadErrorPlaceholder />
+            ) : urls.current && (
+              <img
+                src={urls.current}
+                alt="今回"
+                style={{ ...imgBaseStyle, ...zoomPan.style }}
+                onError={() => setImgError(prev => ({ ...prev, current: true }))}
+              />
+            )}
+            {referenceFailed ? (
+              <div style={{ ...imgBaseStyle, clipPath: `inset(0 ${100 - sliderPercent}% 0 0)` }}>
+                <PhotoLoadErrorPlaceholder />
+              </div>
+            ) : urls.reference && (
               <img
                 src={urls.reference}
                 alt="前回"
                 style={{ ...imgBaseStyle, ...zoomPan.style, clipPath: `inset(0 ${100 - sliderPercent}% 0 0)` }}
+                onError={() => setImgError(prev => ({ ...prev, reference: true }))}
               />
             )}
             <div
@@ -357,11 +427,29 @@ export default function PhotoCompareScreen({ customerId, initialBodyPart, onClos
         ) : (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', gap: '2px' }}>
             <div {...zoomPan.handlers} style={{ position: 'relative', flex: 1, overflow: 'hidden', touchAction: 'none' }}>
-              {urls.reference && <img src={urls.reference} alt="前回" style={{ ...imgBaseStyle, ...zoomPan.style }} />}
+              {referenceFailed ? (
+                <PhotoLoadErrorPlaceholder />
+              ) : urls.reference && (
+                <img
+                  src={urls.reference}
+                  alt="前回"
+                  style={{ ...imgBaseStyle, ...zoomPan.style }}
+                  onError={() => setImgError(prev => ({ ...prev, reference: true }))}
+                />
+              )}
               <span style={compareLabelStyle('left')}>前回</span>
             </div>
             <div {...zoomPan.handlers} style={{ position: 'relative', flex: 1, overflow: 'hidden', touchAction: 'none' }}>
-              {urls.current && <img src={urls.current} alt="今回" style={{ ...imgBaseStyle, ...zoomPan.style }} />}
+              {currentFailed ? (
+                <PhotoLoadErrorPlaceholder />
+              ) : urls.current && (
+                <img
+                  src={urls.current}
+                  alt="今回"
+                  style={{ ...imgBaseStyle, ...zoomPan.style }}
+                  onError={() => setImgError(prev => ({ ...prev, current: true }))}
+                />
+              )}
               <span style={compareLabelStyle('right')}>今回</span>
             </div>
           </div>

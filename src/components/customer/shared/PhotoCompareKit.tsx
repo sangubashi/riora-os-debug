@@ -6,7 +6,7 @@
  * お客様モードとiPad専用スタッフカルテ画面(IpadStaffKarteView)の両方で使えるように
  * CustomerModeView.tsxから移動しただけ(ロジック・見た目は無変更)。
  */
-import { type ReactNode, type ComponentType } from 'react'
+import { useState, type ReactNode, type ComponentType } from 'react'
 import { Shippori_Mincho } from 'next/font/google'
 import {
   Flower2,
@@ -78,21 +78,28 @@ export function PhotoPanel({
     dateLabel,
   ].filter(Boolean)
 
+  // 画像読み込みガード(2026-09-28ユーザー承認): urlは取得できたが実際の<img>読み込みに
+  // 失敗した場合(署名URL期限切れ・Storageオブジェクト欠落等)、urlが無い場合と同じ
+  // 空表示(プレースホルダー)にフォールバックする。urlが変わったら再度読み込みを試す。
+  const [loadFailedFor, setLoadFailedFor] = useState<string | null>(null)
+  const showPlaceholder = !url || loadFailedFor === url
+
   return (
     <div>
       <div
         style={{
           position: 'relative', aspectRatio, borderRadius: '16px', overflow: 'hidden',
           background: '#EFE8DA',
-          border: url ? `1px solid ${PALETTE.border}` : `1.5px dashed ${PALETTE.border}`,
+          border: !showPlaceholder ? `1px solid ${PALETTE.border}` : `1.5px dashed ${PALETTE.border}`,
         }}
       >
-        {url ? (
+        {!showPlaceholder && url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={url}
             alt={`${label}の写真`}
             style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+            onError={() => setLoadFailedFor(url)}
           />
         ) : (
           <div

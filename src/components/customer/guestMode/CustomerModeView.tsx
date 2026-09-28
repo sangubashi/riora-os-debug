@@ -368,18 +368,13 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
   }
 
   /**
-   * 「過去の写真」サムネイルタップ: 自由選択モード中は比較対象へのピン留め/解除、
-   * それ以外は同日写真一覧(ギャラリー)表示(お客様用カルテ自由選択比較・2026-09-15・
-   * 設計確定、2026-09-22ギャラリー化)。3枚目のタップは先入れ先出し(1枚目を追い出し、
-   * 2枚目だった写真を1枚目へ繰り上げ、新しい写真を2枚目にする)で「常に直近タップした2枚」
-   * を維持する。
+   * 比較対象へのピン留め/解除(先入れ先出し: 1枚目を追い出し、2枚目だった写真を
+   * 1枚目へ繰り上げ、新しい写真を2枚目にすることで「常に直近タップした2枚」を維持する)。
+   * 個別写真単位で動作するため、同一撮影機会(同日・同一visit)内の複数枚
+   * (例: 施術前/施術後)からもそれぞれ独立に選べる(2026-09-28ユーザー承認、
+   * 同日複数枚比較への選択ロジック拡張)。
    */
-  function onThumbnailTap(o: PhotoOccasion) {
-    if (!freeSelectMode) {
-      openSameDayGallery(o)
-      return
-    }
-    const photo = representativePhoto(o)
+  function selectPhotoForCompare(photo: TimelinePhoto) {
     if (selectedPhotoA?.id === photo.id) { setSelectedPhotoA(null); return }
     if (selectedPhotoB?.id === photo.id) { setSelectedPhotoB(null); return }
     if (!selectedPhotoA) {
@@ -390,6 +385,30 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
       setSelectedPhotoA(selectedPhotoB)
       setSelectedPhotoB(photo)
     }
+  }
+
+  /**
+   * 「過去の写真」サムネイルタップ: 自由選択モード中は比較対象へのピン留め/解除、
+   * それ以外は同日写真一覧(ギャラリー)表示(お客様用カルテ自由選択比較・2026-09-15・
+   * 設計確定、2026-09-22ギャラリー化)。
+   *
+   * 【2026-09-28改訂】自由選択モード中に撮影機会内の写真が2枚以上(例: 施術前/施術後を
+   * 同日に撮影)ある場合、従来は`representativePhoto(o)`(最新の1枚)しか選べなかった
+   * ため、同日の別の1枚(施術前など)を比較対象に選ぶ手段が無かった。この場合はギャラリーを
+   * 開き、個別写真タップで選べるようにする(ギャラリー側の分岐は下記onClick参照)。
+   * 撮影機会内が1枚のみの場合は、従来通りその場で直接ピン留めする(不要なギャラリーを
+   * 経由させない)。
+   */
+  function onThumbnailTap(o: PhotoOccasion) {
+    if (!freeSelectMode) {
+      openSameDayGallery(o)
+      return
+    }
+    if (o.photos.length > 1) {
+      openSameDayGallery(o)
+      return
+    }
+    selectPhotoForCompare(representativePhoto(o))
   }
 
   return (
@@ -859,8 +878,13 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
                       const captionText = dateLabel
                         ?? (photo.visitCountAt != null ? (photo.visitCountAt === 1 ? '初回' : `${photo.visitCountAt}回目`) : null)
                       // 自由選択モード中のピン留め状態(1=1枚目・2=2枚目・null=未選択)。
+                      // 撮影機会内の代表写真(photo)自体だけでなく、その機会内の別の1枚
+                      // (ギャラリー経由で選んだ施術前/施術後等)が選択中でもここに反映する
+                      // (2026-09-28ユーザー承認、同日複数枚比較への選択ロジック拡張)。
                       const pinSlot: 1 | 2 | null =
-                        photo.id === selectedPhotoA?.id ? 1 : photo.id === selectedPhotoB?.id ? 2 : null
+                        selectedPhotoA && o.photos.some(p => p.id === selectedPhotoA.id) ? 1
+                        : selectedPhotoB && o.photos.some(p => p.id === selectedPhotoB.id) ? 2
+                        : null
                       return (
                         <div key={o.key}>
                           <button
@@ -985,15 +1009,28 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
             }}>
               {galleryOccasion.photos.map(photo => {
                 const url = data.photoUrls[photo.id] ?? thumbUrls[photo.id]
+                // 自由選択モード中のピン留め状態(1=1枚目・2=2枚目・null=未選択)。ギャラリーは
+                // 同一撮影機会の個別写真(例: 施術前/施術後)を区別して選べる唯一の経路のため、
+                // ここでも外側のサムネイル一覧と同じ表示・操作パターンを踏襲する。
+                const pinSlot: 1 | 2 | null =
+                  photo.id === selectedPhotoA?.id ? 1 : photo.id === selectedPhotoB?.id ? 2 : null
                 return (
                   <button
                     key={photo.id}
                     type="button"
-                    onClick={() => { void openPhotoInLightbox(photo) }}
-                    aria-label={`${bodyPartLabel(photo.bodyPart)}の写真を拡大表示`}
+                    onClick={() => {
+                      if (freeSelectMode) { selectPhotoForCompare(photo); return }
+                      void openPhotoInLightbox(photo)
+                    }}
+                    aria-label={
+                      freeSelectMode
+                        ? (pinSlot ? `${bodyPartLabel(photo.bodyPart)}の写真の選択を解除` : `${bodyPartLabel(photo.bodyPart)}の写真を比較対象に選ぶ`)
+                        : `${bodyPartLabel(photo.bodyPart)}の写真を拡大表示`
+                    }
                     style={{
                       position: 'relative', aspectRatio: '4 / 5', borderRadius: '10px', overflow: 'hidden',
-                      padding: 0, cursor: 'pointer', background: '#EFE8DA', border: `1px solid ${PALETTE.border}`,
+                      padding: 0, cursor: 'pointer', background: '#EFE8DA',
+                      border: pinSlot ? `2px solid ${PALETTE.gold}` : `1px solid ${PALETTE.border}`,
                     }}
                   >
                     {url ? (
@@ -1011,6 +1048,18 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
                     }}>
                       {bodyPartLabel(photo.bodyPart)}
                     </span>
+                    {pinSlot && (
+                      <span
+                        style={{
+                          position: 'absolute', top: '4px', left: '4px', width: '18px', height: '18px',
+                          borderRadius: '50%', background: PALETTE.gold, color: '#FFFFFF',
+                          fontSize: '10px', fontWeight: 700,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}
+                      >
+                        {pinSlot}
+                      </span>
+                    )}
                   </button>
                 )
               })}

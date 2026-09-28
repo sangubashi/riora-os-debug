@@ -17,6 +17,19 @@
  * optionItems(2026-09-28ユーザー承認・/karte「オプション」): 「今回の施術」を
  * 「メインコース」(course_options)と「オプション」(brain_visits.option_items、
  * 新規列)に構造化し、それぞれ独立して保存・取得できるようにした。
+ *
+ * 過去来店の編集(2026-09-28ユーザー承認・/karte「来店履歴」VisitHistorySection.tsx):
+ * このエンドポイントはvisitIdの新旧を問わず元々対応済み(visit_dateによる制限は無い)。
+ * TreatmentCourseEditModal.tsx/TreatmentOptionEditModal.tsxにvisitIdを渡すことで、
+ * 過去来店のcourseOptions/optionItemsもこのPATCHで更新できるようにした。
+ * SalonBoard CSV再取込時の保護について: csvImportPipeline.ts の reconcile() は
+ * staffId/menuId/isNomination/treatmentAmount/retailAmount/checkoutId(+source列自体)
+ * のみを更新し、course_options/option_itemsには一切触れない(brain_visits.source列の
+ * 値がsalonboard_import/reconciled/staff_inputのいずれであっても同じ)ため、この2列は
+ * 追加の保護なしに既に安全(reconcile対象外)である。手動編集時にsource列を'staff_input'
+ * へ書き換える実装は意図的に行っていない(既にreconciled/salonboard_import済みの過去visitの
+ * sourceを'staff_input'に変えると、翌日以降のCSV再取込でこの行がreconcile()の対象に
+ * "戻ってしまい"、staffId/menuId/金額/checkoutIdが再度上書きされ得るため、かえって危険)。
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
