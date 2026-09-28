@@ -32,7 +32,7 @@ const patchBodySchema = z.object({
   machineSettings:  z.record(z.string(), z.unknown()).optional(),
   treatmentMemo:    z.string().trim().max(1000).nullable().optional(),
   courseOptions:    z.array(z.string()).max(14).optional(),
-  optionItems:      z.array(z.string()).max(26).optional(),
+  optionItems:      z.array(z.string()).max(27).optional(),
 }).refine(
   (b) => b.options !== undefined || b.productsUsed !== undefined
     || b.machineSettings !== undefined || b.treatmentMemo !== undefined

@@ -183,11 +183,11 @@ describe('PUT /api/customers/[id]/today-treatment-course', () => {
     expect(body.error).toBe('validation_error')
   })
 
-  it('optionItemsが26件を超える場合はvalidation_error(400)を返す', async () => {
+  it('optionItemsが27件を超える場合はvalidation_error(400)を返す', async () => {
     mockExtractStaff.mockResolvedValue(STAFF)
     mockCanAccess.mockResolvedValue(true)
     mockGetRepos.mockReturnValue(mockRepos as never)
-    const tooMany = Array.from({ length: 27 }, (_, i) => `option-${i}`)
+    const tooMany = Array.from({ length: 28 }, (_, i) => `option-${i}`)
     const res  = await putRoute('cust-1', { optionItems: tooMany })
     const body = await res.json()
     expect(res.status).toBe(400)

@@ -17,8 +17,9 @@ import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, headingFont } from '@/components/customer/shared/PhotoCompareKit'
 
 /**
- * 追加オプションの固定26項目(2026-09-28ユーザー承認、現場スタッフ記入の順序どおり、
- * カテゴリ分けはせずそのまま列挙する)。
+ * 追加オプションの固定27項目(2026-09-28ユーザー承認、現場スタッフ記入の順序どおり、
+ * カテゴリ分けはせずそのまま列挙する。リンパマッサージは2026-09-28ユーザー依頼により
+ * 「造顔マッサージ」の直後へ追記)。
  */
 export const TREATMENT_OPTION_ITEMS = [
   'スクライバー',
@@ -44,6 +45,7 @@ export const TREATMENT_OPTION_ITEMS = [
   'フェイスマッサージ',
   'デコルテマッサージ',
   '造顔マッサージ',
+  'リンパマッサージ',
   'ラジオ波 (顔)',
   '首ケア (角質除去＋ラジオ波＋パック)',
   '背中ハーブピーリング',

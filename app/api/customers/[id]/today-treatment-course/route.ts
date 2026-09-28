@@ -35,7 +35,7 @@ import { canAccessCustomer } from '@/lib/auth/canAccessCustomer'
 
 const putBodySchema = z.object({
   courseOptions: z.array(z.string()).max(14).optional(),
-  optionItems:   z.array(z.string()).max(26).optional(),
+  optionItems:   z.array(z.string()).max(27).optional(),
 }).refine(
   (b) => b.courseOptions !== undefined || b.optionItems !== undefined,
   { message: 'at least one of courseOptions/optionItems is required' },

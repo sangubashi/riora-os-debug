@@ -2625,6 +2625,34 @@ VisitRepo.reconcile()・スマホアプリ側の呼び出し(onGoToDetail未指�
 のみに限る。** メインコース(14項目・既存の保存先列・エンドポイント)自体の項目内容・
 挙動には一切変更を加えていない。
 
+### `/karte` 着手済み事項（追加オプションへの「リンパマッサージ」追加のみ・2026-09-28ユーザー承認）
+
+直前のエントリで新設した「追加オプション」固定26項目のうち、「造顔マッサージ」の直後に
+「リンパマッサージ」を1項目追加する依頼を受けた。現場スタッフ記入の順序を保つ既存方針
+([[Salon Riora プロジェクト概要]]参照)どおり、指定位置への単純な追記のみを行い、
+並び替え・カテゴリ分けはしていない。
+
+- **`src/components/customer/ipadKarte/TreatmentOptionEditModal.tsx`**:
+  `TREATMENT_OPTION_ITEMS`の「造顔マッサージ」の直後に「リンパマッサージ」を追加し、
+  固定項目数を26→27へ更新(項目数コメントも同時更新)。
+- **`app/api/customers/[id]/visits/[visitId]/treatment/route.ts`・
+  `app/api/customers/[id]/today-treatment-course/route.ts`**: `optionItems`の
+  バリデーション上限を`.max(26)`→`.max(27)`へ変更(27項目全選択がバリデーションエラーに
+  ならないようにするため)。それ以外のバリデーション・保存ロジックには一切触れていない。
+- **`app/karte/guide/page.tsx`**: Card⑧「追加オプション」の説明文を「固定26項目」→
+  「固定27項目」に更新し、列挙例に「リンパマッサージ」を追加。
+- **テスト**: `tests/api/customer-today-treatment-course.test.ts`の境界値テスト
+  (旧称「optionItemsが26件を超える場合」)を27件境界(28件でエラー)に更新。
+  関連テスト(`customer-today-treatment-course.test.ts`・`customer-visit-treatment.test.ts`)
+  計24件は全てパス。
+- **検証**: `npx tsc --noEmit`パス(既存の無関係な失敗のみ、変更前と同一のエラー集合)。
+  `npm run build`パス。`next-env.d.ts`のbuild副作用は復元済み。**実機での動作確認は
+  未検証**。
+
+**この解除は上記(「リンパマッサージ」の追加、関連する上限バリデーション・テスト・
+ガイド文言の更新)のみに限る。** メインコース(14項目)・既存の追加オプション26項目自体の
+内容・順序、その他のバリデーション・保存ロジックには一切変更を加えていない。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。
