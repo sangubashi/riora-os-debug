@@ -3,7 +3,7 @@
  * TreatmentOptionEditModal.tsx — 「✏️」追加オプション選択モーダル(2026-09-28ユーザー承認)。
  *
  * `/karte`のPIN保護スタッフモード(IpadStaffKarteView.tsx)専用。「今回の施術」の
- * うち「追加オプション」枠を担当する(固定26項目・4カテゴリからの複数選択・ON/OFFトグル)。
+ * うち「追加オプション」枠を担当する(固定26項目からの複数選択・ON/OFFトグル)。
  * 「メインコース」枠は別コンポーネント TreatmentCourseEditModal.tsx が担当する
  * (course_options列、互いのPUTは相手の選択内容を上書きしない)。
  *
@@ -17,60 +17,37 @@ import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, headingFont } from '@/components/customer/shared/PhotoCompareKit'
 
 /**
- * 追加オプションの固定カテゴリ・項目(2026-09-28ユーザー承認、依頼どおりの文言・順序)。
- * ユーザー依頼文言では「25項目」と案内されたが、列挙された実項目数は26件のため、
- * 記入された項目リストをそのまま(削らずに)採用している。
+ * 追加オプションの固定26項目(2026-09-28ユーザー承認、現場スタッフ記入の順序どおり、
+ * カテゴリ分けはせずそのまま列挙する)。
  */
-export const TREATMENT_OPTION_CATEGORIES = [
-  {
-    category: 'クレンジング・毛穴・ピーリング',
-    items: [
-      'スクライバー',
-      'ハイドラフェイシャル 1部位',
-      'ハイドラフェイシャル 全顔',
-      'ハーブピーリング (全顔)',
-      'ハーブピーリング＋肌別パック (全顔)',
-      '毛穴スチーム',
-      '背中ハーブピーリング',
-    ],
-  },
-  {
-    category: '導入・マシン',
-    items: [
-      'ヒト幹細胞導入 (乳歯髄)',
-      'ヒト幹細胞導入 (臍帯血)',
-      'マイクロカレント',
-      'ビタミンC導入',
-      '生コラーゲン エアバリ導入',
-      'EMS',
-      'エアバリ',
-      'ラジオ波 (顔)',
-    ],
-  },
-  {
-    category: 'パック・塗布',
-    items: [
-      '高濃度ヒト幹細胞パック',
-      '水素パック',
-      'モデリングパック各種 (海藻/黒炭/パール)',
-      '炭酸パック (オールスキン)',
-      '炭酸パック (プレミアム)',
-      '導入パック各種 (カーミング/ブライト/エナジー)',
-      '生コラーゲン塗布',
-    ],
-  },
-  {
-    category: 'マッサージ・部位ケア',
-    items: [
-      'フェイスマッサージ',
-      'デコルテマッサージ',
-      '造顔マッサージ',
-      '首ケア (角質除去＋ラジオ波＋パック)',
-    ],
-  },
+export const TREATMENT_OPTION_ITEMS = [
+  'スクライバー',
+  'ハイドラフェイシャル 1部位',
+  'ハイドラフェイシャル 全顔',
+  'ハーブピーリング (全顔)',
+  'ハーブピーリング＋肌別パック (全顔)',
+  'ヒト幹細胞導入 (乳歯髄)',
+  'ヒト幹細胞導入 (臍帯血)',
+  'マイクロカレント',
+  '高濃度ヒト幹細胞パック',
+  '水素パック',
+  'モデリングパック各種 (海藻/黒炭/パール)',
+  '炭酸パック (オールスキン)',
+  '炭酸パック (プレミアム)',
+  '導入パック各種 (カーミング/ブライト/エナジー)',
+  '毛穴スチーム',
+  '生コラーゲン塗布',
+  'ビタミンC導入',
+  '生コラーゲン エアバリ導入',
+  'EMS',
+  'エアバリ',
+  'フェイスマッサージ',
+  'デコルテマッサージ',
+  '造顔マッサージ',
+  'ラジオ波 (顔)',
+  '首ケア (角質除去＋ラジオ波＋パック)',
+  '背中ハーブピーリング',
 ] as const
-
-export const TREATMENT_OPTION_ITEMS = TREATMENT_OPTION_CATEGORIES.flatMap(c => c.items)
 
 interface Props {
   customerId: string
@@ -149,42 +126,35 @@ export default function TreatmentOptionEditModal({ customerId, existing, onClose
           該当する項目をタップしてON/OFFしてください。複数選択できます。
         </p>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-          {TREATMENT_OPTION_CATEGORIES.map(({ category, items }) => (
-            <div key={category} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <p style={{ margin: 0, fontSize: '12px', fontWeight: 700, color: PALETTE.gold }}>
-                {category}
-              </p>
-              {items.map(label => {
-                const isOn = selected.has(label)
-                return (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => toggle(label)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '10px', textAlign: 'left',
-                      padding: '10px 12px', borderRadius: '12px', cursor: 'pointer',
-                      border: `1.5px solid ${isOn ? PALETTE.gold : PALETTE.border}`,
-                      background: isOn ? 'rgba(173,138,84,0.10)' : 'none',
-                    }}
-                  >
-                    <span style={{
-                      flexShrink: 0, width: '20px', height: '20px', borderRadius: '6px',
-                      border: `1.5px solid ${isOn ? PALETTE.gold : PALETTE.muted}`,
-                      background: isOn ? PALETTE.gold : 'none',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      {isOn && <Check size={13} color="#fff" strokeWidth={3} />}
-                    </span>
-                    <span style={{ flex: 1, fontSize: '13px', fontWeight: 600, color: isOn ? PALETTE.gold : PALETTE.text }}>
-                      {label}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          ))}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {TREATMENT_OPTION_ITEMS.map(label => {
+            const isOn = selected.has(label)
+            return (
+              <button
+                key={label}
+                type="button"
+                onClick={() => toggle(label)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '10px', textAlign: 'left',
+                  padding: '10px 12px', borderRadius: '12px', cursor: 'pointer',
+                  border: `1.5px solid ${isOn ? PALETTE.gold : PALETTE.border}`,
+                  background: isOn ? 'rgba(173,138,84,0.10)' : 'none',
+                }}
+              >
+                <span style={{
+                  flexShrink: 0, width: '20px', height: '20px', borderRadius: '6px',
+                  border: `1.5px solid ${isOn ? PALETTE.gold : PALETTE.muted}`,
+                  background: isOn ? PALETTE.gold : 'none',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  {isOn && <Check size={13} color="#fff" strokeWidth={3} />}
+                </span>
+                <span style={{ flex: 1, fontSize: '13px', fontWeight: 600, color: isOn ? PALETTE.gold : PALETTE.text }}>
+                  {label}
+                </span>
+              </button>
+            )
+          })}
         </div>
 
         {error && <p style={{ margin: 0, fontSize: '12px', color: '#B85050' }}>{error}</p>}

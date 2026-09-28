@@ -599,7 +599,7 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
               )}
 
               {/* 今回の施術(2026-09-28ユーザー承認)。「メインコース」(固定14項目、
-                  brain_visits.course_options)と「追加オプション」(固定26項目・4カテゴリ、
+                  brain_visits.course_options)と「追加オプション」(固定26項目、
                   brain_visits.option_items)を、それぞれ独立して選択・保存できる別枠として
                   配置する。互いのPUTは相手の選択内容を上書きしない(today-treatment-course
                   route.ts参照)。

@@ -2574,10 +2574,12 @@ VisitRepo.reconcile()・スマホアプリ側の呼び出し(onGoToDetail未指�
 ### `/karte`「今回の施術」の「メインコース」「追加オプション」分離構造化（2026-09-28ユーザー承認、「要はこういう事だよね」で確定）
 
 **背景**: 従来「今回の施術コース」(固定14項目)のみだった`/karte`の「今回の施術」を、
-「メインコース」(既存の14項目、無変更)と「追加オプション」(新規・固定26項目・4カテゴリ)
-に分離し、それぞれ独立して選択・保存できるようにした。ユーザー依頼文言では追加オプションを
+「メインコース」(既存の14項目、無変更)と「追加オプション」(新規・固定26項目)に分離し、
+それぞれ独立して選択・保存できるようにした。ユーザー依頼文言では追加オプションを
 「25項目」と案内されたが、列挙された実項目数は26件だったため、記入された項目リストを
-そのまま(削らずに)採用している。
+そのまま(削らずに)採用している。追加オプションの項目順は当初こちらでカテゴリ分け
+(4カテゴリ)して提示したが、「スタッフが書いたのそのまま入れて」という指示を受け、
+現場スタッフ記入の順序どおりカテゴリ分けなしのフラットな一覧に修正した。
 
 1. **DB**: `supabase/migrations/20260928090000_brain_visits_option_items.sql`で
    `brain_visits.option_items`(jsonb、デフォルト`'[]'::jsonb`)を追加・適用済み。
@@ -2594,8 +2596,9 @@ VisitRepo.reconcile()・スマホアプリ側の呼び出し(onGoToDetail未指�
    「メインコース」に改名し、新設の「追加オプション」カードと共に「今回の施術」
    グルーピングラベルの下に並べて配置した。既存の`TreatmentCourseEditModal.tsx`は
    タイトルのみ「メインコースを選択」に変更(14項目・保存先エンドポイントは無変更)。
-   新規`TreatmentOptionEditModal.tsx`(4カテゴリ・26項目、`{optionItems}`のみをPUT)を
-   追加。`ipadKarteData.ts`に`todayOptionItems`・`applyTodayOptionSave()`を追加。
+   新規`TreatmentOptionEditModal.tsx`(固定26項目・現場スタッフ記入順のフラット一覧、
+   `{optionItems}`のみをPUT)を追加。`ipadKarteData.ts`に`todayOptionItems`・
+   `applyTodayOptionSave()`を追加。
 4. **UI(お客様用カルテ)への同期**: `customerModeData.ts`の`fetchTodayCourseOptions()`を
    `fetchTodayCourseAndOptions()`に改め、`courseOptions`・`optionItems`を1回のfetchで
    まとめて取得するようにした(`refreshCourseSignal`発火時の重複リクエストを避けるため)。

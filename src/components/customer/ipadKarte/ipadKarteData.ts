@@ -158,7 +158,7 @@ export interface IpadKarteData {
   todayCourseOptions: string[]
   /**
    * 「今回の施術」の「追加オプション」枠(2026-09-28ユーザー承認)。当日visitのoption_items
-   * (固定26項目・4カテゴリからの複数選択、course_options・options とは別列で独立管理)。
+   * (固定26項目からの複数選択、course_options・options とは別列で独立管理)。
    */
   todayOptionItems: string[]
   // 「次回の目安」は次回目安エンジン(PHASE NEXT-VISIT-1・src/lib/nextVisit/useNextVisit.ts)に
