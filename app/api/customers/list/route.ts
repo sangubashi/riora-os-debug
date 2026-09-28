@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
     const [custRes, visitRes, staffRes] = await Promise.allSettled([
       supabase
         .from('brain_customers')
-        .select('id, name, name_kana, customer_type, churn_score, first_visit_date, is_subscriber, is_internal_user')
+        .select('id, name, name_kana, customer_type, churn_score, first_visit_date, is_subscriber, is_internal_user, phone_number, birth_date')
         .eq('store_id', STORE_ID)
         .is('deleted_at', null)
         .order('name'),
@@ -108,6 +108,12 @@ export async function GET(req: NextRequest) {
         // フリガナ検索対応(2026-09-27ユーザー承認): brain_customers.name_kanaをそのまま返す。
         // SalonBoard取込フィールド由来で無い顧客はnull(未フリガナ登録)。
         nameKana:         c.name_kana ?? null,
+        // 同姓同名識別表示(2026-09-28ユーザー承認・PII方針の限定例外): /karte検索結果
+        // 一覧での同姓同名誤選択防止のみに用途を限定する(電話番号は中4桁伏せ字表示、
+        // KarteEntryScreen.tsx側でマスキングする。生の値をそのままAPIレスポンスに含める
+        // ため、このエンドポイントの呼び出し元を増やす際は表示先の限定を必ず確認すること)。
+        phoneNumber:      c.phone_number ?? null,
+        birthDate:        c.birth_date ?? null,
         type,
         // PHASE HOMECARE-V12-MVP-1: brain_customers.customer_type の生値
         // ('A_acne'|'B_pore'|'C_sensitive'|'D_aging'|null)。上のtypeは

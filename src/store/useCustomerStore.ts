@@ -15,6 +15,14 @@ export interface CustomerRow {
   name:             string
   /** フリガナ(brain_customers.name_kana)。未登録の顧客はnull(2026-09-27・フリガナ検索対応)。 */
   nameKana:         string | null
+  /**
+   * brain_customers.phone_number(生の値・伏せ字化はしていない)。2026-09-28ユーザー承認:
+   * `/karte`検索結果一覧の同姓同名識別表示のみに用途を限定する(表示側で中4桁を伏せ字化する)。
+   * 未登録の顧客はnull。
+   */
+  phoneNumber:      string | null
+  /** brain_customers.birth_date(YYYY-MM-DD)。未登録の顧客はnull。 */
+  birthDate:        string | null
   type:             CustomerType
   /** brain_customers.customer_type の生値(PHASE HOMECARE-V12-MVP-1)。typeとは別物 */
   skinConcernType:  string | null

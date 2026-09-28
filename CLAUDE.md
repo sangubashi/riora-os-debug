@@ -2136,6 +2136,47 @@ SUBSCRIPTION_VISIT_SPLIT_PHASE1で意図的に`brain_visits`から分離済み)�
 `monthlySales`/`avgSpend`/`forecastSales`/`breakevenPoint`/`monthProfitEst`等の既存計算式、
 `replaceForCheckout`/`listByCustomer`等の既存サブスク書込みロジックには一切触れていない。
 
+### `/karte` 着手済み事項（検索結果一覧に同姓同名識別表示を追加・2026-09-28ユーザー承認・PII方針の限定例外）
+
+**背景**: `/karte`の顧客検索で同姓同名の顧客が複数いる場合、名前だけでは誤って別人の
+カルテを開いてしまうリスクがあるとの指摘。検索結果一覧内で漢字氏名・フリガナが両方
+一致する顧客が2件以上いる場合のみ、識別用の追加情報を表示する仕様で対応した。
+
+**PII方針との関係(着手前にユーザーへ確認済み)**: `docs/security/PII_MINIMUM_POLICY_V1.md`は
+電話番号を「保持しない」対象とし、`brain_customers.phone_number`は2026-09-24に個別例外化
+されたが、そのマイグレーション(`20260924040000_brain_customers_phone_gender.sql`)自身が
+「表示はPIN保護されたスタッフモード側に限定する」という方針を明記していた(実際に
+`IpadStaffKarteView.tsx`のPIN保護領域でのみ生の電話番号を表示している)。今回の依頼は
+PIN保護前の検索結果一覧に電話番号を表示するもので、この既存方針と矛盾するため着手前に
+AskUserQuestionで確認した。ユーザーから「中4桁を伏せ字(※※※※)にした表示は実質的な
+PII露出に当たらないと判断する。同姓同名の誤選択防止を最優先し、検索結果一覧(PIN保護前)
+への伏せ字電話番号表示を承認する」との回答を得て実施した。**この伏せ字表示の例外は
+`/karte`検索結果一覧の同姓同名識別表示のみに限る**(生の電話番号・伏せ字なしの表示範囲を
+広げる変更ではない)。
+
+- **`app/api/customers/list/route.ts`**: `brain_customers`のselectに`phone_number`・
+  `birth_date`を追加し、レスポンスに`phoneNumber`(生の値)・`birthDate`(YYYY-MM-DD)を
+  追加。既存フィールドの算出ロジックには触れていない。
+- **`src/store/useCustomerStore.ts`**: `CustomerRow`に`phoneNumber: string | null`・
+  `birthDate: string | null`を追加。
+- **`src/lib/customer/phoneMask.ts`(新規)**: `maskPhoneNumberMiddle()`。数字を先頭・末尾
+  それぞれ残し中間のみ`※`で伏せ字化する(例: `09012345678` → `090-※※※※-5678`)。
+  `/karte`検索結果一覧の識別表示専用として作成。
+- **`src/components/karte/KarteEntryScreen.tsx`**: `filteredCustomers`内で
+  `name`+`nameKana`が完全一致する顧客が2件以上いる場合のみ、対象カードに「同姓同名」
+  バッジ・`maskPhoneNumberMiddle()`適用済みの電話番号・`calculateAge()`(既存
+  `src/lib/customer/birthDate.ts`を再利用)による年齢・前回来店日を表示する。該当しない
+  通常の顧客カードは従来通り名前のみのシンプルな表示を維持。検索ロジック自体
+  (`isKanaOnly`/`kanaSurnameStartsWith`等)には一切触れていない。
+- **検証**: `npx tsc --noEmit`パス(既存の無関係な失敗15件のみ、変更前と同一のエラー集合)。
+  `npm run build`パス。`next-env.d.ts`のbuild副作用は復元済み。`KarteEntryScreen.tsx`への
+  既存ユニット/コンポーネントテストは元々リポジトリに存在しない。**実機での表示確認は
+  未検証**。
+
+**この解除は上記(同姓同名識別表示・関連するAPI/store/新規util)のみに限る。** 通常時の
+顧客カード表示・検索ロジック本体・電話番号を検索結果以外の非PIN保護領域へ表示する変更
+には一切触れていない。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

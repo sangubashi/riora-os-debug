@@ -32,6 +32,8 @@ import CustomerTopPage from '@/components/customer/CustomerTopPage'
 import type { ReservationWithBrainCustomer } from '@/types/database'
 import type { Customer as BSCustomer, Reservation as BSReservation, CustomerType } from '@/types'
 import { isKanaOnly, kanaSurnameStartsWith } from '@/lib/customer/kanaMatch'
+import { calculateAge } from '@/lib/customer/birthDate'
+import { maskPhoneNumberMiddle } from '@/lib/customer/phoneMask'
 
 // ─── CustomerRow(検索結果) → CustomerTopPage 用マッパー ─────────────────────────
 // CustomersScreen.tsxのtoCustomer/toReservationと同一の変換(既存ファイルには触れず、
@@ -152,6 +154,18 @@ export default function KarteEntryScreen() {
     return customers.filter(c => c.name.toLowerCase().includes(q)).slice(0, 30)
   }, [customers, query])
 
+  // 同姓同名の識別表示(2026-09-28ユーザー承認): 検索結果一覧内で漢字氏名・フリガナが
+  // 共に一致する顧客が2件以上いる場合のみ、対象カードに識別情報(バッジ・電話番号中央
+  // マスキング・年齢・前回来店日)を表示する。それ以外の通常カードは従来通りの表示。
+  const duplicateNameKeys = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const c of filteredCustomers) {
+      const key = `${c.name}::${c.nameKana ?? ''}`
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+    return new Set(Array.from(counts.entries()).filter(([, n]) => n >= 2).map(([key]) => key))
+  }, [filteredCustomers])
+
   const openCustomerFromSearch = (c: CustomerRow) =>
     setSelected({ customer: toCustomerFromRow(c), reservation: toReservationFromRow(c) })
   const openCustomerFromReservation = (r: ReservationWithBrainCustomer) =>
@@ -237,20 +251,60 @@ export default function KarteEntryScreen() {
               </p>
               {customersLoading && <p style={{ fontSize: '13px', color: PALETTE.muted }}>読み込み中…</p>}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {filteredCustomers.map(c => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => openCustomerFromSearch(c)}
-                    style={{
-                      textAlign: 'left', padding: '14px 16px', borderRadius: '12px',
-                      border: `1px solid ${PALETTE.border}`, background: PALETTE.card,
-                      cursor: 'pointer', fontSize: '14px', color: PALETTE.text,
-                    }}
-                  >
-                    {c.name}様
-                  </button>
-                ))}
+                {filteredCustomers.map(c => {
+                  const isDuplicate = duplicateNameKeys.has(`${c.name}::${c.nameKana ?? ''}`)
+                  if (!isDuplicate) {
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => openCustomerFromSearch(c)}
+                        style={{
+                          textAlign: 'left', padding: '14px 16px', borderRadius: '12px',
+                          border: `1px solid ${PALETTE.border}`, background: PALETTE.card,
+                          cursor: 'pointer', fontSize: '14px', color: PALETTE.text,
+                        }}
+                      >
+                        {c.name}様
+                      </button>
+                    )
+                  }
+
+                  const maskedPhone = c.phoneNumber ? maskPhoneNumberMiddle(c.phoneNumber) : null
+                  const age         = c.birthDate ? calculateAge(c.birthDate) : null
+                  const lastVisitLabel = c.lastVisitDate ? c.lastVisitDate.replaceAll('-', '/') : '来店履歴なし'
+
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => openCustomerFromSearch(c)}
+                      style={{
+                        display: 'flex', flexDirection: 'column', gap: '6px',
+                        textAlign: 'left', padding: '14px 16px', borderRadius: '12px',
+                        border: `1px solid ${PALETTE.border}`, background: PALETTE.card,
+                        cursor: 'pointer', fontSize: '14px', color: PALETTE.text,
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span>{c.name}様</span>
+                        <span
+                          style={{
+                            fontSize: '10px', fontWeight: 600, color: '#B85050',
+                            background: 'rgba(184,80,80,0.12)', borderRadius: '999px', padding: '2px 8px',
+                          }}
+                        >
+                          同姓同名
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', fontSize: '11px', color: PALETTE.muted }}>
+                        {maskedPhone && <span>TEL {maskedPhone}</span>}
+                        {age !== null && <span>{age}歳</span>}
+                        <span>前回来店 {lastVisitLabel}</span>
+                      </div>
+                    </button>
+                  )
+                })}
               </div>
             </div>
           ) : (
