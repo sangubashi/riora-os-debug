@@ -120,6 +120,35 @@ function todayDateStr(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
+/** APIはunknown[]で返す(自由形式JSON)ため、文字列要素のみを安全に取り出す(ipadKarteData.tsと同一)。 */
+function toStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((v): v is string => typeof v === 'string')
+}
+
+/**
+ * 「今回の施術」表示連携(2026-09-28ユーザー承認)。当日visitのcourse_optionsのみを
+ * 取得する(既存の/treatment APIをそのまま使うが、options/productsUsed/treatmentMemo等
+ * 他フィールドは意図的に読まない。2026-09-14の「治療メモ等はお客様モードに含めない」
+ * 方針は維持したまま、course_options単体のみの例外とする)。todayVisitIdが無い間は
+ * 空配列を返す。
+ */
+async function fetchTodayCourseOptions(customerId: string, todayVisitId: string | null): Promise<string[]> {
+  if (!todayVisitId) return []
+  try {
+    const res = await authedFetch(`/api/customers/${customerId}/visits/${todayVisitId}/treatment`)
+    if (res.ok) {
+      const json = (await res.json()) as { success: boolean; treatment?: { courseOptions?: unknown } }
+      if (json.success && json.treatment) {
+        return toStringList(json.treatment.courseOptions)
+      }
+    }
+  } catch {
+    /* 取得失敗時は空のまま(致命的にしない) */
+  }
+  return []
+}
+
 /**
  * photosByAngle/photoUrlsの組み立て(角度ごとの前回↔今回↔初回の代表写真をsigned URL付きで
  * 用意する)。マウント時のuseEffectとrefetchPhotos(写真撮影・選択・削除フロー用の軽量
@@ -189,6 +218,15 @@ export interface CustomerModeData {
    * 同じ意味・同じ算出方法(visit-history APIのvisitDateが本日と一致する行)。
    */
   todayVisitId: string | null
+  /**
+   * 「今回の施術」表示連携(2026-09-28ユーザー承認): スタッフ用カルテ側で選択・保存した
+   * brain_visits.course_options(固定14項目の複数選択)を、お客様用カルテの「今回の施術」
+   * にも反映する。2026-09-14に「今回の施術ポイント」(options/productsUsed、施術メモを
+   * 含む自由記述寄りの記録)をお客様モードから撤去した経緯があるが、course_optionsは
+   * それとは別物(顧客自身が受けているコース名そのもの、来店メニュー名と同種の情報)で
+   * あり、treatmentMemo等の他フィールドは引き続き取得・表示しない(この配列のみを使う)。
+   */
+  todayCourseOptions: string[]
 }
 
 const EMPTY_DATA: CustomerModeData = {
@@ -201,6 +239,7 @@ const EMPTY_DATA: CustomerModeData = {
   homecareItems: [],
   visits: [],
   todayVisitId: null,
+  todayCourseOptions: [],
 }
 
 export interface UseCustomerModeDataResult extends CustomerModeData {
@@ -211,6 +250,12 @@ export interface UseCustomerModeDataResult extends CustomerModeData {
    * 再取得しない(全項目再取得は不要なsigned URL再発行等が走り重いため)。
    */
   refetchPhotos: () => Promise<void>
+  /**
+   * 「今回の施術」表示連携(2026-09-28ユーザー承認)。スタッフ用カルテ側でコースを
+   * 選択・保存した後、お客様用カルテへ切り替えたタイミングで呼ぶ想定の軽量な再取得
+   * (todayCourseOptionsのみを更新、他の項目には触れない)。
+   */
+  refetchTodayCourseOptions: () => Promise<void>
 }
 
 export function useCustomerModeData(customerId: string): UseCustomerModeDataResult {
@@ -255,7 +300,10 @@ export function useCustomerModeData(customerId: string): UseCustomerModeDataResu
         return { productName: p.productName, frequency: guide?.frequency ?? null, timing: guide?.timing ?? null, caution: guide?.caution ?? null }
       })
 
-      const { photosByAngle, photoUrls } = await computePhotosByAngle(customerId, photos)
+      const [{ photosByAngle, photoUrls }, todayCourseOptions] = await Promise.all([
+        computePhotosByAngle(customerId, photos),
+        fetchTodayCourseOptions(customerId, todayVisitId),
+      ])
       if (cancelled) return
 
       setData({
@@ -266,6 +314,7 @@ export function useCustomerModeData(customerId: string): UseCustomerModeDataResu
         currentSkinTags,
         previousSkinTags,
         homecareItems,
+        todayCourseOptions,
         visits,
         todayVisitId,
       })
@@ -288,5 +337,10 @@ export function useCustomerModeData(customerId: string): UseCustomerModeDataResu
     setData(prev => ({ ...prev, photosByAngle, photoUrls }))
   }, [customerId])
 
-  return { ...data, refetchPhotos }
+  const refetchTodayCourseOptions = useCallback(async () => {
+    const todayCourseOptions = await fetchTodayCourseOptions(customerId, data.todayVisitId)
+    setData(prev => ({ ...prev, todayCourseOptions }))
+  }, [customerId, data.todayVisitId])
+
+  return { ...data, refetchPhotos, refetchTodayCourseOptions }
 }

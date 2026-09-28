@@ -68,6 +68,11 @@ export default function KarteCustomerSwitcher({ customerId }: { customerId: stri
   const [staffViewMounted, setStaffViewMounted] = useState(false)
   // お客様トップページ(CustomerTopPage.tsx)への導線(2026-09-28ユーザー承認)。
   const [showCustomerTop, setShowCustomerTop] = useState(false)
+  // 「今回の施術」表示連携(2026-09-28ユーザー承認): スタッフ用カルテからお客様用カルテへ
+  // 切り替えるたびにインクリメントする。CustomerModeViewは常時マウントのままのため、
+  // スタッフ側でコースを保存しただけでは自動的に最新化されない(refreshCourseSignalの
+  // 変化を検知させてtodayCourseOptionsのみ再取得させる)。
+  const [customerCourseRefreshSignal, setCustomerCourseRefreshSignal] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -76,6 +81,7 @@ export default function KarteCustomerSwitcher({ customerId }: { customerId: stri
     setMode('customer')
     setStaffViewMounted(false)
     setShowCustomerTop(false)
+    setCustomerCourseRefreshSignal(0)
 
     void (async () => {
       const res = await authedFetch(`/api/customers/${customerId}`)
@@ -139,6 +145,7 @@ export default function KarteCustomerSwitcher({ customerId }: { customerId: stri
           onClose={backToKarte}
           onSwitchToStaffView={() => { setStaffViewMounted(true); setMode('staff') }}
           onShowCustomerTop={() => setShowCustomerTop(true)}
+          refreshCourseSignal={customerCourseRefreshSignal}
         />
       </div>
       {staffViewMounted && (
@@ -147,7 +154,7 @@ export default function KarteCustomerSwitcher({ customerId }: { customerId: stri
             customerId={customer.id}
             customerName={customer.name}
             onClose={backToKarte}
-            onSwitchToCustomerView={() => setMode('customer')}
+            onSwitchToCustomerView={() => { setMode('customer'); setCustomerCourseRefreshSignal(s => s + 1) }}
             onShowCustomerTop={() => setShowCustomerTop(true)}
           />
         </div>

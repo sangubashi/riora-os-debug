@@ -2501,6 +2501,42 @@ fakeSupabaseヘルパーへの.not()追加)のみに限る。** csvImportPipelin
 VisitRepo.reconcile()・スマホアプリ側の呼び出し(onGoToDetail未指定時は従来通り)には
 一切触れていない。
 
+### `/karte` 着手済み事項（お客様用カルテ「今回の施術」表示への施術コース連携・2026-09-28ユーザー承認、吉沼翼様でテスト確認）
+
+**背景・過去の方針との関係**: `customerModeData.ts`には2026-09-14の履歴として、
+「今回の施術ポイント」(options/productsUsed、治療メモ寄りの自由記述系記録)を
+お客様モードから意図的に撤去し、`/visits/[visitId]/treatment`の呼び出し自体を
+このフックから削除した経緯が明記されていた。今回追加する`course_options`は
+性質が異なる(顧客が受けているコース名そのもの、来店メニュー名と同種の情報であり、
+スタッフ向けの内部メモではない)と判断し、ユーザーへ確認の上、`course_options`
+**のみ**を対象にした限定的な例外として`/treatment`の呼び出しを再度追加した
+(options/productsUsed/treatmentMemo等、2026-09-14に撤去した他フィールドは
+一切取得・表示しない。2026-09-14の方針自体は維持)。
+
+1. **表示の連携**: `customerModeData.ts`に`todayCourseOptions: string[]`と
+   `refetchTodayCourseOptions()`を追加(当日visitの`course_options`のみを取得、
+   ipadKarteData.tsの`todayCourseOptions`と同じ考え方)。`CustomerModeView.tsx`の
+   「今回の施術」InfoBarItemを、`todayCourseOptions`(複数選択時は「・」区切りで結合)を
+   優先表示し、無ければ従来通り`currentMenuName`→「本日のメニューは準備中です」の
+   順にフォールバックするよう変更した。
+2. **スタッフ側保存→お客様側反映のタイミング連携**: `KarteCustomerSwitcher.tsx`は
+   `CustomerModeView`/`IpadStaffKarteView`の両方を常時マウントしたまま`display`のみで
+   切り替える設計(PERF-KARTE-SWITCH-CACHE-1)のため、スタッフ側でコースを保存しても
+   お客様側のstateは自動更新されない。`CustomerModeView.tsx`に任意prop
+   `refreshCourseSignal?: number`を新設し、値が変化するたびに`todayCourseOptions`のみを
+   軽量再取得するようにした。`KarteCustomerSwitcher.tsx`側で、スタッフ用カルテの
+   「お客様用カルテへ戻る」(`onSwitchToCustomerView`)が呼ばれるたびにこのカウンタを
+   インクリメントする(未指定時=`CustomerBottomSheet.tsx`経由の既存呼び出しは
+   何もしない、初回マウント時の重複フェッチもガード済み)。
+- **検証**: `npx tsc --noEmit`パス(既存の無関係な失敗15件のみ)。`npm run build`パス。
+  `next-env.d.ts`のbuild副作用は復元済み。`customerModeData.ts`/`CustomerModeView.tsx`
+  には元々ユニットテストが存在しない。**ユーザーが吉沼翼様で実機テストを実施予定**。
+
+**この解除は上記(`todayCourseOptions`の追加、「今回の施術」表示ロジック変更、
+`refreshCourseSignal`によるスタッフ→お客様切替時の再取得連携)のみに限る。**
+2026-09-14に撤去したoptions/productsUsed/treatmentMemo等の他フィールドの再表示は
+行っていない(course_options単体のみの例外)。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

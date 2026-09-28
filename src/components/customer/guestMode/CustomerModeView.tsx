@@ -107,6 +107,15 @@ interface Props {
    * (CustomerTopPage自体が`/karte`専用領域のコンポーネントのため)。
    */
   onShowCustomerTop?: () => void
+  /**
+   * 「今回の施術」表示連携用の任意カウンタ(2026-09-28ユーザー承認)。値が変化するたびに
+   * todayCourseOptionsのみを再取得する。スタッフ用カルテでコースを選択・保存した後、
+   * お客様用カルテへ切り替えたタイミングでKarteCustomerSwitcher.tsxがこの値を
+   * インクリメントする想定(CustomerModeView自体は常時マウントのままのため、
+   * 切り替えだけでは自動的に最新化されない)。未指定時(CustomerBottomSheet経由の
+   * 既存呼び出し)は何もしない。
+   */
+  refreshCourseSignal?: number
 }
 
 /** ライトボックスの下部キャプション用。サムネイル一覧のcaptionTextと同じロジック
@@ -122,8 +131,23 @@ function buildLightboxCaption(
   return null
 }
 
-export default function CustomerModeView({ customerId, customerName, onClose, onSwitchToStaffView, onShowCustomerTop }: Props) {
+export default function CustomerModeView({ customerId, customerName, onClose, onSwitchToStaffView, onShowCustomerTop, refreshCourseSignal }: Props) {
   const data = useCustomerModeData(customerId)
+
+  // 「今回の施術」表示連携(2026-09-28ユーザー承認): refreshCourseSignalが変化した
+  // タイミングでtodayCourseOptionsのみを再取得する(他の項目には触れない)。初回マウント時
+  // (通常のマウント時fetchで既に取得済み・refreshCourseSignal未指定=CustomerBottomSheet
+  // 経由の既存呼び出し)は呼ばない。
+  const courseSignalMountedRef = useRef(false)
+  useEffect(() => {
+    if (refreshCourseSignal === undefined) return
+    if (!courseSignalMountedRef.current) {
+      courseSignalMountedRef.current = true
+      return
+    }
+    void data.refetchTodayCourseOptions()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshCourseSignal])
   const [angle, setAngle] = useState<CustomerModeAngleId>('face_front')
   /** ライトボックス表示中の写真。撮影日・来店回数のキャプションも合わせて保持する
    *  (2026-09-22ユーザー要望: 拡大表示にメタデータも表示する)。 */
@@ -705,7 +729,18 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
                   borderRadius: '18px', boxShadow: PALETTE.shadow, display: 'flex', alignItems: 'stretch',
                 }}
               >
-                <InfoBarItem icon={Leaf} label="今回の施術" value={data.currentMenuName ?? '本日のメニューは準備中です'} />
+                {/* 「今回の施術」表示連携(2026-09-28ユーザー承認): スタッフ用カルテで
+                    保存したcourse_options(複数選択)がある場合はそれを優先表示し、
+                    無ければ従来通りcurrentMenuName(来店メニュー名)へフォールバックする。 */}
+                <InfoBarItem
+                  icon={Leaf}
+                  label="今回の施術"
+                  value={
+                    data.todayCourseOptions.length > 0
+                      ? data.todayCourseOptions.join('・')
+                      : data.currentMenuName ?? '本日のメニューは準備中です'
+                  }
+                />
                 {/* SHOW_NEXT_VISIT_ESTIMATEがfalseの間は表示を一時停止する(2026-09-18ユーザー
                     承認、詳細はファイル冒頭のコメント参照)。既存のhiddenFromCustomer(顧客ごとの
                     個別設定)条件はそのまま維持し、両方を満たす場合のみ表示する。 */}
