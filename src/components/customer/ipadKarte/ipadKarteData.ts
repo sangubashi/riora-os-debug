@@ -84,6 +84,7 @@ interface TreatmentDetail {
   productsUsed: unknown
   treatmentMemo?: string | null
   courseOptions?: unknown
+  optionItems?: unknown
 }
 
 interface HomecareProductEntry {
@@ -151,10 +152,15 @@ export interface IpadKarteData {
   /** 当日visitのoptions/productsUsedをそのまま返す(手順テンプレート化はしない)。 */
   todayTreatmentPoints: string[]
   /**
-   * 「💆 今回の施術コース」(2026-09-28ユーザー承認)。当日visitのcourse_options
+   * 「今回の施術」の「メインコース」枠(2026-09-28ユーザー承認)。当日visitのcourse_options
    * (固定14項目からの複数選択、brain_visits.options(施術ポイント)とは別列)。
    */
   todayCourseOptions: string[]
+  /**
+   * 「今回の施術」の「追加オプション」枠(2026-09-28ユーザー承認)。当日visitのoption_items
+   * (固定26項目・4カテゴリからの複数選択、course_options・options とは別列で独立管理)。
+   */
+  todayOptionItems: string[]
   // 「次回の目安」は次回目安エンジン(PHASE NEXT-VISIT-1・src/lib/nextVisit/useNextVisit.ts)に
   // 置き換えたため、このフックでは算出しない(IpadStaffKarteView側でuseNextVisitを直接使う)。
   /** 「今回のホームケア」カード(customerModeData.tsと同じ取得ロジックの流用)。 */
@@ -195,6 +201,7 @@ const EMPTY_DATA: IpadKarteData = {
   currentSkinTags: [],
   todayTreatmentPoints: [],
   todayCourseOptions: [],
+  todayOptionItems: [],
   homecareItems: [],
   lastVisitDate: null,
   visitCount: 0,
@@ -226,6 +233,12 @@ export interface UseIpadKarteDataResult extends IpadKarteData {
    * 反映する(以後、他のtodayVisitId依存表示にも即座に反映される)。
    */
   applyTodayCourseSave: (visitId: string, courseOptions: string[]) => void
+  /**
+   * 今回の施術「追加オプション」保存(2026-09-28ユーザー承認)の保存直後に呼ぶ。
+   * applyTodayCourseSaveと同様、本日分のvisitが無ければAPI側でその場で作成するため、
+   * 保存前はtodayVisitId=nullだったケースでも新しいvisitIdをここで反映する。
+   */
+  applyTodayOptionSave: (visitId: string, optionItems: string[]) => void
 }
 
 export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
@@ -307,8 +320,8 @@ export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
         .flatMap(p => [p.current?.id, p.reference?.id])
         .filter((id): id is string => !!id)
 
-      const fetchTodayTreatmentPoints = async (): Promise<{ points: string[]; courseOptions: string[] }> => {
-        if (!todayVisitId) return { points: [], courseOptions: [] }
+      const fetchTodayTreatmentPoints = async (): Promise<{ points: string[]; courseOptions: string[]; optionItems: string[] }> => {
+        if (!todayVisitId) return { points: [], courseOptions: [], optionItems: [] }
         try {
           const res = await authedFetch(`/api/customers/${customerId}/visits/${todayVisitId}/treatment`)
           if (res.ok) {
@@ -320,13 +333,14 @@ export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
                   ...toStringList(json.treatment.productsUsed),
                 ],
                 courseOptions: toStringList(json.treatment.courseOptions),
+                optionItems:   toStringList(json.treatment.optionItems),
               }
             }
           }
         } catch {
           /* 今日の施術記録が無くても他の表示に影響させない */
         }
-        return { points: [], courseOptions: [] }
+        return { points: [], courseOptions: [], optionItems: [] }
       }
 
       // 「前回メモをワンタップ参照」用: 前回visitのtreatment_memoのみ取得(施術内容は
@@ -365,6 +379,7 @@ export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
         currentSkinTags,
         todayTreatmentPoints: todayTreatment.points,
         todayCourseOptions: todayTreatment.courseOptions,
+        todayOptionItems: todayTreatment.optionItems,
         homecareItems,
         lastVisitDate,
         visitCount,
@@ -417,10 +432,15 @@ export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
     setData(prev => ({ ...prev, todayVisitId: visitId, todayCourseOptions: courseOptions }))
   }, [])
 
+  const applyTodayOptionSave = useCallback((visitId: string, optionItems: string[]) => {
+    setData(prev => ({ ...prev, todayVisitId: visitId, todayOptionItems: optionItems }))
+  }, [])
+
   return {
     ...data,
     refetchGoalAndContraindications,
     refetchPhotos,
     applyTodayCourseSave,
+    applyTodayOptionSave,
   }
 }

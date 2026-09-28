@@ -109,7 +109,8 @@ interface Props {
   onShowCustomerTop?: () => void
   /**
    * 「今回の施術」表示連携用の任意カウンタ(2026-09-28ユーザー承認)。値が変化するたびに
-   * todayCourseOptionsのみを再取得する。スタッフ用カルテでコースを選択・保存した後、
+   * todayCourseOptions・todayOptionItems(メインコース・追加オプション)をまとめて
+   * 再取得する。スタッフ用カルテでメインコース・追加オプションを選択・保存した後、
    * お客様用カルテへ切り替えたタイミングでKarteCustomerSwitcher.tsxがこの値を
    * インクリメントする想定(CustomerModeView自体は常時マウントのままのため、
    * 切り替えだけでは自動的に最新化されない)。未指定時(CustomerBottomSheet経由の
@@ -135,9 +136,9 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
   const data = useCustomerModeData(customerId)
 
   // 「今回の施術」表示連携(2026-09-28ユーザー承認): refreshCourseSignalが変化した
-  // タイミングでtodayCourseOptionsのみを再取得する(他の項目には触れない)。初回マウント時
-  // (通常のマウント時fetchで既に取得済み・refreshCourseSignal未指定=CustomerBottomSheet
-  // 経由の既存呼び出し)は呼ばない。
+  // タイミングでtodayCourseOptions・todayOptionItemsをまとめて再取得する(他の項目には
+  // 触れない)。初回マウント時(通常のマウント時fetchで既に取得済み・refreshCourseSignal
+  // 未指定=CustomerBottomSheet経由の既存呼び出し)は呼ばない。
   const courseSignalMountedRef = useRef(false)
   useEffect(() => {
     if (refreshCourseSignal === undefined) return
@@ -730,17 +731,43 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
                 }}
               >
                 {/* 「今回の施術」表示連携(2026-09-28ユーザー承認): スタッフ用カルテで
-                    保存したcourse_options(複数選択)がある場合はそれを優先表示し、
-                    無ければ従来通りcurrentMenuName(来店メニュー名)へフォールバックする。 */}
-                <InfoBarItem
-                  icon={Leaf}
-                  label="今回の施術"
-                  value={
-                    data.todayCourseOptions.length > 0
-                      ? data.todayCourseOptions.join('・')
-                      : data.currentMenuName ?? '本日のメニューは準備中です'
-                  }
-                />
+                    保存したcourse_options(メインコース)・option_items(追加オプション)を
+                    それぞれ明確に区別して表示する。どちらも無ければ従来通り
+                    currentMenuName(来店メニュー名)へフォールバックする。共有InfoBarItem
+                    はvalue:stringの単一行のみを想定しているため(「次回の目安」でも
+                    共用しているため無変更)、この2行表示は同じ見た目パターンをここに
+                    直接複製している。 */}
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '14px', padding: '18px 20px' }}>
+                  <span
+                    style={{
+                      width: '34px', height: '34px', borderRadius: '50%', flexShrink: 0,
+                      background: PALETTE.bg, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    <Leaf size={16} strokeWidth={1.4} color={PALETTE.gold} />
+                  </span>
+                  <div>
+                    <p style={{ margin: 0, fontSize: '11px', letterSpacing: '0.1em', color: PALETTE.muted }}>今回の施術</p>
+                    {data.todayCourseOptions.length > 0 || data.todayOptionItems.length > 0 ? (
+                      <>
+                        {data.todayCourseOptions.length > 0 && (
+                          <p style={{ margin: '2px 0 0', fontSize: '13px', fontWeight: 700, color: PALETTE.text }}>
+                            メインコース: {data.todayCourseOptions.join('・')}
+                          </p>
+                        )}
+                        {data.todayOptionItems.length > 0 && (
+                          <p style={{ margin: '2px 0 0', fontSize: '13px', fontWeight: 700, color: PALETTE.text }}>
+                            追加オプション: {data.todayOptionItems.join('・')}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p style={{ margin: '2px 0 0', fontSize: '14px', fontWeight: 700, color: PALETTE.text }}>
+                        {data.currentMenuName ?? '本日のメニューは準備中です'}
+                      </p>
+                    )}
+                  </div>
+                </div>
                 {/* SHOW_NEXT_VISIT_ESTIMATEがfalseの間は表示を一時停止する(2026-09-18ユーザー
                     承認、詳細はファイル冒頭のコメント参照)。既存のhiddenFromCustomer(顧客ごとの
                     個別設定)条件はそのまま維持し、両方を満たす場合のみ表示する。 */}

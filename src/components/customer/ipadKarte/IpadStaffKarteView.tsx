@@ -41,6 +41,7 @@ import { authedFetch } from '@/lib/api/authedFetch'
 import { calculateAge } from '@/lib/customer/birthDate'
 import SalonBoardImportModal from '@/components/customer/SalonBoardImportModal'
 import TreatmentCourseEditModal from './TreatmentCourseEditModal'
+import TreatmentOptionEditModal from './TreatmentOptionEditModal'
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
 /** クイック選択の候補(本日起点の週数)。 */
@@ -432,8 +433,9 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
   const [acquisitionChannel, setAcquisitionChannel] = useState<string | null>(null)
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null)
   const [showSalonBoardImport, setShowSalonBoardImport] = useState(false)
-  // 今回の施術コース選択モーダル(2026-09-28ユーザー承認)。
+  // 今回の施術(メインコース・追加オプション)選択モーダル(2026-09-28ユーザー承認)。
   const [showTreatmentCourseEdit, setShowTreatmentCourseEdit] = useState(false)
+  const [showTreatmentOptionEdit, setShowTreatmentOptionEdit] = useState(false)
 
   const fetchCustomerDetail = useCallback(async () => {
     try {
@@ -596,53 +598,105 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
                 </Card>
               )}
 
-              {/* 今回の施術コース(2026-09-28ユーザー承認)。固定14項目からの複数選択を
-                  brain_visits.course_options(新規列)へ保存する。
+              {/* 今回の施術(2026-09-28ユーザー承認)。「メインコース」(固定14項目、
+                  brain_visits.course_options)と「追加オプション」(固定26項目・4カテゴリ、
+                  brain_visits.option_items)を、それぞれ独立して選択・保存できる別枠として
+                  配置する。互いのPUTは相手の選択内容を上書きしない(today-treatment-course
+                  route.ts参照)。
                   追加対応(2026-09-28・「現場の入力が正である」方針): 本日分のvisitが
                   無くても保存できる(保存API側でその場でvisit行を作成する。詳細は
-                  PUT /api/customers/[id]/today-treatment-course・TreatmentCourseEditModal.tsx
-                  参照)。共有Cardコンポーネントではヘッダーにボタンを置けないため、重要事項
-                  編集(旧実装)と同じ見た目複製パターンでこのブロック限定の独自divにしている。 */}
-              <div
-                style={{
-                  background: PALETTE.card, border: `1px solid ${PALETTE.border}`, borderRadius: '18px',
-                  padding: '18px 20px', boxShadow: PALETTE.shadow,
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                  <p style={{ margin: 0, fontSize: '13px', letterSpacing: '0.08em', color: PALETTE.gold, fontFamily: headingFont.style.fontFamily }}>
-                    今回の施術コース
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setShowTreatmentCourseEdit(true)}
-                    aria-label="今回の施術コースを選択"
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px',
-                      border: `1px solid ${PALETTE.border}`, borderRadius: '999px',
-                      background: 'none', color: PALETTE.muted, fontSize: '11px', cursor: 'pointer',
-                    }}
-                  >
-                    ✏️ 選択
-                  </button>
-                </div>
-                {data.todayCourseOptions.length > 0 ? (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                    {data.todayCourseOptions.map((course, i) => (
-                      <span
-                        key={`${course}-${i}`}
-                        style={{
-                          fontSize: '12px', color: PALETTE.text, background: PALETTE.bg,
-                          border: `1px solid ${PALETTE.border}`, borderRadius: '999px', padding: '6px 14px',
-                        }}
-                      >
-                        {course}
-                      </span>
-                    ))}
+                  PUT /api/customers/[id]/today-treatment-course・TreatmentCourseEditModal.tsx・
+                  TreatmentOptionEditModal.tsx参照)。共有Cardコンポーネントではヘッダーに
+                  ボタンを置けないため、重要事項編集(旧実装)と同じ見た目複製パターンで
+                  このブロック限定の独自divにしている。 */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <p style={{ margin: '0 4px', fontSize: '11px', letterSpacing: '0.1em', color: PALETTE.muted }}>
+                  今回の施術
+                </p>
+
+                <div
+                  style={{
+                    background: PALETTE.card, border: `1px solid ${PALETTE.border}`, borderRadius: '18px',
+                    padding: '18px 20px', boxShadow: PALETTE.shadow,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                    <p style={{ margin: 0, fontSize: '13px', letterSpacing: '0.08em', color: PALETTE.gold, fontFamily: headingFont.style.fontFamily }}>
+                      メインコース
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowTreatmentCourseEdit(true)}
+                      aria-label="メインコースを選択"
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px',
+                        border: `1px solid ${PALETTE.border}`, borderRadius: '999px',
+                        background: 'none', color: PALETTE.muted, fontSize: '11px', cursor: 'pointer',
+                      }}
+                    >
+                      ✏️ 選択
+                    </button>
                   </div>
-                ) : (
-                  <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>コース未選択</p>
-                )}
+                  {data.todayCourseOptions.length > 0 ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {data.todayCourseOptions.map((course, i) => (
+                        <span
+                          key={`${course}-${i}`}
+                          style={{
+                            fontSize: '12px', color: PALETTE.text, background: PALETTE.bg,
+                            border: `1px solid ${PALETTE.border}`, borderRadius: '999px', padding: '6px 14px',
+                          }}
+                        >
+                          {course}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>コース未選択</p>
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    background: PALETTE.card, border: `1px solid ${PALETTE.border}`, borderRadius: '18px',
+                    padding: '18px 20px', boxShadow: PALETTE.shadow,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                    <p style={{ margin: 0, fontSize: '13px', letterSpacing: '0.08em', color: PALETTE.gold, fontFamily: headingFont.style.fontFamily }}>
+                      追加オプション
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowTreatmentOptionEdit(true)}
+                      aria-label="追加オプションを選択"
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px',
+                        border: `1px solid ${PALETTE.border}`, borderRadius: '999px',
+                        background: 'none', color: PALETTE.muted, fontSize: '11px', cursor: 'pointer',
+                      }}
+                    >
+                      ✏️ 選択
+                    </button>
+                  </div>
+                  {data.todayOptionItems.length > 0 ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {data.todayOptionItems.map((option, i) => (
+                        <span
+                          key={`${option}-${i}`}
+                          style={{
+                            fontSize: '12px', color: PALETTE.text, background: PALETTE.bg,
+                            border: `1px solid ${PALETTE.border}`, borderRadius: '999px', padding: '6px 14px',
+                          }}
+                        >
+                          {option}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>オプション未選択</p>
+                  )}
+                </div>
               </div>
 
               {/* 今回のホームケア(PHASE IPAD-4・2026-09-12・READ ONLY調査に基づき追加)。
@@ -817,6 +871,15 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
           existing={data.todayCourseOptions}
           onClose={() => setShowTreatmentCourseEdit(false)}
           onSaved={(visitId, courseOptions) => data.applyTodayCourseSave(visitId, courseOptions)}
+        />
+      )}
+
+      {showTreatmentOptionEdit && (
+        <TreatmentOptionEditModal
+          customerId={customerId}
+          existing={data.todayOptionItems}
+          onClose={() => setShowTreatmentOptionEdit(false)}
+          onSaved={(visitId, optionItems) => data.applyTodayOptionSave(visitId, optionItems)}
         />
       )}
     </div>

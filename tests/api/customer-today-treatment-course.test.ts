@@ -182,4 +182,76 @@ describe('PUT /api/customers/[id]/today-treatment-course', () => {
     expect(res.status).toBe(400)
     expect(body.error).toBe('validation_error')
   })
+
+  it('optionItemsが26件を超える場合はvalidation_error(400)を返す', async () => {
+    mockExtractStaff.mockResolvedValue(STAFF)
+    mockCanAccess.mockResolvedValue(true)
+    mockGetRepos.mockReturnValue(mockRepos as never)
+    const tooMany = Array.from({ length: 27 }, (_, i) => `option-${i}`)
+    const res  = await putRoute('cust-1', { optionItems: tooMany })
+    const body = await res.json()
+    expect(res.status).toBe(400)
+    expect(body.error).toBe('validation_error')
+  })
+
+  it('courseOptions・optionItemsのどちらも指定しない場合はvalidation_error(400)を返す', async () => {
+    mockExtractStaff.mockResolvedValue(STAFF)
+    mockCanAccess.mockResolvedValue(true)
+    mockGetRepos.mockReturnValue(mockRepos as never)
+    const res  = await putRoute('cust-1', {})
+    const body = await res.json()
+    expect(res.status).toBe(400)
+    expect(body.error).toBe('validation_error')
+  })
+
+  it('optionItemsのみ指定した場合、course_optionsは更新せずoption_itemsのみ更新する', async () => {
+    mockExtractStaff.mockResolvedValue(STAFF)
+    mockCanAccess.mockResolvedValue(true)
+    mockRepos.customerRepo.findById.mockResolvedValue(CUSTOMER)
+    mockRepos.visitRepo.findByCustomerAndDate.mockResolvedValue({ id: 'visit-existing' })
+    mockGetRepos.mockReturnValue(mockRepos as never)
+
+    const fake = createFakeSupabase({
+      brain_visits: { data: { id: 'visit-existing', course_options: null, option_items: ['スクライバー'] }, error: null },
+    })
+    mockGetClient.mockReturnValue(fake as never)
+
+    const res  = await putRoute('cust-1', { optionItems: ['スクライバー'] })
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body).toEqual({
+      success: true, visitId: 'visit-existing',
+      courseOptions: null, optionItems: ['スクライバー'],
+    })
+    expect(fake.chainFor('brain_visits').update).toHaveBeenCalledWith({ option_items: ['スクライバー'] })
+  })
+
+  it('courseOptions・optionItemsを同時に指定した場合、両方まとめて更新する', async () => {
+    mockExtractStaff.mockResolvedValue(STAFF)
+    mockCanAccess.mockResolvedValue(true)
+    mockRepos.customerRepo.findById.mockResolvedValue(CUSTOMER)
+    mockRepos.visitRepo.findByCustomerAndDate.mockResolvedValue({ id: 'visit-existing' })
+    mockGetRepos.mockReturnValue(mockRepos as never)
+
+    const fake = createFakeSupabase({
+      brain_visits: {
+        data: { id: 'visit-existing', course_options: ['スク→ポレ→炭酸'], option_items: ['スクライバー'] },
+        error: null,
+      },
+    })
+    mockGetClient.mockReturnValue(fake as never)
+
+    const res  = await putRoute('cust-1', { courseOptions: ['スク→ポレ→炭酸'], optionItems: ['スクライバー'] })
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body).toEqual({
+      success: true, visitId: 'visit-existing',
+      courseOptions: ['スク→ポレ→炭酸'], optionItems: ['スクライバー'],
+    })
+    expect(fake.chainFor('brain_visits').update).toHaveBeenCalledWith({
+      course_options: ['スク→ポレ→炭酸'], option_items: ['スクライバー'],
+    })
+  })
 })

@@ -127,26 +127,34 @@ function toStringList(value: unknown): string[] {
 }
 
 /**
- * 「今回の施術」表示連携(2026-09-28ユーザー承認)。当日visitのcourse_optionsのみを
- * 取得する(既存の/treatment APIをそのまま使うが、options/productsUsed/treatmentMemo等
- * 他フィールドは意図的に読まない。2026-09-14の「治療メモ等はお客様モードに含めない」
- * 方針は維持したまま、course_options単体のみの例外とする)。todayVisitIdが無い間は
- * 空配列を返す。
+ * 「今回の施術」表示連携(2026-09-28ユーザー承認)。当日visitのcourse_options
+ * (「メインコース」)・option_items(「追加オプション」)のみを取得する(既存の
+ * /treatment APIをそのまま使うが、options/productsUsed/treatmentMemo等他フィールドは
+ * 意図的に読まない。2026-09-14の「治療メモ等はお客様モードに含めない」方針は維持したまま、
+ * course_options・option_items単体のみの例外とする)。todayVisitIdが無い間はどちらも
+ * 空配列を返す。1回のfetchでまとめて取得する(refreshCourseSignal発火時の重複リクエストを
+ * 避けるため、意図的に2フィールドを1関数に統合している)。
  */
-async function fetchTodayCourseOptions(customerId: string, todayVisitId: string | null): Promise<string[]> {
-  if (!todayVisitId) return []
+async function fetchTodayCourseAndOptions(
+  customerId: string,
+  todayVisitId: string | null
+): Promise<{ courseOptions: string[]; optionItems: string[] }> {
+  if (!todayVisitId) return { courseOptions: [], optionItems: [] }
   try {
     const res = await authedFetch(`/api/customers/${customerId}/visits/${todayVisitId}/treatment`)
     if (res.ok) {
-      const json = (await res.json()) as { success: boolean; treatment?: { courseOptions?: unknown } }
+      const json = (await res.json()) as { success: boolean; treatment?: { courseOptions?: unknown; optionItems?: unknown } }
       if (json.success && json.treatment) {
-        return toStringList(json.treatment.courseOptions)
+        return {
+          courseOptions: toStringList(json.treatment.courseOptions),
+          optionItems:   toStringList(json.treatment.optionItems),
+        }
       }
     }
   } catch {
     /* 取得失敗時は空のまま(致命的にしない) */
   }
-  return []
+  return { courseOptions: [], optionItems: [] }
 }
 
 /**
@@ -227,6 +235,13 @@ export interface CustomerModeData {
    * あり、treatmentMemo等の他フィールドは引き続き取得・表示しない(この配列のみを使う)。
    */
   todayCourseOptions: string[]
+  /**
+   * 「今回の施術」表示連携(2026-09-28ユーザー承認): スタッフ用カルテ側で選択・保存した
+   * brain_visits.option_items(固定26項目・4カテゴリの複数選択、「追加オプション」)を、
+   * お客様用カルテの「今回の施術」にも反映する。todayCourseOptionsと同じ方針で、
+   * treatmentMemo等の他フィールドは引き続き取得・表示しない。
+   */
+  todayOptionItems: string[]
 }
 
 const EMPTY_DATA: CustomerModeData = {
@@ -240,6 +255,7 @@ const EMPTY_DATA: CustomerModeData = {
   visits: [],
   todayVisitId: null,
   todayCourseOptions: [],
+  todayOptionItems: [],
 }
 
 export interface UseCustomerModeDataResult extends CustomerModeData {
@@ -251,9 +267,9 @@ export interface UseCustomerModeDataResult extends CustomerModeData {
    */
   refetchPhotos: () => Promise<void>
   /**
-   * 「今回の施術」表示連携(2026-09-28ユーザー承認)。スタッフ用カルテ側でコースを
-   * 選択・保存した後、お客様用カルテへ切り替えたタイミングで呼ぶ想定の軽量な再取得
-   * (todayCourseOptionsのみを更新、他の項目には触れない)。
+   * 「今回の施術」表示連携(2026-09-28ユーザー承認)。スタッフ用カルテ側でメインコース・
+   * 追加オプションを選択・保存した後、お客様用カルテへ切り替えたタイミングで呼ぶ想定の
+   * 軽量な再取得(todayCourseOptions・todayOptionItemsをまとめて更新、他の項目には触れない)。
    */
   refetchTodayCourseOptions: () => Promise<void>
 }
@@ -300,9 +316,9 @@ export function useCustomerModeData(customerId: string): UseCustomerModeDataResu
         return { productName: p.productName, frequency: guide?.frequency ?? null, timing: guide?.timing ?? null, caution: guide?.caution ?? null }
       })
 
-      const [{ photosByAngle, photoUrls }, todayCourseOptions] = await Promise.all([
+      const [{ photosByAngle, photoUrls }, { courseOptions: todayCourseOptions, optionItems: todayOptionItems }] = await Promise.all([
         computePhotosByAngle(customerId, photos),
-        fetchTodayCourseOptions(customerId, todayVisitId),
+        fetchTodayCourseAndOptions(customerId, todayVisitId),
       ])
       if (cancelled) return
 
@@ -315,6 +331,7 @@ export function useCustomerModeData(customerId: string): UseCustomerModeDataResu
         previousSkinTags,
         homecareItems,
         todayCourseOptions,
+        todayOptionItems,
         visits,
         todayVisitId,
       })
@@ -338,8 +355,9 @@ export function useCustomerModeData(customerId: string): UseCustomerModeDataResu
   }, [customerId])
 
   const refetchTodayCourseOptions = useCallback(async () => {
-    const todayCourseOptions = await fetchTodayCourseOptions(customerId, data.todayVisitId)
-    setData(prev => ({ ...prev, todayCourseOptions }))
+    const { courseOptions: todayCourseOptions, optionItems: todayOptionItems } =
+      await fetchTodayCourseAndOptions(customerId, data.todayVisitId)
+    setData(prev => ({ ...prev, todayCourseOptions, todayOptionItems }))
   }, [customerId, data.todayVisitId])
 
   return { ...data, refetchPhotos, refetchTodayCourseOptions }

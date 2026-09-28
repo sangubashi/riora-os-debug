@@ -2571,6 +2571,57 @@ VisitRepo.reconcile()・スマホアプリ側の呼び出し(onGoToDetail未指�
 **この解除は上記のガイド文言追加・更新(`app/karte/guide/page.tsx`)のみに限る。**
 対象機能のコード自体には一切触れていない。
 
+### `/karte`「今回の施術」の「メインコース」「追加オプション」分離構造化（2026-09-28ユーザー承認、「要はこういう事だよね」で確定）
+
+**背景**: 従来「今回の施術コース」(固定14項目)のみだった`/karte`の「今回の施術」を、
+「メインコース」(既存の14項目、無変更)と「追加オプション」(新規・固定26項目・4カテゴリ)
+に分離し、それぞれ独立して選択・保存できるようにした。ユーザー依頼文言では追加オプションを
+「25項目」と案内されたが、列挙された実項目数は26件だったため、記入された項目リストを
+そのまま(削らずに)採用している。
+
+1. **DB**: `supabase/migrations/20260928090000_brain_visits_option_items.sql`で
+   `brain_visits.option_items`(jsonb、デフォルト`'[]'::jsonb`)を追加・適用済み。
+   既存の`course_options`・`options`(施術ポイント、スマホアプリ側)・
+   `products_used`/`machine_settings`/`treatment_memo`には一切触れない。
+2. **API拡張**: `app/api/customers/[id]/visits/[visitId]/treatment/route.ts`の
+   GET/PATCHへ`optionItems`(最大26件)を追加(`courseOptions`と同じ扱いで、
+   互いのPATCHが相手の列を上書きしない)。`app/api/customers/[id]/
+   today-treatment-course/route.ts`のPUTボディを`courseOptions`/`optionItems`
+   どちらも省略可・少なくとも一方必須(refine)に変更し、指定された列のみを
+   条件付きで更新するようにした(未指定側は更新しない)。本日分のvisitが無ければ
+   その場で作成する既存ロジック(「現場の入力が正である」方針)は無変更。
+3. **UI(スタッフ用カルテ)**: `IpadStaffKarteView.tsx`の「今回の施術コース」カードを
+   「メインコース」に改名し、新設の「追加オプション」カードと共に「今回の施術」
+   グルーピングラベルの下に並べて配置した。既存の`TreatmentCourseEditModal.tsx`は
+   タイトルのみ「メインコースを選択」に変更(14項目・保存先エンドポイントは無変更)。
+   新規`TreatmentOptionEditModal.tsx`(4カテゴリ・26項目、`{optionItems}`のみをPUT)を
+   追加。`ipadKarteData.ts`に`todayOptionItems`・`applyTodayOptionSave()`を追加。
+4. **UI(お客様用カルテ)への同期**: `customerModeData.ts`の`fetchTodayCourseOptions()`を
+   `fetchTodayCourseAndOptions()`に改め、`courseOptions`・`optionItems`を1回のfetchで
+   まとめて取得するようにした(`refreshCourseSignal`発火時の重複リクエストを避けるため)。
+   `todayOptionItems`を追加、`refetchTodayCourseOptions()`は両方を更新するよう拡張
+   (関数名は既存の呼び出し元(`CustomerModeView.tsx`)を変えないためそのまま維持)。
+   `CustomerModeView.tsx`の「今回の施術」表示は、共有`InfoBarItem`(value:string単一行、
+   「次回の目安」でも共用のため無変更)を使わず、「メインコース: ...」「追加オプション:
+   ...」を明確に区別した2行表示をこのブロック限定で直接複製した(どちらも無ければ
+   従来通り`currentMenuName`にフォールバック)。
+5. **ガイド更新**: `app/karte/guide/page.tsx`のCard③のNoteとCard⑧の見出し・本文を、
+   メインコース/追加オプションの分離構造に合わせて更新。
+- **テスト**: `tests/api/customer-today-treatment-course.test.ts`に`optionItems`関連の
+  新規テスト4件(26件超過validation_error、両方未指定validation_error、optionItemsのみ
+  更新、courseOptions・optionItems同時更新)を追加(既存9件は無変更・全パス)。
+- **検証**: `npx tsc --noEmit`パス(既存の無関係な失敗のみ、対象外の他ファイル)。
+  関連テスト(`customer-today-treatment-course.test.ts`13件・`customer-visit-treatment.test.ts`
+  11件)全パス。`npm run build`パス。`next-env.d.ts`のbuild副作用は復元済み。
+  `customerModeData.ts`/`CustomerModeView.tsx`には元々ユニットテストが存在しない。
+  **実機での動作確認は未検証**。
+
+**この解除は上記(`option_items`列の追加、`/treatment`・`today-treatment-course`APIの
+拡張、メインコース/追加オプション両モーダル・`IpadStaffKarteView.tsx`・
+`ipadKarteData.ts`・`customerModeData.ts`・`CustomerModeView.tsx`の関連変更、ガイド更新)
+のみに限る。** メインコース(14項目・既存の保存先列・エンドポイント)自体の項目内容・
+挙動には一切変更を加えていない。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

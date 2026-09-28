@@ -1,9 +1,11 @@
 'use client'
 /**
- * TreatmentCourseEditModal.tsx — 「✏️」施術コース選択モーダル(2026-09-28ユーザー承認)。
+ * TreatmentCourseEditModal.tsx — 「✏️」メインコース選択モーダル(2026-09-28ユーザー承認)。
  *
- * `/karte`のPIN保護スタッフモード(IpadStaffKarteView.tsx)専用。固定14項目からの
- * 複数選択(ON/OFFトグル)を保存する。
+ * `/karte`のPIN保護スタッフモード(IpadStaffKarteView.tsx)専用。「今回の施術」の
+ * うち「メインコース」枠を担当する(固定14項目からの複数選択・ON/OFFトグル)。
+ * 「追加オプション」枠は別コンポーネント TreatmentOptionEditModal.tsx が担当する
+ * (option_items列、互いのPUTは相手の選択内容を上書きしない)。
  *
  * 保存先API(PUT /api/customers/[id]/today-treatment-course、2026-09-28追加対応)は
  * 「本日分のbrain_visits行が無ければその場で作成し、course_optionsを保存する」設計
@@ -105,7 +107,7 @@ export default function TreatmentCourseEditModal({ customerId, existing, onClose
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <p style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: PALETTE.text, fontFamily: headingFont.style.fontFamily }}>
-            今回の施術コースを選択
+            メインコースを選択
           </p>
           <button type="button" onClick={onClose} aria-label="閉じる" style={{ background: 'none', border: 'none', cursor: 'pointer', color: PALETTE.muted }}>
             <X size={20} />

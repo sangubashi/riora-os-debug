@@ -1,11 +1,11 @@
 /**
- * PUT /api/customers/[id]/today-treatment-course — 「今回の施術コース」保存(現場優先版)
+ * PUT /api/customers/[id]/today-treatment-course — 「今回の施術」保存(現場優先版)
  *
  * 背景(2026-09-28ユーザー承認・追加調査): brain_visitsは実際には翌日以降SalonBoard CSV
  * インポートで一括作成されており(source='salonboard_import')、来店当日には
  * visit_date=今日のvisit行がほぼ存在しない(スマホアプリの「接客ログ保存」
  * (/api/visits/service-complete)を当日中に使った場合のみ例外)。/karte単独で使う限り
- * このためcourse_optionsを保存する対象visitが存在せず、「今回の施術コース」が常に
+ * このためcourse_options/option_itemsを保存する対象visitが存在せず、「今回の施術」が常に
  * 保存不可能だった。「事前予約CSVよりも現場の入力が正である」という方針(ユーザー承認)
  * のもと、本日分のvisitが無ければこのAPI自身がその場で作成する。
  *
@@ -20,6 +20,11 @@
  * menuIdは必須列(NOT NULL)だが、この画面ではメニュー選択を行わないため、顧客の直近
  * 来店のmenu_idを暫定値として使う(無ければ同店舗の任意のメニュー1件)。翌日のCSV取込
  * reconcile()が正しい値へ上書きするため、暫定値の選び方自体は最終的な集計に影響しない。
+ *
+ * courseOptions/optionItems(2026-09-28ユーザー承認): 「今回の施術」を「メインコース」
+ * (course_options、固定14項目)と「追加オプション」(option_items、固定26項目・4カテゴリ)
+ * に構造化し、それぞれ独立して選択・保存できるようにした。どちらか一方のみのPUTも許可し、
+ * 未指定側の列は更新しない(相手の選択内容を上書きしない)。
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -29,8 +34,12 @@ import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest'
 import { canAccessCustomer } from '@/lib/auth/canAccessCustomer'
 
 const putBodySchema = z.object({
-  courseOptions: z.array(z.string()).max(14),
-})
+  courseOptions: z.array(z.string()).max(14).optional(),
+  optionItems:   z.array(z.string()).max(26).optional(),
+}).refine(
+  (b) => b.courseOptions !== undefined || b.optionItems !== undefined,
+  { message: 'at least one of courseOptions/optionItems is required' },
+)
 
 /** service-complete/route.tsのtodayDateOnly()と同一(UTC基準、既知のJST 0-9時ズレも同様に踏襲)。 */
 function todayDateOnly(): string {
@@ -68,7 +77,7 @@ export async function PUT(
   if (!parsed.success) {
     return NextResponse.json(toValidationErrorResponse(parsed.error), { status: 400 })
   }
-  const { courseOptions } = parsed.data
+  const { courseOptions, optionItems } = parsed.data
 
   const repos = getRepos()
   const customer = await repos.customerRepo.findById(customerId)
@@ -134,12 +143,16 @@ export async function PUT(
     }
   }
 
+  const update: Record<string, unknown> = {}
+  if (courseOptions !== undefined) update.course_options = courseOptions
+  if (optionItems   !== undefined) update.option_items   = optionItems
+
   const supabase = getServiceClient()
   const { data: updated, error } = await supabase
     .from('brain_visits')
-    .update({ course_options: courseOptions })
+    .update(update)
     .eq('id', visitId)
-    .select('id, course_options')
+    .select('id, course_options, option_items')
     .maybeSingle()
 
   if (error || !updated) {
@@ -150,5 +163,6 @@ export async function PUT(
     success:       true,
     visitId:       (updated as { id: string }).id,
     courseOptions: (updated as { course_options: unknown }).course_options,
+    optionItems:   (updated as { option_items: unknown }).option_items,
   })
 }

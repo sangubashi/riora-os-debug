@@ -9,10 +9,14 @@
  * 認証: extractStaffFromRequest + canAccessCustomer(既存APIと同一パターン)。
  * visitIdが対象customerに属することはAPI層で確認する(FK制約では表現できないため)。
  *
- * courseOptions(2026-09-28ユーザー承認・/karte「今回の施術コース」): brain_visits.
- * course_options(新規列)を対象に追加した。既存のoptions(施術ポイント、スマホアプリ側
- * TreatmentRecordSection.tsxが使用)とは別列のため、双方のPATCHが互いの選択内容を
- * 上書きすることはない。
+ * courseOptions(2026-09-28ユーザー承認・/karte「メインコース」、旧称「今回の施術コース」):
+ * brain_visits.course_options(新規列)を対象に追加した。既存のoptions(施術ポイント、
+ * スマホアプリ側TreatmentRecordSection.tsxが使用)とは別列のため、双方のPATCHが互いの
+ * 選択内容を上書きすることはない。
+ *
+ * optionItems(2026-09-28ユーザー承認・/karte「オプション」): 「今回の施術」を
+ * 「メインコース」(course_options)と「オプション」(brain_visits.option_items、
+ * 新規列)に構造化し、それぞれ独立して保存・取得できるようにした。
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -28,10 +32,11 @@ const patchBodySchema = z.object({
   machineSettings:  z.record(z.string(), z.unknown()).optional(),
   treatmentMemo:    z.string().trim().max(1000).nullable().optional(),
   courseOptions:    z.array(z.string()).max(14).optional(),
+  optionItems:      z.array(z.string()).max(26).optional(),
 }).refine(
   (b) => b.options !== undefined || b.productsUsed !== undefined
     || b.machineSettings !== undefined || b.treatmentMemo !== undefined
-    || b.courseOptions !== undefined,
+    || b.courseOptions !== undefined || b.optionItems !== undefined,
   { message: 'at least one field is required' },
 )
 
@@ -42,6 +47,7 @@ interface TreatmentRow {
   machine_settings:  unknown
   treatment_memo:    string | null
   course_options:    unknown
+  option_items:      unknown
 }
 
 function toApiShape(row: TreatmentRow) {
@@ -52,6 +58,7 @@ function toApiShape(row: TreatmentRow) {
     machineSettings:  row.machine_settings,
     treatmentMemo:    row.treatment_memo,
     courseOptions:    row.course_options,
+    optionItems:      row.option_items,
   }
 }
 
@@ -92,7 +99,7 @@ export async function GET(
   const supabase = getServiceClient()
   const { data, error } = await supabase
     .from('brain_visits')
-    .select('id, options, products_used, machine_settings, treatment_memo, course_options')
+    .select('id, options, products_used, machine_settings, treatment_memo, course_options, option_items')
     .eq('id', visitId)
     .eq('customer_id', customerId)
     .is('deleted_at', null)
@@ -152,6 +159,7 @@ export async function PATCH(
   if (input.machineSettings  !== undefined) update.machine_settings = input.machineSettings
   if (input.treatmentMemo    !== undefined) update.treatment_memo   = input.treatmentMemo
   if (input.courseOptions    !== undefined) update.course_options   = input.courseOptions
+  if (input.optionItems      !== undefined) update.option_items     = input.optionItems
 
   const supabase = getServiceClient()
   const { data, error } = await supabase
@@ -160,7 +168,7 @@ export async function PATCH(
     .eq('id', visitId)
     .eq('customer_id', customerId)
     .is('deleted_at', null)
-    .select('id, options, products_used, machine_settings, treatment_memo, course_options')
+    .select('id, options, products_used, machine_settings, treatment_memo, course_options, option_items')
     .maybeSingle()
 
   if (error) {
