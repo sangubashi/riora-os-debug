@@ -16,6 +16,7 @@ import {
 import {
   captureVideoFrameToBlob,
   captureVideoFrameToBlobAt,
+  waitBeforeShutterCapture,
   MAX_THUMBNAIL_LONG_EDGE_PX,
   THUMBNAIL_ENCODE_QUALITY,
 } from '@/lib/photos/captureFrame'
@@ -36,6 +37,24 @@ export type CameraStatus = 'idle' | 'requesting' | 'ready' | 'error'
 export type GhostOpacityLevel = 'off' | 'weak' | 'strong'
 
 /**
+ * focusMode/exposureMode(連続AF/AE)はImage Capture API拡張のプロパティで、
+ * TypeScript同梱のlib.dom.d.ts(MediaTrackConstraintSet)には定義されていない
+ * (このプロジェクトのTS 5.9.3で確認済み)。手ブレ・ピンボケ対策(2026-09-28
+ * ユーザー承認)としてideal指定のみ追加するが、**iPadOS Safari(このアプリの対象
+ * 環境)は現時点(2026年1月時点の知識)でこの制約自体をサポートしていない**
+ * (iOSのカメラはgetUserMediaのプレビュー用ストリームに対し、そもそもWeb側から
+ * 制御する手段のない常時連続AF/AEをハードウェア層で行っている)。ideal指定は
+ * 非対応環境では単に無視されるだけで例外にはならない(exact/min/maxと違い
+ * OverconstrainedErrorを起こさない)ため、実害のない前提で追加している
+ * (Chromium系ブラウザでの対応・将来のSafari対応時に備えるだけの意味合いが強く、
+ * 実機(iPad)での見た目上の改善効果は無いと考えるべき)。
+ */
+interface ExtendedVideoConstraints extends MediaTrackConstraintSet {
+  focusMode?:    ConstrainDOMString
+  exposureMode?: ConstrainDOMString
+}
+
+/**
  * 写真撮影画質改善 Phase 3-A: カメラ起動時のconstraints。
  * width/height/facingModeいずれも「ideal」でのみ要求し、exactにはしない
  * (端末が3072x2304や背面カメラに対応していなくても撮影自体はできるようにするため。
@@ -43,13 +62,22 @@ export type GhostOpacityLevel = 'off' | 'weak' | 'strong'
  * ideal指定は「できればこの解像度が欲しい」という要求であり、端末が対応していなければ
  * ブラウザが実際に返せる値へ自動的に妥協する(無理なアップスケールはしない)。
  * 保存時リサイズ(captureFrame.ts、長辺3072px)・エンコード品質(0.9)と揃えた値。
+ *
+ * 手ブレ・モーションブラー対策(2026-09-28ユーザー承認): frameRate ideal 30を追加
+ * (フレームレートが低いほど自動露出が長いシャッター速度を選びやすくなるため、
+ * 「できれば30fps」という緩い上限のヒントを与える)。focusMode/exposureModeは
+ * 上記の通りideal限定・iPadOS Safariでは実効性が無い前提で追加。実際に効くのは
+ * 主にshutter()側のタイミング制御(waitBeforeShutterCapture)。
  */
 export const CAMERA_CONSTRAINTS: MediaStreamConstraints = {
   video: {
-    facingMode: { ideal: 'environment' },
-    width:      { ideal: 3072 },
-    height:     { ideal: 2304 },
-  },
+    facingMode:   { ideal: 'environment' },
+    width:        { ideal: 3072 },
+    height:       { ideal: 2304 },
+    frameRate:    { ideal: 30 },
+    focusMode:    { ideal: 'continuous' },
+    exposureMode: { ideal: 'continuous' },
+  } as ExtendedVideoConstraints,
   audio: false,
 }
 
@@ -133,6 +161,21 @@ export function usePhotoCapture(options: UsePhotoCaptureOptions) {
     streamRef.current = null
   }, [])
 
+  // 手ブレ/モーションブラー対策の実機診断用(2026-09-28ユーザー承認・元は調査用の
+  // 一時コードを整理して確定): 実機で実際に割り当てられたカメラ解像度/FPS・
+  // focusMode/exposureMode等がtrack.getSettings()/getCapabilities()でどう見えるかを
+  // console.logのみで観測する(constraint自体・撮影動作には一切影響しない)。
+  // カメラ起動直後(camera_ready)とシャッター直前(before_shutter)の2箇所でのみ呼ぶ
+  // (以前あった起動3秒後の追加チェックは、この2点があれば十分なため削除した)。
+  const logCameraDiagnostics = useCallback((label: string) => {
+    const track = streamRef.current?.getVideoTracks()[0]
+    if (!track) return
+    console.log('[PHOTO_KARTE][camera-diag]', label, 'settings=', track.getSettings())
+    if (typeof track.getCapabilities === 'function') {
+      console.log('[PHOTO_KARTE][camera-diag]', label, 'capabilities=', track.getCapabilities())
+    }
+  }, [])
+
   const startCamera = useCallback(async () => {
     setCameraStatus('requesting')
     setCameraErrorKind(null)
@@ -156,12 +199,13 @@ export function usePhotoCapture(options: UsePhotoCaptureOptions) {
         await videoRef.current.play().catch(() => {})
       }
       setCameraStatus('ready')
+      logCameraDiagnostics('camera_ready')
     } catch (err) {
       releaseStream()
       setCameraStatus('error')
       setCameraErrorKind(classifyCameraError(err, true))
     }
-  }, [releaseStream])
+  }, [releaseStream, logCameraDiagnostics])
 
   const stopCamera = useCallback(() => {
     releaseStream()
@@ -303,24 +347,51 @@ export function usePhotoCapture(options: UsePhotoCaptureOptions) {
     ensureSession().capture({ blob, thumbnailBlob, bodyPart, photoType, visitId, takenAt: takenAtOverride ?? undefined, staffId })
   }, [bodyPart, photoType, visitId, takenAtOverride, staffId, ensureSession, clearPreview])
 
+  // 手ブレ対策(2026-09-28ユーザー承認): shutter()呼び出しからbeginReview()による
+  // reviewPhase='reviewing'までの間(=下記のwaitBeforeShutterCapture待機中)は
+  // reviewPhaseがまだ'idle'のままのため、既存の「reviewPhase==='reviewing'なら
+  // 何もしない」ガードだけでは連続タップによる二重撮影を防げない。この待機窓を
+  // 塞ぐための同期フラグ。
+  const capturingRef = useRef(false)
+
   const shutter = useCallback(async () => {
     if (reviewPhase === 'reviewing') return // 二重シャッター防止
+    if (capturingRef.current) return // 手ブレ対策の待機中の二重タップ防止
     if (!videoRef.current || cameraStatus !== 'ready') return
 
+    logCameraDiagnostics('before_shutter')
+    capturingRef.current = true
     const video = videoRef.current
-    const source = { element: video, width: video.videoWidth, height: video.videoHeight }
-    const deps = {
-      createCanvas: () => document.createElement('canvas'),
-      canvasToBlob: (canvas: unknown, mimeType: string, quality?: number) =>
-        new Promise<Blob>((resolve, reject) => {
-          (canvas as unknown as HTMLCanvasElement).toBlob(
-            (b) => (b ? resolve(b) : reject(new Error('canvas_to_blob_failed'))),
-            mimeType,
-            quality
-          )
-        }),
-    }
+
     try {
+      // 手ブレ・モーションブラー対策(2026-09-28ユーザー承認): タップ操作自体が伝える
+      // 微振動が収まるのを固定ディレイで待ち、対応環境(iPadOS Safari 15.4+含む)では
+      // requestVideoFrameCallbackで実際に新しいフレームが描画されたことを確認した上で
+      // videoWidth/videoHeightを読み、canvasへ描画する(即時同期取得だと、タップ直後の
+      // 遷移中フレームを掴む可能性を減らせないため)。
+      await waitBeforeShutterCapture({
+        wait: (ms) => new Promise(resolve => setTimeout(resolve, ms)),
+        waitForNextFrame: () => new Promise(resolve => {
+          if (typeof video.requestVideoFrameCallback === 'function') {
+            video.requestVideoFrameCallback(() => resolve())
+          } else {
+            resolve()
+          }
+        }),
+      })
+
+      const source = { element: video, width: video.videoWidth, height: video.videoHeight }
+      const deps = {
+        createCanvas: () => document.createElement('canvas'),
+        canvasToBlob: (canvas: unknown, mimeType: string, quality?: number) =>
+          new Promise<Blob>((resolve, reject) => {
+            (canvas as unknown as HTMLCanvasElement).toBlob(
+              (b) => (b ? resolve(b) : reject(new Error('canvas_to_blob_failed'))),
+              mimeType,
+              quality
+            )
+          }),
+      }
       const blob = await captureVideoFrameToBlob(source, deps)
 
       // 写真サムネイル機能③(2026-09-26ユーザー承認): 同じvideoソースから追加で
@@ -344,8 +415,10 @@ export function usePhotoCapture(options: UsePhotoCaptureOptions) {
           ? 'この端末では撮影画像を保存可能な形式に変換できませんでした。「写真を選択して記録する」からお試しください。'
           : '撮影に失敗しました。もう一度お試しください。'
       )
+    } finally {
+      capturingRef.current = false
     }
-  }, [reviewPhase, cameraStatus, beginReview])
+  }, [reviewPhase, cameraStatus, beginReview, logCameraDiagnostics])
 
   const retake = useCallback(() => {
     sessionRef.current?.retake()

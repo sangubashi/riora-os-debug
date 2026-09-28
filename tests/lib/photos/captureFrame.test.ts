@@ -12,9 +12,11 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   CAPTURE_MIME_FALLBACK_ORDER,
   MAX_CAPTURE_LONG_EDGE_PX,
+  SHUTTER_SETTLE_DELAY_MS,
   captureVideoFrameToBlob,
   computeResizedDimensions,
   encodeCanvasWithFallback,
+  waitBeforeShutterCapture,
   type CaptureCanvas,
   type CaptureCanvasContext,
 } from '../../../src/lib/photos/captureFrame'
@@ -184,6 +186,35 @@ describe('computeResizedDimensions', () => {
 
   it('既定の上限はMAX_CAPTURE_LONG_EDGE_PX(写真撮影画質改善Phase 3-Aで3072)', () => {
     expect(computeResizedDimensions(4000, 4000)).toEqual({ width: MAX_CAPTURE_LONG_EDGE_PX, height: MAX_CAPTURE_LONG_EDGE_PX })
+  })
+})
+
+describe('waitBeforeShutterCapture（手ブレ・モーションブラー対策、2026-09-28ユーザー承認）', () => {
+  it('既定ではwaitに固定ディレイ(SHUTTER_SETTLE_DELAY_MS)を渡し、その後waitForNextFrameを呼ぶ(順序保証)', async () => {
+    const calls: string[] = []
+    const wait = vi.fn(async (ms: number) => { calls.push(`wait:${ms}`) })
+    const waitForNextFrame = vi.fn(async () => { calls.push('frame') })
+
+    await waitBeforeShutterCapture({ wait, waitForNextFrame })
+
+    expect(wait).toHaveBeenCalledWith(SHUTTER_SETTLE_DELAY_MS)
+    expect(calls).toEqual([`wait:${SHUTTER_SETTLE_DELAY_MS}`, 'frame'])
+  })
+
+  it('delayMs引数を渡した場合はそちらを使う', async () => {
+    const wait = vi.fn(async () => {})
+    const waitForNextFrame = vi.fn(async () => {})
+
+    await waitBeforeShutterCapture({ wait, waitForNextFrame }, 300)
+
+    expect(wait).toHaveBeenCalledWith(300)
+  })
+
+  it('waitForNextFrameが未対応環境相当(即resolve)でも正常に完了する', async () => {
+    const wait = vi.fn(async () => {})
+    const waitForNextFrame = vi.fn(async () => {})
+
+    await expect(waitBeforeShutterCapture({ wait, waitForNextFrame })).resolves.toBeUndefined()
   })
 })
 

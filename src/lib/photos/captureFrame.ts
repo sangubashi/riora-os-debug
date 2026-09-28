@@ -166,3 +166,30 @@ export async function captureVideoFrameToBlob(
 ): Promise<Blob> {
   return captureVideoFrameToBlobAt(source, deps, MAX_CAPTURE_LONG_EDGE_PX, deps.quality ?? 0.9)
 }
+
+/**
+ * 手ブレ・モーションブラー対策(2026-09-28ユーザー承認)。シャッター操作から実際に
+ * フレームを取得するまでのタイミングを2段階で制御する:
+ *   (1) タップ操作自体が伝える微振動が収まるのを待つ固定ディレイ。
+ *   (2) 対応環境では「実際に新しいフレームが描画された」ことを確認してから取得する
+ *       (即時同期取得だと、タップ直後の遷移中フレームを掴む可能性を減らせない)。
+ * DOM API(setTimeout・HTMLVideoElement.requestVideoFrameCallback)そのものは
+ * usePhotoCapture.ts側からdeps経由で注入し、このモジュール自体は他の関数と同様に
+ * 純粋(Vitestでもレンダリング環境なしで検証できる)。
+ */
+export const SHUTTER_SETTLE_DELAY_MS = 150
+
+export interface ShutterTimingDeps {
+  /** 指定msだけ待つ(実ブラウザではsetTimeoutをPromise化)。 */
+  wait: (ms: number) => Promise<void>
+  /** 次の描画フレームを待つ(未対応環境では即resolveでよい)。 */
+  waitForNextFrame: () => Promise<void>
+}
+
+export async function waitBeforeShutterCapture(
+  deps:     ShutterTimingDeps,
+  delayMs:  number = SHUTTER_SETTLE_DELAY_MS,
+): Promise<void> {
+  await deps.wait(delayMs)
+  await deps.waitForNextFrame()
+}

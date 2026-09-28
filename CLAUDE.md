@@ -2232,6 +2232,60 @@ Phase 2-S①-aの残り(`fetchContraindications`等のAPI呼び出しへの書�
 スマホアプリ側の自動生成ロジック・Phase 2-S①-aの残りの未コミット差分には
 一切触れていない(それらは今回のコミットに含めておらず、判断も行っていない)。
 
+### `/karte` 着手済み事項（撮影機能の手ブレ・ピンボケ対策・2026-09-28ユーザー承認）
+
+**背景**: 前段の画質確認の際、作業ディレクトリに手ブレ/モーションブラー調査用の
+一時診断コード(`usePhotoCapture.ts`の`track.getSettings()/getCapabilities()`ログ、
+未コミット)が残っていることが判明した。これを整理・確定した上で、シャッターの
+フレームタイミング見直し・カメラ制約プロパティの最適化を行った。
+
+**着手前に判明した制約事項(正直に共有)**: `focusMode`/`exposureMode`(連続AF/AE)は
+Image Capture API拡張のプロパティで、TypeScript同梱のlib.dom.d.ts
+(`MediaTrackConstraintSet`)には定義されていない(TS 5.9.3で確認)。加えて、
+**このアプリの対象環境であるiPadOS Safariは現時点(2026年1月時点の知識)でこの
+制約自体をサポートしていない**(iOSのカメラはgetUserMediaのプレビュー用ストリームに
+対し、そもそもWeb側から制御する手段のない常時連続AF/AEをハードウェア層で行っている)。
+ideal指定であれば非対応環境でも単に無視されるだけで例外にはならないため実害はないが、
+**実機(iPad)での見た目上の改善効果は無いと考えるべき**、という制約を認識した上で
+「害はないので入れる」という位置づけで対応した。実際に効果が見込めるのは
+shutter()側のタイミング制御(タップの微振動を待つ・新しいフレームの描画を確認する)。
+
+- **`src/hooks/usePhotoCapture.ts`**:
+  - 診断コードの整理・確定: 起動3秒後の追加チェック(`after_3s`、探索的で冗長)を削除し、
+    カメラ起動直後(`camera_ready`)・シャッター直前(`before_shutter`)の2箇所のみに
+    整理。コメントも「実機確認後に削除予定」から「確定した軽量診断」へ更新(console.log
+    のみ・constraint自体や撮影動作には影響しない)。
+  - `CAMERA_CONSTRAINTS`に`frameRate: {ideal: 30}`・`focusMode: {ideal: 'continuous'}`・
+    `exposureMode: {ideal: 'continuous'}`を追加(いずれもideal限定、exact/min/maxは
+    使わない。既存のwidth/height/facingModeと同じ「端末が対応していなくても起動自体は
+    できる」方針を維持)。TS型定義に無い`focusMode`/`exposureMode`は`ExtendedVideoConstraints`
+    という最小限のローカル拡張型でカバーした。
+  - `shutter()`: `captureFrame.ts`の新規`waitBeforeShutterCapture()`を呼び、
+    (1)タップの微振動が収まるための固定ディレイ(`SHUTTER_SETTLE_DELAY_MS`=150ms)、
+    (2)対応環境(iPadOS Safari 15.4+含む)では`requestVideoFrameCallback`で実際に
+    新しいフレームが描画されたことを確認、の順で待ってから`videoWidth`/`videoHeight`を
+    読み撮影する。この待機窓(`reviewPhase`がまだ`'idle'`のまま)での連続タップによる
+    二重撮影を防ぐため、新規に同期フラグ`capturingRef`を追加した(既存の
+    `reviewPhase==='reviewing'`ガードだけでは待機中はカバーできないため)。
+- **`src/lib/photos/captureFrame.ts`**: `waitBeforeShutterCapture()`(新規・純粋関数、
+  `wait`/`waitForNextFrame`をdeps注入するテスト容易な設計、既存の
+  `captureVideoFrameToBlobAt`等と同じ思想)を追加。`SHUTTER_SETTLE_DELAY_MS`(150ms)を
+  export。既存のキャプチャ・リサイズ・エンコードロジックには一切触れていない。
+- **テスト**: `tests/lib/photos/captureFrame.test.ts`に`waitBeforeShutterCapture`の
+  3件を追加。`tests/hooks/usePhotoCapture.test.ts`(既存だが未コミットだったため
+  今回一緒にコミット、内容は既存のCAMERA_CONSTRAINTS検証4件のみで無変更)に
+  frameRate/focusMode/exposureModeの3件を追加。
+- **検証**: `npx tsc --noEmit`パス(既存の無関係な失敗15件のみ)。関連テスト
+  (`captureFrame.test.ts`・`usePhotoCapture.test.ts`)26件全パス。`npm run build`パス。
+  `next-env.d.ts`のbuild副作用は復元済み。**実機(iPad)での手ブレ改善効果の確認は
+  未検証**(上記の通り、focusMode/exposureMode自体はiPadOS Safariでは無効と考えられ、
+  効果があるとすればタイミング制御(150ms待機+フレーム確認)側のみ)。
+
+**この解除は上記(診断コードの整理、CAMERA_CONSTRAINTSへのframeRate/focusMode/
+exposureMode追加、shutter()のタイミング制御追加)のみに限る。** カメラ映像コンテナの
+レイアウト・ゴースト機能・保存/圧縮処理・`src/lib/photos/constants.ts`
+(別の未コミット作業、HEIC対応・アップロード上限15MB化)には一切触れていない。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。
