@@ -156,6 +156,11 @@ export default function KarteCustomerSwitcher({ customerId }: { customerId: stri
         <CustomerTopPage
           customer={toMinimalCustomerForTopPage(customer)}
           onClose={() => setShowCustomerTop(false)}
+          // 画面フリーズ修正(2026-09-28ユーザー承認): 既にこの顧客の詳細ページ
+          // (/karte/[customerId])に居るため、「詳細ページを見る」は実際に遷移させず
+          // オーバーレイを閉じるだけでよい(router.pushに任せると同一ルートへのpushが
+          // no-opになり、オーバーレイが開いたまま操作不能になっていた)。
+          onGoToDetail={() => setShowCustomerTop(false)}
         />
       )}
     </>

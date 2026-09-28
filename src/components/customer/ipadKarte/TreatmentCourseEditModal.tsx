@@ -1,12 +1,16 @@
 'use client'
 /**
- * TreatmentCourseEditModal.tsx — 「💆 今回の施術コース」選択モーダル(2026-09-28ユーザー承認)。
+ * TreatmentCourseEditModal.tsx — 「✏️」施術コース選択モーダル(2026-09-28ユーザー承認)。
  *
  * `/karte`のPIN保護スタッフモード(IpadStaffKarteView.tsx)専用。固定14項目からの
- * 複数選択(ON/OFFトグル)を、当日visitのbrain_visits.course_options(新規列)へ
- * 直接保存する。保存先API(PATCH /api/customers/[id]/visits/[visitId]/treatment)は
- * 既存の「今日の施術記録」用エンドポイントを拡張したもので、courseOptionsフィールドの
- * みを送信する(options/productsUsed/treatmentMemo等の既存フィールドには一切触れない)。
+ * 複数選択(ON/OFFトグル)を保存する。
+ *
+ * 保存先API(PUT /api/customers/[id]/today-treatment-course、2026-09-28追加対応)は
+ * 「本日分のbrain_visits行が無ければその場で作成し、course_optionsを保存する」設計
+ * (brain_visitsは実際には翌日以降のSalonBoard CSVインポートで一括作成されるため、
+ * 来店当日にはvisitが存在しないことがほとんどだった。「現場の入力が正である」という
+ * 方針(ユーザー承認)のもと、visitIdを事前に知らなくても保存できるようにした)。
+ * このモーダル自身はvisitIdを一切扱わない(customerIdのみで完結)。
  */
 import { useState } from 'react'
 import { X, Check } from 'lucide-react'
@@ -37,19 +41,25 @@ export const TREATMENT_COURSE_OPTIONS = [
 
 interface Props {
   customerId: string
-  visitId:    string
   existing:   string[]
   onClose:    () => void
-  /** 保存成功時に呼ばれる(親側で今回の施術コース表示を再取得させる想定)。 */
-  onSaved:    () => void
+  /** 保存成功時に呼ばれる(親側で今回の施術コース表示・todayVisitIdを更新する想定)。 */
+  onSaved:    (visitId: string, courseOptions: string[]) => void
 }
 
-interface PatchResponse {
-  success: boolean
-  error?:  string
+interface PutResponse {
+  success:        boolean
+  visitId?:       string
+  courseOptions?: unknown
+  error?:         string
 }
 
-export default function TreatmentCourseEditModal({ customerId, visitId, existing, onClose, onSaved }: Props) {
+function toStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((v): v is string => typeof v === 'string')
+}
+
+export default function TreatmentCourseEditModal({ customerId, existing, onClose, onSaved }: Props) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set(existing))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -68,17 +78,17 @@ export default function TreatmentCourseEditModal({ customerId, visitId, existing
     setSaving(true)
     setError(null)
     try {
-      const res = await authedFetch(`/api/customers/${customerId}/visits/${visitId}/treatment`, {
-        method:  'PATCH',
+      const res = await authedFetch(`/api/customers/${customerId}/today-treatment-course`, {
+        method:  'PUT',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ courseOptions: Array.from(selected) }),
       })
-      const json = await res.json() as PatchResponse
-      if (!res.ok || !json.success) {
+      const json = await res.json() as PutResponse
+      if (!res.ok || !json.success || !json.visitId) {
         setError('保存に失敗しました')
         return
       }
-      onSaved()
+      onSaved(json.visitId, toStringList(json.courseOptions))
       onClose()
     } catch {
       setError('保存に失敗しました')

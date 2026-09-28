@@ -14,7 +14,7 @@ export interface FakeResult {
 }
 
 const CHAIN_METHODS = [
-  'select', 'eq', 'is', 'order', 'limit', 'lt', 'gt', 'in', 'gte', 'lte', 'neq',
+  'select', 'eq', 'is', 'not', 'order', 'limit', 'lt', 'gt', 'in', 'gte', 'lte', 'neq',
   'insert', 'update', 'single', 'maybeSingle',
 ] as const
 

@@ -220,10 +220,12 @@ export interface UseIpadKarteDataResult extends IpadKarteData {
    */
   refetchPhotos: () => Promise<void>
   /**
-   * 「💆 今回の施術コース」(2026-09-28ユーザー承認)編集モーダル保存後に呼ぶ軽量な
-   * 再取得。当日visitのcourse_optionsのみを更新する。todayVisitIdが無い間は何もしない。
+   * 今回の施術コース保存(2026-09-28ユーザー承認・追加対応)の保存直後に呼ぶ。
+   * PUT /api/customers/[id]/today-treatment-courseは本日分のvisitが無ければその場で
+   * 作成するため、保存前はtodayVisitId=nullだったケースでも新しいvisitIdをここで
+   * 反映する(以後、他のtodayVisitId依存表示にも即座に反映される)。
    */
-  refetchTodayCourseOptions: () => Promise<void>
+  applyTodayCourseSave: (visitId: string, courseOptions: string[]) => void
 }
 
 export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
@@ -411,21 +413,14 @@ export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
     setData(prev => ({ ...prev, anglePairs, photoUrls }))
   }, [customerId])
 
-  const refetchTodayCourseOptions = useCallback(async () => {
-    const visitId = data.todayVisitId
-    if (!visitId) return
-    try {
-      const res = await authedFetch(`/api/customers/${customerId}/visits/${visitId}/treatment`)
-      if (res.ok) {
-        const json = (await res.json()) as { success: boolean; treatment?: TreatmentDetail }
-        if (json.success && json.treatment) {
-          setData(prev => ({ ...prev, todayCourseOptions: toStringList(json.treatment!.courseOptions) }))
-        }
-      }
-    } catch {
-      /* 失敗しても既存表示のまま(致命的にしない) */
-    }
-  }, [customerId, data.todayVisitId])
+  const applyTodayCourseSave = useCallback((visitId: string, courseOptions: string[]) => {
+    setData(prev => ({ ...prev, todayVisitId: visitId, todayCourseOptions: courseOptions }))
+  }, [])
 
-  return { ...data, refetchGoalAndContraindications, refetchPhotos, refetchTodayCourseOptions }
+  return {
+    ...data,
+    refetchGoalAndContraindications,
+    refetchPhotos,
+    applyTodayCourseSave,
+  }
 }

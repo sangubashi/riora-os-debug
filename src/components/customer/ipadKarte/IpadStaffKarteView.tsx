@@ -400,7 +400,7 @@ interface Props {
   onSwitchToCustomerView?: () => void
   /**
    * お客様トップページ(CustomerTopPage.tsx)への導線用の任意コールバック
-   * (2026-09-28ユーザー承認)。指定時のみ、ヘッダーに「🏠 お客様トップへ」ボタンを表示する。
+   * (2026-09-28ユーザー承認)。指定時のみ、ヘッダーに「お客様トップへ」ボタンを表示する。
    * 未指定時(CustomerBottomSheet経由の既存呼び出し)は何も表示しない
    * (CustomerTopPage自体が`/karte`専用領域のコンポーネントのため)。
    */
@@ -519,7 +519,7 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
                 fontSize: '11px', fontWeight: 600, whiteSpace: 'nowrap',
               }}
             >
-              🏠 お客様トップへ
+              お客様トップへ
             </button>
           )}
         </div>
@@ -597,10 +597,12 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
               )}
 
               {/* 今回の施術コース(2026-09-28ユーザー承認)。固定14項目からの複数選択を
-                  brain_visits.course_options(新規列)へ保存する。本日の来店記録
-                  (todayVisitId)が無い間は選択できない(今日の施術記録と同じ制約)。
-                  共有Cardコンポーネントではヘッダーにボタンを置けないため、重要事項編集
-                  (旧実装)と同じ見た目複製パターンでこのブロック限定の独自divにしている。 */}
+                  brain_visits.course_options(新規列)へ保存する。
+                  追加対応(2026-09-28・「現場の入力が正である」方針): 本日分のvisitが
+                  無くても保存できる(保存API側でその場でvisit行を作成する。詳細は
+                  PUT /api/customers/[id]/today-treatment-course・TreatmentCourseEditModal.tsx
+                  参照)。共有Cardコンポーネントではヘッダーにボタンを置けないため、重要事項
+                  編集(旧実装)と同じ見た目複製パターンでこのブロック限定の独自divにしている。 */}
               <div
                 style={{
                   background: PALETTE.card, border: `1px solid ${PALETTE.border}`, borderRadius: '18px',
@@ -609,26 +611,22 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
                   <p style={{ margin: 0, fontSize: '13px', letterSpacing: '0.08em', color: PALETTE.gold, fontFamily: headingFont.style.fontFamily }}>
-                    💆 今回の施術コース
+                    今回の施術コース
                   </p>
                   <button
                     type="button"
                     onClick={() => setShowTreatmentCourseEdit(true)}
-                    disabled={!data.todayVisitId}
                     aria-label="今回の施術コースを選択"
                     style={{
                       display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px',
                       border: `1px solid ${PALETTE.border}`, borderRadius: '999px',
-                      background: 'none', color: data.todayVisitId ? PALETTE.muted : PALETTE.border,
-                      fontSize: '11px', cursor: data.todayVisitId ? 'pointer' : 'not-allowed',
+                      background: 'none', color: PALETTE.muted, fontSize: '11px', cursor: 'pointer',
                     }}
                   >
                     ✏️ 選択
                   </button>
                 </div>
-                {!data.todayVisitId ? (
-                  <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>本日の来店記録がありません</p>
-                ) : data.todayCourseOptions.length > 0 ? (
+                {data.todayCourseOptions.length > 0 ? (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                     {data.todayCourseOptions.map((course, i) => (
                       <span
@@ -813,13 +811,12 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
         />
       )}
 
-      {showTreatmentCourseEdit && data.todayVisitId && (
+      {showTreatmentCourseEdit && (
         <TreatmentCourseEditModal
           customerId={customerId}
-          visitId={data.todayVisitId}
           existing={data.todayCourseOptions}
           onClose={() => setShowTreatmentCourseEdit(false)}
-          onSaved={() => void data.refetchTodayCourseOptions()}
+          onSaved={(visitId, courseOptions) => data.applyTodayCourseSave(visitId, courseOptions)}
         />
       )}
     </div>

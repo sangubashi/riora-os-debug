@@ -2424,6 +2424,83 @@ AskUserQuestionで確認した。ユーザーから「依頼どおりCustomerTop
 options(施術ポイント)・スマホアプリ側`TreatmentRecordSection.tsx`・
 `machine_settings`・来店履歴の金額(amount)表示には一切触れていない。
 
+### `/karte` 着手済み事項（施術コース保存不可バグの根本原因調査・修正、画面フリーズ修正、絵文字整理・2026-09-28ユーザー承認）
+
+**根本原因調査の結果**: 「モーダル内でトグル操作できない」という報告を受け調査したが、
+トグル処理自体(React state管理)にはバグが無いことを確認した。本番DBを直接調査した
+結果、**brain_visitsは実際には翌日以降SalonBoard CSVインポートで一括作成されており
+(source='salonboard_import'、created_atがvisit_dateの翌日)、来店当日にはvisit_date=
+今日のvisit行がほぼ存在しない**(スマホアプリの「接客ログ保存」
+(`/api/visits/service-complete`)を当日中に使った場合のみ例外)ことが判明した。前段で
+実装した「今回の施術コース」は`todayVisitId`(本日のvisit)に依存していたため、
+`/karte`単独で使う限り`todayVisitId`が常にnullとなり、「✏️ 選択」ボタンが常時
+グレーアウトしていた(トグル処理そのものではなく、保存対象visitが存在しないという
+前提条件の問題)。この点をAskUserQuestionで報告し、「事前予約CSVよりも現場の入力が
+正である」という方針のもと、以下の対応で解消する承認を得た。
+
+1. **`/karte`単独での当日来店データ動的生成とコース保存**:
+   - `app/api/customers/[id]/today-treatment-course/route.ts`(新規PUT): 本日分の
+     `brain_visits`行を`findByCustomerAndDate`で検索し、無ければ`visitRepo.
+     createSequenced()`(`/api/visits/service-complete`と全く同じ「見つからなければ
+     作成」パターンを再利用、source既定値`'staff_input'`)でその場で作成してから
+     `course_options`を保存する。`menu_id`(NOT NULL制約)は顧客の直近来店の
+     `menu_id`を暫定値として使い、無ければ同店舗の任意メニュー1件へフォールバックする
+     (どちらも翌日のCSV取込`reconcile()`が正しい値へ上書きするため、暫定値の選び方
+     自体は最終集計に影響しない)。
+   - `TreatmentCourseEditModal.tsx`: `visitId` propを廃止し、`customerId`のみで
+     完結するようこの新APIを呼ぶ形に変更。保存成功時に`visitId`と`courseOptions`を
+     `onSaved`へ渡す。
+   - `ipadKarteData.ts`: `applyTodayCourseSave(visitId, courseOptions)`を新設し、
+     保存直後に`todayVisitId`・`todayCourseOptions`をローカルstateへ即座に反映する
+     (再フェッチ不要。保存前に`todayVisitId`がnullだったケースでも、保存後は他の
+     todayVisitId依存表示にも即座に反映される)。不要になった`refetchTodayCourseOptions`
+     は削除した。
+   - `IpadStaffKarteView.tsx`: 「✏️ 選択」ボタンの`disabled={!data.todayVisitId}`・
+     モーダル表示条件の`data.todayVisitId &&`・「本日の来店記録がありません」表示を
+     削除し、常時操作可能にした。
+2. **翌日CSVインポート時の重複防止・データ保護(調査の結果、既存ロジックで既に対応済みと判明・コード変更なし)**:
+   `csvImportPipeline.ts`を調査した結果、`findByCustomerAndDate`(customer_id+
+   visit_dateキー)で既存visitを検索し、`source`が`'reconciled'`/`'salonboard_import'`
+   以外(すなわち`'staff_input'`)であれば`reconcile()`で**既存行を上書き更新**する
+   ロジックが**既に実装済み**であることを確認した(`csvImportPipeline.ts`
+   771〜797行目)。`reconcile()`が更新するフィールド(staffId/menuId/
+   isNomination/treatmentAmount/retailAmount/checkoutId)に`course_options`は
+   含まれないため、翌日のCSV取込後も今回保存したコース選択が消えることはない。
+   このため、**本対応の1で新規作成したvisit行はcsvImportPipeline.ts側の既存の
+   突合ロジックだけで自動的に安全にマージされ、重複防止のための追加コードは一切
+   不要だった**(csvImportPipeline.ts/VisitRepo.reconcile()自体には一切触れていない)。
+3. **画面フリーズ修正**: `CustomerTopPage.tsx`に新設した`onGoToDetail?`propが原因
+   だったフリーズを修正。「お客様トップへ」導線(`KarteCustomerSwitcher.tsx`)から
+   開いた場合、既に`/karte/[customerId]`(詳細ページ)に居るため「詳細ページを見る」
+   の`router.push('/karte/[customerId]')`が同一ルートへのpushとなり実質no-opになり、
+   `CustomerTopPage`のオーバーレイが開いたまま操作不能になっていた。任意propが
+   指定されている間はrouter.pushの代わりにそちらを呼ぶようにし、
+   `KarteCustomerSwitcher.tsx`側で`() => setShowCustomerTop(false)`(オーバーレイを
+   閉じるだけ)を渡した。`KarteEntryScreen.tsx`経由の既存呼び出し(prop未指定)は
+   従来通りrouter.pushのまま。
+4. **絵文字整理**: 今回追加したUI文言のうち、依頼どおり「✏️」以外の絵文字
+   (「🏠 お客様トップへ」「💆 今回の施術コース」「⚠ 重要事項」)を削除した
+   (`CustomerModeView.tsx`・`IpadStaffKarteView.tsx`・`CustomerTopPage.tsx`)。
+   スコープ外の既存機能(例: 非表示中の「🏠 今回のホームケア」カード、スマホアプリ側の
+   絵文字)には触れていない。
+- **テスト**: `app/api/customers/[id]/today-treatment-course/route.ts`用に
+  `tests/api/customer-today-treatment-course.test.ts`(新規9件)を追加。既存の
+  `tests/api/_helpers/fakeSupabase.ts`に`.not()`チェーンメソッドが未対応だったため
+  追加した(既存の全呼び出し元への影響がないことを`fakeSupabase`使用テスト6ファイル
+  58件で確認済み)。
+- **検証**: `npx tsc --noEmit`パス(既存の無関係な失敗15件のみ)。関連テスト
+  (`customer-visit-treatment.test.ts`・`customer-today-treatment-course.test.ts`)
+  20件全パス。`npm run build`パス(新規ルート`/api/customers/[id]/
+  today-treatment-course`がビルド出力に登場することを確認)。`next-env.d.ts`の
+  build副作用は復元済み。**実機での動作確認(特にcourse保存→visit自動作成、
+  お客様トップへ→詳細ページを見るの往復)は未検証**。
+
+**この解除は上記(today-treatment-course APIの新設、施術コースモーダル・ipadKarteData.ts
+の関連変更、CustomerTopPageのonGoToDetail追加、対象UIからの絵文字削除、
+fakeSupabaseヘルパーへの.not()追加)のみに限る。** csvImportPipeline.ts・
+VisitRepo.reconcile()・スマホアプリ側の呼び出し(onGoToDetail未指定時は従来通り)には
+一切触れていない。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

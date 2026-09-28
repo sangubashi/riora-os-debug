@@ -55,6 +55,17 @@ interface Props {
   customer:     Customer
   reservation?: Reservation
   onClose:      () => void
+  /**
+   * 画面フリーズ修正(2026-09-28ユーザー承認): 「お客様トップへ」導線
+   * (KarteCustomerSwitcher.tsx)からこの画面を開いた場合、既に`/karte/[customerId]`
+   * (詳細ページ)に居るため、「詳細ページを見る」のrouter.push('/karte/[customerId]')は
+   * 同一ルートへのpushとなり実質no-opになる(画面遷移が起きずCustomerTopPageの
+   * オーバーレイだけが開いたまま残り、以後操作不能になるフリーズの原因だった)。
+   * この任意コールバックが指定されている間は、router.pushの代わりにこちらを呼ぶ
+   * (呼び出し元でオーバーレイを閉じるだけでよい、= 既に見えている詳細ページに戻る)。
+   * 未指定時(KarteEntryScreen.tsx経由の既存呼び出し)は従来通りrouter.pushする。
+   */
+  onGoToDetail?: () => void
 }
 
 interface QuestionnaireState {
@@ -75,7 +86,7 @@ interface QuestionnaireResponse {
   uploadedAt?: string | null
 }
 
-export default function CustomerTopPage({ customer, reservation, onClose }: Props) {
+export default function CustomerTopPage({ customer, reservation, onClose, onGoToDetail }: Props) {
   const router = useRouter()
   const [birthDate, setBirthDate] = useState<string | null>(null)
   const [nameKana, setNameKana] = useState<string | null>(null)
@@ -207,7 +218,13 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
     return () => { cancelled = true }
   }, [customer.id])
 
-  const goToDetailPage = () => router.push(`/karte/${customer.id}`)
+  const goToDetailPage = () => {
+    if (onGoToDetail) {
+      onGoToDetail()
+      return
+    }
+    router.push(`/karte/${customer.id}`)
+  }
 
   function startEditBirthDate() {
     setBirthDateInput(birthDate ? formatBirthDateSlash(birthDate) ?? '' : '')
@@ -398,7 +415,7 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
         <div style={cardStyle}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <p style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: PALETTE.text, fontFamily: headingFont.style.fontFamily }}>
-              ⚠ 重要事項
+              重要事項
             </p>
             <button
               type="button"

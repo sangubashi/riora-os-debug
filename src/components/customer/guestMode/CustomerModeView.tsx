@@ -102,7 +102,7 @@ interface Props {
   onSwitchToStaffView?: () => void
   /**
    * お客様トップページ(CustomerTopPage.tsx)への導線用の任意コールバック
-   * (2026-09-28ユーザー承認)。指定時のみ、ヘッダーに「🏠 お客様トップへ」ボタンを表示する。
+   * (2026-09-28ユーザー承認)。指定時のみ、ヘッダーに「お客様トップへ」ボタンを表示する。
    * 未指定時(CustomerBottomSheet経由の既存呼び出し)は何も表示しない
    * (CustomerTopPage自体が`/karte`専用領域のコンポーネントのため)。
    */
@@ -449,7 +449,7 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
                 fontSize: '11px', fontWeight: 700, letterSpacing: '0.04em', whiteSpace: 'nowrap', flexShrink: 0,
               }}
             >
-              🏠 お客様トップへ
+              お客様トップへ
             </button>
           )}
           <StaffTagBar
