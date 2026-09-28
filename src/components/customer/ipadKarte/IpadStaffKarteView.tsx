@@ -6,13 +6,12 @@
  * CustomerBottomSheet本体のstate/useEffectには一切触れず、customerId/customerNameのみを
  * 受け取る自己完結コンポーネント(CustomerModeViewと同じ設計方針)。
  *
- * レイアウト(2026-09-22時点):
- *   左カラム: 重要事項
- *   右カラム: 肌の特徴タグ(簡易版)・今日の施術(自由記述、手順テンプレート化はしない)・
- *             今回のホームケア・次回の目安
- *   全幅行(左右カラムの下、上から順): カルテメモ・顔シェーマ・顧客ステータス
- *   (カルテメモ・顔シェーマ・顧客ステータスはいずれも2026-09-22ユーザー要望により、
- *   狭い片カラムから左右カラムをまたぐ全幅行へ順次移動した)。
+ * レイアウト(2026-09-28時点):
+ *   全幅行(上から順): 肌の特徴タグ(簡易版)・今日の施術(自由記述、手順テンプレート化は
+ *             しない)・今回のホームケア・次回の目安/カルテメモ・顔シェーマ・顧客ステータス
+ *   (元は左カラムに「重要事項」・右カラムに肌の特徴タグ等の二カラム構成だったが、
+ *   2026-09-28ユーザー承認で重要事項を「お客様トップページ」(CustomerTopPage.tsx)へ
+ *   移動したため、残った右カラム内容も全幅行へ統合し二カラム構成を解消した)。
  * 前回の施術・AI接客ポイント・次回提案は次フェーズ(🟡項目)のため、この画面にはまだ無い。
  *
  * 写真カルテ(正面/左45/右45、前回|今回比較)はPHASE IPAD-KARTE-PHOTO-REMOVE-1
@@ -41,7 +40,6 @@ import { useStaffTagSession } from '@/lib/staffTag/useStaffTagSession'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { calculateAge } from '@/lib/customer/birthDate'
 import SalonBoardImportModal from '@/components/customer/SalonBoardImportModal'
-import ContraindicationEditModal from './ContraindicationEditModal'
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
 /** クイック選択の候補(本日起点の週数)。 */
@@ -399,9 +397,16 @@ interface Props {
    * 既存呼び出し)は何も表示されない。
    */
   onSwitchToCustomerView?: () => void
+  /**
+   * お客様トップページ(CustomerTopPage.tsx)への導線用の任意コールバック
+   * (2026-09-28ユーザー承認)。指定時のみ、ヘッダーに「🏠 お客様トップへ」ボタンを表示する。
+   * 未指定時(CustomerBottomSheet経由の既存呼び出し)は何も表示しない
+   * (CustomerTopPage自体が`/karte`専用領域のコンポーネントのため)。
+   */
+  onShowCustomerTop?: () => void
 }
 
-export default function IpadStaffKarteView({ customerId, customerName, onClose, onSwitchToCustomerView }: Props) {
+export default function IpadStaffKarteView({ customerId, customerName, onClose, onSwitchToCustomerView, onShowCustomerTop }: Props) {
   const data = useIpadKarteData(customerId)
 
   // 担当者タグ選択(PHASE IPAD-SHARED-LOGIN-1・2026-09-20ユーザー承認)。店舗共通ログイン
@@ -426,8 +431,6 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
   const [acquisitionChannel, setAcquisitionChannel] = useState<string | null>(null)
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null)
   const [showSalonBoardImport, setShowSalonBoardImport] = useState(false)
-  // 重要事項の手動登録・編集モーダル(2026-09-28ユーザー承認)。
-  const [showContraindicationEdit, setShowContraindicationEdit] = useState(false)
 
   const fetchCustomerDetail = useCallback(async () => {
     try {
@@ -500,6 +503,22 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
               お客様用カルテへ戻る
             </button>
           )}
+          {/* お客様トップページへの導線(2026-09-28ユーザー承認)。onShowCustomerTop未指定時
+              (CustomerBottomSheet経由の既存呼び出し)は何も表示しない。 */}
+          {onShowCustomerTop && (
+            <button
+              type="button"
+              onClick={onShowCustomerTop}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '5px',
+                padding: '5px 12px', borderRadius: '999px', cursor: 'pointer',
+                border: `1px solid ${PALETTE.border}`, background: PALETTE.card, color: PALETTE.text,
+                fontSize: '11px', fontWeight: 600, whiteSpace: 'nowrap',
+              }}
+            >
+              🏠 お客様トップへ
+            </button>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
           <StaffTagBar
@@ -541,61 +560,15 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
               alignItems: 'start',
             }}
           >
-            {/* ── 左カラム ── */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/*
-                重要事項の手動登録・編集(2026-09-28ユーザー承認): それまでCard(共有
-                コンポーネント、他画面でも使用)で「1件以上ある場合のみ表示」だったが、
-                登録前の状態でも編集ボタンを出す必要があるため、Cardの見た目(背景・
-                border・padding)をこのブロック限定で複製し、常時表示に変更した。
-                共有Cardコンポーネント自体・他の呼び出し元には一切触れていない。
-              */}
-              <div
-                style={{
-                  background: PALETTE.card, border: `1px solid ${PALETTE.border}`, borderRadius: '18px',
-                  padding: '18px 20px', boxShadow: PALETTE.shadow,
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                  <p style={{ margin: 0, fontSize: '13px', letterSpacing: '0.08em', color: PALETTE.gold, fontFamily: headingFont.style.fontFamily }}>
-                    ⚠ 重要事項
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setShowContraindicationEdit(true)}
-                    aria-label="重要事項を編集"
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px',
-                      border: `1px solid ${PALETTE.border}`, borderRadius: '999px', background: 'none',
-                      color: PALETTE.muted, fontSize: '11px', cursor: 'pointer',
-                    }}
-                  >
-                    <Pencil size={12} />編集
-                  </button>
-                </div>
-                {data.contraindications.length > 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {data.contraindications.map(ci => (
-                      <div key={ci.id}>
-                        <p style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: PALETTE.text }}>
-                          {ci.title}
-                        </p>
-                        {ci.description && (
-                          <p style={{ margin: '4px 0 0', fontSize: '12px', color: PALETTE.muted, lineHeight: 1.6 }}>
-                            {ci.description}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>登録されている重要事項はありません</p>
-                )}
-              </div>
-            </div>
-
-            {/* ── 右カラム ── */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/*
+              重要事項は2026-09-28ユーザー承認により「お客様トップページ」
+              (CustomerTopPage.tsx)へ移動した(この画面からは削除・スマホアプリを
+              介さず直接登録・編集できるようにするため)。この画面に唯一残っていた
+              左カラムの内容が無くなったため、二カラム構成を解消し、以下を
+              全幅行(gridColumn:'1 / -1')へ変更した(KarteMemoSection等、既存の
+              他の全幅セクションと同じパターン)。
+            */}
+            <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {data.currentSkinTags.length > 0 && (
                 <Card title="✨ 肌の特徴">
                   <SkinTagRow tags={data.currentSkinTags} />
@@ -786,14 +759,6 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
         />
       )}
 
-      {showContraindicationEdit && (
-        <ContraindicationEditModal
-          customerId={customerId}
-          existing={data.contraindications}
-          onClose={() => setShowContraindicationEdit(false)}
-          onSaved={() => void data.refetchGoalAndContraindications()}
-        />
-      )}
     </div>
   )
 }

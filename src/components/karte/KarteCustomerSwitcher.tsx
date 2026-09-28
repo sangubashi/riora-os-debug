@@ -16,10 +16,33 @@ import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE } from '@/components/customer/shared/PhotoCompareKit'
 import CustomerModeView from '@/components/customer/guestMode/CustomerModeView'
 import IpadStaffKarteView from '@/components/customer/ipadKarte/IpadStaffKarteView'
+import CustomerTopPage from '@/components/customer/CustomerTopPage'
+import type { Customer as BSCustomer } from '@/types'
 
 interface CustomerDetail {
   id: string
   name: string
+}
+
+// お客様トップページ(CustomerTopPage.tsx)への導線(2026-09-28ユーザー承認)。
+// CustomerTopPageはid/nameのみを実際に使用するため(他の必須フィールドは内部で
+// 別途API取得しており、propsとしては読まない)、他のフィールドはダミー値で埋める
+// (KarteEntryScreen.tsxのtoCustomerFromRow等と同じ「最小マッパーを複製する」既存パターン)。
+function toMinimalCustomerForTopPage(customer: CustomerDetail): BSCustomer {
+  return {
+    id:                    customer.id,
+    name:                  customer.name,
+    visits:                0,
+    visit_count:           0,
+    total_sales:           0,
+    avg_price:             0,
+    last_visit:            '',
+    customer_type:         '信頼構築型',
+    vip_rank:              1,
+    churn_risk:            0,
+    line_response_rate:    0,
+    next_visit_prediction: '',
+  }
 }
 
 interface CustomerDetailApiResponse {
@@ -43,6 +66,8 @@ export default function KarteCustomerSwitcher({ customerId }: { customerId: stri
   // CSS表示のみに変更)。初回表示時(お客様用カルテのみ表示中)はスタッフ用カルテの
   // データ取得が一切走らないよう、mountするまでコンポーネント自体をレンダーしない。
   const [staffViewMounted, setStaffViewMounted] = useState(false)
+  // お客様トップページ(CustomerTopPage.tsx)への導線(2026-09-28ユーザー承認)。
+  const [showCustomerTop, setShowCustomerTop] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -50,6 +75,7 @@ export default function KarteCustomerSwitcher({ customerId }: { customerId: stri
     setError(null)
     setMode('customer')
     setStaffViewMounted(false)
+    setShowCustomerTop(false)
 
     void (async () => {
       const res = await authedFetch(`/api/customers/${customerId}`)
@@ -112,6 +138,7 @@ export default function KarteCustomerSwitcher({ customerId }: { customerId: stri
           customerName={customer.name}
           onClose={backToKarte}
           onSwitchToStaffView={() => { setStaffViewMounted(true); setMode('staff') }}
+          onShowCustomerTop={() => setShowCustomerTop(true)}
         />
       </div>
       {staffViewMounted && (
@@ -121,8 +148,15 @@ export default function KarteCustomerSwitcher({ customerId }: { customerId: stri
             customerName={customer.name}
             onClose={backToKarte}
             onSwitchToCustomerView={() => setMode('customer')}
+            onShowCustomerTop={() => setShowCustomerTop(true)}
           />
         </div>
+      )}
+      {showCustomerTop && (
+        <CustomerTopPage
+          customer={toMinimalCustomerForTopPage(customer)}
+          onClose={() => setShowCustomerTop(false)}
+        />
       )}
     </>
   )

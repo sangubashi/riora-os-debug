@@ -2326,6 +2326,60 @@ exposureMode追加、shutter()のタイミング制御追加)のみに限る。*
 レビュー時stop()・retake()修正)のみに限る。** メインモーダルのカメラストリーム自体
 (連続撮影中は維持する方針を確認済み)・保存/圧縮処理・ゴースト機能には一切触れていない。
 
+### `/karte` 着手済み事項（重要事項の配置移動・「お客様トップへ」導線追加・2026-09-28ユーザー承認）
+
+**着手前に確認したPII方針上の重要な論点**: 重要事項(禁忌事項)を「お客様トップページ」
+(`CustomerTopPage.tsx`)へ移すと、PIN保護なしの画面で「妊娠中」「抗がん剤・放射線治療中」
+「感染症の疑い」等の具体的な健康情報がタイトル・説明・推奨対応のテキストとして直接
+表示される。`CustomerTopPage.tsx`自体のコメントには、まさにこの種の情報(来店きっかけ等)を
+お客様と一緒に見る可能性がある画面には出さない方針が明記されており矛盾するため、
+AskUserQuestionで確認した。ユーザーから「依頼どおりCustomerTopPageへ移す」との回答を
+得て実施した。**これはPII_MINIMUM_POLICY_V1・従来のPIN保護方針に対する明確な例外
+(ユーザー承認済み)であり、今後この画面のPII方針を検討する際は必ずこの経緯を踏まえること。**
+
+1. **重要事項の配置移動**:
+   - `IpadStaffKarteView.tsx`から「⚠ 重要事項」ブロック(バッジ表示+✏️編集ボタン+
+     `ContraindicationEditModal`)を削除し、`CustomerTopPage.tsx`の「初回カウンセリング表」
+     カードの直後へ移設した(表示ロジック・`ContraindicationEditModal`自体は無変更、
+     呼び出し元のみ変更)。
+   - `CustomerTopPage.tsx`に`fetchContraindications()`(既存、`src/lib/contraindication.ts`)
+     による取得処理を新設。
+   - **副次的なレイアウト修正**: `IpadStaffKarteView.tsx`は重要事項が左カラムの唯一の
+     内容だったため、削除後に左カラムが空になる問題があった。二カラム構成
+     (`repeat(auto-fit, minmax(320px, 1fr))`)を解消し、右カラムの内容(肌の特徴タグ・
+     今日の施術・次回の目安)を既存のカルテメモ等と同じ全幅行(`gridColumn:'1 / -1'`)へ
+     統合した。
+   - `data.contraindications`(`useIpadKarteData`/`ipadKarteData.ts`)は今回`IpadStaffKarteView.tsx`
+     からの参照が無くなったが、**取得処理自体(`refetchGoalAndContraindications`含む)は
+     意図的に削除していない**(依頼範囲は表示の移動のみのため。今使われていない取得が
+     残っている点は次回以降の課題として認識済み)。
+2. **「🏠 お客様トップへ」ボタンの追加**: `CustomerModeView.tsx`(お客様用カルテ)・
+   `IpadStaffKarteView.tsx`(スタッフ用カルテ)の両方に、既存の`onSwitchToStaffView`/
+   `onSwitchToCustomerView`と同じ「任意propsが指定された時だけボタンを表示する」パターンで
+   `onShowCustomerTop?: () => void`を追加した(両コンポーネントとも`CustomerBottomSheet.tsx`
+   (スマホアプリ側)からも呼ばれる共有コンポーネントのため、`/karte`専用のこの導線を
+   無条件に埋め込むことはできない)。`KarteCustomerSwitcher.tsx`(`/karte/[customerId]`の本体)
+   側で新規state`showCustomerTop`を追加し、両ビューに`onShowCustomerTop`を渡し、
+   `CustomerTopPage`を追加のオーバーレイとして表示する。`CustomerTopPage`の`customer`props
+   (型`Customer`)は実際には`id`/`name`しか使われていないことを確認済みのため、他の
+   必須フィールドはダミー値で埋める最小マッパー(`toMinimalCustomerForTopPage`、
+   `KarteEntryScreen.tsx`の`toCustomerFromRow`等と同じ既存パターン)を新設した。
+   - **zIndex調整**: `CustomerTopPage.tsx`のルートdivは従来60(`KarteEntryScreen.tsx`上での
+     単独使用のみを想定、競合なし)だったが、`CustomerModeView`/`IpadStaffKarteView`
+     (いずれも300)の上に重ねて開く必要があるため310へ変更した。内部の子モーダル
+     (lightbox=90・LineLink/Thread=95・ContraindicationEdit=100・写真撮影系=500)は
+     このdivが作るスタッキングコンテキスト内部での相対比較のみで並び順が決まるため、
+     ルートの値を変えても内部の並び順自体には影響しない(値の変更は不要と判断・確認済み)。
+- **検証**: `npx tsc --noEmit`パス(既存の無関係な失敗15件のみ、変更前と同一のエラー集合)。
+  `npm run build`パス。`next-env.d.ts`のbuild副作用は復元済み。これらのコンポーネントには
+  元々ユニット/コンポーネントテストが存在しない。**実機での表示・導線・レイアウト確認は
+  未検証**。
+
+**この解除は上記(重要事項の配置移動、「🏠 お客様トップへ」導線追加、関連するzIndex調整・
+レイアウト修正)のみに限る。** `ContraindicationEditModal`自体のロジック・
+`CustomerBottomSheet.tsx`経由の既存呼び出し(`onShowCustomerTop`未指定時は何も表示しない
+ため無変更)・スマホアプリ側の画面構成には一切触れていない。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

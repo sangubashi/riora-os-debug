@@ -100,6 +100,13 @@ interface Props {
    * 描画せず、ロゴも非インタラクティブな装飾のまま。
    */
   onSwitchToStaffView?: () => void
+  /**
+   * お客様トップページ(CustomerTopPage.tsx)への導線用の任意コールバック
+   * (2026-09-28ユーザー承認)。指定時のみ、ヘッダーに「🏠 お客様トップへ」ボタンを表示する。
+   * 未指定時(CustomerBottomSheet経由の既存呼び出し)は何も表示しない
+   * (CustomerTopPage自体が`/karte`専用領域のコンポーネントのため)。
+   */
+  onShowCustomerTop?: () => void
 }
 
 /** ライトボックスの下部キャプション用。サムネイル一覧のcaptionTextと同じロジック
@@ -115,7 +122,7 @@ function buildLightboxCaption(
   return null
 }
 
-export default function CustomerModeView({ customerId, customerName, onClose, onSwitchToStaffView }: Props) {
+export default function CustomerModeView({ customerId, customerName, onClose, onSwitchToStaffView, onShowCustomerTop }: Props) {
   const data = useCustomerModeData(customerId)
   const [angle, setAngle] = useState<CustomerModeAngleId>('face_front')
   /** ライトボックス表示中の写真。撮影日・来店回数のキャプションも合わせて保持する
@@ -427,6 +434,22 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
               }}
             >
               Staff Karte
+            </button>
+          )}
+          {/* お客様トップページへの導線(2026-09-28ユーザー承認)。onShowCustomerTop未指定時
+              (CustomerBottomSheet経由の既存呼び出し)は何も表示しない。 */}
+          {onShowCustomerTop && (
+            <button
+              type="button"
+              onClick={onShowCustomerTop}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '5px',
+                padding: '6px 14px', borderRadius: '999px', cursor: 'pointer',
+                border: `1px solid ${PALETTE.border}`, background: 'transparent', color: PALETTE.text,
+                fontSize: '11px', fontWeight: 700, letterSpacing: '0.04em', whiteSpace: 'nowrap', flexShrink: 0,
+              }}
+            >
+              🏠 お客様トップへ
             </button>
           )}
           <StaffTagBar

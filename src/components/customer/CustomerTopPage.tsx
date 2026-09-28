@@ -40,10 +40,13 @@ import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, headingFont } from '@/components/customer/shared/PhotoCompareKit'
 import InitialQuestionnaireCaptureModal from '@/components/customer/ipadKarte/InitialQuestionnaireCaptureModal'
 import DocumentSlotCaptureModal from '@/components/customer/ipadKarte/DocumentSlotCaptureModal'
+import ContraindicationEditModal from '@/components/customer/ipadKarte/ContraindicationEditModal'
 import LineLinkModal from '@/components/customer/LineLinkModal'
 import LineThreadModal from '@/components/customer/LineThreadModal'
 import { calculateAge, formatBirthDateJapanese, formatBirthDateSlash } from '@/lib/customer/birthDate'
-import type { Customer, Reservation } from '@/types'
+import { fetchContraindications } from '@/lib/contraindication'
+import type { Customer, Reservation, Contraindication } from '@/types'
+import { CONTRAINDICATION_SEVERITY_LABEL, CONTRAINDICATION_SEVERITY_COLOR } from '@/types'
 
 type DocumentSlot = 1 | 2 | 3 | 4
 const DOCUMENT_SLOTS: DocumentSlot[] = [1, 2, 3, 4]
@@ -96,6 +99,13 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
   const [lineLastMessage, setLineLastMessage] = useState<string | null>(null)
   const [showLineLinkModal, setShowLineLinkModal]     = useState(false)
   const [showLineThreadModal, setShowLineThreadModal] = useState(false)
+  // 重要事項(禁忌事項、2026-09-28ユーザー承認): 従来PIN保護されたスタッフモード
+  // (IpadStaffKarteView.tsx)のみに表示・編集していたが、スマホアプリを介さず
+  // お客様トップページでも即座に確認・編集できるようにこの画面へ移動した
+  // (ユーザーへPII方針上の懸念を確認済み・「依頼どおりCustomerTopPageへ移す」で承認)。
+  const [contraindications, setContraindications] = useState<Contraindication[]>([])
+  const [contraindicationsLoading, setContraindicationsLoading] = useState(true)
+  const [showContraindicationEdit, setShowContraindicationEdit] = useState(false)
 
   const fetchQuestionnaire = useCallback(async () => {
     setQuestionnaireLoading(true)
@@ -163,6 +173,20 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
 
   useEffect(() => { void fetchLineStatus() }, [fetchLineStatus])
 
+  const fetchContraindicationsForCustomer = useCallback(async () => {
+    setContraindicationsLoading(true)
+    try {
+      const items = await fetchContraindications(customer.id)
+      setContraindications(items)
+    } catch {
+      /* 取得失敗時は空のまま(致命的にしない) */
+    } finally {
+      setContraindicationsLoading(false)
+    }
+  }, [customer.id])
+
+  useEffect(() => { void fetchContraindicationsForCustomer() }, [fetchContraindicationsForCustomer])
+
   useEffect(() => {
     let cancelled = false
     void (async () => {
@@ -223,7 +247,14 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: PALETTE.bg, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+    // zIndex(2026-09-28ユーザー承認): 従来60(KarteEntryScreen.tsx上でのみ使用、競合なし)
+    // だったが、KarteCustomerSwitcher.tsxから「🏠 お客様トップへ」導線で
+    // CustomerModeView/IpadStaffKarteView(いずれもzIndex:300)の上に重ねて開けるよう
+    // 310へ変更した。内部の子モーダル(lightbox=90・LineLink/Thread=95・
+    // ContraindicationEdit=100・写真撮影系=500)は、いずれもこのdivが作る
+    // スタッキングコンテキスト内部での相対比較のみで並び順が決まるため、
+    // このdiv自体の値を変えても内部の並び順には影響しない(値の変更は不要)。
+    <div style={{ position: 'fixed', inset: 0, zIndex: 310, background: PALETTE.bg, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
       <div
         style={{
           flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -361,6 +392,54 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
           >
             <Camera size={16} /> {questionnaire?.url ? '撮り直す・差し替える' : '撮影・登録する'}
           </button>
+        </div>
+
+        {/* 重要事項(禁忌事項、2026-09-28ユーザー承認・PIN保護スタッフモードから移動) */}
+        <div style={cardStyle}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <p style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: PALETTE.text, fontFamily: headingFont.style.fontFamily }}>
+              ⚠ 重要事項
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowContraindicationEdit(true)}
+              aria-label="重要事項を編集"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px',
+                border: `1px solid ${PALETTE.border}`, borderRadius: '999px', background: 'none',
+                color: PALETTE.muted, fontSize: '11px', cursor: 'pointer',
+              }}
+            >
+              <Pencil size={12} />編集
+            </button>
+          </div>
+          {contraindicationsLoading ? (
+            <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>読み込み中…</p>
+          ) : contraindications.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {contraindications.map(ci => {
+                const col = CONTRAINDICATION_SEVERITY_COLOR[ci.severity]
+                return (
+                  <div key={ci.id} style={{ background: col.bg, border: `1px solid ${col.border}`, borderRadius: '10px', padding: '10px 12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                      <span style={{
+                        fontSize: '9px', fontWeight: 700, letterSpacing: '0.08em', padding: '2px 8px',
+                        borderRadius: '999px', background: col.bg, color: col.text, border: `1px solid ${col.border}`, flexShrink: 0,
+                      }}>
+                        {CONTRAINDICATION_SEVERITY_LABEL[ci.severity]}
+                      </span>
+                      <p style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: col.text }}>{ci.title}</p>
+                    </div>
+                    {ci.description && (
+                      <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted, lineHeight: 1.6 }}>{ci.description}</p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>登録されている重要事項はありません</p>
+          )}
         </div>
 
         {/* 詳細ページ導線 */}
@@ -584,6 +663,15 @@ export default function CustomerTopPage({ customer, reservation, onClose }: Prop
           customerId={customer.id}
           customerName={customer.name}
           onClose={() => { setShowLineThreadModal(false); void fetchLineStatus() }}
+        />
+      )}
+
+      {showContraindicationEdit && (
+        <ContraindicationEditModal
+          customerId={customer.id}
+          existing={contraindications}
+          onClose={() => setShowContraindicationEdit(false)}
+          onSaved={() => void fetchContraindicationsForCustomer()}
         />
       )}
     </div>
