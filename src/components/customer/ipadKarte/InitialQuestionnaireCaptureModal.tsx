@@ -83,6 +83,26 @@ export default function InitialQuestionnaireCaptureModal({ customerId, onClose, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // バックグラウンド時のカメラ解放(2026-09-28ユーザー承認): タブ切替・他アプリへの
+  // 切替等でこのページが非表示になっている間、カメラ映像(phase==='camera')が起動中
+  // なら停止してリソースを解放する。フォアグラウンド復帰時、phaseがまだ'camera'で
+  // ストリームが無ければ再取得する(レビュー中に非表示になった場合はstreamRef.current
+  // が既にnullのため、この処理では何もしない=下記beginReviewでのstop方針と競合しない)。
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        if (phase === 'camera' && streamRef.current) {
+          releaseStream()
+          setCameraReady(false)
+        }
+      } else if (phase === 'camera' && !streamRef.current) {
+        void startCamera()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [phase, releaseStream, startCamera])
+
   const beginReview = useCallback((blob: Blob) => {
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
     const url = URL.createObjectURL(blob)
@@ -91,7 +111,12 @@ export default function InitialQuestionnaireCaptureModal({ customerId, onClose, 
     setPendingBlob(blob)
     setSaveError(null)
     setPhase('reviewing')
-  }, [])
+    // カメラリソース解放(2026-09-28ユーザー承認): この画面は1枚撮影→確認→保存の単純な
+    // フローのため、レビュー中はカメラを完全に停止してよい。撮り直す場合はretake()で
+    // 再取得・新しい<video>要素へ再アタッチする。
+    releaseStream()
+    setCameraReady(false)
+  }, [releaseStream])
 
   const shutter = useCallback(async () => {
     const video = videoRef.current
@@ -138,6 +163,9 @@ export default function InitialQuestionnaireCaptureModal({ customerId, onClose, 
     setPendingBlob(null)
     setSaveError(null)
     setPhase('camera')
+    // レビュー中にstop()したカメラを再取得し、新しくマウントされる<video>要素へ
+    // 再アタッチする(2026-09-28ユーザー承認。beginReview()でのstop()と対になる処理)。
+    void startCamera()
   }
 
   const handleSave = async () => {

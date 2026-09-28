@@ -231,7 +231,13 @@ export default function IpadPhotoCaptureModal({ customerId, visitId, intent, onC
 
   const bodyPartSelected = isValidBodyPart(capture.bodyPart)
   const faceGuideMode = faceGuideModeFor(capture.bodyPart)
-  const faceGuideActive = intent === 'camera' && capture.cameraStatus === 'ready' && bodyPartSelected
+  // 軽量化(2026-09-28ユーザー承認): レビュー中(reviewPhase==='reviewing')は<video>自体が
+  // アンマウントされ画面に何も表示されないため、MediaPipeの250ms間隔の顔検出推論・
+  // デバイス傾き(devicemotion)監視を続ける意味がない。カメラストリーム自体は連続撮影
+  // ワークフローの応答性を優先して維持したまま(ユーザー承認済み)、この2つの背景処理
+  // だけをレビュー中は止める。
+  const faceGuideActive =
+    intent === 'camera' && capture.cameraStatus === 'ready' && bodyPartSelected && capture.reviewPhase !== 'reviewing'
   const faceGuide = useFaceGuide({ videoRef: capture.videoRef, mode: faceGuideMode, active: faceGuideActive })
   const faceGuideMessage = faceGuide.state ? pickFaceGuideMessage(faceGuide.state) : null
 

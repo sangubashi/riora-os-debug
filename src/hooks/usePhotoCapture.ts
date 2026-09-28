@@ -213,6 +213,30 @@ export function usePhotoCapture(options: UsePhotoCaptureOptions) {
     setCameraStatus('idle')
   }, [releaseStream])
 
+  // バックグラウンド時のカメラ解放(2026-09-28ユーザー承認): タブ切替・他アプリへの
+  // 切替・画面ロック等でこのページが非表示になっている間、カメラを起動したままにしておく
+  // 理由がないため停止し、メモリ・GPU・カメラハードウェアを解放する。連続撮影中の
+  // レビュー画面(reviewPhase==='reviewing')ではカメラを維持する既存方針(ユーザー承認済み、
+  // 連続撮影の応答性を優先)とは別軸の対策で、こちらは「実際に画面を見ていない」ケースに
+  // 限定される。フォアグラウンド復帰時は、この処理で自分が停止した場合のみ再取得する
+  // (元からidle/errorだった場合は何もしない)。
+  const stoppedByVisibilityRef = useRef(false)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        if (cameraStatus === 'ready') {
+          stoppedByVisibilityRef.current = true
+          stopCamera()
+        }
+      } else if (stoppedByVisibilityRef.current) {
+        stoppedByVisibilityRef.current = false
+        void startCamera()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [cameraStatus, stopCamera, startCamera])
+
   useEffect(() => {
     return () => {
       // 必須修正1: レビュー中(1.5秒以内)に画面を閉じた場合、CaptureConfirmSessionに
