@@ -201,7 +201,14 @@ export default function VisitHistorySection({ customerId, visits }: Props) {
                 {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 <span style={{ fontWeight: 700 }}>来店{visitNumber}回目</span>
                 <span style={{ color: PALETTE.muted, fontSize: '12px' }}>
-                  {[formatDateOnly(visit.visitDate), visit.menuName].filter(Boolean).join(' ・ ')}
+                  {[
+                    formatDateOnly(visit.visitDate),
+                    visit.menuName,
+                    // 来店履歴サマリー表示改善(2026-09-28ユーザー承認): 担当スタッフ名を
+                    // 一目で確認できるよう折りたたみ行にも追加(タップして展開しなくても
+                    // 日付・施術・担当が分かるようにする)。
+                    visit.staffName ? `担当 ${visit.staffName}` : null,
+                  ].filter(Boolean).join(' ・ ')}
                 </span>
               </button>
 

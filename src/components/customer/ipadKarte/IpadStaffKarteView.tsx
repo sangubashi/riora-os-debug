@@ -40,6 +40,7 @@ import { useStaffTagSession } from '@/lib/staffTag/useStaffTagSession'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { calculateAge } from '@/lib/customer/birthDate'
 import SalonBoardImportModal from '@/components/customer/SalonBoardImportModal'
+import TreatmentCourseEditModal from './TreatmentCourseEditModal'
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
 /** クイック選択の候補(本日起点の週数)。 */
@@ -431,6 +432,8 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
   const [acquisitionChannel, setAcquisitionChannel] = useState<string | null>(null)
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null)
   const [showSalonBoardImport, setShowSalonBoardImport] = useState(false)
+  // 今回の施術コース選択モーダル(2026-09-28ユーザー承認)。
+  const [showTreatmentCourseEdit, setShowTreatmentCourseEdit] = useState(false)
 
   const fetchCustomerDetail = useCallback(async () => {
     try {
@@ -592,6 +595,57 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
                   </div>
                 </Card>
               )}
+
+              {/* 今回の施術コース(2026-09-28ユーザー承認)。固定14項目からの複数選択を
+                  brain_visits.course_options(新規列)へ保存する。本日の来店記録
+                  (todayVisitId)が無い間は選択できない(今日の施術記録と同じ制約)。
+                  共有Cardコンポーネントではヘッダーにボタンを置けないため、重要事項編集
+                  (旧実装)と同じ見た目複製パターンでこのブロック限定の独自divにしている。 */}
+              <div
+                style={{
+                  background: PALETTE.card, border: `1px solid ${PALETTE.border}`, borderRadius: '18px',
+                  padding: '18px 20px', boxShadow: PALETTE.shadow,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                  <p style={{ margin: 0, fontSize: '13px', letterSpacing: '0.08em', color: PALETTE.gold, fontFamily: headingFont.style.fontFamily }}>
+                    💆 今回の施術コース
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowTreatmentCourseEdit(true)}
+                    disabled={!data.todayVisitId}
+                    aria-label="今回の施術コースを選択"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px',
+                      border: `1px solid ${PALETTE.border}`, borderRadius: '999px',
+                      background: 'none', color: data.todayVisitId ? PALETTE.muted : PALETTE.border,
+                      fontSize: '11px', cursor: data.todayVisitId ? 'pointer' : 'not-allowed',
+                    }}
+                  >
+                    ✏️ 選択
+                  </button>
+                </div>
+                {!data.todayVisitId ? (
+                  <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>本日の来店記録がありません</p>
+                ) : data.todayCourseOptions.length > 0 ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    {data.todayCourseOptions.map((course, i) => (
+                      <span
+                        key={`${course}-${i}`}
+                        style={{
+                          fontSize: '12px', color: PALETTE.text, background: PALETTE.bg,
+                          border: `1px solid ${PALETTE.border}`, borderRadius: '999px', padding: '6px 14px',
+                        }}
+                      >
+                        {course}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>コース未選択</p>
+                )}
+              </div>
 
               {/* 今回のホームケア(PHASE IPAD-4・2026-09-12・READ ONLY調査に基づき追加)。
                   CustomerModeView.tsxの同カードと同じ表示構造・データ取得ロジック(ipadKarteData.ts)。
@@ -759,6 +813,15 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
         />
       )}
 
+      {showTreatmentCourseEdit && data.todayVisitId && (
+        <TreatmentCourseEditModal
+          customerId={customerId}
+          visitId={data.todayVisitId}
+          existing={data.todayCourseOptions}
+          onClose={() => setShowTreatmentCourseEdit(false)}
+          onSaved={() => void data.refetchTodayCourseOptions()}
+        />
+      )}
     </div>
   )
 }

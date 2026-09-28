@@ -8,6 +8,11 @@
  *
  * 認証: extractStaffFromRequest + canAccessCustomer(既存APIと同一パターン)。
  * visitIdが対象customerに属することはAPI層で確認する(FK制約では表現できないため)。
+ *
+ * courseOptions(2026-09-28ユーザー承認・/karte「今回の施術コース」): brain_visits.
+ * course_options(新規列)を対象に追加した。既存のoptions(施術ポイント、スマホアプリ側
+ * TreatmentRecordSection.tsxが使用)とは別列のため、双方のPATCHが互いの選択内容を
+ * 上書きすることはない。
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -22,9 +27,11 @@ const patchBodySchema = z.object({
   productsUsed:     z.array(z.unknown()).max(50).optional(),
   machineSettings:  z.record(z.string(), z.unknown()).optional(),
   treatmentMemo:    z.string().trim().max(1000).nullable().optional(),
+  courseOptions:    z.array(z.string()).max(14).optional(),
 }).refine(
   (b) => b.options !== undefined || b.productsUsed !== undefined
-    || b.machineSettings !== undefined || b.treatmentMemo !== undefined,
+    || b.machineSettings !== undefined || b.treatmentMemo !== undefined
+    || b.courseOptions !== undefined,
   { message: 'at least one field is required' },
 )
 
@@ -34,6 +41,7 @@ interface TreatmentRow {
   products_used:     unknown
   machine_settings:  unknown
   treatment_memo:    string | null
+  course_options:    unknown
 }
 
 function toApiShape(row: TreatmentRow) {
@@ -43,6 +51,7 @@ function toApiShape(row: TreatmentRow) {
     productsUsed:     row.products_used,
     machineSettings:  row.machine_settings,
     treatmentMemo:    row.treatment_memo,
+    courseOptions:    row.course_options,
   }
 }
 
@@ -83,7 +92,7 @@ export async function GET(
   const supabase = getServiceClient()
   const { data, error } = await supabase
     .from('brain_visits')
-    .select('id, options, products_used, machine_settings, treatment_memo')
+    .select('id, options, products_used, machine_settings, treatment_memo, course_options')
     .eq('id', visitId)
     .eq('customer_id', customerId)
     .is('deleted_at', null)
@@ -142,6 +151,7 @@ export async function PATCH(
   if (input.productsUsed     !== undefined) update.products_used    = input.productsUsed
   if (input.machineSettings  !== undefined) update.machine_settings = input.machineSettings
   if (input.treatmentMemo    !== undefined) update.treatment_memo   = input.treatmentMemo
+  if (input.courseOptions    !== undefined) update.course_options   = input.courseOptions
 
   const supabase = getServiceClient()
   const { data, error } = await supabase
@@ -150,7 +160,7 @@ export async function PATCH(
     .eq('id', visitId)
     .eq('customer_id', customerId)
     .is('deleted_at', null)
-    .select('id, options, products_used, machine_settings, treatment_memo')
+    .select('id, options, products_used, machine_settings, treatment_memo, course_options')
     .maybeSingle()
 
   if (error) {

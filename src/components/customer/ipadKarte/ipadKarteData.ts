@@ -60,6 +60,12 @@ export interface VisitHistoryEntry {
   id: string
   visitDate: string
   menuName: string | null
+  /**
+   * 担当スタッフ名(2026-09-28ユーザー承認・来店履歴サマリー表示改善)。APIレスポンス
+   * (/api/customers/[id]/visit-history)は元々このフィールドを返していたが、この
+   * ローカル型に未宣言だったため使われていなかった(新規APIエンドポイント追加は不要)。
+   */
+  staffName: string | null
 }
 
 interface SkinRecord {
@@ -77,6 +83,7 @@ interface TreatmentDetail {
   options: unknown
   productsUsed: unknown
   treatmentMemo?: string | null
+  courseOptions?: unknown
 }
 
 interface HomecareProductEntry {
@@ -143,6 +150,11 @@ export interface IpadKarteData {
   currentSkinTags: SkinTagChip[]
   /** 当日visitのoptions/productsUsedをそのまま返す(手順テンプレート化はしない)。 */
   todayTreatmentPoints: string[]
+  /**
+   * 「💆 今回の施術コース」(2026-09-28ユーザー承認)。当日visitのcourse_options
+   * (固定14項目からの複数選択、brain_visits.options(施術ポイント)とは別列)。
+   */
+  todayCourseOptions: string[]
   // 「次回の目安」は次回目安エンジン(PHASE NEXT-VISIT-1・src/lib/nextVisit/useNextVisit.ts)に
   // 置き換えたため、このフックでは算出しない(IpadStaffKarteView側でuseNextVisitを直接使う)。
   /** 「今回のホームケア」カード(customerModeData.tsと同じ取得ロジックの流用)。 */
@@ -182,6 +194,7 @@ const EMPTY_DATA: IpadKarteData = {
   currentMenuName: null,
   currentSkinTags: [],
   todayTreatmentPoints: [],
+  todayCourseOptions: [],
   homecareItems: [],
   lastVisitDate: null,
   visitCount: 0,
@@ -206,6 +219,11 @@ export interface UseIpadKarteDataResult extends IpadKarteData {
    * 顧客ステータス等)は再取得しない。
    */
   refetchPhotos: () => Promise<void>
+  /**
+   * 「💆 今回の施術コース」(2026-09-28ユーザー承認)編集モーダル保存後に呼ぶ軽量な
+   * 再取得。当日visitのcourse_optionsのみを更新する。todayVisitIdが無い間は何もしない。
+   */
+  refetchTodayCourseOptions: () => Promise<void>
 }
 
 export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
@@ -287,23 +305,26 @@ export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
         .flatMap(p => [p.current?.id, p.reference?.id])
         .filter((id): id is string => !!id)
 
-      const fetchTodayTreatmentPoints = async (): Promise<string[]> => {
-        if (!todayVisitId) return []
+      const fetchTodayTreatmentPoints = async (): Promise<{ points: string[]; courseOptions: string[] }> => {
+        if (!todayVisitId) return { points: [], courseOptions: [] }
         try {
           const res = await authedFetch(`/api/customers/${customerId}/visits/${todayVisitId}/treatment`)
           if (res.ok) {
             const json = (await res.json()) as { success: boolean; treatment?: TreatmentDetail }
             if (json.success && json.treatment) {
-              return [
-                ...toStringList(json.treatment.options),
-                ...toStringList(json.treatment.productsUsed),
-              ]
+              return {
+                points: [
+                  ...toStringList(json.treatment.options),
+                  ...toStringList(json.treatment.productsUsed),
+                ],
+                courseOptions: toStringList(json.treatment.courseOptions),
+              }
             }
           }
         } catch {
           /* 今日の施術記録が無くても他の表示に影響させない */
         }
-        return []
+        return { points: [], courseOptions: [] }
       }
 
       // 「前回メモをワンタップ参照」用: 前回visitのtreatment_memoのみ取得(施術内容は
@@ -325,7 +346,7 @@ export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
         return null
       }
 
-      const [todayTreatmentPoints, previousTreatmentMemo, photoUrls] = await Promise.all([
+      const [todayTreatment, previousTreatmentMemo, photoUrls] = await Promise.all([
         fetchTodayTreatmentPoints(),
         fetchPreviousTreatmentMemo(),
         getBatchSignedUrls(customerId, photoIds, 'detail'),
@@ -340,7 +361,8 @@ export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
         goalNote,
         currentMenuName,
         currentSkinTags,
-        todayTreatmentPoints,
+        todayTreatmentPoints: todayTreatment.points,
+        todayCourseOptions: todayTreatment.courseOptions,
         homecareItems,
         lastVisitDate,
         visitCount,
@@ -389,5 +411,21 @@ export function useIpadKarteData(customerId: string): UseIpadKarteDataResult {
     setData(prev => ({ ...prev, anglePairs, photoUrls }))
   }, [customerId])
 
-  return { ...data, refetchGoalAndContraindications, refetchPhotos }
+  const refetchTodayCourseOptions = useCallback(async () => {
+    const visitId = data.todayVisitId
+    if (!visitId) return
+    try {
+      const res = await authedFetch(`/api/customers/${customerId}/visits/${visitId}/treatment`)
+      if (res.ok) {
+        const json = (await res.json()) as { success: boolean; treatment?: TreatmentDetail }
+        if (json.success && json.treatment) {
+          setData(prev => ({ ...prev, todayCourseOptions: toStringList(json.treatment!.courseOptions) }))
+        }
+      }
+    } catch {
+      /* 失敗しても既存表示のまま(致命的にしない) */
+    }
+  }, [customerId, data.todayVisitId])
+
+  return { ...data, refetchGoalAndContraindications, refetchPhotos, refetchTodayCourseOptions }
 }

@@ -2380,6 +2380,50 @@ AskUserQuestionで確認した。ユーザーから「依頼どおりCustomerTop
 `CustomerBottomSheet.tsx`経由の既存呼び出し(`onShowCustomerTop`未指定時は何も表示しない
 ため無変更)・スマホアプリ側の画面構成には一切触れていない。
 
+### `/karte` 着手済み事項（今回の施術コース選択機能・来店履歴サマリー改善・2026-09-28ユーザー承認・DBマイグレーション実施）
+
+**設計判断(着手前の調査結果)**: 「今回の施術コース」(依頼どおりの固定14項目)の保存先を
+検討した結果、既存の`brain_visits.options`(Phase1-A、「🎯施術ポイント」7項目の固定
+チェックボックス、スマホアプリ側`TreatmentRecordSection.tsx`が使用)への相乗りは避けた。
+語彙・意味が異なる別データであり、同じ列を共用すると`/karte`とスマホアプリ双方のPATCHが
+互いの選択内容を上書きしてしまうため。`machine_settings`(Phase1-A、仕様未確定で現在
+未使用)への転用も列名の意味と用途が乖離するため避けた。**`brain_visits`へ新規列
+`course_options`(jsonb、既定値`'[]'`)を追加するマイグレーションを作成・本番適用した**
+(`supabase/migrations/20260928080000_brain_visits_course_options.sql`、Supabase MCP
+`apply_migration`で適用済み・適用結果を`information_schema.columns`で確認済み)。
+
+1. **今回の施術コース選択機能**:
+   - `app/api/customers/[id]/visits/[visitId]/treatment/route.ts`(既存の「今日の施術記録」
+     API)に`courseOptions`(string[]、最大14件)を追加。既存のoptions/productsUsed/
+     machineSettings/treatmentMemoには一切触れていない。テスト2件追加
+     (`tests/api/customer-visit-treatment.test.ts`、GET/PATCH双方)。
+   - `src/components/customer/ipadKarte/ipadKarteData.ts`: `todayCourseOptions: string[]`
+     (当日visitのcourse_options)と`refetchTodayCourseOptions()`を追加。既存の
+     `fetchTodayTreatmentPoints`(今日の施術ポイント用)は戻り値の形を変えた
+     (`string[]`→`{points, courseOptions}`)が、呼び出し元1箇所のみで影響範囲は限定的。
+   - `src/components/customer/ipadKarte/TreatmentCourseEditModal.tsx`(新規): 固定14項目
+     (依頼どおりの文言・順序、`TREATMENT_COURSE_OPTIONS`としてexport)のチェックボックス
+     モーダル。`ContraindicationEditModal.tsx`と同じ見た目・設計。本日の来店記録
+     (todayVisitId)が無い間は開けない(「今日の施術記録」と同じ制約)。
+   - `IpadStaffKarteView.tsx`: 「✂ 今日の施術」カードの直後に「💆 今回の施術コース」
+     ブロック+✏️選択ボタンを追加(共有Cardコンポーネントにボタンを置けないため、
+     重要事項編集(旧実装・現在は移動済み)と同じ見た目複製パターンを踏襲)。
+2. **来店履歴サマリーの表示改善**: `/api/customers/[id]/visit-history`は元々
+   `staffName`(担当スタッフ名)を返していたが、`ipadKarteData.ts`のローカル型
+   `VisitHistoryEntry`にこのフィールドが未宣言だったため使われていなかった(新規API
+   追加は不要、型を追加しただけ)。`VisitHistorySection.tsx`の折りたたみ行(タップして
+   展開する前の一覧表示)に「担当 ○○」を追加し、日付・施術・担当が一目で確認できる
+   ようにした。
+- **検証**: `npx tsc --noEmit`パス(既存の無関係な失敗15件のみ、変更前と同一のエラー
+  集合)。関連テスト(`tests/api/customer-visit-treatment.test.ts`)11件全パス。
+  `npm run build`パス。`next-env.d.ts`のbuild副作用は復元済み。**実機での表示・保存
+  動作確認は未検証**。
+
+**この解除は上記(`course_options`列の追加、`/treatment`APIの拡張、施術コース選択
+モーダル・ボタンの追加、来店履歴への担当スタッフ名表示追加)のみに限る。** 既存の
+options(施術ポイント)・スマホアプリ側`TreatmentRecordSection.tsx`・
+`machine_settings`・来店履歴の金額(amount)表示には一切触れていない。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

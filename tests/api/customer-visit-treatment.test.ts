@@ -85,7 +85,7 @@ describe('GET /api/customers/[id]/visits/[visitId]/treatment', () => {
     mockVerifyVisit.mockResolvedValue(true)
     mockGetClient.mockReturnValue(createFakeSupabase({
       brain_visits: {
-        data: { id: 'visit-1', options: ['毛穴集中'], products_used: ['ローション'], machine_settings: { level: 3 }, treatment_memo: '順調' },
+        data: { id: 'visit-1', options: ['毛穴集中'], products_used: ['ローション'], machine_settings: { level: 3 }, treatment_memo: '順調', course_options: ['スク→ポレ→炭酸'] },
         error: null,
       },
     }) as never)
@@ -95,7 +95,7 @@ describe('GET /api/customers/[id]/visits/[visitId]/treatment', () => {
     expect(res.status).toBe(200)
     expect(body.treatment).toEqual({
       visitId: 'visit-1', options: ['毛穴集中'], productsUsed: ['ローション'],
-      machineSettings: { level: 3 }, treatmentMemo: '順調',
+      machineSettings: { level: 3 }, treatmentMemo: '順調', courseOptions: ['スク→ポレ→炭酸'],
     })
   })
 })
@@ -152,5 +152,27 @@ describe('PATCH /api/customers/[id]/visits/[visitId]/treatment', () => {
     mockGetClient.mockReturnValue(createFakeSupabase({ brain_visits: { data: null, error: null } }) as never)
     const res = await patchRoute('cust-1', 'visit-1', { treatmentMemo: 'test' })
     expect(res.status).toBe(404)
+  })
+
+  // ── courseOptions(2026-09-28ユーザー承認・/karte「今回の施術コース」) ──────────
+  it('正常系: courseOptionsのみUPDATEする(既存のoptions等には触れない)', async () => {
+    mockExtractStaff.mockResolvedValue(STAFF)
+    mockCanAccess.mockResolvedValue(true)
+    mockVerifyVisit.mockResolvedValue(true)
+    const fake = createFakeSupabase({
+      brain_visits: {
+        data: { id: 'visit-1', options: [], products_used: [], machine_settings: {}, treatment_memo: null, course_options: ['スク→ポレ→炭酸', '背中ケア(内容カルテ記入)'] },
+        error: null,
+      },
+    })
+    mockGetClient.mockReturnValue(fake as never)
+
+    const res  = await patchRoute('cust-1', 'visit-1', { courseOptions: ['スク→ポレ→炭酸', '背中ケア(内容カルテ記入)'] })
+    const body = await res.json()
+    expect(res.status).toBe(200)
+    expect(body.treatment.courseOptions).toEqual(['スク→ポレ→炭酸', '背中ケア(内容カルテ記入)'])
+    expect(fake.chainFor('brain_visits').update).toHaveBeenCalledWith({
+      course_options: ['スク→ポレ→炭酸', '背中ケア(内容カルテ記入)'],
+    })
   })
 })
