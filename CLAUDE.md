@@ -2177,6 +2177,61 @@ PII露出に当たらないと判断する。同姓同名の誤選択防止を�
 顧客カード表示・検索ロジック本体・電話番号を検索結果以外の非PIN保護領域へ表示する変更
 には一切触れていない。
 
+### `/karte` 着手済み事項（重要事項の手動登録・編集UIを追加・2026-09-28ユーザー承認）
+
+**背景**: 従来、重要事項(禁忌事項)はスマホアプリ(`CustomerBottomSheet.tsx`)側で
+顧客メモ・音声メモのキーワード自動検出のみによって生成され、`/karte`
+(`IpadStaffKarteView.tsx`)側は表示専用(登録・編集不可)だった(直前の使い方ガイド
+「⑧ 重要事項」の記載通り)。スマホアプリに依存せず`/karte`単独で直接登録・編集できる
+UIが欲しいとの依頼を受け対応した。
+
+**着手前に判明した注意点(スコープを絞った理由)**: `app/api/customers/[id]/
+contraindications/route.ts`(GET/POST)は、既存の`src/lib/contraindication.ts`を
+ブラウザ直接アクセスからAPI経由に置き換える「Phase 2-S①-a」という**別セッションの
+未コミット・未承認の作業**がすでに存在していた(このファイル自体も`src/lib/
+contraindication.ts`の大部分の変更も、今回の依頼より前からワーキングツリーに
+存在していた無関係な差分)。これらを今回のコミットに混在させないよう、
+**新規エンドポイントは既存ファイルに追記せず、完全に独立した新規ファイル
+(`app/api/customers/[id]/contraindications-manual/route.ts`)として作成した**。
+`src/lib/contraindication.ts`への変更も、`CONTRAINDICATION_RULES`/
+`ContraindicationRule`への`export`追加(既存ロジックの挙動を変えない、
+2行+コメントのみ)だけを`git apply --cached`でパッチ単位に切り出してコミットし、
+Phase 2-S①-aの残り(`fetchContraindications`等のAPI呼び出しへの書き換え)は
+一切コミットに含めていない(ワーキングツリーには手を加えず、未コミットのまま残置)。
+
+- **`app/api/customers/[id]/contraindications-manual/route.ts`(新規)**: PUT。
+  既存16ルール(`CONTRAINDICATION_RULES`)のON/OFF(`selectedTitles: string[]`)と
+  自由記述メモ(`note`)を受け取る。チェックボックスのON/OFFは「そのtitleの行が
+  現在存在するか」だけを見て`contraindications`テーブルへinsert/deleteする
+  (生成元がAI自動検出か手動かを問わず削除できる既存仕様(`CustomerBottomSheet.tsx`
+  のゴミ箱ボタンと同じ)を踏襲、新たな制約は設けていない)。自由記述メモは
+  `customer_notes`への手動メモ(category=null、`CustomerBottomSheet.saveMemo`と
+  同じ形)として保存するのみで、キーワード再解析は行わない(チェックボックスと
+  メモの役割を分離、というユーザー指定の仕様)。認証パターンは既存の
+  `/api/customers/[id]/birth-date`と同一(`extractStaffFromRequest`+
+  `canAccessCustomer`+service_role client)。
+- **`src/lib/contraindication.ts`**: `ContraindicationRule`/`CONTRAINDICATION_RULES`
+  (16ルール定義そのものは無変更)を`export`化しただけ(上記の通りパッチ単位で
+  コミット、Phase 2-S①-aの残りには一切触れていない)。
+- **`src/components/customer/ipadKarte/ContraindicationEditModal.tsx`(新規)**:
+  16ルールのチェックボックス(severityバッジ付き)+自由記述テキストエリアの
+  モーダル。保存時に上記PUTを呼び、成功したら`onSaved`(親側の
+  `refetchGoalAndContraindications()`)を呼んで即座に再取得・反映する。
+- **`IpadStaffKarteView.tsx`**: 「⚠ 重要事項」ブロックを、共有`Card`コンポーネント
+  (他画面でも使用)から、このブロック限定で見た目を複製した独自divへ変更し、
+  0件でも常時表示(編集ボタンを出すため)にした。共有`Card`コンポーネント自体・
+  他の呼び出し元には一切触れていない。ヘッダーに✏️「編集」ボタンを追加し、
+  上記モーダルを開く。0件時は「登録されている重要事項はありません」と表示。
+- **検証**: `npx tsc --noEmit`パス(既存の無関係な失敗15件のみ、変更前と同一の
+  エラー集合)。`npm run build`パス(新規ルート`/api/customers/[id]/
+  contraindications-manual`がビルド出力に登場することを確認)。`next-env.d.ts`の
+  build副作用は復元済み。**実機での表示・保存動作確認は未検証**。
+
+**この解除は上記(手動登録・編集UI、新規PUTエンドポイント、`CONTRAINDICATION_RULES`
+のexport化)のみに限る。** 既存のGET/POST(`contraindications/route.ts`)・
+スマホアプリ側の自動生成ロジック・Phase 2-S①-aの残りの未コミット差分には
+一切触れていない(それらは今回のコミットに含めておらず、判断も行っていない)。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

@@ -53,7 +53,7 @@ const DEMO_CONTRAINDICATIONS: Contraindication[] = [
 
 // ─── キーワード辞書 ───────────────────────────────────────────────────────────
 
-interface ContraindicationRule {
+export interface ContraindicationRule {
   keywords:       string[]
   severity:       ContraindicationSeverity
   title:          string
@@ -61,7 +61,13 @@ interface ContraindicationRule {
   recommendation: string
 }
 
-const CONTRAINDICATION_RULES: ContraindicationRule[] = [
+/**
+ * 16項目のルール定義(手動登録UI・PHASE KARTE-CONTRAINDICATION-MANUAL-1で
+ * export化。キーワード辞書自体は無変更)。手動登録モーダル
+ * (ContraindicationEditModal.tsx)・API(/api/customers/[id]/contraindications
+ * のPUT)双方で、この配列のtitleを唯一の正として再利用する。
+ */
+export const CONTRAINDICATION_RULES: ContraindicationRule[] = [
   // ── CRITICAL ──────────────────────────────────────────────────────────────
   {
     keywords:       ['感染症', '感染中', '皮膚感染', 'ウイルス', '帯状疱疹', 'ヘルペス'],

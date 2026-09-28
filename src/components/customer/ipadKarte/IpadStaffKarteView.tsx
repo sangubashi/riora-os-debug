@@ -41,6 +41,7 @@ import { useStaffTagSession } from '@/lib/staffTag/useStaffTagSession'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { calculateAge } from '@/lib/customer/birthDate'
 import SalonBoardImportModal from '@/components/customer/SalonBoardImportModal'
+import ContraindicationEditModal from './ContraindicationEditModal'
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
 /** クイック選択の候補(本日起点の週数)。 */
@@ -425,6 +426,8 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
   const [acquisitionChannel, setAcquisitionChannel] = useState<string | null>(null)
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null)
   const [showSalonBoardImport, setShowSalonBoardImport] = useState(false)
+  // 重要事項の手動登録・編集モーダル(2026-09-28ユーザー承認)。
+  const [showContraindicationEdit, setShowContraindicationEdit] = useState(false)
 
   const fetchCustomerDetail = useCallback(async () => {
     try {
@@ -540,8 +543,37 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
           >
             {/* ── 左カラム ── */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {data.contraindications.length > 0 && (
-                <Card title="⚠ 重要事項">
+              {/*
+                重要事項の手動登録・編集(2026-09-28ユーザー承認): それまでCard(共有
+                コンポーネント、他画面でも使用)で「1件以上ある場合のみ表示」だったが、
+                登録前の状態でも編集ボタンを出す必要があるため、Cardの見た目(背景・
+                border・padding)をこのブロック限定で複製し、常時表示に変更した。
+                共有Cardコンポーネント自体・他の呼び出し元には一切触れていない。
+              */}
+              <div
+                style={{
+                  background: PALETTE.card, border: `1px solid ${PALETTE.border}`, borderRadius: '18px',
+                  padding: '18px 20px', boxShadow: PALETTE.shadow,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                  <p style={{ margin: 0, fontSize: '13px', letterSpacing: '0.08em', color: PALETTE.gold, fontFamily: headingFont.style.fontFamily }}>
+                    ⚠ 重要事項
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowContraindicationEdit(true)}
+                    aria-label="重要事項を編集"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px',
+                      border: `1px solid ${PALETTE.border}`, borderRadius: '999px', background: 'none',
+                      color: PALETTE.muted, fontSize: '11px', cursor: 'pointer',
+                    }}
+                  >
+                    <Pencil size={12} />編集
+                  </button>
+                </div>
+                {data.contraindications.length > 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     {data.contraindications.map(ci => (
                       <div key={ci.id}>
@@ -556,8 +588,10 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
                       </div>
                     ))}
                   </div>
-                </Card>
-              )}
+                ) : (
+                  <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>登録されている重要事項はありません</p>
+                )}
+              </div>
             </div>
 
             {/* ── 右カラム ── */}
@@ -749,6 +783,15 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
           customerId={customerId}
           onClose={() => setShowSalonBoardImport(false)}
           onImported={() => void fetchCustomerDetail()}
+        />
+      )}
+
+      {showContraindicationEdit && (
+        <ContraindicationEditModal
+          customerId={customerId}
+          existing={data.contraindications}
+          onClose={() => setShowContraindicationEdit(false)}
+          onSaved={() => void data.refetchGoalAndContraindications()}
         />
       )}
     </div>
