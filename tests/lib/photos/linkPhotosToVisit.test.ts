@@ -8,6 +8,11 @@
 //   4. deleted_atあり → is('deleted_at', null)条件でそもそも対象外
 //   5. UPDATE自体が失敗 → 例外を投げずok:falseを返す(呼び出し元を落とさない)
 //   6. JSTの日付境界 → UTC日付ではなくJST日付で計算されていることを直接検証
+//
+// 同日複数visit時の誤紐付け防止(2026-09-29ユーザー承認、追加ケース):
+//   7. 同日に対象visitより後に作成されたvisitがある → そのcreated_atを上限にする
+//   8. 同日に対象visitより前に作成されたvisitがある → そのcreated_atを下限にする
+//   9. 同日visit一覧の取得自体が失敗 → 従来通りJST暦日いっぱいにフォールバックする
 // ================================================================
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -20,14 +25,23 @@ import { jstDayRangeToUtcIso, linkUnattachedPhotosToVisit } from '../../../src/l
 
 const mockGetClient = vi.mocked(getPhotoServiceClient)
 
-/** update().eq().is().is().gte().lt().select() のチェインを記録しつつ結果を返すフェイク。 */
-function createFakeSupabase(result: { data?: unknown; error?: unknown }) {
+/**
+ * from('brain_visits')(同日visit一覧取得)とfrom('brain_customer_photos')(UPDATE)の
+ * 2種類のチェインを、テーブル名で振り分けて記録・返却するフェイク。
+ * visitsResultを省略した場合は「同日に対象visit(visit-1)のみが存在する」体で返し、
+ * 従来(単一visit)のJST暦日いっぱいの範囲にフォールバックする挙動を再現する。
+ */
+function createFakeSupabase(
+  photosResult: { data?: unknown; error?: unknown },
+  visitsResult?: { data?: unknown; error?: unknown },
+) {
   const calls: { method: string; args: unknown[] }[] = []
-  const chainMethods = ['update', 'eq', 'is', 'gte', 'lt', 'select'] as const
+  const photoChainMethods = ['update', 'eq', 'is', 'gte', 'lt', 'select'] as const
+  const visitChainMethods = ['select', 'eq', 'is', 'order'] as const
 
-  function chainable(): Record<string, unknown> {
+  function chainable(methods: readonly string[], result: unknown): Record<string, unknown> {
     const obj: Record<string, unknown> = {}
-    for (const m of chainMethods) {
+    for (const m of methods) {
       obj[m] = vi.fn((...args: unknown[]) => {
         calls.push({ method: m, args })
         return obj
@@ -37,10 +51,13 @@ function createFakeSupabase(result: { data?: unknown; error?: unknown }) {
     return obj
   }
 
+  const defaultVisitsResult = { data: [{ id: 'visit-1', created_at: '2026-09-08T04:00:00.000Z' }], error: null }
+
   return {
     from: vi.fn((table: string) => {
       calls.push({ method: 'from', args: [table] })
-      return chainable()
+      if (table === 'brain_visits') return chainable(visitChainMethods, visitsResult ?? defaultVisitsResult)
+      return chainable(photoChainMethods, photosResult)
     }),
     __calls: calls,
   }
@@ -134,5 +151,72 @@ describe('linkUnattachedPhotosToVisit', () => {
     })
 
     expect(result).toEqual({ ok: false, error: 'Supabase env not configured' })
+  })
+
+  it('ケース7: 同日に対象visitより後に作成されたvisitがある場合、そのcreated_atを上限にする(後の来店の写真が混入しない)', async () => {
+    const visitsResult = {
+      data: [
+        { id: 'visit-1', created_at: '2026-09-08T01:00:00.000Z' }, // 先(古い)来店=対象
+        { id: 'visit-2', created_at: '2026-09-08T05:00:00.000Z' }, // 後(新しい)来店
+      ],
+      error: null,
+    }
+    const fake = createFakeSupabase({ data: [{ id: 'photo-1' }], error: null }, visitsResult)
+    mockGetClient.mockReturnValue(fake as never)
+
+    await linkUnattachedPhotosToVisit({
+      customerId: 'cust-1',
+      visitId:    'visit-1',
+      visitDate:  '2026-09-08',
+    })
+
+    const calls = fake.__calls
+    // 下限はJST暦日の開始のまま(対象visitより前の同日visitが無いため)
+    expect(calls).toContainEqual({ method: 'gte', args: ['taken_at', '2026-09-07T15:00:00.000Z'] })
+    // 上限は後のvisit(visit-2)のcreated_at(JST暦日の終了ではない)
+    expect(calls).toContainEqual({ method: 'lt', args: ['taken_at', '2026-09-08T05:00:00.000Z'] })
+  })
+
+  it('ケース8: 同日に対象visitより前に作成されたvisitがある場合、そのcreated_atを下限にする(前の来店の写真を奪わない)', async () => {
+    const visitsResult = {
+      data: [
+        { id: 'visit-1', created_at: '2026-09-08T01:00:00.000Z' }, // 先(古い)来店
+        { id: 'visit-2', created_at: '2026-09-08T05:00:00.000Z' }, // 後(新しい)来店=対象
+      ],
+      error: null,
+    }
+    const fake = createFakeSupabase({ data: [{ id: 'photo-2' }], error: null }, visitsResult)
+    mockGetClient.mockReturnValue(fake as never)
+
+    await linkUnattachedPhotosToVisit({
+      customerId: 'cust-1',
+      visitId:    'visit-2',
+      visitDate:  '2026-09-08',
+    })
+
+    const calls = fake.__calls
+    // 下限は前のvisit(visit-1)のcreated_at(JST暦日の開始ではない)
+    expect(calls).toContainEqual({ method: 'gte', args: ['taken_at', '2026-09-08T01:00:00.000Z'] })
+    // 上限はJST暦日の終了のまま(対象visitより後の同日visitが無いため)
+    expect(calls).toContainEqual({ method: 'lt', args: ['taken_at', '2026-09-08T15:00:00.000Z'] })
+  })
+
+  it('ケース9: 同日visit一覧の取得がエラーの場合、従来通りJST暦日いっぱいにフォールバックする(絞り込みを諦めても写真は紐付ける)', async () => {
+    const fake = createFakeSupabase(
+      { data: [{ id: 'photo-1' }], error: null },
+      { data: null, error: { message: 'visits query failed' } },
+    )
+    mockGetClient.mockReturnValue(fake as never)
+
+    const result = await linkUnattachedPhotosToVisit({
+      customerId: 'cust-1',
+      visitId:    'visit-1',
+      visitDate:  '2026-09-08',
+    })
+
+    expect(result).toEqual({ ok: true, linkedCount: 1 })
+    const calls = fake.__calls
+    expect(calls).toContainEqual({ method: 'gte', args: ['taken_at', '2026-09-07T15:00:00.000Z'] })
+    expect(calls).toContainEqual({ method: 'lt', args: ['taken_at', '2026-09-08T15:00:00.000Z'] })
   })
 })

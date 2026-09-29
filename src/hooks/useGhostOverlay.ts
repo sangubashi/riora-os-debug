@@ -92,7 +92,10 @@ function readStoredEnabled(): boolean {
   } catch {
     // 同上
   }
-  return true
+  // 既定オフ(2026-09-29ユーザー承認): 前回写真との誤認識を防ぐため、スタッフが
+  // 明示的にトグルをONにするまでは撮影画面にゴーストを重ねない。過去にトグルを
+  // 操作したことがある端末はlocalStorageの値をそのまま優先する(上のreturnで処理済み)。
+  return false
 }
 
 /** 「2026/03/15 (3週間前)」形式の表示ラベルを組み立てる(IMG_1448.JPGの表記に合わせる)。 */
@@ -119,7 +122,9 @@ export function useGhostOverlay({
   autoGhost,
   autoGhostUrl,
 }: UseGhostOverlayOptions): UseGhostOverlayResult {
-  const [enabled, setEnabledState] = useState(true)
+  // 初期値はreadStoredEnabled()と同じ既定オフ(mount時のuseEffectで上書きされるまでの
+  // 1フレームだけONに見えてしまうのを防ぐため、ここもfalseに揃える)。
+  const [enabled, setEnabledState] = useState(false)
   const [opacityPercent, setOpacityPercentState] = useState(GHOST_DEFAULT_OPACITY_PERCENT)
   const [scalePercent, setScalePercentState] = useState(GHOST_DEFAULT_SCALE_PERCENT)
   const [candidates, setCandidates] = useState<GhostCandidatePhoto[]>([])

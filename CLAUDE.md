@@ -2829,6 +2829,51 @@ gap/padding)に広げた。`IpadStaffKarteView.tsx`側の呼び出し・レイ�
 メインコース・追加オプションの編集導線、カルテメモ・顔シェーマ、ギャラリーのプリロード
 ロジックには一切触れていない。
 
+### 撮影側 着手済み事項（ゴースト既定オフ化・同日複数visit写真誤紐付け防止・HEIC直送りWIPの整理のみ・2026-09-29ユーザー承認）
+
+**背景**: モデル自身がユーザーからの「撮影側や写真の懸念点」照会に答える形で指摘した
+3点について、ユーザーが対応を依頼した。
+
+**1. ゴースト機能の既定オフ化**: `src/hooks/useGhostOverlay.ts`の`readStoredEnabled()`の
+フォールバック値と`useState`の初期値を`true`→`false`に変更した。localStorageに
+過去の明示的なON/OFF操作履歴があればそちらを優先する既存ロジック(`GHOST_ENABLED_STORAGE_KEY`)
+は無変更のため、既にトグルを操作したことがある端末の挙動は変わらない。`opacityPercent`
+既定値(30%)・自動位置合わせ(`ghostAlignment.ts`)・選定ロジック(`ghostSelection.ts`)には
+一切触れていない(2026-09-18「一旦停止」指示の対象である自動位置・サイズ合わせの
+改修ではないため、着手前のユーザー確認は不要と判断した。既定値変更のみ)。
+
+**2. 同日複数visit時の写真誤紐付け防止**: `src/lib/photos/linkPhotosToVisit.ts`に
+`resolveTakenAtRange()`を新設した。同一顧客・同一visit_date(JST暦日)の
+brain_visitsを`created_at`昇順で取得し、対象visitの直前・直後の同日visit(存在する
+場合のみ)の`created_at`をtaken_atの下限・上限として使う(無ければ従来通りJST暦日の
+開始/終了)。新しい識別子(capture_session_id等)は導入していない(このファイル冒頭の
+既存方針を維持)。同日visit一覧の取得自体が失敗した場合は、絞り込みを諦めて従来通り
+JST暦日いっぱいにフォールバックする(非致命的方針を維持、写真が誰にも紐付かないまま
+埋もれる事態を避ける)。`tests/lib/photos/linkPhotosToVisit.test.ts`にケース7〜9
+(後続visitのcreated_atが上限になる/先行visitのcreated_atが下限になる/取得失敗時の
+フォールバック)を追加し、既存6ケースと合わせ全9件パス。呼び出し元
+(`app/api/visits/service-complete/route.ts`)・brain_visits作成/採番ロジックには
+一切触れていない。
+
+**3. HEIC直送りWIPの整理**: `src/lib/photos/constants.ts`・
+`tests/api/customer-photos-upload.test.ts`にあった未コミットの変更(HEIC/HEIF許可・
+アップロード上限15MB化)を`git checkout`で直前のコミット状態へ戻し、
+`ALLOWED_PHOTO_MIME_TYPES=['image/webp','image/jpeg']`・`MAX_PHOTO_UPLOAD_BYTES=5MB`
+の現行フローに統一した。`fileToWebpBlob.ts`(選択して追加時、HEIC等を含め常にcanvas
+経由でWebP/JPEGへ変換してから送信する既存実装)には元々変更が入っておらず、無変更のまま。
+このWIPは他ファイルに波及していなかったことをgrep(`heic`/`HEIC`)で確認済み。
+
+**検証**: `npx tsc --noEmit`パス(既存の無関係な失敗10件のみ、変更前と同一のエラー集合)。
+`tests/lib/photos/linkPhotosToVisit.test.ts`(9件)・`tests/api/customer-photos-upload.test.ts`
+(12件、`.env.local`読み込み後)・`tests/api/customer-visit-treatment.test.ts`(10件)
+全てパス。`npm run build`パス。`next-env.d.ts`のbuild副作用は復元済み。**実機(iPad
+Safari)での動作確認、および同日複数visitシナリオの本番データでの検証は未実施**。
+
+**この解除は上記3点(ゴースト既定オフ化、同日複数visit写真誤紐付け防止ロジックの追加、
+HEIC直送りWIPの整理)のみに限る。** ゴーストの自動位置・サイズ合わせ・選定ロジック、
+brain_visitsの作成/採番ロジック、写真アップロードAPI本体(`app/api/customers/[id]/photos/route.ts`)
+には一切触れていない。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

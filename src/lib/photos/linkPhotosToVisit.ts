@@ -47,8 +47,55 @@ export interface LinkPhotosToVisitParams {
 }
 
 /**
+ * 同日複数visit時の写真誤紐付け防止(2026-09-29ユーザー承認): 同一顧客・同一visit_date
+ * (JST暦日)に複数のbrain_visits行が存在し得る(例: 同日に会計IDの異なる2回来店、
+ * CLAUDE.md「同一顧客・同日複数会計の売上欠落」修正の副作用として発生する既知の仕様)。
+ * この場合、従来はJST暦日いっぱいの範囲で未紐付け写真を検索していたため、後の来店で
+ * 撮影した写真が先に呼ばれた方のvisitへ紐付いてしまう恐れがあった。
+ *
+ * 新しいcapture_session_id等の識別子は導入せず(このファイル冒頭の設計方針を維持)、
+ * 既存のbrain_visits.created_atのみを使い、同日の他visitとの前後関係から
+ * taken_atの探索範囲を絞り込む: 対象visitより前に作成された同日visitがあればその
+ * created_atを下限に、後に作成された同日visitがあればそのcreated_atを上限にする
+ * (無ければ従来通りJST暦日の開始/終了を使う)。呼び出し順に関わらず、既に存在する
+ * 同日visit同士の間で未紐付け写真が食い合わないようにするためのガード。
+ *
+ * この絞り込み自体が失敗した場合(brain_visits取得エラー等)は、非致命的方針を優先し
+ * 従来通りJST暦日いっぱいの範囲にフォールバックする(絞り込みを諦めても、少なくとも
+ * 写真が誰にも紐付かないまま埋もれる事態は避ける)。
+ */
+async function resolveTakenAtRange(
+  sb: ReturnType<typeof getPhotoServiceClient>,
+  params: LinkPhotosToVisitParams,
+  dayRange: JstDayRangeUtc,
+): Promise<JstDayRangeUtc> {
+  const { customerId, visitId, visitDate } = params
+  const { data, error } = await sb
+    .from('brain_visits')
+    .select('id, created_at')
+    .eq('customer_id', customerId)
+    .eq('visit_date', visitDate)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: true })
+
+  if (error || !data) return dayRange
+
+  const sameDayVisits = data as { id: string; created_at: string }[]
+  const index = sameDayVisits.findIndex(v => v.id === visitId)
+  if (index === -1) return dayRange
+
+  const previous = index > 0 ? sameDayVisits[index - 1] : null
+  const next = index < sameDayVisits.length - 1 ? sameDayVisits[index + 1] : null
+
+  return {
+    startUtc: previous?.created_at ?? dayRange.startUtc,
+    endUtc:   next?.created_at ?? dayRange.endUtc,
+  }
+}
+
+/**
  * customer_id一致・visit_id IS NULL・deleted_at IS NULL・taken_atがvisitDate当日(JST)の
- * 写真を、visitIdへ一括UPDATEする。
+ * うち対象visitの前後の同日visitとの境界内にある写真を、visitIdへ一括UPDATEする。
  *
  * 呼び出し元(service-complete)を失敗させない非致命的処理として設計されているため、
  * 例外は投げない(Supabaseエラー・env未設定等はすべてcatchしてok:falseで返す)。
@@ -58,10 +105,12 @@ export async function linkUnattachedPhotosToVisit(
   params: LinkPhotosToVisitParams
 ): Promise<{ ok: true; linkedCount: number } | { ok: false; error: string }> {
   const { customerId, visitId, visitDate } = params
-  const { startUtc, endUtc } = jstDayRangeToUtcIso(visitDate)
+  const dayRange = jstDayRangeToUtcIso(visitDate)
 
   try {
     const sb = getPhotoServiceClient()
+    const { startUtc, endUtc } = await resolveTakenAtRange(sb, params, dayRange)
+
     const { data, error } = await sb
       .from('brain_customer_photos')
       .update({ visit_id: visitId })
