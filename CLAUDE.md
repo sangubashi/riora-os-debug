@@ -2911,6 +2911,49 @@ brain_visitsの作成/採番ロジック、写真アップロードAPI本体(`ap
 (PATCH /visits/[visitId]/treatment)・展開後の施術コース・オプション表示自体には
 一切触れていない。
 
+### 撮影側 着手済み事項（カメラ撮影・保存写真の画質低下調査・canvas描画品質の修正のみ・2026-09-29ユーザー承認）
+
+**背景**: 「カメラ撮影画面・保存写真の画質低下」の調査を依頼された。着手前に、
+ユーザーが疑っていた3箇所(カメラ解像度・canvas圧縮設定・表示CSS)を1つずつ実際に
+コード確認した。
+
+- **カメラ解像度(`usePhotoCapture.ts`)**: `CAMERA_CONSTRAINTS`は既に
+  `width:{ideal:3072}, height:{ideal:2304}`(写真撮影画質改善Phase 3-Aで設定済み)
+  で、ユーザーが想定していた1920×1080より高い値だったため変更していない。
+- **canvas出力上限・圧縮品質(`captureFrame.ts`・`fileToWebpBlob.ts`)**: 長辺上限
+  `MAX_CAPTURE_LONG_EDGE_PX=3072px`・エンコード品質`0.9`も、いずれもPhase 3-Aで
+  既に引き上げ済み(ユーザー想定の0.85〜0.92の範囲内)だったため、この2値自体は
+  変更していない。
+- **表示CSS(`IpadPhotoCaptureModal.tsx`のvideo・`PhotoCompareKit.tsx`のPhotoPanel)**:
+  いずれも`objectFit:'cover'`/`'contain'`で、縦横比を維持したまま表示しており、
+  引き伸ばし(`fill`相当)によるCSS上の画質劣化は無いことを確認した(変更不要)。
+
+**実際に見つかった原因と修正**: 上記3点は既に適切に設定済みだった一方、
+`captureFrame.ts`の`captureVideoFrameToBlobAt`・`fileToWebpBlob.ts`の
+`encodeImageToBlob`のいずれも、縮小描画(`ctx.drawImage`)前に
+`imageSmoothingQuality`を明示的に設定していなかった。ブラウザの2D canvasは
+これを明示しない場合既定で低品質相当のsmoothingになるため、長辺が上限
+(3072px)を超える画像を縮小描画するたびに、解像度・圧縮設定とは別に
+実際の描画品質が劣化していたと判断した。両ファイルの該当箇所に
+`ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'`を
+`drawImage`の直前に追加した。`CaptureCanvasContext`インターフェースに
+この2つのオプショナルプロパティを追加した以外、関数シグネチャ・
+呼び出し側・解像度上限・圧縮品質・エンコードのフォールバック順序には
+一切触れていない。
+
+**検証**: `tests/lib/photos/captureFrame.test.ts`に、`drawImage`前に
+`imageSmoothingEnabled`/`imageSmoothingQuality`が設定されることを検証するケースを
+追加し、既存19件と合わせ全20件パス。`tests/lib/photos/`配下156件全てパス。
+`npx tsc --noEmit`パス(既存の無関係な失敗10件のみ、変更前と同一のエラー集合)。
+`npm run build`パス。`next-env.d.ts`のbuild副作用は復元済み。`fileToWebpBlob.ts`は
+ブラウザのcanvas.toBlob/Imageデコードに依存するためjsdomでのユニットテスト対象外
+(ファイル冒頭のコメントに既記載の既知の制約、今回も同様)。**実機(iPad Safari)での
+見た目上の画質改善確認は未検証**。
+
+**この解除は上記(canvas描画時のimageSmoothingQuality明示のみ)に限る。**
+カメラ解像度・長辺上限・エンコード品質・表示CSS(objectFit)・ゴースト機能・
+撮影/保存フロー本体には一切触れていない。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

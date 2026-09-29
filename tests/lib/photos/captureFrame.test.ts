@@ -165,6 +165,21 @@ describe('captureVideoFrameToBlob', () => {
     expect(canvas.height).toBe(600)
     expect(ctx.drawImage).toHaveBeenCalledWith(expect.anything(), 0, 0, 800, 600)
   })
+
+  // ── 画質調査(2026-09-29ユーザー承認): drawImage縮小描画時の既定smoothing品質引き上げ ──
+
+  it('drawImage前にimageSmoothingEnabled=true・imageSmoothingQuality=highを設定する', async () => {
+    const { canvas, ctx } = fakeCanvas()
+    const canvasToBlob = vi.fn(async (_c, mimeType: string) => blobOfType(mimeType))
+
+    await captureVideoFrameToBlob(
+      { element: {}, width: 3840, height: 2160 },
+      { createCanvas: () => canvas, canvasToBlob }
+    )
+
+    expect(ctx.imageSmoothingEnabled).toBe(true)
+    expect(ctx.imageSmoothingQuality).toBe('high')
+  })
 })
 
 describe('computeResizedDimensions', () => {

@@ -63,6 +63,11 @@ function encodeImageToBlob(img: HTMLImageElement, maxLongEdge: number, quality: 
   canvas.height = height
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('canvas_context_unavailable')
+  // 画質調査(2026-09-29ユーザー承認、captureFrame.tsと同じ対応): ブラウザ既定の
+  // imageSmoothingQuality('low'相当)のまま縮小描画すると不必要に画質が劣化するため、
+  // 明示的に'high'へ引き上げる。
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
 
   return encodeCanvasWithFallback(canvas as unknown as CaptureCanvas, canvasToBlobAdapter, quality)

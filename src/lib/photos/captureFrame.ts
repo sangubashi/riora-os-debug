@@ -112,6 +112,15 @@ export interface CaptureFrameSource {
 
 export interface CaptureCanvasContext {
   drawImage(source: unknown, dx: number, dy: number, dw: number, dh: number): void
+  /**
+   * 画質調査(2026-09-29ユーザー承認)で判明: ブラウザの2D canvasは既定で
+   * imageSmoothingQuality='low'(実装依存だが多くのブラウザでlow相当)のため、
+   * drawImageで縮小描画するたび(長辺が上限を超える撮影・選択画像すべて)に
+   * 不必要な画質劣化が起きていた。解像度上限(3072px)・エンコード品質(0.9)は
+   * 既にPhase 3-Aで十分に引き上げ済みだったため、今回はこの描画品質側が
+   * 実際のボトルネックだったと判断した。 */
+  imageSmoothingEnabled?: boolean
+  imageSmoothingQuality?: 'low' | 'medium' | 'high'
 }
 
 export interface CaptureCanvas {
@@ -149,6 +158,11 @@ export async function captureVideoFrameToBlobAt(
 
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('canvas_context_unavailable')
+
+  // 画質調査(2026-09-29ユーザー承認): 縮小描画時のブラウザ既定smoothing品質を
+  // 明示的に'high'へ引き上げる(CaptureCanvasContextのコメント参照)。
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
 
   // 描画対象は source.element(video)のみ。ゴーストレイヤーはこの関数の引数として
   // 一切受け取れないため、ここに描画コードを追加しない限り焼き込まれることはない。
