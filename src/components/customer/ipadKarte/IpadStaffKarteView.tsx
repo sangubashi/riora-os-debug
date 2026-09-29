@@ -799,7 +799,7 @@ export default function IpadStaffKarteView({ customerId, customerName, onClose, 
                 (PERF-KARTE-DEDUP-1・2026-09-27ユーザー承認)。カルテメモ・顔シェーマの
                 取得(このセクション自身のCRUD)には触れていない。 */}
             <div style={{ gridColumn: '1 / -1' }}>
-              <VisitHistorySection customerId={customerId} visits={data.visits} />
+              <VisitHistorySection customerId={customerId} visits={data.visits} todayVisitId={data.todayVisitId} />
             </div>
 
             {/* 顧客ステータス(購買・来店周期データ管理 Phase1・2026-09-12)。すべて自動計算・

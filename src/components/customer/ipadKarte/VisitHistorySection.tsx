@@ -45,8 +45,15 @@ interface VisitTreatmentInfo {
 }
 
 interface Props {
-  customerId: string
-  visits:     VisitHistoryEntry[]
+  customerId:   string
+  visits:       VisitHistoryEntry[]
+  /** 本日のvisitId(useIpadKarteData()の`data.todayVisitId`をそのまま渡す想定・
+   *  2026-09-29ユーザー承認)。本日分は上部の常時表示「施術メモ」
+   *  (TreatmentRecordSection.tsx)が同じtreatment_memo列を編集するため、この
+   *  セクションの「✏️ 自由記述」ボタンは本日分のみ非表示にし、二重編集による
+   *  無言の上書き事故(互いのローカルstateが同期されない)を防ぐ。未指定時は
+   *  従来通り全visitで表示する(呼び出し元が無いテスト等への配慮)。 */
+  todayVisitId?: string | null
 }
 
 function formatDateOnly(dateStr: string): string {
@@ -71,7 +78,7 @@ function isSameLocalDate(iso: string, visitDate: string): boolean {
     && a.getDate() === b.getDate()
 }
 
-export default function VisitHistorySection({ customerId, visits }: Props) {
+export default function VisitHistorySection({ customerId, visits, todayVisitId }: Props) {
   const [memos, setMemos] = useState<CustomerKarteMemo[]>([])
   const [schemas, setSchemas] = useState<FacialSchemaApiShape[]>([])
   const [loading, setLoading] = useState(true)
@@ -422,7 +429,10 @@ export default function VisitHistorySection({ customerId, visits }: Props) {
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                       <p style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: PALETTE.muted }}>この日の自由記述メモ</p>
-                      {treatmentInfo && treatmentInfo.visitId === visit.id && (
+                      {/* 本日分は上部の常時表示「施術メモ」(TreatmentRecordSection.tsx)が
+                          同じtreatment_memo列を編集するため、二重編集による無言の上書きを
+                          防ぐ目的でボタン自体を出さない(2026-09-29ユーザー承認)。 */}
+                      {treatmentInfo && treatmentInfo.visitId === visit.id && visit.id !== todayVisitId && (
                         <button
                           type="button"
                           onClick={() => setEditingMemoVisitId(visit.id)}
@@ -444,7 +454,9 @@ export default function VisitHistorySection({ customerId, visits }: Props) {
                           {treatmentInfo.treatmentMemo}
                         </p>
                       ) : (
-                        <p style={{ margin: 0, fontSize: '16px', color: PALETTE.muted }}>未記入です</p>
+                        <p style={{ margin: 0, fontSize: '16px', color: PALETTE.muted }}>
+                          {visit.id === todayVisitId ? '本日分は上の「施術メモ」欄で編集してください' : '未記入です'}
+                        </p>
                       )
                     ) : (
                       <p style={{ margin: 0, fontSize: '16px', color: PALETTE.muted }}>取得できませんでした</p>
