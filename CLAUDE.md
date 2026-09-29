@@ -2874,6 +2874,43 @@ HEIC直送りWIPの整理)のみに限る。** ゴーストの自動位置・サ
 brain_visitsの作成/採番ロジック、写真アップロードAPI本体(`app/api/customers/[id]/photos/route.ts`)
 には一切触れていない。
 
+### `/karte` 着手済み事項（来店履歴カードのヘッダー見出しにメインコースが反映されないバグ修正のみ・2026-09-29ユーザー承認）
+
+**背景**: `VisitHistorySection.tsx`の折りたたみ行ヘッダー(「来店1回目 2026年7月13日・
+【回数券契約】...」等)が常に`visit.menuName`(予約/CSV由来、`brain_menus`経由)のみを
+参照しており、展開後の「✏️ メインコース」で`course_options`を手動変更・保存しても
+ヘッダーには一切反映されないバグを修正した。
+
+- **`app/api/customers/[id]/visit-history/route.ts`**: SELECTに`course_options`を追加し、
+  レスポンスの`VisitHistoryEntry`に`courseOptions: string[]`(空配列許容)を追加した。
+  同一クエリへの列追加のみで新規JOIN・追加リクエストは発生していない。`menuName`の
+  算出ロジック(`official_display_name ?? name`)自体は無変更。
+- **`src/components/customer/ipadKarte/ipadKarteData.ts`**: クライアント側の
+  `VisitHistoryEntry`型に同じく`courseOptions: string[]`を追加(JSONパススルーのため
+  実装上の変更はこの型宣言のみ、`staffName`追加時と同じパターン)。
+- **`VisitHistorySection.tsx`**: ヘッダーの見出しを`resolveHeaderCourseLabel()`
+  (①`courseOptions`が1件以上あれば「、」区切りで連結してそれを優先表示、②無ければ
+  従来通り`menuName`)経由に変更した。保存直後の即時反映のため、`courseNameOverrides`
+  (visitId→courseOptionsのローカルstate)を新設し、`TreatmentCourseEditModal`の
+  `onSaved`で更新する(親の`visits`props(`useIpadKarteData()`側のstate)を
+  再フェッチしなくても、保存した瞬間にそのカードのヘッダーへ反映される)。ページ再読込後は
+  上記API側の`courseOptions`がそのまま正しく表示されるため、このoverrideは「このセッション中に
+  編集した分の即時反映」用の上乗せに過ぎない。「✏️ 追加オプション」(`optionItems`)は
+  今回のバグ報告・修正対象に含まれないため、ヘッダーには従来通り反映しない(展開後の
+  バッジ表示のみ、無変更)。
+
+**検証**: `npx tsc --noEmit`パス(既存の無関係な失敗10件のみ、変更前と同一のエラー集合)。
+`tests/api/customer-visit-treatment.test.ts`(10件)・`tests/api/customer-today-treatment-course.test.ts`
+(13件、いずれも本修正と無関係だが念のため実行)全てパス(バックエンドAPIは
+`visit-history`ルートのSELECT列追加のみで、影響範囲外のためテスト自体は無変更)。
+`npm run build`パス。`next-env.d.ts`のbuild副作用は復元済み。`VisitHistorySection.tsx`には
+元々ユニット/コンポーネントテストが存在しない。**実機(iPad Safari)での動作確認は未検証**。
+
+**この解除は上記(来店履歴カードヘッダーのコース名表示ロジック修正、関連するAPI/型定義の
+拡張)のみに限る。** `menuName`の算出ロジック・`course_options`/`option_items`の保存経路
+(PATCH /visits/[visitId]/treatment)・展開後の施術コース・オプション表示自体には
+一切触れていない。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

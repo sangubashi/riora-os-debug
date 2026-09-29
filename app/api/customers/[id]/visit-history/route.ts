@@ -20,6 +20,13 @@
  * 一切影響しない。呼び出し元(ipadKarteData.ts・customerModeData.ts、IpadStaffKarteView.tsx・
  * CustomerModeView.tsxの「今回の施術」「来店履歴」)はmenuNameをそのまま表示するだけなので
  * 無変更で反映される。
+ *
+ * courseOptions(2026-09-29ユーザー承認・来店履歴カードのヘッダー見出し反映バグ修正):
+ * brain_visits.course_options(「✏️ メインコース」で手動設定される値、PATCH
+ * /visits/[visitId]/treatment経由)を追加で返す。VisitHistorySection.tsxの
+ * ヘッダー見出しが従来menuName(予約/CSV由来)しか見ておらず、手動でコースを変更しても
+ * 見出しに反映されなかったバグの修正に使う。同一クエリの列追加のみで新規JOIN・
+ * 追加リクエストは発生しない。
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '../../../../lib/repos'
@@ -28,12 +35,19 @@ import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest'
 import { canAccessCustomer } from '@/lib/auth/canAccessCustomer'
 
 export interface VisitHistoryEntry {
-  id:        string
-  visitDate: string
-  menuName:  string | null
-  menuId:    string | null
-  amount:    number
-  staffName: string | null
+  id:            string
+  visitDate:     string
+  menuName:      string | null
+  menuId:        string | null
+  amount:        number
+  staffName:     string | null
+  /** 「✏️ メインコース」で手動設定された値(未設定時は空配列)。 */
+  courseOptions: string[]
+}
+
+function toStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((v): v is string => typeof v === 'string')
 }
 
 export async function GET(
@@ -61,7 +75,7 @@ export async function GET(
 
   const { data: visits, error } = await supabase
     .from('brain_visits')
-    .select('id, visit_date, treatment_amount, retail_amount, menu_id, staff_id')
+    .select('id, visit_date, treatment_amount, retail_amount, menu_id, staff_id, course_options')
     .eq('customer_id', customerId)
     .is('deleted_at', null)
     .order('visit_date', { ascending: false })
@@ -75,6 +89,7 @@ export async function GET(
     id: string; visit_date: string
     treatment_amount: number | null; retail_amount: number | null
     menu_id: string | null; staff_id: string | null
+    course_options: unknown
   }>
 
   const menuIds  = Array.from(new Set(rows.map(v => v.menu_id).filter((v): v is string => !!v)))
@@ -93,12 +108,13 @@ export async function GET(
   const staffMap = new Map((staffRes.data ?? []).map(s => [s.id, s.name]))
 
   const result: VisitHistoryEntry[] = rows.map(v => ({
-    id:        v.id,
-    visitDate: v.visit_date,
-    menuName:  v.menu_id ? menuMap.get(v.menu_id) ?? null : null,
-    menuId:    v.menu_id,
-    amount:    (v.treatment_amount ?? 0) + (v.retail_amount ?? 0),
-    staffName: v.staff_id ? staffMap.get(v.staff_id) ?? null : null,
+    id:            v.id,
+    visitDate:     v.visit_date,
+    menuName:      v.menu_id ? menuMap.get(v.menu_id) ?? null : null,
+    menuId:        v.menu_id,
+    amount:        (v.treatment_amount ?? 0) + (v.retail_amount ?? 0),
+    staffName:     v.staff_id ? staffMap.get(v.staff_id) ?? null : null,
+    courseOptions: toStringList(v.course_options),
   }))
 
   return NextResponse.json({ success: true, visits: result })

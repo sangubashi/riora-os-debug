@@ -68,6 +68,16 @@ function formatTime(iso: string): string {
   return d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
 }
 
+/**
+ * 来店履歴カードのヘッダーに表示するコース名(2026-09-29ユーザー承認)。
+ * 1. 手動設定されたメインコース(courseOptions)があればそれを優先(複数選択時は「、」で連結)。
+ * 2. 無ければ従来通り予約/CSV由来のmenuNameを表示する。
+ */
+function resolveHeaderCourseLabel(courseOptions: string[], menuName: string | null): string | null {
+  if (courseOptions.length > 0) return courseOptions.join('、')
+  return menuName
+}
+
 /** created_at(タイムスタンプ)がvisitDate(YYYY-MM-DD)と同じ暦日かを判定する(ローカル時刻基準)。 */
 function isSameLocalDate(iso: string, visitDate: string): boolean {
   const a = new Date(iso)
@@ -98,6 +108,13 @@ export default function VisitHistorySection({ customerId, visits, todayVisitId }
   const [treatmentLoading, setTreatmentLoading] = useState(false)
   const [editingCourseVisitId, setEditingCourseVisitId] = useState<string | null>(null)
   const [editingOptionVisitId, setEditingOptionVisitId] = useState<string | null>(null)
+  // 来店履歴カードのヘッダー見出し反映バグ修正(2026-09-29ユーザー承認): 「✏️ メインコース」で
+  // 保存した直後、visits(親から渡されたprops、useIpadKarteData()側のstate)を再取得せずとも
+  // ヘッダーの見出しに即座に反映されるよう、visitIdごとの最新courseOptionsをこのセクション内に
+  // 保持する。visits自体はAPI(/api/customers/[id]/visit-history)がcourseOptionsを返すように
+  // 修正済みのため、このoverrideはあくまで「このセッション中に編集した分の即時反映」用の
+  // 上乗せであり、ページ再読み込み後はAPI側の値がそのまま正しく表示される。
+  const [courseNameOverrides, setCourseNameOverrides] = useState<Record<string, string[]>>({})
   // 過去来店の自由記述メモ編集(2026-09-29ユーザー承認): treatment_memo列を対象とする。
   const [editingMemoVisitId, setEditingMemoVisitId] = useState<string | null>(null)
 
@@ -249,6 +266,8 @@ export default function VisitHistorySection({ customerId, visits, todayVisitId }
           const isExpanded = expandedVisitId === visit.id
           const dayMemos = memos.filter(m => isSameLocalDate(m.created_at, visit.visitDate))
           const daySchema = schemas.find(s => s.schemaDate === visit.visitDate) ?? null
+          const headerCourseOptions = courseNameOverrides[visit.id] ?? visit.courseOptions
+          const headerCourseLabel = resolveHeaderCourseLabel(headerCourseOptions, visit.menuName)
 
           return (
             <div key={visit.id} style={{ border: `1px solid ${PALETTE.border}`, borderRadius: '10px', overflow: 'hidden' }}>
@@ -266,7 +285,9 @@ export default function VisitHistorySection({ customerId, visits, todayVisitId }
                 <span style={{ color: PALETTE.muted, fontSize: '15px' }}>
                   {[
                     formatDateOnly(visit.visitDate),
-                    visit.menuName,
+                    // ヘッダー見出し反映バグ修正(2026-09-29ユーザー承認): 「✏️ メインコース」で
+                    // 手動設定した値があればmenuName(予約/CSV由来)より優先して表示する。
+                    headerCourseLabel,
                     // 来店履歴サマリー表示改善(2026-09-28ユーザー承認): 担当スタッフ名を
                     // 一目で確認できるよう折りたたみ行にも追加(タップして展開しなくても
                     // 日付・施術・担当が分かるようにする)。
@@ -486,8 +507,11 @@ export default function VisitHistorySection({ customerId, visits, todayVisitId }
           visitId={editingCourseVisitId}
           existing={treatmentInfo.courseOptions}
           onClose={() => setEditingCourseVisitId(null)}
-          onSaved={(_visitId, courseOptions) => {
+          onSaved={(savedVisitId, courseOptions) => {
             setTreatmentInfo(prev => (prev ? { ...prev, courseOptions } : prev))
+            // ヘッダー見出し反映バグ修正(2026-09-29ユーザー承認): visits props(親のstate)
+            // を再取得しなくても、保存直後にこのカードのヘッダーへ即座に反映されるようにする。
+            setCourseNameOverrides(prev => ({ ...prev, [savedVisitId]: courseOptions }))
             setEditingCourseVisitId(null)
           }}
         />

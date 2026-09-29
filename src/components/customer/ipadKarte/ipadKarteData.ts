@@ -66,6 +66,12 @@ export interface VisitHistoryEntry {
    * ローカル型に未宣言だったため使われていなかった(新規APIエンドポイント追加は不要)。
    */
   staffName: string | null
+  /**
+   * 「✏️ メインコース」で手動設定された値(2026-09-29ユーザー承認・来店履歴カードの
+   * ヘッダー見出し反映バグ修正)。未設定時は空配列。VisitHistorySection.tsxのヘッダーで
+   * menuName(予約/CSV由来)より優先して表示する。
+   */
+  courseOptions: string[]
 }
 
 interface SkinRecord {
