@@ -30,6 +30,7 @@ import type { FacialSchemaApiShape } from '@/lib/facialSchema/facialSchemaApiMap
 import type { VisitHistoryEntry } from './ipadKarteData'
 import TreatmentCourseEditModal from './TreatmentCourseEditModal'
 import TreatmentOptionEditModal from './TreatmentOptionEditModal'
+import PastVisitMemoEditModal from './PastVisitMemoEditModal'
 
 function toStringList(value: unknown): string[] {
   if (!Array.isArray(value)) return []
@@ -40,6 +41,7 @@ interface VisitTreatmentInfo {
   visitId:       string
   courseOptions: string[]
   optionItems:   string[]
+  treatmentMemo: string | null
 }
 
 interface Props {
@@ -89,6 +91,8 @@ export default function VisitHistorySection({ customerId, visits }: Props) {
   const [treatmentLoading, setTreatmentLoading] = useState(false)
   const [editingCourseVisitId, setEditingCourseVisitId] = useState<string | null>(null)
   const [editingOptionVisitId, setEditingOptionVisitId] = useState<string | null>(null)
+  // 過去来店の自由記述メモ編集(2026-09-29ユーザー承認): treatment_memo列を対象とする。
+  const [editingMemoVisitId, setEditingMemoVisitId] = useState<string | null>(null)
 
   useEffect(() => {
     setTreatmentInfo(null)
@@ -102,13 +106,14 @@ export default function VisitHistorySection({ customerId, visits }: Props) {
         if (res.ok) {
           const json = await res.json() as {
             success: boolean
-            treatment?: { visitId: string; courseOptions?: unknown; optionItems?: unknown }
+            treatment?: { visitId: string; courseOptions?: unknown; optionItems?: unknown; treatmentMemo?: string | null }
           }
           if (json.success && json.treatment) {
             setTreatmentInfo({
               visitId:       json.treatment.visitId,
               courseOptions: toStringList(json.treatment.courseOptions),
               optionItems:   toStringList(json.treatment.optionItems),
+              treatmentMemo: json.treatment.treatmentMemo ?? null,
             })
           }
         }
@@ -244,14 +249,14 @@ export default function VisitHistorySection({ customerId, visits }: Props) {
                 type="button"
                 onClick={() => setExpandedVisitId(isExpanded ? null : visit.id)}
                 style={{
-                  width: '100%', display: 'flex', alignItems: 'center', gap: '8px',
-                  padding: '10px 12px', border: 'none', background: PALETTE.card,
-                  color: PALETTE.text, fontSize: '13px', cursor: 'pointer', textAlign: 'left',
+                  width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
+                  padding: '15px 18px', border: 'none', background: PALETTE.card,
+                  color: PALETTE.text, fontSize: '17px', cursor: 'pointer', textAlign: 'left',
                 }}
               >
-                {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                 <span style={{ fontWeight: 700 }}>来店{visitNumber}回目</span>
-                <span style={{ color: PALETTE.muted, fontSize: '12px' }}>
+                <span style={{ color: PALETTE.muted, fontSize: '15px' }}>
                   {[
                     formatDateOnly(visit.visitDate),
                     visit.menuName,
@@ -264,40 +269,40 @@ export default function VisitHistorySection({ customerId, visits }: Props) {
               </button>
 
               {isExpanded && (
-                <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '12px', borderTop: `1px solid ${PALETTE.border}` }}>
+                <div style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '18px', borderTop: `1px solid ${PALETTE.border}` }}>
                   <div>
-                    <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: 700, color: PALETTE.muted }}>この日のカルテメモ</p>
+                    <p style={{ margin: '0 0 8px', fontSize: '14px', fontWeight: 700, color: PALETTE.muted }}>この日のカルテメモ</p>
                     {dayMemos.length === 0 && addingForVisitId !== visit.id && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>記録がありません</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <p style={{ margin: 0, fontSize: '16px', color: PALETTE.muted }}>記録がありません</p>
                         <button
                           type="button"
                           onClick={() => openAddForm(visit.id)}
                           style={{
-                            alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '6px',
-                            fontSize: '12px', fontWeight: 700, padding: '8px 14px', borderRadius: '999px',
+                            alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '8px',
+                            fontSize: '15px', fontWeight: 700, padding: '11px 18px', borderRadius: '999px',
                             border: `1.5px dashed ${PALETTE.gold}`, background: 'transparent', color: PALETTE.gold,
                             cursor: 'pointer',
                           }}
                         >
-                          <Plus size={13} strokeWidth={2.4} />この来店日のメモを追加(サロンボードから貼り付け)
+                          <Plus size={16} strokeWidth={2.4} />この来店日のメモを追加(サロンボードから貼り付け)
                         </button>
                       </div>
                     )}
 
                     {addingForVisitId === visit.id && (
-                      <div style={{ border: `1.5px solid ${PALETTE.gold}`, borderRadius: '12px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ border: `1.5px solid ${PALETTE.gold}`, borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         <button
                           type="button"
                           onClick={() => void handlePasteFromClipboard()}
                           style={{
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                            fontSize: '13px', fontWeight: 700, padding: '10px', borderRadius: '10px',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                            fontSize: '16px', fontWeight: 700, padding: '13px', borderRadius: '10px',
                             border: `1.5px dashed ${PALETTE.gold}`, background: 'transparent', color: PALETTE.gold,
                             cursor: 'pointer',
                           }}
                         >
-                          <ClipboardPaste size={15} />サロンボードのメモを貼り付け
+                          <ClipboardPaste size={18} />サロンボードのメモを貼り付け
                         </button>
                         <textarea
                           ref={draftRef}
@@ -308,49 +313,49 @@ export default function VisitHistorySection({ customerId, visits }: Props) {
                           placeholder={`${formatDateOnly(visit.visitDate)}のカルテメモ(サロンボードからコピーした内容を貼り付け、または直接入力)`}
                           style={{
                             width: '100%', boxSizing: 'border-box', resize: 'vertical', minHeight: '160px',
-                            fontSize: '14px', color: PALETTE.text, lineHeight: 1.7,
+                            fontSize: '17px', color: PALETTE.text, lineHeight: 1.7,
                             border: `1px solid ${PALETTE.border}`, borderRadius: '8px', padding: '10px',
                             outline: 'none', fontFamily: 'inherit',
                           }}
                         />
-                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
                           <button
                             type="button"
                             onClick={closeAddForm}
                             style={{
-                              display: 'flex', alignItems: 'center', gap: '4px',
-                              fontSize: '11px', padding: '6px 12px', borderRadius: '999px',
+                              display: 'flex', alignItems: 'center', gap: '6px',
+                              fontSize: '14px', padding: '9px 16px', borderRadius: '999px',
                               border: `1px solid ${PALETTE.border}`, background: PALETTE.card, color: PALETTE.muted,
                               cursor: 'pointer',
                             }}
                           >
-                            <X size={11} />キャンセル
+                            <X size={14} />キャンセル
                           </button>
                           <button
                             type="button"
                             onClick={() => void handleSaveDraft(visit)}
                             disabled={saving || !draftContent.trim()}
                             style={{
-                              display: 'flex', alignItems: 'center', gap: '4px',
-                              fontSize: '11px', fontWeight: 700, padding: '6px 14px', borderRadius: '999px',
+                              display: 'flex', alignItems: 'center', gap: '6px',
+                              fontSize: '14px', fontWeight: 700, padding: '9px 18px', borderRadius: '999px',
                               border: 'none', background: (saving || !draftContent.trim()) ? PALETTE.border : PALETTE.gold, color: '#fff',
                               cursor: (saving || !draftContent.trim()) ? 'default' : 'pointer',
                             }}
                           >
-                            <Check size={11} />{saving ? '保存中…' : 'この日のメモとして保存する'}
+                            <Check size={14} />{saving ? '保存中…' : 'この日のメモとして保存する'}
                           </button>
                         </div>
                       </div>
                     )}
 
                     {dayMemos.length > 0 && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {dayMemos.map(memo => (
-                          <div key={memo.id} style={{ border: `1px solid ${PALETTE.border}`, borderRadius: '8px', padding: '10px', background: PALETTE.bg }}>
-                            <p style={{ margin: 0, fontSize: '14px', color: PALETTE.text, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                          <div key={memo.id} style={{ border: `1px solid ${PALETTE.border}`, borderRadius: '8px', padding: '14px', background: PALETTE.bg }}>
+                            <p style={{ margin: 0, fontSize: '17px', color: PALETTE.text, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                               {memo.content}
                             </p>
-                            <p style={{ margin: '4px 0 0', fontSize: '10px', color: PALETTE.muted }}>
+                            <p style={{ margin: '6px 0 0', fontSize: '13px', color: PALETTE.muted }}>
                               {formatTime(memo.created_at)}{memo.staffName ? ` ・ ${memo.staffName}` : ''}
                             </p>
                           </div>
@@ -360,48 +365,48 @@ export default function VisitHistorySection({ customerId, visits }: Props) {
                   </div>
 
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                      <p style={{ margin: 0, fontSize: '11px', fontWeight: 700, color: PALETTE.muted }}>この日の施術コース・オプション</p>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <p style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: PALETTE.muted }}>この日の施術コース・オプション</p>
                       {treatmentInfo && treatmentInfo.visitId === visit.id && (
-                        <div style={{ display: 'flex', gap: '6px' }}>
+                        <div style={{ display: 'flex', gap: '8px' }}>
                           <button
                             type="button"
                             onClick={() => setEditingCourseVisitId(visit.id)}
                             style={{
-                              display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px',
+                              display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 14px',
                               border: `1px solid ${PALETTE.border}`, borderRadius: '999px',
-                              background: 'none', color: PALETTE.muted, fontSize: '11px', cursor: 'pointer',
+                              background: 'none', color: PALETTE.muted, fontSize: '14px', cursor: 'pointer',
                             }}
                           >
-                            <Pencil size={11} strokeWidth={2} />メインコース
+                            <Pencil size={15} strokeWidth={2} />メインコース
                           </button>
                           <button
                             type="button"
                             onClick={() => setEditingOptionVisitId(visit.id)}
                             style={{
-                              display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px',
+                              display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 14px',
                               border: `1px solid ${PALETTE.border}`, borderRadius: '999px',
-                              background: 'none', color: PALETTE.muted, fontSize: '11px', cursor: 'pointer',
+                              background: 'none', color: PALETTE.muted, fontSize: '14px', cursor: 'pointer',
                             }}
                           >
-                            <Pencil size={11} strokeWidth={2} />追加オプション
+                            <Pencil size={15} strokeWidth={2} />追加オプション
                           </button>
                         </div>
                       )}
                     </div>
                     {treatmentLoading ? (
-                      <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>読み込み中…</p>
+                      <p style={{ margin: 0, fontSize: '16px', color: PALETTE.muted }}>読み込み中…</p>
                     ) : treatmentInfo && treatmentInfo.visitId === visit.id ? (
                       (treatmentInfo.courseOptions.length === 0 && treatmentInfo.optionItems.length === 0) ? (
-                        <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>未選択です</p>
+                        <p style={{ margin: 0, fontSize: '16px', color: PALETTE.muted }}>未選択です</p>
                       ) : (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                           {[...treatmentInfo.courseOptions, ...treatmentInfo.optionItems].map((label, i) => (
                             <span
                               key={`${label}-${i}`}
                               style={{
-                                fontSize: '11px', color: PALETTE.text, background: PALETTE.bg,
-                                border: `1px solid ${PALETTE.border}`, borderRadius: '999px', padding: '5px 12px',
+                                fontSize: '14px', color: PALETTE.text, background: PALETTE.bg,
+                                border: `1px solid ${PALETTE.border}`, borderRadius: '999px', padding: '7px 16px',
                               }}
                             >
                               {label}
@@ -410,18 +415,50 @@ export default function VisitHistorySection({ customerId, visits }: Props) {
                         </div>
                       )
                     ) : (
-                      <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>取得できませんでした</p>
+                      <p style={{ margin: 0, fontSize: '16px', color: PALETTE.muted }}>取得できませんでした</p>
                     )}
                   </div>
 
                   <div>
-                    <p style={{ margin: '0 0 6px', fontSize: '11px', fontWeight: 700, color: PALETTE.muted }}>この日の顔シェーマ</p>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <p style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: PALETTE.muted }}>この日の自由記述メモ</p>
+                      {treatmentInfo && treatmentInfo.visitId === visit.id && (
+                        <button
+                          type="button"
+                          onClick={() => setEditingMemoVisitId(visit.id)}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 14px',
+                            border: `1px solid ${PALETTE.border}`, borderRadius: '999px',
+                            background: 'none', color: PALETTE.muted, fontSize: '14px', cursor: 'pointer',
+                          }}
+                        >
+                          <Pencil size={15} strokeWidth={2} />自由記述
+                        </button>
+                      )}
+                    </div>
+                    {treatmentLoading ? (
+                      <p style={{ margin: 0, fontSize: '16px', color: PALETTE.muted }}>読み込み中…</p>
+                    ) : treatmentInfo && treatmentInfo.visitId === visit.id ? (
+                      treatmentInfo.treatmentMemo?.trim() ? (
+                        <p style={{ margin: 0, fontSize: '16px', color: PALETTE.text, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                          {treatmentInfo.treatmentMemo}
+                        </p>
+                      ) : (
+                        <p style={{ margin: 0, fontSize: '16px', color: PALETTE.muted }}>未記入です</p>
+                      )
+                    ) : (
+                      <p style={{ margin: 0, fontSize: '16px', color: PALETTE.muted }}>取得できませんでした</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <p style={{ margin: '0 0 8px', fontSize: '14px', fontWeight: 700, color: PALETTE.muted }}>この日の顔シェーマ</p>
                     {daySchema ? (
                       <div style={{ maxWidth: '200px' }}>
                         <FacialSchemaThumbnail strokesData={daySchema.strokesData} />
                       </div>
                     ) : (
-                      <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>記録がありません</p>
+                      <p style={{ margin: 0, fontSize: '16px', color: PALETTE.muted }}>記録がありません</p>
                     )}
                   </div>
                 </div>
@@ -452,6 +489,19 @@ export default function VisitHistorySection({ customerId, visits }: Props) {
           onSaved={(_visitId, optionItems) => {
             setTreatmentInfo(prev => (prev ? { ...prev, optionItems } : prev))
             setEditingOptionVisitId(null)
+          }}
+        />
+      )}
+      {editingMemoVisitId && treatmentInfo && treatmentInfo.visitId === editingMemoVisitId && (
+        <PastVisitMemoEditModal
+          customerId={customerId}
+          visitId={editingMemoVisitId}
+          existing={treatmentInfo.treatmentMemo}
+          dateLabel={formatDateOnly(visits.find(v => v.id === editingMemoVisitId)?.visitDate ?? '')}
+          onClose={() => setEditingMemoVisitId(null)}
+          onSaved={(_visitId, treatmentMemo) => {
+            setTreatmentInfo(prev => (prev ? { ...prev, treatmentMemo } : prev))
+            setEditingMemoVisitId(null)
           }}
         />
       )}

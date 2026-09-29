@@ -162,6 +162,10 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
     visitCountAt: number | null
     photos: TimelinePhoto[]
   } | null>(null)
+  // ギャラリーを開く前の一括プリロード中フラグ(2026-09-29ユーザー承認)。
+  // openSameDayGallery()が全画像のURL取得・プリロードを終えるまでモーダルを開かない
+  // ようにしたため、その待ち時間の間だけこのフラグでスピナーを表示する。
+  const [galleryLoading, setGalleryLoading] = useState(false)
   // スクロール領域への参照。「過去の写真」サムネイルタップ時に拡大モードの表示(上部)まで
   // スクロールを戻すために使う(お客様用カルテ再構成・2026-09-14)。
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -342,8 +346,17 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
    * 優先)。photosByAngleは既にlistCustomerPhotosTimeline()で取得済みの全角度分の写真を
    * 角度別に振り分けたものなので、新規APIコールは不要でクライアント側の絞り込みのみで済む。
    * ギャラリー内の個別写真タップでさらにライトボックス拡大する(openPhotoInLightbox)。
+   *
+   * 【2026-09-29改訂: サムネイル表示遅延の解消】従来はモーダルを先に開いてから
+   * 未取得分のURLを取りに行っていたため、代表写真(1枚目、既に事前取得済み)は
+   * 即時表示される一方、同一撮影機会内のそれ以外の写真(2枚目以降)はURL取得完了まで
+   * 空白のまま遅れて表示されていた。この関数をasync化し、撮影機会内の全画像URLを
+   * Promise.allで並列・一括取得(getBatchSignedUrlsは元々1回のリクエストで複数IDを
+   * まとめて処理するAPI)した上で、さらにブラウザの画像デコードまで完了させてから
+   * (=プリロード)モーダルを開くようにした。これによりモーダルが開いた瞬間には
+   * 全ての画像が即座に表示できる状態になる。待ち時間はgalleryLoadingのスピナーで示す。
    */
-  function openSameDayGallery(o: PhotoOccasion) {
+  async function openSameDayGallery(o: PhotoOccasion) {
     const repPhoto = representativePhoto(o)
     const key = occasionKey(repPhoto)
     const allPhotos = Object.values(data.photosByAngle).flat()
@@ -352,18 +365,34 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
       .filter(p => occasionKey(p) === key)
       .sort((a, b) => (order.get(a.bodyPart) ?? 99) - (order.get(b.bodyPart) ?? 99))
 
-    setGalleryOccasion({
-      dateLabel: formatVisitDateLabel(repPhoto.visitDate ?? repPhoto.takenAt),
-      visitCountAt: repPhoto.visitCountAt,
-      photos: samePhotos,
-    })
+    setGalleryLoading(true)
+    try {
+      const missingIds = samePhotos.map(p => p.id).filter(id => !data.photoUrls[id] && !thumbUrls[id])
+      let fetchedUrls: Record<string, string> = {}
+      if (missingIds.length > 0) {
+        fetchedUrls = await getBatchSignedUrls(customerId, missingIds, 'thumbnail')
+        if (Object.keys(fetchedUrls).length > 0) setThumbUrls(prev => ({ ...prev, ...fetchedUrls }))
+      }
 
-    // グリッド表示に必要なサムネイルURLのうち、未取得のものだけまとめて取りに行く。
-    const missingIds = samePhotos.map(p => p.id).filter(id => !data.photoUrls[id] && !thumbUrls[id])
-    if (missingIds.length > 0) {
-      void getBatchSignedUrls(customerId, missingIds, 'thumbnail').then(urls => {
-        if (Object.keys(urls).length > 0) setThumbUrls(prev => ({ ...prev, ...urls }))
+      const urlFor = (p: TimelinePhoto) => data.photoUrls[p.id] ?? thumbUrls[p.id] ?? fetchedUrls[p.id]
+      await Promise.all(samePhotos.map(p => {
+        const url = urlFor(p)
+        if (!url) return Promise.resolve()
+        return new Promise<void>(resolve => {
+          const img = new Image()
+          img.onload = () => resolve()
+          img.onerror = () => resolve()
+          img.src = url
+        })
+      }))
+
+      setGalleryOccasion({
+        dateLabel: formatVisitDateLabel(repPhoto.visitDate ?? repPhoto.takenAt),
+        visitCountAt: repPhoto.visitCountAt,
+        photos: samePhotos,
       })
+    } finally {
+      setGalleryLoading(false)
     }
   }
 
@@ -401,11 +430,11 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
    */
   function onThumbnailTap(o: PhotoOccasion) {
     if (!freeSelectMode) {
-      openSameDayGallery(o)
+      void openSameDayGallery(o)
       return
     }
     if (o.photos.length > 1) {
-      openSameDayGallery(o)
+      void openSameDayGallery(o)
       return
     }
     selectPhotoForCompare(representativePhoto(o))
@@ -951,6 +980,18 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
           )}
         </div>
       </div>
+
+      {/* ── ギャラリー画像の一括プリロード中スピナー(2026-09-29ユーザー承認)。 ── */}
+      {galleryLoading && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 310, background: 'rgba(30,24,16,0.85)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <Loader2 size={32} color="#fff" className="animate-spin" />
+        </div>
+      )}
 
       {/* ── 同日写真一覧(ギャラリー、2026-09-22ユーザー要望)。「過去の写真」サムネイルタップ時に
           単独拡大ではなくまず開く一覧。角度(正面/右斜め/左斜め/額)をまたいで同一撮影機会の

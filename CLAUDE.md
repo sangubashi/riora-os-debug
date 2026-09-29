@@ -2749,6 +2749,56 @@ VisitRepo.reconcile()・スマホアプリ側の呼び出し(onGoToDetail未指�
 関連するガイド更新)のみに限る。** `brain_visits.source`列・`csvImportPipeline.ts`の
 reconcile()判定ロジック・ゴースト機能・撮影/保存ロジックには一切触れていない。
 
+### `/karte` 着手済み事項（同日ギャラリーの表示遅延解消・過去来店の自由記述メモ編集機能新設・来店履歴UI拡大・2026-09-29ユーザー依頼）
+
+**1. お客様用カルテ「同日写真ギャラリー」のサムネイル表示遅延解消**
+
+`CustomerModeView.tsx`の`openSameDayGallery()`(「過去の写真」サムネイルタップで開く、
+撮影機会内の全角度の写真を集めたギャラリーモーダル)をasync化した。従来はモーダルを
+先に開いてから未取得分のsigned URLを個別に取りに行っていたため、代表写真(1枚目、
+「過去の写真」一覧表示時に既に事前取得済み)は即時表示される一方、同一撮影機会内の
+それ以外の写真(2枚目以降)はURL取得完了まで遅れて空白表示になっていた。
+`getBatchSignedUrls`(元々1回のリクエストで複数IDをまとめて処理する)の呼び出し自体は
+変更していないが、その完了を`await`した上でさらに`Promise.all`で各画像を
+`new Image()`によりブラウザにデコードまでプリロードしてから`setGalleryOccasion()`
+(モーダルを開く)を呼ぶよう順序を変更した。待ち時間の間はスピナー(`galleryLoading`)を
+表示する。`onThumbnailTap()`の呼び出し側を`void openSameDayGallery(o)`に変更した以外、
+分岐ロジック自体は無変更。
+
+**2. 過去来店の自由記述メモ(treatment_memo)編集機能の新設**
+
+`VisitHistorySection.tsx`(スタッフ用カルテ「来店履歴」)に、既存の
+「メインコース」「追加オプション」編集(2026-09-28)と並ぶ第3の枠として
+「この日の自由記述メモ」欄+「✏️ 自由記述」ボタンを新設した。展開中のvisitについて
+既存の`GET /visits/[visitId]/treatment`から`treatmentMemo`も取得・表示するようにし
+(API自体はPhase1-Aから対応済みでコード変更不要)、新規`PastVisitMemoEditModal.tsx`
+(テキストエリア1つのシンプルなモーダル)から`PATCH /visits/[visitId]/treatment`に
+`treatmentMemo`のみを送信して保存する。保存成功時は`treatmentInfo`のstateをその場で
+更新するため、モーダルを閉じると同時に最新のメモ内容がカードに反映される(再フェッチ
+不要)。`brain_visits.source`列は元々`csvImportPipeline.ts`のreconcile()対象外
+(course_options/option_itemsと同じ扱い)のため、変更していない。
+
+**3. スタッフ用カルテ「来店履歴」セクションのUI拡大**
+
+`VisitHistorySection.tsx`内の来店履歴カード(折りたたみ行・展開後の各欄)のみ、
+フォントサイズを約1.2〜1.5倍(例: セクション見出し11px→14px、バッジ・本文11〜14px→
+14〜17px、折りたたみ行の日付部分12〜13px→15〜17px)に拡大し、✏️編集ボタン(メイン
+コース・追加オプション・自由記述)のpaddingを4px 8px→9px 14px、アイコンサイズを
+11→15に拡大した。カード内側の余白も12px→18px(展開時)・8px→10〜14px(各欄の
+gap/padding)に広げた。`IpadStaffKarteView.tsx`側の呼び出し・レイアウトには変更なし。
+
+**検証**: `npx tsc --noEmit`パス(既存の無関係な失敗10件のみ、変更前と同一のエラー集合)。
+`tests/api/customer-visit-treatment.test.ts`・`tests/api/customer-today-treatment-course.test.ts`
+(計25件、バックエンドAPI自体は無変更のため既存テストのみ)全てパス。`npm run build`パス。
+`next-env.d.ts`のbuild副作用は復元済み。`CustomerModeView.tsx`/`VisitHistorySection.tsx`には
+元々ユニット/コンポーネントテストが存在しない。**実機(iPad Safari)での動作確認は未検証**。
+
+**この解除は上記3点(同日ギャラリーのプリロード順序変更、過去来店の自由記述メモ編集機能
+新設、来店履歴セクションのUI拡大、関連するガイド更新)のみに限る。**
+`app/api/customers/[id]/visits/[visitId]/treatment/route.ts`(バックエンドAPI自体)・
+`brain_visits.source`列・`csvImportPipeline.ts`のreconcile()判定ロジック・ゴースト機能・
+撮影/保存ロジック・コース/オプション編集ロジック自体には一切触れていない。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。
