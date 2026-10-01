@@ -25,10 +25,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getServiceClient } from '../../../../lib/repos'
-import { idSchema, toValidationErrorResponse } from '../../../_schemas/common'
+import { toValidationErrorResponse } from '../../../_schemas/common'
 import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest'
 import { canAccessCustomer } from '@/lib/auth/canAccessCustomer'
 import { SHARED_IPAD_STAFF_USER_ID } from '@/lib/constants'
+
+const reservationIdSchema = z.string().uuid()
 
 const bodySchema = z.object({
   action:          z.enum(['cancel', 'restore']),
@@ -53,10 +55,12 @@ export async function PATCH(
     return NextResponse.json({ success: false, error: 'unauthorized' }, { status: 401 })
   }
 
+  // 予約IDがUUID形式でなければ、DBへ問い合わせる前に400で拒否する(不正な値がPostgresの
+  // 型エラー=500になるのを防ぐ)。本番のreservations.idは全件この形式(gen_random_uuid)。
   const { id } = await params
-  const idResult = idSchema.safeParse(id)
+  const idResult = reservationIdSchema.safeParse(id)
   if (!idResult.success) {
-    return NextResponse.json(toValidationErrorResponse(idResult.error), { status: 400 })
+    return NextResponse.json({ success: false, error: '無効な予約ID形式です。' }, { status: 400 })
   }
   const reservationId = idResult.data
 

@@ -27,7 +27,7 @@ const mockGetClient    = vi.mocked(getServiceClient)
 const STAFF: RequestingStaff = {
   authUserId: 'auth-user-1', staffBrainId: 'brain-staff-1', email: 'staff@example.com', isAdmin: false,
 }
-const RES_ID = 'res-1'
+const RES_ID = '33333333-3333-4333-8333-333333333333'
 const CUST_ID = '11111111-1111-4111-8111-111111111111'
 
 interface Row {
@@ -175,6 +175,27 @@ describe('PATCH /api/reservations/[id]/cancel', () => {
     const res = await patchRoute({ action: 'cancel' })
     expect(res.status).toBe(409)
     expect((await res.json()).error).toBe('conflict')
+  })
+
+  it('不正なUUID形式の予約IDは、DBへ問い合わせず400(無効な予約ID形式です。)を返す', async () => {
+    for (const badId of ['not-a-uuid', 'res-1', '12345', '33333333-3333-4333-8333-33333333333', "33333333-3333-4333-8333-333333333333'; drop table reservations;--"]) {
+      authorize()
+      const db = createFakeDb(row())
+      mockGetClient.mockClear() // 以降のgetServiceClient呼び出し(=DBアクセス)の有無だけを見る
+      const res = await patchRoute({ action: 'cancel' }, badId)
+      const json = await res.json()
+
+      expect(res.status).toBe(400)
+      expect(json).toEqual({ success: false, error: '無効な予約ID形式です。' })
+      expect(mockGetClient).not.toHaveBeenCalled()
+      expect(db.updates).toHaveLength(0)
+      expect(db.row.status).toBe('confirmed')
+    }
+  })
+
+  it('不正なUUID形式でも、認証なしなら先に401(IDの形式は認証後に検証される)', async () => {
+    mockExtractStaff.mockResolvedValue(null)
+    expect((await patchRoute({ action: 'cancel' }, 'not-a-uuid')).status).toBe(401)
   })
 
   it('認証なしは401', async () => {
