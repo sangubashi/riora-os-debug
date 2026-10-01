@@ -87,6 +87,14 @@ const logoFont = Playfair_Display({ subsets: ['latin'], weight: '600', style: 'i
 const SHOW_HOMECARE = false
 const SHOW_NEXT_VISIT_ESTIMATE = false
 
+/** 高画質(detail)の先読み結果を保持する最大枚数(古いものから破棄・iPadのメモリ対策)。 */
+const DETAIL_PRELOAD_MAX = 16
+/**
+ * 先読みしたdetail URLを再利用してよい期間。detailの署名付きURLの有効期限は60分
+ * (SIGNED_URL_EXPIRY_DETAIL_SEC)のため、余裕を持って30分とする。
+ */
+const DETAIL_PRELOAD_REUSE_MS = 30 * 60 * 1000
+
 interface Props {
   customerId: string
   customerName: string
@@ -154,11 +162,18 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
    *  (2026-09-22ユーザー要望: 拡大表示にメタデータも表示する)。 */
   // photoId: 拡大中の写真のID。ZoomableLightboxImageのkeyに使い、別の写真に切り替わったときだけ
   // 再マウント(ズーム初期化)させ、同じ写真のサムネイル→高画質への差し替えでは再マウントしない。
-  const [lightboxPhoto, setLightboxPhoto] = useState<{ url: string; caption: string | null; photoId?: string | null } | null>(null)
+  // preloaded: 高画質の先読み(下記detailPreloadRef)が完了済みで、差し替えなしで最初から表示できる。
+  type LightboxState = { url: string; caption: string | null; photoId?: string | null; preloaded?: boolean }
+  const [lightboxPhoto, setLightboxPhoto] = useState<LightboxState | null>(null)
+  // 同日ギャラリーが開いている間に、ギャラリー内の写真の高画質(detail)URLを取得して先読みした
+  // 結果(2026-10-01)。拡大タップ時に「サムネイル→高画質」の差し替えを起こさず、最初から高画質を
+  // 即表示するため。<img>オブジェクトを保持してブラウザのキャッシュから追い出されにくくする
+  // (iPadのメモリを圧迫しないよう、最大DETAIL_PRELOAD_MAX枚・古いものから破棄)。
+  const detailPreloadRef = useRef<Map<string, { url: string; img: HTMLImageElement; at: number }>>(new Map())
   // openPhotoInLightbox()のdetail URL取得中に、拡大を閉じた/別の写真を開いた場合に、遅れて
   // 返ってきた結果で勝手に拡大表示が(再)出現しないようにするためのリクエスト番号。
   const lightboxReqRef = useRef(0)
-  const showLightbox = (next: { url: string; caption: string | null; photoId?: string | null }) => {
+  const showLightbox = (next: LightboxState) => {
     lightboxReqRef.current += 1
     setLightboxPhoto(next)
   }
@@ -339,14 +354,28 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
   async function openPhotoInLightbox(photo: TimelinePhoto) {
     const caption = buildLightboxCaption(photo)
     const cached = data.photoUrls[photo.id] ?? thumbUrls[photo.id]
+
+    // 【2026-10-01改訂: 高画質の先読み】ギャラリーを開いた時点で高画質URLの先読みを始めている
+    // (下のuseEffect)。有効期限内の先読み結果があれば、それを使う。
+    const pre = detailPreloadRef.current.get(photo.id)
+    const usablePre = pre && Date.now() - pre.at < DETAIL_PRELOAD_REUSE_MS ? pre : null
+    if (usablePre && usablePre.img.complete && usablePre.img.naturalWidth > 0) {
+      // 先読み完了済み: サムネイルを経由せず、最初から高画質を即表示する(差し替えが起きない)。
+      showLightbox({ url: usablePre.url, caption, photoId: photo.id, preloaded: true })
+      return
+    }
+
     lightboxReqRef.current += 1
     const req = lightboxReqRef.current
     if (cached) setLightboxPhoto({ url: cached, caption, photoId: photo.id })
-    // 'detail'品質のURL取得を試みている間、サムネイルが既にあればそれをフォールバック表示し
-    // (読み込み中に真っ黒/空白にならないようにする)、取得できた時点で高画質URLへ差し替える。
-    // 差し替えはZoomableLightboxImage側で「高画質の読み込みが完了するまでサムネイルを表示し続け、
-    // 完了後に切り替える」ため、チラつかない(2026-10-01改訂)。
-    const url = await getPhotoSignedUrl(customerId, photo.id, 'detail')
+    // 先読みが未完了でも、取得済みのURLがあればそれを使う(API再取得を省く)。無ければ
+    // 'detail'品質のURLを取得する。取得を試みている間、サムネイルが既にあればそれをフォール
+    // バック表示し(読み込み中に真っ黒/空白にならないようにする)、取得できた時点で高画質URLへ
+    // 差し替える。差し替えはZoomableLightboxImage側で「高画質の読み込みが完了するまでサムネイルを
+    // 表示し続け、完了後に切り替える」ため、チラつかない(2026-10-01改訂)。
+    const url = usablePre ? usablePre.url : await getPhotoSignedUrl(customerId, photo.id, 'detail')
+    // 同じ描画のうちに高画質へ上書きするとサムネイルが一度も描画されないため、1フレーム待つ。
+    if (usablePre && cached) await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
     // 取得中に拡大を閉じた・別の写真を開いた場合は、この結果を反映しない。
     if (req !== lightboxReqRef.current) return
     if (url) {
@@ -357,6 +386,43 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
       setLightboxPhoto(null)
     }
   }
+
+  // 同日ギャラリーが開いたら、その中の写真の高画質(detail)URLをバックグラウンドで取得し、
+  // 画像オブジェクトで先読みする(2026-10-01)。ギャラリー内の写真をタップして拡大したとき、
+  // サムネイル→高画質の差し替え(リロードのような見え方)を起こさず、最初から高画質を表示する。
+  // 比較選択モード中はタップが「選択」になり拡大しないため先読みしない(通信量の節約)。
+  useEffect(() => {
+    if (!galleryOccasion || freeSelectMode) return
+    const map = detailPreloadRef.current
+    const now = Date.now()
+    const ids = galleryOccasion.photos
+      .map(p => p.id)
+      .filter(id => {
+        const entry = map.get(id)
+        return !entry || now - entry.at >= DETAIL_PRELOAD_REUSE_MS
+      })
+    if (ids.length === 0) return
+    let cancelled = false
+    void getBatchSignedUrls(customerId, ids, 'detail')
+      .then(urls => {
+        if (cancelled) return
+        for (const [id, url] of Object.entries(urls)) {
+          const img = new Image()
+          img.decoding = 'async'
+          img.src = url
+          map.delete(id) // 再挿入して「最新」の位置へ
+          map.set(id, { url, img, at: Date.now() })
+        }
+        // 保持枚数の上限を超えた分は古いものから破棄する(iPadのメモリ対策)。
+        while (map.size > DETAIL_PRELOAD_MAX) {
+          const oldest = map.keys().next().value
+          if (oldest === undefined) break
+          map.delete(oldest)
+        }
+      })
+      .catch(() => { /* 先読みの失敗は無視(拡大時に従来どおり取得する) */ })
+    return () => { cancelled = true }
+  }, [galleryOccasion, freeSelectMode, customerId])
 
   /**
    * 「過去の写真」サムネイルタップ: 単独拡大ではなく、同一撮影機会(同じvisit、無ければ
@@ -1143,7 +1209,7 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
           {/* 画像自体へのタップはズーム操作(ピンチ/ダブルタップ)のため、背景への
               クリックとして閉じてしまわないようstopPropagationする。 */}
           <div onClick={e => e.stopPropagation()} style={{ maxWidth: '100%', maxHeight: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-            <ZoomableLightboxImage key={lightboxPhoto.photoId ?? lightboxPhoto.url} url={lightboxPhoto.url} />
+            <ZoomableLightboxImage key={lightboxPhoto.photoId ?? lightboxPhoto.url} url={lightboxPhoto.url} preloaded={lightboxPhoto.preloaded} />
             {lightboxPhoto.caption && (
               <span style={{
                 fontSize: '13px', fontWeight: 700, color: '#fff',
@@ -1293,7 +1359,7 @@ function ShortcutButton({
  * 【重要】保留中の「比較エンジン(スライダー+連動ズーム)」とは別実装。ここでは1枚の
  * 写真を単独で拡大するだけで、2枚の写真を連動させてズーム・スライドする機能ではない。
  */
-function ZoomableLightboxImage({ url }: { url: string }) {
+function ZoomableLightboxImage({ url, preloaded = false }: { url: string; preloaded?: boolean }) {
   const zoom = usePinchZoom()
   // 読み込み中/失敗時のフォールバック表示(2026-09-22ユーザー要望)。
   //
@@ -1305,7 +1371,9 @@ function ZoomableLightboxImage({ url }: { url: string }) {
   // 画面外の<img>で先読みし、読み込み完了した時点で初めて表示を差し替える
   // (サムネイル→高画質が途切れずに切り替わる)。別の写真への切替はkey(photoId)で再マウント
   // される前提のため、ここではズーム状態を維持する(高画質化の差し替えでズームが戻らない)。
-  const [shownUrl, setShownUrl] = useState<string | null>(null)
+  // preloaded: 呼び出し側で先読み完了を確認済みの場合は、読み込み待ち(スピナー)を経由せず
+  // 最初から表示する(ブラウザのキャッシュ済みのため即描画される)。
+  const [shownUrl, setShownUrl] = useState<string | null>(preloaded ? url : null)
   const [failedUrl, setFailedUrl] = useState<string | null>(null)
   // 差し替え先のurlが読み込めなくても、既に表示できている画像(サムネイル等)があれば
   // それを表示し続ける。何も表示できていない場合のみ「読み込めませんでした」を出す。

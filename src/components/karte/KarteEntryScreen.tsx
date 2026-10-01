@@ -414,7 +414,7 @@ export default function KarteEntryScreen() {
                   <button
                     type="button"
                     onClick={() => { setCancelError(null); setCancelTarget(r) }}
-                    aria-label={`${r.brain_customer.name}様の予約をキャンセル`}
+                    aria-label={`${r.brain_customer.name}様の予約を変更`}
                     // 控えめなデザイン(2026-10-01): メインの「予約カードタップ(カルテ遷移)」より目立たせない。
                     // 小さく・枠/背景なし・stone-500相当の文字色。押下(タップ)中・ホバー中のみ赤系にする。
                     // 押し間違い防止のため、カードとの間隔(wrapperのgap)を広めに取っている。
@@ -430,7 +430,7 @@ export default function KarteEntryScreen() {
                       color: CANCEL_BUTTON_COLOR, fontSize: '11px', fontWeight: 400, cursor: 'pointer',
                     }}
                   >
-                    キャンセル
+                    変更
                   </button>
                   </div>
                 ))}
@@ -449,7 +449,7 @@ export default function KarteEntryScreen() {
                     }}
                   >
                     {cancelledOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                    当日キャンセル（{cancelledToday.length}件）
+                    変更（{cancelledToday.length}件）
                   </button>
                   {cancelledOpen && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
@@ -471,7 +471,7 @@ export default function KarteEntryScreen() {
                             </span>
                             <span style={{ fontSize: '12px', color: PALETTE.muted }}>
                               {r.menu === '未定' ? 'メニュー未定' : r.menu}
-                              {r.cancelled_at ? `　当日キャンセル：${formatTimeJst(r.cancelled_at)}` : ''}
+                              {r.cancelled_at ? `　変更：${formatTimeJst(r.cancelled_at)}` : ''}
                             </span>
                           </div>
                           {r.cancel_source === 'manual' && (
@@ -484,7 +484,7 @@ export default function KarteEntryScreen() {
                                 color: PALETTE.gold, fontSize: '13px', fontWeight: 600, cursor: 'pointer',
                               }}
                             >
-                              キャンセル取消
+                              変更取り消し
                             </button>
                           )}
                         </div>
@@ -500,14 +500,14 @@ export default function KarteEntryScreen() {
 
       {cancelTarget && (
         <ReservationCancelDialog
-          title="当日キャンセル"
+          title="予約変更"
           lines={[
             `${cancelTarget.brain_customer.name}様の予約を`,
-            '当日キャンセルにしますか？',
+            '変更にしますか？',
             `予約時間：${formatTimeJst(cancelTarget.scheduled_at)}`,
             `メニュー：${cancelTarget.menu === '未定' ? 'メニュー未定' : cancelTarget.menu}`,
           ]}
-          confirmLabel="当日キャンセルにする"
+          confirmLabel="変更にする"
           busy={cancelBusy}
           error={cancelError}
           onConfirm={() => void runCancelAction('cancel')}
@@ -516,12 +516,12 @@ export default function KarteEntryScreen() {
       )}
       {restoreTarget && (
         <ReservationCancelDialog
-          title="当日キャンセルを取り消しますか？"
+          title="変更を取り消しますか？"
           lines={[
             `${restoreTarget.brain_customer.name}様の予約を通常の予約に戻します。`,
             `予約時間：${formatTimeJst(restoreTarget.scheduled_at)}`,
           ]}
-          confirmLabel="キャンセルを取り消す"
+          confirmLabel="変更を取り消す"
           busy={cancelBusy}
           error={cancelError}
           onConfirm={() => void runCancelAction('restore')}
