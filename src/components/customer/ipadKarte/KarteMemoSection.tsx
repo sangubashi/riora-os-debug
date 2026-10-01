@@ -18,6 +18,7 @@ import { ChevronDown, ChevronRight, Pencil, Plus, Trash2, Check, X } from 'lucid
 import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, Card } from '@/components/customer/shared/PhotoCompareKit'
 import type { CustomerKarteMemo } from '@/types/customerKarteMemo'
+import DeleteConfirmDialog from './DeleteConfirmDialog'
 
 interface Props {
   customerId: string
@@ -139,13 +140,29 @@ export default function KarteMemoSection({
     finally { setUpdating(false) }
   }
 
+  // 削除前の確認モーダル(2026-10-01ユーザー依頼: 誤保存メモの消去時の誤操作防止)。
+  // DELETE APIは物理削除で元に戻せないため、必ず確認を挟む。
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState(false)
+
   async function handleDelete(id: string) {
-    const res = await authedFetch(`/api/customer-karte-memos/${id}?customer_id=${encodeURIComponent(customerId)}`, {
-      method: 'DELETE',
-    })
-    if (!res.ok) return
-    setMemos(prev => prev.filter(m => m.id !== id))
-    if (editingId === id) cancelEdit()
+    if (deleting) return
+    setDeleting(true)
+    setDeleteError(false)
+    try {
+      const res = await authedFetch(`/api/customer-karte-memos/${id}?customer_id=${encodeURIComponent(customerId)}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) throw new Error()
+      setMemos(prev => prev.filter(m => m.id !== id))
+      if (editingId === id) cancelEdit()
+      setDeleteTargetId(null)
+    } catch {
+      setDeleteError(true)
+    } finally {
+      setDeleting(false)
+    }
   }
 
   // 「前回のカルテメモ」= 今日すでに書いた分(あれば)を除いた直近1件(2026-09-20ユーザー承認:
@@ -255,7 +272,7 @@ export default function KarteMemoSection({
                   </button>
                   <button
                     type="button"
-                    onClick={() => void handleDelete(m.id)}
+                    onClick={() => { setDeleteError(false); setDeleteTargetId(m.id) }}
                     aria-label="削除"
                     style={{
                       width: '26px', height: '26px', borderRadius: '50%', border: '1px solid rgba(196,90,90,0.3)',
@@ -381,6 +398,17 @@ export default function KarteMemoSection({
           </button>
         )}
       </div>
+
+      {deleteTargetId && (
+        <DeleteConfirmDialog
+          title="このカルテメモを物理削除しますか？"
+          message="削除したデータは復元できません。"
+          deleting={deleting}
+          error={deleteError}
+          onConfirm={() => void handleDelete(deleteTargetId)}
+          onCancel={() => setDeleteTargetId(null)}
+        />
+      )}
     </Card>
   )
 }

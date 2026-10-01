@@ -20,7 +20,7 @@
  * 独自に引き続き取得する(この2件については二重フェッチが残る、既知のトレードオフ)。
  */
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, Plus, ClipboardPaste, Check, X, Pencil } from 'lucide-react'
+import { ChevronDown, ChevronRight, Plus, ClipboardPaste, Check, X, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, Card } from '@/components/customer/shared/PhotoCompareKit'
@@ -31,6 +31,7 @@ import type { VisitHistoryEntry } from './ipadKarteData'
 import TreatmentCourseEditModal from './TreatmentCourseEditModal'
 import TreatmentOptionEditModal from './TreatmentOptionEditModal'
 import PastVisitMemoEditModal from './PastVisitMemoEditModal'
+import DeleteConfirmDialog from './DeleteConfirmDialog'
 
 function toStringList(value: unknown): string[] {
   if (!Array.isArray(value)) return []
@@ -217,6 +218,30 @@ export default function VisitHistorySection({ customerId, visits, todayVisitId }
     }
   }
 
+  // 来店日別カルテメモの物理削除(2026-10-01ユーザー依頼)。KarteMemoSection.tsxと同じ
+  // DELETE /api/customer-karte-memos/[id]を使う。確認モーダル必須・復元不可。
+  const [deleteMemoId, setDeleteMemoId] = useState<string | null>(null)
+  const [memoDeleting, setMemoDeleting] = useState(false)
+  const [memoDeleteError, setMemoDeleteError] = useState(false)
+
+  async function handleDeleteMemo(id: string) {
+    if (memoDeleting) return
+    setMemoDeleting(true)
+    setMemoDeleteError(false)
+    try {
+      const res = await authedFetch(`/api/customer-karte-memos/${id}?customer_id=${encodeURIComponent(customerId)}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) throw new Error()
+      setMemos(prev => prev.filter(m => m.id !== id))
+      setDeleteMemoId(null)
+    } catch {
+      setMemoDeleteError(true)
+    } finally {
+      setMemoDeleting(false)
+    }
+  }
+
   async function handleSaveDraft(visit: VisitHistoryEntry) {
     if (!draftContent.trim() || saving) return
     setSaving(true)
@@ -383,9 +408,24 @@ export default function VisitHistorySection({ customerId, visits, todayVisitId }
                             <p style={{ margin: 0, fontSize: '17px', color: PALETTE.text, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                               {memo.content}
                             </p>
-                            <p style={{ margin: '6px 0 0', fontSize: '13px', color: PALETTE.muted }}>
-                              {formatTime(memo.created_at)}{memo.staffName ? ` ・ ${memo.staffName}` : ''}
-                            </p>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '6px' }}>
+                              <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>
+                                {formatTime(memo.created_at)}{memo.staffName ? ` ・ ${memo.staffName}` : ''}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => { setMemoDeleteError(false); setDeleteMemoId(memo.id) }}
+                                aria-label="このカルテメモを削除"
+                                style={{
+                                  width: '34px', height: '34px', borderRadius: '50%', flexShrink: 0,
+                                  border: '1px solid rgba(196,90,90,0.3)', background: 'rgba(196,90,90,0.08)',
+                                  color: '#B85050', display: 'flex', alignItems: 'center',
+                                  justifyContent: 'center', cursor: 'pointer',
+                                }}
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -539,6 +579,16 @@ export default function VisitHistorySection({ customerId, visits, todayVisitId }
             setTreatmentInfo(prev => (prev ? { ...prev, treatmentMemo } : prev))
             setEditingMemoVisitId(null)
           }}
+        />
+      )}
+      {deleteMemoId && (
+        <DeleteConfirmDialog
+          title="このカルテメモを物理削除しますか？"
+          message="削除したデータは復元できません。"
+          deleting={memoDeleting}
+          error={memoDeleteError}
+          onConfirm={() => void handleDeleteMemo(deleteMemoId)}
+          onCancel={() => setDeleteMemoId(null)}
         />
       )}
     </Card>

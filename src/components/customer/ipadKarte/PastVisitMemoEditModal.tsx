@@ -16,9 +16,10 @@
  * 翌日以降のCSV再取込で上書きされることはない。
  */
 import { useState } from 'react'
-import { X, Check } from 'lucide-react'
+import { X, Check, Trash2 } from 'lucide-react'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, headingFont } from '@/components/customer/shared/PhotoCompareKit'
+import DeleteConfirmDialog from './DeleteConfirmDialog'
 
 interface Props {
   customerId:  string
@@ -40,6 +41,34 @@ export default function PastVisitMemoEditModal({ customerId, visitId, existing, 
   const [content, setContent] = useState(existing ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // 「削除する」(2026-10-01ユーザー依頼): treatment_memoはbrain_visitsの1列のため、行の物理
+  // DELETEは来店記録自体を消してしまい不可。「空(NULL)にして保存」が唯一の消去手段になる
+  // (保存時に空文字を入力した場合と同じPATCH)。確認モーダル必須。
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState(false)
+
+  async function handleDelete() {
+    if (deleting) return
+    setDeleting(true)
+    setDeleteError(false)
+    try {
+      const res = await authedFetch(`/api/customers/${customerId}/visits/${visitId}/treatment`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ treatmentMemo: null }),
+      })
+      const json = await res.json() as PatchResponse
+      if (!res.ok || !json.success || !json.treatment) throw new Error()
+      onSaved(json.treatment.visitId, json.treatment.treatmentMemo ?? null)
+      onClose()
+    } catch {
+      setDeleteError(true)
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   async function handleSave() {
     if (saving) return
@@ -97,7 +126,21 @@ export default function PastVisitMemoEditModal({ customerId, visitId, existing, 
 
         {error && <p style={{ margin: 0, fontSize: '12px', color: '#B85050' }}>{error}</p>}
 
-        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', alignItems: 'center' }}>
+          {((existing ?? '').trim().length > 0 || content.trim().length > 0) && (
+            <button
+              type="button"
+              onClick={() => { setDeleteError(false); setConfirmingDelete(true) }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '6px', marginRight: 'auto',
+                fontSize: '13px', padding: '8px 14px', borderRadius: '999px',
+                border: '1px solid rgba(196,90,90,0.3)', background: 'rgba(196,90,90,0.08)',
+                color: '#B85050', cursor: 'pointer',
+              }}
+            >
+              <Trash2 size={14} />削除する
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}
@@ -120,6 +163,17 @@ export default function PastVisitMemoEditModal({ customerId, visitId, existing, 
           </button>
         </div>
       </div>
+
+      {confirmingDelete && (
+        <DeleteConfirmDialog
+          title="このカルテメモを物理削除しますか？"
+          message="削除したデータは復元できません。（この来店日の自由記述メモを空にします）"
+          deleting={deleting}
+          error={deleteError}
+          onConfirm={() => void handleDelete()}
+          onCancel={() => setConfirmingDelete(false)}
+        />
+      )}
     </div>
   )
 }
