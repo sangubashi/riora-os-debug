@@ -115,6 +115,9 @@ function toReservationFromReservation(r: ReservationWithBrainCustomer): BSReserv
   }
 }
 
+/** 予約カード横の「キャンセル」ボタンの通常時の文字色(stone-500相当・控えめ)。 */
+const CANCEL_BUTTON_COLOR = '#78716C'
+
 const formatTimeJst = (iso: string) =>
   new Date(iso).toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' })
 
@@ -383,7 +386,7 @@ export default function KarteEntryScreen() {
               )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {reservations.map(r => (
-                  <div key={r.id} style={{ display: 'flex', alignItems: 'stretch', gap: '8px' }}>
+                  <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                   <button
                     type="button"
                     onClick={() => openCustomerFromReservation(r)}
@@ -412,10 +415,19 @@ export default function KarteEntryScreen() {
                     type="button"
                     onClick={() => { setCancelError(null); setCancelTarget(r) }}
                     aria-label={`${r.brain_customer.name}様の予約をキャンセル`}
+                    // 控えめなデザイン(2026-10-01): メインの「予約カードタップ(カルテ遷移)」より目立たせない。
+                    // 小さく・枠/背景なし・stone-500相当の文字色。押下(タップ)中・ホバー中のみ赤系にする。
+                    // 押し間違い防止のため、カードとの間隔(wrapperのgap)を広めに取っている。
+                    onPointerEnter={e => { e.currentTarget.style.color = '#B85050' }}
+                    onPointerLeave={e => { e.currentTarget.style.color = CANCEL_BUTTON_COLOR }}
+                    onPointerDown={e => { e.currentTarget.style.color = '#B85050' }}
+                    onPointerUp={e => { e.currentTarget.style.color = CANCEL_BUTTON_COLOR }}
+                    onPointerCancel={e => { e.currentTarget.style.color = CANCEL_BUTTON_COLOR }}
                     style={{
-                      flexShrink: 0, padding: '0 16px', borderRadius: '12px',
-                      border: '1px solid rgba(196,90,90,0.35)', background: 'rgba(196,90,90,0.06)',
-                      color: '#B85050', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                      flexShrink: 0, alignSelf: 'center',
+                      padding: '6px 8px', borderRadius: '8px',
+                      border: 'none', background: 'transparent',
+                      color: CANCEL_BUTTON_COLOR, fontSize: '11px', fontWeight: 400, cursor: 'pointer',
                     }}
                   >
                     キャンセル
