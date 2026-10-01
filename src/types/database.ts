@@ -51,6 +51,10 @@ export interface Reservation {
   created_at: string
   /** 多店舗展開用（将来対応）。未指定時はデフォルト店舗 */
   store_id?: string
+  /** 当日キャンセル機能(2026-10-01): キャンセル操作の日時。未キャンセル・既存データはnull/未設定。 */
+  cancelled_at?: string | null
+  /** 当日キャンセル機能(2026-10-01): 'manual'=カルテアプリで手動 / 'salonboard_csv'=CSV取込。既存データはnull/未設定。 */
+  cancel_source?: 'manual' | 'salonboard_csv' | null
 }
 
 export interface ReservationWithCustomer extends Reservation {

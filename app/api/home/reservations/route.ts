@@ -6,6 +6,8 @@
  * 仕様:
  *   - 今日の予約のみ返す（フォールバックなし）
  *   - 今日0件 → reservations: [] を返す（画面側で「本日の予約はありません」表示）
+ *   - 追加で cancelledToday を返す(2026-10-01・当日キャンセル機能): status='cancelled'のうち
+ *     cancelled_at(キャンセル日時)が本日(JST)のもの。通常のreservationsには含めない。
  *   - status='cancelled'の予約は除外する(Phase 1-F修正版)
  *   - 同一 brain_customer_id が重複する場合はcreated_at最新の1件を残す(Phase 1-F修正版。
  *     リスケジュール等でscheduled_atが変わった場合に古い時刻の行が優先される不具合の修正)。
@@ -42,6 +44,33 @@ const RESERVATION_SELECT = `
   is_new_customer,
   notes,
   created_at,
+  brain_customer:brain_customers!brain_customer_id (
+    id,
+    name,
+    customer_type,
+    churn_score,
+    is_subscriber,
+    skin_tags,
+    is_internal_user
+  )
+` as const;
+
+// 当日キャンセル欄用: RESERVATION_SELECT + キャンセル情報(cancelled_at / cancel_source)。
+// 通常予約のクエリ(RESERVATION_SELECT)は未変更(新カラム未適用でも壊れないようにするため)。
+const CANCELLED_SELECT = `
+  id,
+  brain_customer_id,
+  staff_id,
+  menu,
+  price,
+  scheduled_at,
+  duration_minutes,
+  status,
+  is_new_customer,
+  notes,
+  created_at,
+  cancelled_at,
+  cancel_source,
   brain_customer:brain_customers!brain_customer_id (
     id,
     name,
@@ -107,7 +136,35 @@ export async function GET(req: NextRequest) {
         new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
     );
 
-    return NextResponse.json({ reservations });
+    // 当日キャンセル(2026-10-01・/karteの「当日キャンセル」欄用): 「予約日が今日」ではなく
+    // 「キャンセルされた日時(cancelled_at)が今日(JST)」の予約を別配列で返す。通常の
+    // reservationsには一切影響しない(status<>'cancelled'の既存仕様のまま)。
+    // cancelled_at列が未適用などで失敗しても、通常予約の返却は壊さず空配列で継続する。
+    let cancelledToday: unknown[] = [];
+    try {
+      let cancelledQuery = supabase
+        .from('reservations')
+        .select(CANCELLED_SELECT)
+        .not('brain_customer_id', 'is', null)
+        .eq('status', 'cancelled')
+        .gte('cancelled_at', start)
+        .lte('cancelled_at', end)
+        .order('cancelled_at', { ascending: false });
+      if (!staff.isAdmin && staff.authUserId !== SHARED_IPAD_STAFF_USER_ID) {
+        cancelledQuery = cancelledQuery.eq('staff_id', staff.authUserId);
+      }
+      const { data: cancelledData, error: cancelledError } = await cancelledQuery.limit(50);
+      if (cancelledError) {
+        console.error('[home/reservations] cancelledToday query failed:', cancelledError.message);
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        cancelledToday = (cancelledData ?? []).filter((r: any) => r.brain_customer != null && !r.brain_customer.is_internal_user);
+      }
+    } catch (e) {
+      console.error('[home/reservations] cancelledToday failed:', e);
+    }
+
+    return NextResponse.json({ reservations, cancelledToday });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }

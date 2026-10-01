@@ -27,6 +27,8 @@ interface ReservationRowRaw {
   notes:              string | null;
 }
 
+type CancelSource = 'manual' | 'salonboard_csv';
+
 const WEEK_DAY_ORDER: WeeklyReservationDayCount['dayOfWeek'][] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
 /**
@@ -68,6 +70,12 @@ function toDbInput(input: ReservationUpsertInput) {
     status:            input.status,
     is_new_customer:   input.isNewCustomer,
     notes:             input.notes,
+    // 当日キャンセル機能(2026-10-01): CSV取込でcancelledになった行はcancel_source='salonboard_csv'
+    // とする(cancelled_atはセットしない=「当日キャンセル」欄には出さない)。cancelled以外へ
+    // 更新する場合は両方NULLへ戻す。手動キャンセル(manual)の行はパイプライン側で
+    // 更新対象から除外されるため、ここへは到達しない。
+    cancel_source:     input.status === 'cancelled' ? ('salonboard_csv' as CancelSource) : null,
+    ...(input.status === 'cancelled' ? {} : { cancelled_at: null }),
   };
 }
 
@@ -87,7 +95,7 @@ export class ReservationRepo implements IReservationRepo {
   ): Promise<ReservationRow | null> {
     let query = this.client
       .from('reservations')
-      .select('id, created_at')
+      .select('id, created_at, cancel_source')
       .eq('scheduled_at', scheduledAt);
 
     query = brainCustomerId
@@ -100,7 +108,7 @@ export class ReservationRepo implements IReservationRepo {
       throw new Error(`ReservationRepo.findByNaturalKey failed: ${error.message}`);
     }
 
-    const rows = (data ?? []) as { id: string; created_at: string }[];
+    const rows = (data ?? []) as { id: string; created_at: string; cancel_source: CancelSource | null }[];
     if (rows.length === 0) return null;
 
     if (rows.length > 1) {
@@ -112,7 +120,11 @@ export class ReservationRepo implements IReservationRepo {
       });
     }
 
-    return { id: rows[0].id };
+    // 当日キャンセル機能(2026-10-01): 同一キーに重複行がある場合でも、手動キャンセル済みの行が
+    // 1件でもあればそれを返す(CSV再取込による手動キャンセルの復活を確実に防ぐため)。
+    // 手動キャンセルが無ければ従来どおり最古の1件。
+    const target = rows.find((r) => r.cancel_source === 'manual') ?? rows[0];
+    return { id: target.id, cancelSource: target.cancel_source ?? null };
   }
 
   async create(input: ReservationUpsertInput): Promise<ReservationRow> {

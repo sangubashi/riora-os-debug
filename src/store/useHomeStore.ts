@@ -17,11 +17,20 @@ import { authedFetch } from '@/lib/api/authedFetch'
 
 // ─── Store types ──────────────────────────────────────────────────────────────
 
+/** 当日キャンセル/取消の結果(2026-10-01・/karteの当日キャンセル機能)。 */
+export type ReservationCancelResult = { ok: true } | { ok: false; error: string }
+
 interface HomeState {
   reservations: ReservationWithBrainCustomer[]
+  /** 当日キャンセル(キャンセル日時が本日JSTの予約)。/karteの「当日キャンセル」欄用。 */
+  cancelledToday: ReservationWithBrainCustomer[]
   isLoading:    boolean
 
   fetchTodayReservations: (role: UserRole, uid: string) => Promise<void>
+  /** 予約を当日キャンセルにする(成功時は一覧を再取得)。 */
+  cancelReservation:  (reservation: ReservationWithBrainCustomer) => Promise<ReservationCancelResult>
+  /** 当日キャンセルを取り消して通常予約へ戻す(成功時は一覧を再取得)。 */
+  restoreReservation: (reservation: ReservationWithBrainCustomer) => Promise<ReservationCancelResult>
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -68,10 +77,39 @@ function enrichWithStaffNames(
   })
 }
 
+/**
+ * PATCH /api/reservations/[id]/cancel を呼び、成功時は本日の予約を再取得する。
+ * 失敗時はAPIのerrorコード(already_cancelled / conflict / forbidden等)をそのまま返す。
+ */
+async function callCancelApi(
+  reservation: ReservationWithBrainCustomer,
+  action: 'cancel' | 'restore',
+  refetch: (role: UserRole, uid: string) => Promise<void>,
+): Promise<ReservationCancelResult> {
+  try {
+    const res = await authedFetch(`/api/reservations/${reservation.id}/cancel`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ action, brainCustomerId: reservation.brain_customer_id }),
+    })
+    const json = await res.json().catch(() => ({})) as { success?: boolean; error?: string }
+    if (!res.ok || !json.success) {
+      // 二重送信・他端末での操作済み(409)でも一覧は最新化しておく。
+      if (res.status === 409) await refetch('staff', '')
+      return { ok: false, error: json.error ?? 'request_failed' }
+    }
+    await refetch('staff', '')
+    return { ok: true }
+  } catch {
+    return { ok: false, error: 'network_error' }
+  }
+}
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
-export const useHomeStore = create<HomeState>((set) => ({
+export const useHomeStore = create<HomeState>((set, get) => ({
   reservations: [],
+  cancelledToday: [],
   isLoading:    false,
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -85,10 +123,14 @@ export const useHomeStore = create<HomeState>((set) => ({
         return
       }
 
-      const { reservations: raw } =
-        await res.json() as { reservations: ReservationWithBrainCustomer[] }
+      const { reservations: raw, cancelledToday: rawCancelled } =
+        await res.json() as {
+          reservations: ReservationWithBrainCustomer[]
+          cancelledToday?: ReservationWithBrainCustomer[]
+        }
 
       let mapped = raw
+      let mappedCancelled = rawCancelled ?? []
 
       // ── 2. brain_visits で顧客統計を補完 ─────────────────────────────
       if (mapped.length > 0) {
@@ -123,6 +165,7 @@ export const useHomeStore = create<HomeState>((set) => ({
                 if (s.user_id) staffByUserId[s.user_id] = s.name
               }
               mapped = enrichWithStaffNames(mapped, staffByUserId)
+              mappedCancelled = enrichWithStaffNames(mappedCancelled, staffByUserId)
             }
           }
         } catch {
@@ -130,11 +173,14 @@ export const useHomeStore = create<HomeState>((set) => ({
         }
       }
 
-      set({ reservations: mapped })
+      set({ reservations: mapped, cancelledToday: mappedCancelled })
     } catch (e) {
       console.error('[HomeStore] fetchTodayReservations error:', e)
     } finally {
       set({ isLoading: false })
     }
   },
+
+  cancelReservation: (reservation) => callCancelApi(reservation, 'cancel', get().fetchTodayReservations),
+  restoreReservation: (reservation) => callCancelApi(reservation, 'restore', get().fetchTodayReservations),
 }))

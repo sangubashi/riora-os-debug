@@ -512,6 +512,12 @@ export interface ReservationUpsertInput {
 
 export interface ReservationRow {
   id: UUID;
+  /**
+   * 当日キャンセル機能(2026-10-01): 既存行のキャンセルの出どころ。
+   * 'manual'(カルテアプリで手動キャンセル)の行はCSV再取込で上書きしない(保護)。
+   * findByNaturalKey以外(create等)では未設定。
+   */
+  cancelSource?: 'manual' | 'salonboard_csv' | null;
 }
 
 export interface WeeklyReservationDayCount {

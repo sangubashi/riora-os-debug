@@ -2984,6 +2984,42 @@ brain_visitsの作成/採番ロジック、写真アップロードAPI本体(`ap
 
 **この解除は上記の確認モーダル・削除導線の追加に限る。**
 
+### `/karte` 着手済み事項（本日の予約「当日キャンセル」機能の新設・2026-10-01ユーザー承認・未コミット/未デプロイ/DB未適用）
+
+事前のREAD ONLY調査(`reservations.status`のCHECK制約に`cancelled`が既にあり、`/api/home/reservations`は
+`status<>'cancelled'`で除外済み、予約はサロンボードCSVの手動取込で作られ再取込のたびにstatusを
+上書きする)を踏まえ、`/karte`のみに限って実装した。
+
+- **DB(マイグレーション作成のみ・未適用)**: `supabase/migrations/20261001000000_reservations_cancel_tracking.sql`
+  — `reservations`に`cancelled_at timestamptz NULL`・`cancel_source text NULL`
+  (CHECK: `manual`/`salonboard_csv`)を追加。既存データは両方NULLのまま(推測分類しない)。
+  **本番適用前にコードをデプロイしても、通常予約・取込は壊れない作りにしてある**(`/api/home/reservations`の
+  当日キャンセル取得は失敗時に空配列で継続)が、取込(`ReservationRepo`がcancel_source列を書く)は
+  マイグレーション適用が前提のため、**必ずマイグレーション適用→デプロイの順で行うこと。**
+- **API**: `PATCH /api/reservations/[id]/cancel`(新規)。`action: cancel|restore`。cancelはconfirmedのみ
+  (→cancelled・cancelled_at=now・cancel_source=manual)、restoreは手動キャンセル(manual)のみ
+  (→confirmed・両列NULL)。認証は既存方式(extractStaffFromRequest+canAccessCustomer、一般スタッフは
+  自分の担当のみ・admin/iPad共通ログインは全員分)。状態を条件に含めた更新で二重送信を弾く(409)。
+  予約は削除しない。`GET /api/home/reservations`は`cancelledToday`(cancelled_atが本日JSTのcancelled)
+  を追加で返す(通常のreservationsの条件・順序・件数は無変更)。
+- **CSV取込の保護**: `ReservationRepo.findByNaturalKey`が`cancel_source`を返し(同一キーの重複行に
+  手動キャンセルがあればそれを優先)、`reservationImportPipeline.ts`は`cancelSource==='manual'`の行を
+  CSVの内容(status含む)に関わらずスキップする。件数・行番号・CSV上のstatusのみを
+  `brain_ops_logs.detail.manualCancelProtected(Count)`へ残す(個人情報なし)。CSV由来のcancelledは
+  `cancel_source='salonboard_csv'`(cancelled_atは書かない=「当日キャンセル」欄には出さない)。
+- **UI**: `KarteEntryScreen.tsx`のみ。各予約カードに「キャンセル」ボタン、確認モーダル
+  (新規`ReservationCancelDialog.tsx`)、「当日キャンセル（N件）」折りたたみ欄、「キャンセル取消」。
+  `useHomeStore.ts`に`cancelledToday`・`cancelReservation`・`restoreReservation`を追加(今日タブ・
+  マイページ・メモ画面は`reservations`のみ使い続けるため無変更)。
+- **検証**: `npx tsc --noEmit`は既存の無関係な10件のみ(変更前と同数)。`npm run build`成功。新規テスト
+  (`reservation-cancel`・`home-reservations-cancelled-today`・`ReservationRepo.cancel`・
+  `reservationImportPipeline`追加4件)は全てパス。関連スイートで失敗1件
+  (`CustomerRepo.test.ts`、phoneNumber等の期待値不足)は本件と無関係の既存の失敗。
+  **iPad実機・本番DBでの動作は未確認(本番DBへのテスト予約INSERTは行っていない)。**
+
+**この解除は上記(当日キャンセル機能の新設)に限る。** LINE・写真・顧客カルテ・admin領域・今日タブ/
+マイページ/メモ画面には触れていない。
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

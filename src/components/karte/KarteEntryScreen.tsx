@@ -23,12 +23,13 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, Calendar, HelpCircle } from 'lucide-react'
+import { Search, Calendar, HelpCircle, ChevronDown, ChevronRight } from 'lucide-react'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useHomeStore } from '@/store/useHomeStore'
 import { useCustomerStore, type CustomerRow } from '@/store/useCustomerStore'
 import { PALETTE, headingFont } from '@/components/customer/shared/PhotoCompareKit'
 import CustomerTopPage from '@/components/customer/CustomerTopPage'
+import ReservationCancelDialog from '@/components/karte/ReservationCancelDialog'
 import type { ReservationWithBrainCustomer } from '@/types/database'
 import type { Customer as BSCustomer, Reservation as BSReservation, CustomerType } from '@/types'
 import { isKanaOnly, kanaSurnameStartsWith } from '@/lib/customer/kanaMatch'
@@ -114,11 +115,40 @@ function toReservationFromReservation(r: ReservationWithBrainCustomer): BSReserv
   }
 }
 
+const formatTimeJst = (iso: string) =>
+  new Date(iso).toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' })
+
+function cancelErrorMessage(code: string): string {
+  switch (code) {
+    case 'already_cancelled':
+    case 'not_cancelled':
+    case 'conflict':
+    case 'invalid_status':
+    case 'not_manual_cancel':
+      return '予約の状態が変更されています。一覧を更新しました。'
+    case 'forbidden':
+      return 'この予約を操作する権限がありません。'
+    case 'unauthorized':
+      return 'ログインの有効期限が切れています。再ログインしてください。'
+    default:
+      return '処理に失敗しました。もう一度お試しください。'
+  }
+}
+
 export default function KarteEntryScreen() {
   const router = useRouter()
   const session = useAuthStore(s => s.session)
   const [selected, setSelected] = useState<{ customer: BSCustomer; reservation?: BSReservation } | null>(null)
-  const { reservations, isLoading: reservationsLoading, fetchTodayReservations } = useHomeStore()
+  const {
+    reservations, cancelledToday, isLoading: reservationsLoading, fetchTodayReservations,
+    cancelReservation, restoreReservation,
+  } = useHomeStore()
+  // 当日キャンセル機能(2026-10-01): 確認モーダル対象・処理中・エラー・「当日キャンセル」欄の開閉。
+  const [cancelTarget, setCancelTarget] = useState<ReservationWithBrainCustomer | null>(null)
+  const [restoreTarget, setRestoreTarget] = useState<ReservationWithBrainCustomer | null>(null)
+  const [cancelBusy, setCancelBusy] = useState(false)
+  const [cancelError, setCancelError] = useState<string | null>(null)
+  const [cancelledOpen, setCancelledOpen] = useState(false)
   const { customers, isLoading: customersLoading, fetchCustomers } = useCustomerStore()
   const [query, setQuery] = useState('')
   const fetchedRef = useRef(false)
@@ -170,6 +200,24 @@ export default function KarteEntryScreen() {
     setSelected({ customer: toCustomerFromRow(c), reservation: toReservationFromRow(c) })
   const openCustomerFromReservation = (r: ReservationWithBrainCustomer) =>
     setSelected({ customer: toCustomerFromReservation(r), reservation: toReservationFromReservation(r) })
+
+  const closeCancelDialogs = () => { setCancelTarget(null); setRestoreTarget(null); setCancelError(null) }
+
+  // 二重送信防止: cancelBusy中は何もしない(ボタン自体もdisabled)。
+  async function runCancelAction(kind: 'cancel' | 'restore') {
+    const target = kind === 'cancel' ? cancelTarget : restoreTarget
+    if (!target || cancelBusy) return
+    setCancelBusy(true)
+    setCancelError(null)
+    const result = kind === 'cancel' ? await cancelReservation(target) : await restoreReservation(target)
+    setCancelBusy(false)
+    if (result.ok) {
+      closeCancelDialogs()
+      if (kind === 'cancel') setCancelledOpen(true)
+      return
+    }
+    setCancelError(cancelErrorMessage(result.error))
+  }
 
   // 本日のJST日付を「2026/09/20 (日)」形式で表示する(PHASE IPAD-KARTE-ENTRY-1 UI刷新・
   // 2026-09-20ユーザー承認)。サーバー側todayJst()とは独立(表示専用・クエリには使わない)。
@@ -335,11 +383,12 @@ export default function KarteEntryScreen() {
               )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {reservations.map(r => (
+                  <div key={r.id} style={{ display: 'flex', alignItems: 'stretch', gap: '8px' }}>
                   <button
-                    key={r.id}
                     type="button"
                     onClick={() => openCustomerFromReservation(r)}
                     style={{
+                      flex: 1, minWidth: 0,
                       display: 'flex', alignItems: 'center',
                       textAlign: 'left', padding: '14px 16px', borderRadius: '12px',
                       border: `1px solid ${PALETTE.border}`, background: PALETTE.card, cursor: 'pointer',
@@ -359,12 +408,114 @@ export default function KarteEntryScreen() {
                       担当 {r.staff_name ?? '-'}
                     </span>
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => { setCancelError(null); setCancelTarget(r) }}
+                    aria-label={`${r.brain_customer.name}様の予約をキャンセル`}
+                    style={{
+                      flexShrink: 0, padding: '0 16px', borderRadius: '12px',
+                      border: '1px solid rgba(196,90,90,0.35)', background: 'rgba(196,90,90,0.06)',
+                      color: '#B85050', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                    }}
+                  >
+                    キャンセル
+                  </button>
+                  </div>
                 ))}
               </div>
+
+              {/* 当日キャンセル欄(2026-10-01): キャンセル日時が本日(JST)の予約。0件のときは出さない。 */}
+              {cancelledToday.length > 0 && (
+                <div style={{ marginTop: '20px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setCancelledOpen(v => !v)}
+                    aria-expanded={cancelledOpen}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none',
+                      padding: '4px 0', cursor: 'pointer', fontSize: '13px', fontWeight: 600, color: PALETTE.muted,
+                    }}
+                  >
+                    {cancelledOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                    当日キャンセル（{cancelledToday.length}件）
+                  </button>
+                  {cancelledOpen && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                      {cancelledToday.map(r => (
+                        <div
+                          key={r.id}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px',
+                            borderRadius: '12px', border: `1px dashed ${PALETTE.border}`,
+                            background: 'rgba(0,0,0,0.02)', opacity: 0.85,
+                          }}
+                        >
+                          <span style={{ fontSize: '14px', color: PALETTE.muted, fontWeight: 600, minWidth: '52px' }}>
+                            {formatTimeJst(r.scheduled_at)}
+                          </span>
+                          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <span style={{ fontSize: '14px', color: PALETTE.muted, textDecoration: 'line-through' }}>
+                              {r.brain_customer.name}様
+                            </span>
+                            <span style={{ fontSize: '12px', color: PALETTE.muted }}>
+                              {r.menu === '未定' ? 'メニュー未定' : r.menu}
+                              {r.cancelled_at ? `　当日キャンセル：${formatTimeJst(r.cancelled_at)}` : ''}
+                            </span>
+                          </div>
+                          {r.cancel_source === 'manual' && (
+                            <button
+                              type="button"
+                              onClick={() => { setCancelError(null); setRestoreTarget(r) }}
+                              style={{
+                                flexShrink: 0, padding: '8px 14px', borderRadius: '999px',
+                                border: `1px solid ${PALETTE.gold}`, background: PALETTE.card,
+                                color: PALETTE.gold, fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                              }}
+                            >
+                              キャンセル取消
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
       </div>
+
+      {cancelTarget && (
+        <ReservationCancelDialog
+          title="当日キャンセル"
+          lines={[
+            `${cancelTarget.brain_customer.name}様の予約を`,
+            '当日キャンセルにしますか？',
+            `予約時間：${formatTimeJst(cancelTarget.scheduled_at)}`,
+            `メニュー：${cancelTarget.menu === '未定' ? 'メニュー未定' : cancelTarget.menu}`,
+          ]}
+          confirmLabel="当日キャンセルにする"
+          busy={cancelBusy}
+          error={cancelError}
+          onConfirm={() => void runCancelAction('cancel')}
+          onClose={closeCancelDialogs}
+        />
+      )}
+      {restoreTarget && (
+        <ReservationCancelDialog
+          title="当日キャンセルを取り消しますか？"
+          lines={[
+            `${restoreTarget.brain_customer.name}様の予約を通常の予約に戻します。`,
+            `予約時間：${formatTimeJst(restoreTarget.scheduled_at)}`,
+          ]}
+          confirmLabel="キャンセルを取り消す"
+          busy={cancelBusy}
+          error={cancelError}
+          onConfirm={() => void runCancelAction('restore')}
+          onClose={closeCancelDialogs}
+        />
+      )}
 
       {selected && (
         <CustomerTopPage

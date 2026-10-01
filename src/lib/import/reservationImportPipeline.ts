@@ -252,6 +252,8 @@ export async function runReservationImportPipeline(
   let updated = 0
   let skipped = parsed.issues.filter(i => i.lineNumber !== undefined).length
   let needsReviewCount = 0
+  // 手動キャンセル保護でCSV上書きをスキップした行(個人情報は含めない: 行番号とCSV上のstatusのみ)。
+  const manualCancelProtected: { rowNumber: number; csvStatus: string }[] = []
 
   // missing_field分(CSVパース時点で行自体が組み立てられなかった行)は
   // customerNameを取得する術が無いため空文字とする(RES-9)。
@@ -323,6 +325,15 @@ export async function runReservationImportPipeline(
     }
 
     const existing = await repos.reservationRepo.findByNaturalKey(resolved.scheduledAt, brainCustomerId)
+    if (existing?.cancelSource === 'manual') {
+      // 当日キャンセル機能(2026-10-01): カルテアプリ(/karte)で手動キャンセルした予約は、CSVが
+      // 古い状態(予約済み等)のままでも復活させない。CSVの内容(status含む)は一切反映せず
+      // スキップし、ops_logへ「manual cancellation protected from CSV overwrite」として残す。
+      // サロンボード側で本当に予約が再設定された場合かCSVが単に古いだけかはCSVから判定できない
+      // ため、いずれの場合も自動復活はさせない(復活はスタッフが「キャンセル取消」で行う)。
+      manualCancelProtected.push({ rowNumber: row.lineNumber, csvStatus: resolved.status })
+      continue
+    }
     if (existing) {
       await repos.reservationRepo.update(existing.id, upsertInput)
       updated += 1
@@ -338,7 +349,13 @@ export async function runReservationImportPipeline(
     storeId: input.storeId,
     kind:    'reservation_csv_import',
     actorId: input.actorId ?? null,
-    detail:  { fileName: input.fileName ?? '', rows: parsed.totalLines, created, updated, skipped, needsReviewCount, durationMs, skippedDetail },
+    detail:  {
+      fileName: input.fileName ?? '', rows: parsed.totalLines, created, updated, skipped, needsReviewCount, durationMs, skippedDetail,
+      // 手動キャンセル保護(manual cancellation protected from CSV overwrite)。0件のときは付けない。
+      ...(manualCancelProtected.length > 0
+        ? { manualCancelProtectedCount: manualCancelProtected.length, manualCancelProtected }
+        : {}),
+    },
   })
 
   return { ok: true, report: { created, updated, skipped, needsReviewCount, durationMs } }

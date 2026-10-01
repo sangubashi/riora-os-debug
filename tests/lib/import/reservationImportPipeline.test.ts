@@ -50,7 +50,7 @@ function buildCsv(rows: string[]): string {
 
 function createFakeRepos(opts: { staff?: Staff[] } = {}): ReservationPipelineRepos & { state: {
   customers: Customer[];
-  reservations: Array<{ id: string; input: ReservationUpsertInput }>;
+  reservations: Array<{ id: string; input: ReservationUpsertInput; cancelSource?: 'manual' | 'salonboard_csv' | null }>;
   opsLogs: OpsLog[];
 } } {
   const staff: Staff[] = opts.staff ?? [
@@ -59,7 +59,7 @@ function createFakeRepos(opts: { staff?: Staff[] } = {}): ReservationPipelineRep
 
   const state = {
     customers:    [] as Customer[],
-    reservations: [] as Array<{ id: string; input: ReservationUpsertInput }>,
+    reservations: [] as Array<{ id: string; input: ReservationUpsertInput; cancelSource?: 'manual' | 'salonboard_csv' | null }>,
     opsLogs:      [] as OpsLog[],
   };
   let customerSeq = 0;
@@ -118,7 +118,7 @@ function createFakeRepos(opts: { staff?: Staff[] } = {}): ReservationPipelineRep
         const found = state.reservations.find(
           r => r.input.scheduledAt === scheduledAt && r.input.brainCustomerId === brainCustomerId
         );
-        return found ? { id: found.id } as ReservationRow : null;
+        return found ? { id: found.id, cancelSource: found.cancelSource ?? null } as ReservationRow : null;
       },
       create: async (input) => {
         reservationSeq += 1;
@@ -221,6 +221,65 @@ describe('reservationImportPipeline', () => {
       expect(result.ok).toBe(true);
       expect(repos.state.customers).toHaveLength(1);
       expect(repos.state.customers[0].nameKana).toBe('クロダ カズマサ');
+    });
+
+    // ── 当日キャンセル機能(2026-10-01): 手動キャンセルのCSV上書き保護 ──────────────────
+    async function importTwice(secondCsvStatus: string, markManualCancelled: boolean) {
+      const repos = createFakeRepos();
+      const supabase = createFakeSupabase([{ id: 'staff-1', user_id: 'profile-1' }]);
+      const first = await runReservationImportPipeline(
+        { storeId: STORE_ID, csvText: buildCsv([row({ name: '田中花子' })]), reviewDecisions: {} },
+        repos, supabase
+      );
+      expect(first.ok).toBe(true);
+      expect(repos.state.reservations).toHaveLength(1);
+
+      if (markManualCancelled) {
+        // /karteでの手動キャンセル後の状態(status=cancelled, cancel_source=manual)を再現する。
+        repos.state.reservations[0].input = { ...repos.state.reservations[0].input, status: 'cancelled' };
+        repos.state.reservations[0].cancelSource = 'manual';
+      }
+
+      const second = await runReservationImportPipeline(
+        { storeId: STORE_ID, csvText: buildCsv([row({ name: '田中花子', status: secondCsvStatus })]), reviewDecisions: {} },
+        repos, supabase
+      );
+      return { repos, second };
+    }
+
+    it('手動キャンセル(cancel_source=manual)の予約は、CSVが予約済み(受付待ち)のままでも復活しない', async () => {
+      const { repos, second } = await importTwice('受付待ち', true);
+
+      expect(second.ok).toBe(true);
+      if (!second.ok) return;
+      expect(second.report.updated).toBe(0);
+      expect(second.report.created).toBe(0);
+      expect(repos.state.reservations).toHaveLength(1);
+      expect(repos.state.reservations[0].input.status).toBe('cancelled');
+    });
+
+    it('手動キャンセルの保護はCSV上のstatusに関わらず働く(会計済みでも自動復活しない)', async () => {
+      const { repos } = await importTwice('会計済み', true);
+      expect(repos.state.reservations[0].input.status).toBe('cancelled');
+    });
+
+    it('手動キャンセルを保護した場合、ops_logに manualCancelProtected(行番号とCSV上のstatusのみ・個人情報なし)が残る', async () => {
+      const { repos } = await importTwice('受付待ち', true);
+
+      const secondLog = repos.state.opsLogs[1];
+      expect(secondLog.detail.manualCancelProtectedCount).toBe(1);
+      expect(secondLog.detail.manualCancelProtected).toEqual([{ rowNumber: 2, csvStatus: 'confirmed' }]);
+      // 1回目(保護なし)のログには項目自体が付かない
+      expect(repos.state.opsLogs[0].detail.manualCancelProtected).toBeUndefined();
+    });
+
+    it('手動キャンセルでない予約(cancel_source未設定)は従来どおりCSVの内容で更新される', async () => {
+      const { repos, second } = await importTwice('お客様キャンセル', false);
+
+      expect(second.ok).toBe(true);
+      if (!second.ok) return;
+      expect(second.report.updated).toBe(1);
+      expect(repos.state.reservations[0].input.status).toBe('cancelled');
     });
 
     it('actorIdを指定した場合、brain_ops_logsのactorIdにその値が入る', async () => {
