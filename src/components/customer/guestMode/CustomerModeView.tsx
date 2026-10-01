@@ -152,7 +152,20 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
   const [angle, setAngle] = useState<CustomerModeAngleId>('face_front')
   /** ライトボックス表示中の写真。撮影日・来店回数のキャプションも合わせて保持する
    *  (2026-09-22ユーザー要望: 拡大表示にメタデータも表示する)。 */
-  const [lightboxPhoto, setLightboxPhoto] = useState<{ url: string; caption: string | null } | null>(null)
+  // photoId: 拡大中の写真のID。ZoomableLightboxImageのkeyに使い、別の写真に切り替わったときだけ
+  // 再マウント(ズーム初期化)させ、同じ写真のサムネイル→高画質への差し替えでは再マウントしない。
+  const [lightboxPhoto, setLightboxPhoto] = useState<{ url: string; caption: string | null; photoId?: string | null } | null>(null)
+  // openPhotoInLightbox()のdetail URL取得中に、拡大を閉じた/別の写真を開いた場合に、遅れて
+  // 返ってきた結果で勝手に拡大表示が(再)出現しないようにするためのリクエスト番号。
+  const lightboxReqRef = useRef(0)
+  const showLightbox = (next: { url: string; caption: string | null; photoId?: string | null }) => {
+    lightboxReqRef.current += 1
+    setLightboxPhoto(next)
+  }
+  const closeLightbox = () => {
+    lightboxReqRef.current += 1
+    setLightboxPhoto(null)
+  }
   /** 「過去の写真」タップ時の同日写真一覧(ギャラリー、2026-09-22ユーザー要望)。
    *  角度(正面/右斜め/左斜め/額)をまたいで同一撮影機会の写真をすべて集めたもの。
    *  グリッド内の個別写真をタップするとlightboxPhotoが別途開く(ギャラリー自体は
@@ -326,12 +339,18 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
   async function openPhotoInLightbox(photo: TimelinePhoto) {
     const caption = buildLightboxCaption(photo)
     const cached = data.photoUrls[photo.id] ?? thumbUrls[photo.id]
-    if (cached) setLightboxPhoto({ url: cached, caption })
+    lightboxReqRef.current += 1
+    const req = lightboxReqRef.current
+    if (cached) setLightboxPhoto({ url: cached, caption, photoId: photo.id })
     // 'detail'品質のURL取得を試みている間、サムネイルが既にあればそれをフォールバック表示し
     // (読み込み中に真っ黒/空白にならないようにする)、取得できた時点で高画質URLへ差し替える。
+    // 差し替えはZoomableLightboxImage側で「高画質の読み込みが完了するまでサムネイルを表示し続け、
+    // 完了後に切り替える」ため、チラつかない(2026-10-01改訂)。
     const url = await getPhotoSignedUrl(customerId, photo.id, 'detail')
+    // 取得中に拡大を閉じた・別の写真を開いた場合は、この結果を反映しない。
+    if (req !== lightboxReqRef.current) return
     if (url) {
-      setLightboxPhoto({ url, caption })
+      setLightboxPhoto({ url, caption, photoId: photo.id })
     } else if (!cached) {
       // detail取得に失敗し、フォールバックできるサムネイルも無い場合は
       // モーダルを開かない(何も表示できないまま開いてしまうことを防ぐ)。
@@ -706,7 +725,7 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
                   visitCountAt={leftPhoto?.visitCountAt ?? null}
                   visitDate={leftPhoto?.visitDate ?? leftPhoto?.takenAt ?? null}
                   emptyText={leftEmptyText}
-                  onExpand={leftUrl ? () => setLightboxPhoto({ url: leftUrl, caption: buildLightboxCaption(leftPhoto) }) : undefined}
+                  onExpand={leftUrl ? () => showLightbox({ url: leftUrl, caption: buildLightboxCaption(leftPhoto), photoId: leftPhoto?.id }) : undefined}
                   aspectRatio="4 / 5"
                 />
                 <PhotoPanel
@@ -715,7 +734,7 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
                   visitCountAt={rightPhoto?.visitCountAt ?? null}
                   visitDate={rightPhoto?.visitDate ?? rightPhoto?.takenAt ?? null}
                   emptyText={rightEmptyText}
-                  onExpand={rightUrl ? () => setLightboxPhoto({ url: rightUrl, caption: buildLightboxCaption(rightPhoto) }) : undefined}
+                  onExpand={rightUrl ? () => showLightbox({ url: rightUrl, caption: buildLightboxCaption(rightPhoto), photoId: rightPhoto?.id }) : undefined}
                   aspectRatio="4 / 5"
                 />
               </div>
@@ -1115,7 +1134,7 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
           という導線自体には手を加えていない、表示内容の拡充のみ)。 ── */}
       {lightboxPhoto && (
         <div
-          onClick={() => setLightboxPhoto(null)}
+          onClick={closeLightbox}
           style={{
             position: 'fixed', inset: 0, zIndex: 320, background: 'rgba(30,24,16,0.85)',
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px',
@@ -1124,7 +1143,7 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
           {/* 画像自体へのタップはズーム操作(ピンチ/ダブルタップ)のため、背景への
               クリックとして閉じてしまわないようstopPropagationする。 */}
           <div onClick={e => e.stopPropagation()} style={{ maxWidth: '100%', maxHeight: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-            <ZoomableLightboxImage url={lightboxPhoto.url} />
+            <ZoomableLightboxImage key={lightboxPhoto.photoId ?? lightboxPhoto.url} url={lightboxPhoto.url} />
             {lightboxPhoto.caption && (
               <span style={{
                 fontSize: '13px', fontWeight: 700, color: '#fff',
@@ -1136,7 +1155,7 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
           </div>
           <button
             type="button"
-            onClick={() => setLightboxPhoto(null)}
+            onClick={closeLightbox}
             aria-label="閉じる"
             style={{
               position: 'absolute', top: 'max(20px, env(safe-area-inset-top))', right: '24px',
@@ -1276,16 +1295,22 @@ function ShortcutButton({
  */
 function ZoomableLightboxImage({ url }: { url: string }) {
   const zoom = usePinchZoom()
-  // 読み込み中/失敗時のフォールバック表示(2026-09-22ユーザー要望)。urlが切り替わる
-  // (別の写真を開き直す・fetch中のサムネイル→detail品質への差し替え)たびに状態を
-  // リセットし、直前の写真の表示が一瞬残ることを防ぐ。
-  const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading')
-
-  useEffect(() => {
-    zoom.reset()
-    setStatus('loading')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url])
+  // 読み込み中/失敗時のフォールバック表示(2026-09-22ユーザー要望)。
+  //
+  // 【2026-10-01改訂: 拡大時のチラつき解消】従来はurlが変わるたびに表示中の<img>を
+  // display:none+スピナーに戻していたため、openPhotoInLightbox()が「まずサムネイルを表示→
+  // detail品質のsigned URLを取得できたら差し替える」動きをすると、サムネイルが一瞬消えて
+  // スピナーが出てから高画質画像が現れ、リロードのようにチラついていた(別URLのため
+  // ブラウザキャッシュも効かない)。現在は「表示中のURL(shownUrl)」を保持したまま、新しいurlを
+  // 画面外の<img>で先読みし、読み込み完了した時点で初めて表示を差し替える
+  // (サムネイル→高画質が途切れずに切り替わる)。別の写真への切替はkey(photoId)で再マウント
+  // される前提のため、ここではズーム状態を維持する(高画質化の差し替えでズームが戻らない)。
+  const [shownUrl, setShownUrl] = useState<string | null>(null)
+  const [failedUrl, setFailedUrl] = useState<string | null>(null)
+  // 差し替え先のurlが読み込めなくても、既に表示できている画像(サムネイル等)があれば
+  // それを表示し続ける。何も表示できていない場合のみ「読み込めませんでした」を出す。
+  const status: 'loading' | 'loaded' | 'error' =
+    shownUrl !== null ? 'loaded' : failedUrl === url ? 'error' : 'loading'
 
   return (
     <div
@@ -1310,20 +1335,33 @@ function ZoomableLightboxImage({ url }: { url: string }) {
           )}
         </div>
       )}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={url}
-        alt=""
-        onLoad={() => setStatus('loaded')}
-        onError={() => setStatus('error')}
-        style={{
-          maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '8px',
-          display: status === 'loaded' ? 'block' : 'none', margin: '0 auto',
-          transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})`,
-          transformOrigin: 'center',
-          transition: zoom.scale === 1 ? 'transform 0.2s ease' : 'none',
-        }}
-      />
+      {/* 先読み用(画面外・非表示): 新しいurlはここで読み込み、完了したらshownUrlへ差し替える。
+          shownUrlと同じurlのときは不要。読み込み済みのためブラウザが再取得せず即表示できる。 */}
+      {url !== shownUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={url}
+          alt=""
+          aria-hidden="true"
+          onLoad={() => { setShownUrl(url); setFailedUrl(null) }}
+          onError={() => setFailedUrl(url)}
+          style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
+        />
+      )}
+      {shownUrl !== null && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={shownUrl}
+          alt=""
+          style={{
+            maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '8px',
+            display: 'block', margin: '0 auto',
+            transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})`,
+            transformOrigin: 'center',
+            transition: zoom.scale === 1 ? 'transform 0.2s ease' : 'none',
+          }}
+        />
+      )}
     </div>
   )
 }
