@@ -48,6 +48,9 @@ function createRepos(overrides: { customers?: Customer[]; visits?: Visit[]; menu
       sumSalesByStoreAndDate: async () => 0,
       listByStore: async () => overrides.visits ?? [],
       updateMenuId: async () => {},
+      createSequenced: async (v) => ({ ...v, id: 'new', visitCountAt: 1 }),
+      updateNextBookingMade: async () => {},
+      replaceRetailItems: async () => {},
     },
     menuRepo: {
       listByStore: async () => overrides.menus ?? [],

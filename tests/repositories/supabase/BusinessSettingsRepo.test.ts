@@ -9,7 +9,7 @@ const SETTINGS_ROW: BrainBusinessSettingsRow = {
   sales_target: 2500000,
   fixed_costs: { rent: 437646 },
   variable_cost_rate: '0.25',
-  seat_capacity: { mon: { '10': 2 } },
+  seat_capacity: 2,
   variable_rates: { incentive_rate: 0.05 },
 };
 
@@ -27,7 +27,7 @@ describe('BusinessSettingsRepo', () => {
         salesTarget: 2500000,
         fixedCosts: { rent: 437646 },
         variableCostRate: 0.25,
-        seatCapacity: { mon: { '10': 2 } },
+        seatCapacity: 2,
         variableRates: { incentive_rate: 0.05 },
       });
     });

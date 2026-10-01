@@ -171,6 +171,7 @@ describe('DashboardRepo', () => {
         repeat60: 0.45,
         repeat90: 0.4,
         nominationRate: 0.6,
+        rebookingRate: null,
       });
 
       expect(builder.upsert).toHaveBeenCalledWith(
@@ -198,7 +199,7 @@ describe('DashboardRepo', () => {
       await expect(repo.upsertDaily({
         storeId: 'store-1', snapshotDate: '2026-06-23', monthlySales: 0, forecastSales: 0,
         breakevenPoint: null, monthProfitEst: null, visitCount: 0,
-        repeat30: null, repeat60: null, repeat90: null, nominationRate: null,
+        repeat30: null, repeat60: null, repeat90: null, nominationRate: null, rebookingRate: null,
       })).rejects.toThrow('DashboardRepo.upsertDaily failed: db down');
     });
 
@@ -210,7 +211,7 @@ describe('DashboardRepo', () => {
       await repo.upsertDaily({
         storeId: 'store-1', snapshotDate: '2026-06-23', monthlySales: 0, forecastSales: 0,
         breakevenPoint: null, monthProfitEst: null, visitCount: 0,
-        repeat30: null, repeat60: null, repeat90: null, nominationRate: null,
+        repeat30: null, repeat60: null, repeat90: null, nominationRate: null, rebookingRate: null,
         aiInsights: [{ title: '失客予兆', message: 'テスト', severity: 'critical', targetCount: 1, actionType: 'contact_customer' }],
       });
 
@@ -226,7 +227,7 @@ describe('DashboardRepo', () => {
       await repo.upsertDaily({
         storeId: 'store-1', snapshotDate: '2026-06-23', monthlySales: 0, forecastSales: 0,
         breakevenPoint: null, monthProfitEst: null, visitCount: 0,
-        repeat30: null, repeat60: null, repeat90: null, nominationRate: null,
+        repeat30: null, repeat60: null, repeat90: null, nominationRate: null, rebookingRate: null,
       });
 
       const [payload] = (builder.upsert as ReturnType<typeof vi.fn>).mock.calls[0];

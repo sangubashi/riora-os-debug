@@ -73,6 +73,7 @@ function createFakeRepos(overrides: { customer?: Customer | null; visits?: Visit
       recentByCustomer: async () => overrides.visits ?? [visit({ visitDate: '2026-05-01' }), visit({ visitDate: '2026-06-01' })],
       create: async (v) => ({ ...v, id: 'new-visit' }), countByCustomer: async () => 0, findByCustomerAndDate: async () => null,
       reconcile: async (id) => ({ ...visit(), id }), sumSalesByStoreAndDate: async () => 0, listByStore: async () => [], updateMenuId: async () => {},
+      createSequenced: async (v) => ({ ...v, id: 'new-visit', visitCountAt: 1 }), updateNextBookingMade: async () => {}, replaceRetailItems: async () => {},
     },
     staffRepo: { listByStore: async () => [staff()], addNameAlias: async () => null, deactivate: async () => null, create: async () => { throw new Error('not implemented in test fake'); } },
     subscriptionRepo: { listByStore: async () => [] },

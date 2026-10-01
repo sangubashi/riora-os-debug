@@ -128,7 +128,8 @@ test.describe('PROD: riora-os-debug-webhook 動作確認', () => {
   test('STEP1b: /login で admin@salon-riora.jp / riora2026 でログインできる', async ({ page }) => {
     const errors: string[] = []
     page.on('console', msg => {
-      if (msg.type() === 'error' || msg.type() === 'warn') {
+      // Playwrightのconsole種別は 'warning'(旧記述の'warn'はどのtypeにも一致せず、警告が収集されていなかった)
+      if (msg.type() === 'error' || msg.type() === 'warning') {
         errors.push(`[${msg.type()}] ${msg.text()}`)
       }
     })

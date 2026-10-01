@@ -50,6 +50,12 @@ describe('CustomerRepo', () => {
         prefecture: null,
         city: null,
         externalKeyHash: null,
+        // 後から追加された任意列(行に値が無い場合はいずれもnullで返る)
+        nameKana: null,
+        birthDate: null,
+        gender: null,
+        phoneNumber: null,
+        salonboardVisitCount: null,
       });
     });
 

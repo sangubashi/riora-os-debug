@@ -140,7 +140,7 @@ test('Voice Memo 保存フロー 実機検証', async ({ page }) => {
   // ③ currentStaffId が session から取得されているか確認
   const staffIdInPage = await page.evaluate(() => {
     // useStaffStore / useAuthStore の状態を取得
-    const stores = (window as Record<string, unknown>).__zustand_stores__
+    const stores = (window as unknown as Record<string, unknown>).__zustand_stores__
     if (stores) return JSON.stringify(stores)
     return null
   })

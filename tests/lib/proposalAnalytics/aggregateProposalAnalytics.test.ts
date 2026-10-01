@@ -90,7 +90,7 @@ describe('aggregateProposalAnalytics', () => {
 
   it('was_executed=falseのoutcomesは月別推移の実施数に含めない', () => {
     const result = aggregateProposalAnalytics({
-      fireLogEntries: [fireLog('f1', '2026-07-10T00:00:00Z')],
+      fireLogEntries: [fireLog({ id: 'f1', createdAt: '2026-07-10T00:00:00Z' })],
       outcomes: [outcome({ occurredAt: '2026-07-05T00:00:00Z', wasExecuted: false })],
       stepStats: [],
     });
