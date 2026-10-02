@@ -6,11 +6,13 @@
  * 定数のみを使い、ここでは言い換えない。
  *
  * 入力はサーバーが検証・マスターから再計算済みの値だけを受け取る(クライアントの金額は信用しない)。
- * 未使用行は呼び出し側(contractCalc.buildLineItems)が既に捨てているため、itemsの行だけを描く。
  *
- * デザイン(2026-10-02ユーザー指示): 黒・薄グレーのシンプルな配色(ベージュ等の色は使わない)、
- * 表・本文まわりの余白を広めに取る。文書ID・内容ハッシュはPDFには表示しない
- * (content_hash自体はDBに保存し、改ざん確認には引き続き使う)。
+ * レイアウト(2026-10-02ユーザー提示の見本「51544.jpg」に合わせた): 左揃えの大きなタイトル、
+ * 黒罫線の4列の表(コース名/数量/金額/備考・空行を含め常に4行)で、最下段の行に「合計金額」(数量の列)と
+ * 合計(金額の列)、「※」を行頭に出して2行目以降を字下げした注意書き、広い間隔の申込日(年/月/日)と
+ * 氏名・住所・電話番号、下段は事業者情報の囲み枠と(右隣に)署名枠。配色は黒のみ。
+ * 文書ID・内容ハッシュはPDFには表示しない(content_hashはDBに保存し改ざん確認に使う)。
+ * 単価は印字しない(保存データのline_itemsには残る)。
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -19,7 +21,7 @@ import fontkit from '@pdf-lib/fontkit'
 import {
   CONTRACT_SALON, CONTRACT_SALON_LINES, CONTRACT_TABLE_HEADERS, CONTRACT_TEMPLATES, CONTRACT_TOTAL_LABEL,
 } from './contractTemplates'
-import type { ContractDocumentType, ContractLineItem } from './contractTypes'
+import { CONTRACT_MAX_LINES, type ContractDocumentType, type ContractLineItem } from './contractTypes'
 
 export const A4_WIDTH_PT = 595.28
 export const A4_HEIGHT_PT = 841.89
@@ -51,19 +53,15 @@ export function formatYen(n: number): string {
   return `${n.toLocaleString('ja-JP')}円`
 }
 
-function formatDateJa(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number)
-  return `${y}年${m}月${d}日`
-}
-
-/** 1文字ずつ幅を測って折り返す(日本語は単語区切りが無いため文字単位)。 */
-export function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
+/** 1文字ずつ幅を測って折り返す(日本語は単語区切りが無いため文字単位)。先頭行だけ幅を変えられる。 */
+export function wrapText(text: string, font: PDFFont, size: number, maxWidth: number, firstLineWidth = maxWidth): string[] {
   const lines: string[] = []
   let current = ''
   for (const ch of Array.from(text)) {
+    const limit = lines.length === 0 ? firstLineWidth : maxWidth
     // 禁則処理: 句読点・閉じ括弧は行頭に来ないよう、はみ出しても直前の行に残す。
     const noLineStart = '。、，．）」』】！？'.includes(ch)
-    if (current && !noLineStart && font.widthOfTextAtSize(current + ch, size) > maxWidth) {
+    if (current && !noLineStart && font.widthOfTextAtSize(current + ch, size) > limit) {
       lines.push(current)
       current = ch
     } else {
@@ -74,10 +72,26 @@ export function wrapText(text: string, font: PDFFont, size: number, maxWidth: nu
   return lines
 }
 
-// 黒・薄グレーのみ
-const INK = rgb(0.07, 0.07, 0.07)
-const LINE = rgb(0.62, 0.62, 0.62)
-const HEAD_BG = rgb(0.95, 0.95, 0.95)
+// 黒のみ(見本どおり)
+const INK = rgb(0, 0, 0)
+const RULE = 0.9
+
+// 見本(1080px幅=A4)から読み取った配置[pt]
+const TABLE_X = 58
+const TABLE_W = 488
+const COL_W = [210, 54, 118, 106]        // コース名 / 数量 / 金額 / 備考
+const PAD_X = 9
+const TITLE_X = 55
+const NOTE_X = 46                         // 「※」を出す位置
+const NOTE_INDENT = 12                    // 2行目以降の字下げ(※の幅)
+const NOTE_RIGHT = 562
+const LABEL_X = 68                        // 申込日・氏名・住所・電話番号のラベル
+const VALUE_X = 140                       // 氏名・住所・電話番号の値
+const BOX_X = 62
+const BOX_W = 290
+const SIGN_X = 372
+const SIGN_W = TABLE_X + TABLE_W - SIGN_X // 表の右端にそろえる
+const BOTTOM_LIMIT = 40
 
 export async function buildContractPdf(input: ContractPdfInput): Promise<Uint8Array> {
   const doc = await PDFDocument.create()
@@ -90,122 +104,123 @@ export async function buildContractPdf(input: ContractPdfInput): Promise<Uint8Ar
   doc.setProducer('Riora karte contracts')
 
   const tpl = CONTRACT_TEMPLATES[input.documentType]
-  const margin = 54
-  const bottomMargin = 46
-  const contentWidth = A4_WIDTH_PT - margin * 2
-
   let page: PDFPage = doc.addPage([A4_WIDTH_PT, A4_HEIGHT_PT])
-  let y = A4_HEIGHT_PT - margin
+  // 以降 top は「ページ上端からの距離」(下へ増える)。pdf-libの座標(下端基準)へは H - top で変換する。
+  let top = 96
 
   const ensure = (needed: number) => {
-    if (y - needed < bottomMargin) {
+    if (top + needed > A4_HEIGHT_PT - BOTTOM_LIMIT) {
       page = doc.addPage([A4_WIDTH_PT, A4_HEIGHT_PT])
-      y = A4_HEIGHT_PT - margin
+      top = 60
     }
   }
-  const text = (s: string, x: number, size: number) => {
-    page.drawText(s, { x, y: y - size, size, font, color: INK })
+  /** textTop = 文字の上端のページ上端からの距離。 */
+  const draw = (s: string, x: number, size: number, textTop: number) => {
+    page.drawText(s, { x, y: A4_HEIGHT_PT - textTop - size * 0.86, size, font, color: INK })
   }
-  const centered = (s: string, size: number) => {
-    const w = font.widthOfTextAtSize(s, size)
-    page.drawText(s, { x: (A4_WIDTH_PT - w) / 2, y: y - size, size, font, color: INK })
+  const drawRight = (s: string, rightX: number, size: number, textTop: number) => {
+    draw(s, rightX - font.widthOfTextAtSize(s, size), size, textTop)
+  }
+  const rect = (x: number, topY: number, w: number, h: number) => {
+    page.drawRectangle({ x, y: A4_HEIGHT_PT - topY - h, width: w, height: h, borderColor: INK, borderWidth: RULE })
+  }
+  const vline = (x: number, topY: number, h: number) => {
+    page.drawLine({ start: { x, y: A4_HEIGHT_PT - topY }, end: { x, y: A4_HEIGHT_PT - topY - h }, thickness: RULE, color: INK })
   }
 
-  // タイトル
-  centered(tpl.title, 20)
-  y -= 20 + 30
+  // ── タイトル・導入文(左揃え) ──
+  draw(tpl.title, TITLE_X, 22, top)
+  top += 22 + 39
+  draw(tpl.intro, TABLE_X + 1, 10, top)
+  top += 10 + 15
 
-  // 本文(導入)
-  text(tpl.intro, margin, 11)
-  y -= 11 + 18
+  // ── 表: ヘッダ行 + 本文4行(空行を含む) + 合計の行 ──
+  const colX = COL_W.reduce<number[]>((acc, w, i) => { acc.push(i === 0 ? TABLE_X : acc[i - 1] + COL_W[i - 1]); return acc }, [])
+  const colRight = (i: number) => colX[i] + COL_W[i]
 
-  // コース表: 列幅(コース名/数量/単価/金額/備考)。備考列は長めの文字が3行程度で収まる幅を確保する。
-  const colW = [172, 36, 68, 80, contentWidth - 172 - 36 - 68 - 80]
-  const colX = colW.reduce<number[]>((acc, w, i) => { acc.push(i === 0 ? margin : acc[i - 1] + colW[i - 1]); return acc }, [])
-  const padX = 8
-  const padY = 9
-
-  const headerH = 30
+  const headerH = 25
   ensure(headerH)
-  page.drawRectangle({ x: margin, y: y - headerH, width: contentWidth, height: headerH, color: HEAD_BG, borderColor: LINE, borderWidth: 0.6 })
-  CONTRACT_TABLE_HEADERS.forEach((h, i) => {
-    const isNum = i >= 1 && i <= 3
-    const w = font.widthOfTextAtSize(h, 10)
-    const x = isNum ? colX[i] + colW[i] - padX - w : colX[i] + padX
-    page.drawText(h, { x, y: y - 19, size: 10, font, color: INK })
-  })
-  y -= headerH
+  rect(TABLE_X, top, TABLE_W, headerH)
+  for (let i = 1; i < colX.length; i++) vline(colX[i], top, headerH)
+  CONTRACT_TABLE_HEADERS.forEach((h, i) => draw(h, colX[i] + PAD_X, 10, top + (headerH - 10) / 2))
+  top += headerH
 
-  for (const item of input.items) {
-    const nameLines = wrapText(item.course_name, font, 10, colW[0] - padX * 2)
-    const noteLines = wrapText(item.note, font, 9, colW[4] - padX * 2)
-    const rowH = Math.max(nameLines.length * 14, noteLines.length * 12.5, 14) + padY * 2
+  for (let r = 0; r < CONTRACT_MAX_LINES; r++) {
+    const item = input.items[r]
+    const nameLines = item ? wrapText(item.course_name, font, 10, COL_W[0] - PAD_X * 2) : []
+    const noteLines = item ? wrapText(item.note, font, 9, COL_W[3] - PAD_X * 2) : []
+    const rowH = Math.max(30, nameLines.length * 13 + 16, noteLines.length * 11.5 + 16)
     ensure(rowH)
-    page.drawRectangle({ x: margin, y: y - rowH, width: contentWidth, height: rowH, borderColor: LINE, borderWidth: 0.6 })
-    for (let i = 1; i < colX.length; i++) {
-      page.drawLine({ start: { x: colX[i], y }, end: { x: colX[i], y: y - rowH }, thickness: 0.6, color: LINE })
+    rect(TABLE_X, top, TABLE_W, rowH)
+    for (let i = 1; i < colX.length; i++) vline(colX[i], top, rowH)
+    if (item) {
+      const single = nameLines.length === 1 && noteLines.length <= 1
+      nameLines.forEach((l, k) => draw(l, colX[0] + PAD_X, 10, single ? top + (rowH - 10) / 2 : top + 8 + k * 13))
+      draw(String(item.quantity), colX[1] + PAD_X, 10, single ? top + (rowH - 10) / 2 : top + 8)
+      drawRight(formatYen(item.amount), colRight(2) - PAD_X, 10, single ? top + (rowH - 10) / 2 : top + 8)
+      noteLines.forEach((l, k) => { if (l) draw(l, colX[3] + PAD_X, 9, single ? top + (rowH - 9) / 2 : top + 8 + k * 11.5) })
     }
-    nameLines.forEach((l, k) => page.drawText(l, { x: colX[0] + padX, y: y - padY - 10 - k * 14, size: 10, font, color: INK }))
-    const right = (s: string, i: number) => {
-      const w = font.widthOfTextAtSize(s, 10)
-      page.drawText(s, { x: colX[i] + colW[i] - padX - w, y: y - padY - 10, size: 10, font, color: INK })
-    }
-    right(String(item.quantity), 1)
-    right(formatYen(item.unit_price), 2)
-    right(formatYen(item.amount), 3)
-    noteLines.forEach((l, k) => { if (l) page.drawText(l, { x: colX[4] + padX, y: y - padY - 9 - k * 12.5, size: 9, font, color: INK }) })
-    y -= rowH
+    top += rowH
   }
 
-  // 合計金額
-  const totalH = 34
+  // 合計の行: 「合計金額」は数量の列、合計は金額の列(見本どおり)
+  const totalH = 30
   ensure(totalH)
-  page.drawRectangle({ x: margin, y: y - totalH, width: contentWidth, height: totalH, color: HEAD_BG, borderColor: LINE, borderWidth: 0.6 })
-  page.drawText(CONTRACT_TOTAL_LABEL, { x: colX[0] + padX, y: y - 21, size: 11, font, color: INK })
-  const totalStr = formatYen(input.total)
-  const totalW = font.widthOfTextAtSize(totalStr, 13)
-  page.drawText(totalStr, { x: margin + contentWidth - padX - totalW, y: y - 22, size: 13, font, color: INK })
-  y -= totalH + 22
+  rect(TABLE_X, top, TABLE_W, totalH)
+  for (let i = 1; i < colX.length; i++) vline(colX[i], top, totalH)
+  draw(CONTRACT_TOTAL_LABEL, colX[1] + PAD_X - 2, 9, top + (totalH - 9) / 2)
+  drawRight(formatYen(input.total), colRight(2) - PAD_X, 11, top + (totalH - 11) / 2)
+  top += totalH + 30
 
-  // 注意書き
+  // ── 注意書き(「※」を行頭に出し、2行目以降を字下げ) ──
   for (const note of tpl.notes) {
-    const lines = wrapText(note, font, 9.5, contentWidth)
-    ensure(lines.length * 14 + 8)
-    lines.forEach((l, k) => page.drawText(l, { x: margin, y: y - 9.5 - k * 14, size: 9.5, font, color: INK }))
-    y -= lines.length * 14 + 8
+    const lines = wrapText(note, font, 10.5, NOTE_RIGHT - (NOTE_X + NOTE_INDENT), NOTE_RIGHT - NOTE_X)
+    ensure(lines.length * 13.5)
+    lines.forEach((l, k) => draw(l, k === 0 ? NOTE_X : NOTE_X + NOTE_INDENT, 10.5, top + k * 13.5))
+    top += lines.length * 13.5 + 9
   }
-  y -= 14
+  top += 16
 
-  // 申込日・氏名・住所・電話番号
-  ensure(120)
-  text(`申込日　${formatDateJa(input.applicationDate)}`, margin, 11)
-  y -= 11 + 16
-  text(`氏名：${input.name}`, margin, 11)
-  y -= 11 + 16
-  const addrLines = wrapText(`住所：${input.address}`, font, 11, contentWidth)
-  addrLines.forEach((l, k) => page.drawText(l, { x: margin, y: y - 11 - k * 16, size: 11, font, color: INK }))
-  y -= addrLines.length * 16 + 12
-  text(`電話番号：${input.phoneNumber}`, margin, 11)
-  y -= 11 + 20
+  // ── 申込日(年・月・日を広い間隔で) ──
+  ensure(130)
+  const [y, m, d] = input.applicationDate.split('-').map(Number)
+  draw('申込日', LABEL_X, 11, top)
+  drawRight(String(y), 150, 11, top); draw('年', 156, 11, top)
+  drawRight(String(m), 212, 11, top); draw('月', 218, 11, top)
+  drawRight(String(d), 274, 11, top); draw('日', 280, 11, top)
+  top += 31
 
-  // 署名
-  const sigBoxW = 220
-  const sigBoxH = 66
-  ensure(sigBoxH + 24 + CONTRACT_SALON_LINES.length * 16)
-  text('署名：', margin, 11)
-  const sigX = margin + 40
-  page.drawRectangle({ x: sigX, y: y - sigBoxH, width: sigBoxW, height: sigBoxH, borderColor: LINE, borderWidth: 0.5 })
-  const scale = Math.min((sigBoxW - 12) / signature.width, (sigBoxH - 12) / signature.height, 1)
+  draw('氏名：', LABEL_X, 11, top)
+  draw(input.name, VALUE_X, 11, top)
+  top += 31
+
+  draw('住所：', LABEL_X, 11, top)
+  const addrLines = wrapText(input.address, font, 11, NOTE_RIGHT - VALUE_X)
+  addrLines.forEach((l, k) => draw(l, VALUE_X, 11, top + k * 15))
+  top += Math.max(31, addrLines.length * 15 + 16)
+
+  draw('電話番号：', LABEL_X, 11, top)
+  draw(input.phoneNumber, VALUE_X, 11, top)
+  top += 30
+
+  // ── 下段: 事業者情報の囲み枠(左) と 署名枠(右) ──
+  const boxH = 99
+  ensure(boxH)
+  rect(BOX_X, top, BOX_W, boxH)
+  CONTRACT_SALON_LINES.forEach(([label, value], k) => draw(`${label}：${value}`, BOX_X + 13, 10, top + 12 + k * 15))
+
+  rect(SIGN_X, top, SIGN_W, boxH)
+  draw('署名', SIGN_X + 9, 9, top + 8)
+  const areaW = SIGN_W - 20
+  const areaH = boxH - 34
+  const scale = Math.min(areaW / signature.width, areaH / signature.height, 1)
   const sw = signature.width * scale
   const sh = signature.height * scale
-  page.drawImage(signature, { x: sigX + (sigBoxW - sw) / 2, y: y - sigBoxH + (sigBoxH - sh) / 2, width: sw, height: sh })
-  y -= sigBoxH + 24
-
-  // 事業者情報(事業者・店舗名・代表者・住所・電話番号)
-  for (const [label, value] of CONTRACT_SALON_LINES) {
-    text(`${label}：${value}`, margin, 10)
-    y -= 10 + 6
-  }
+  page.drawImage(signature, {
+    x: SIGN_X + (SIGN_W - sw) / 2,
+    y: A4_HEIGHT_PT - top - 26 - areaH + (areaH - sh) / 2,
+    width: sw, height: sh,
+  })
 
   return doc.save()
 }

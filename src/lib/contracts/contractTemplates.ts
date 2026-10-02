@@ -32,8 +32,8 @@ export const CONTRACT_TEMPLATES: Record<ContractDocumentType, ContractTemplate> 
   },
 }
 
-/** 表の見出し(原文は「コース名　数量　金額　備考」。PDFには単価も含める指示のため単価列を追加)。 */
-export const CONTRACT_TABLE_HEADERS = ['コース名', '数量', '単価', '金額', '備考'] as const
+/** 表の見出し(原文どおり「コース名　数量　金額　備考」。2026-10-02の見本レイアウトに合わせ単価列は印字しない)。 */
+export const CONTRACT_TABLE_HEADERS = ['コース名', '数量', '金額', '備考'] as const
 export const CONTRACT_TOTAL_LABEL = '合計金額'
 
 /**
