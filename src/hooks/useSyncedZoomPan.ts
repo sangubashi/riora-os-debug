@@ -14,9 +14,6 @@
  *     独自にpointerdown/moveを処理する)。
  *   - ダブルタップ: scale・pan位置をリセットする(よくある画像ビューアの挙動)。
  *
- * 独立ズーム: 呼び出しごとに独立した状態を持つため、並列比較では左右で別々に呼べば片方だけ
- * 拡大・移動できる(スライダー比較では1つを共有する)。
- *
  * GPU寄り実装の要件(clip-pathまたはtransform)に合わせ、再描画(再レイアウト)を伴わない
  * transform: translate()/scale() のみを使う。
  */
@@ -44,7 +41,6 @@ export interface UseSyncedZoomPanResult {
   }
   reset: () => void
   isZoomed: boolean
-  scale: number
 }
 
 function clamp(v: number, min: number, max: number): number {
@@ -140,5 +136,5 @@ export function useSyncedZoomPan(): UseSyncedZoomPanResult {
     transformOrigin: 'center center',
   }), [state])
 
-  return { style, handlers, reset, isZoomed: state.scale > 1.01, scale: state.scale }
+  return { style, handlers, reset, isZoomed: state.scale > 1.01 }
 }

@@ -249,21 +249,3 @@ export async function deletePhoto(customerId: string, photoId: string): Promise<
   const body = await res.json().catch(() => null) as { error?: string } | null
   throw new Error(body?.error ?? `delete_failed:${res.status}`)
 }
-
-/**
- * 写真のアングル修正(PATCH /api/customers/[id]/photos/[photoId])。新しいbody_partを返す。
- * 失敗時は例外を投げる。
- */
-export async function updatePhotoAngle(
-  customerId: string,
-  photoId: string,
-  angle: 'front' | 'right' | 'left' | 'forehead' | 'other'
-): Promise<string> {
-  const res = await authedFetch(`/api/customers/${customerId}/photos/${photoId}`, {
-    method: 'PATCH',
-    body:   JSON.stringify({ angle }),
-  })
-  const body = await res.json().catch(() => null) as { success?: boolean; bodyPart?: string; error?: string } | null
-  if (res.ok && body?.success && body.bodyPart) return body.bodyPart
-  throw new Error(body?.error ?? `update_angle_failed:${res.status}`)
-}

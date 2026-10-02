@@ -1,36 +1,47 @@
 'use client'
 /**
- * PhotoCompareScreen.tsx — 写真カルテ Before/After比較UI(スライダー/並列、2026-09-17)。
+ * PhotoCompareScreen.tsx — 写真カルテ Before/After比較UI(スライダー画面、2026-09-17)。
  *
- * 2026-10-02拡張(ユーザー依頼):
- *  - レイアウト: 上=比較画像、下=「撮影日タブ + その日のアングル別サムネイル」パネル。
- *    「左(前)に設定 / 右(後)に設定」で対象側を選び、日付タブ→サムネイルのタップで
- *    その側の写真を差し替える(旧: ヘッダーの日付ポップアップ)。
- *  - 左右の表示ラベルは「前回/今回」ではなく撮影日(+アングル)で表示する。
- *  - 並列モードは左右それぞれ独立したズーム・パン(useSyncedZoomPanを左右で別々に呼ぶ)。
- *    スライダーモードは重ね合わせのため従来通り1つのズームを共有する。
- *  - アングル修正: サムネイルのアングルを後から直せる(PATCH .../photos/[photoId]、
- *    実体はbody_part。語彙は src/lib/photos/photoAngle.ts)。
+ * デザイン確定(IMG_1453.JPG相当): ヘッダー(Salon Rioraテキストのみ・日付・
+ * スライダー/並列切替・全画面トグル)＋中央の大きな写真比較エリア。
  *
- * 撮影用ゴーストUI(IpadPhotoCaptureModal.tsx)とは完全に別画面。対象は保存済み写真
- * (既存の GET /api/customers/[id]/photos・signed-url API)のみで、カメラ・ゴースト・
- * ジャイロ・メモ・AI・LINEには関与しない。権限チェックは既存API(authedFetch経由)に委ねる。
+ * 撮影用ゴーストUI(IpadPhotoCaptureModal.tsx、水平器・シャッター等)とは完全に別画面。
+ * 対象は保存済み写真(既存の GET /api/customers/[id]/photos・signed-url API)のみで、
+ * カメラ・アップロード・ゴースト・ジャイロには一切関与しない。メモ・AI・LINEも
+ * 表示しない(閲覧専用の比較ビューアに徹する)。
  *
- * 画像読み込みガード(2026-09-28): signed URL取得失敗・<img>のonErrorいずれも
- * プレースホルダーを表示し、操作(ズーム・スライダー)は画像の状態に依存しない。
+ * 初期ペア選定・日付候補一覧は src/lib/photos/comparePairSelection.ts の純粋関数
+ * (既存のcomparisonSelection.tsのロジックをそのまま利用)に委譲する。
+ * 連動ズーム・連動パンは src/hooks/useSyncedZoomPan.ts に委譲する(2枚の<img>へ
+ * 同一のtransformを適用するだけの汎用フックで、写真固有の知識は持たない)。
+ *
+ * 権限: listCustomerPhotosTimeline/getBatchSignedUrls は既存の認証付きAPI
+ * (authedFetch経由、サーバー側でcanAccessCustomer等の既存チェックを通る)をそのまま使う。
+ * このコンポーネント自身は権限チェックを一切実装しない(=既存のチェックに委ねる)。
+ *
+ * 画像読み込みガード(2026-09-28ユーザー承認): signed URL取得(getBatchSignedUrls)自体が
+ * 例外を投げた場合(ネットワーク断等)にキャッチせず放置すると、以後urlsが更新されず
+ * 画面が固まって見える問題があったため.catch()を追加した。また、signed URLの取得自体は
+ * 成功したが<img>のonErrorが発生した場合(署名URL期限切れ・Storageオブジェクト欠落等)も、
+ * 従来は`{url && <img/>}`のみで「取得できなかったIDは結果に含めない」
+ * (photoApiClient.tsのコメント通り)ため画像が無言で表示されないだけだった。
+ * 両ケースとも同じプレースホルダー(PhotoCompareKit.tsxのPhotoPanelと同系統の見た目)を
+ * 表示するようにし、スライダー・並列比較のドラッグ操作自体(useSyncedZoomPan/
+ * ハンドルのpointerイベント)は画像の読み込み状態に依存しないため、画像が無くても
+ * 動かなくなることはない(構造上安全であることをコード確認済み)。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
-import { Calendar, ImageOff, Maximize2, Minimize2, MoveHorizontal, Pencil, Rows3, RotateCcw, SlidersHorizontal, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Calendar, ImageOff, Maximize2, Minimize2, MoveHorizontal, Rows3, SlidersHorizontal, X } from 'lucide-react'
+import { listCustomerPhotosTimeline, getBatchSignedUrls, type TimelinePhoto } from '@/lib/photos/photoApiClient'
 import {
-  listCustomerPhotosTimeline, getBatchSignedUrls, updatePhotoAngle, type TimelinePhoto,
-} from '@/lib/photos/photoApiClient'
-import { pickInitialComparisonPair, formatPhotoDateLabel } from '@/lib/photos/comparePairSelection'
+  pickInitialComparisonPair,
+  listPhotoOptions,
+  formatPhotoDateLabel,
+  buildPhotoOptionLabels,
+  type PhotoOption,
+} from '@/lib/photos/comparePairSelection'
 import type { ComparisonPair } from '@/lib/photos/comparisonSelection'
-import {
-  PHOTO_ANGLES, angleOfBodyPart, angleLabelOfPhoto, bodyPartOfAngle, photoDayKey,
-  listPhotoDays, listPhotosOfDay, formatDayTab, type PhotoAngle,
-} from '@/lib/photos/photoAngle'
+import { bodyPartLabel } from '@/lib/photos/bodyParts'
 import { useSyncedZoomPan } from '@/hooks/useSyncedZoomPan'
 import { PALETTE, headingFont } from '@/components/customer/shared/PhotoCompareKit'
 
@@ -44,14 +55,15 @@ interface Props {
   onClose: () => void
 }
 
-// objectFitはcontain(写真全体を必ず表示する。coverだと額・顎が切り取られる、CLAUDE.md参照)。
+// objectFitはcontain(写真全体を必ず表示する)。coverだと縦長写真を横長画面に表示した際に
+// 上下(額・顎)が大きく切り取られてしまう(PhotoPanel共有コンポーネントで過去に対応した
+// のと同じ問題。CLAUDE.md参照)。
 const imgBaseStyle: React.CSSProperties = {
   position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain',
   willChange: 'transform', userSelect: 'none', pointerEvents: 'none',
 }
 
-const SIDE_LABEL: Record<PairSide, string> = { reference: '左（前）', current: '右（後）' }
-
+/** 画像取得エラー時のプレースホルダー(2026-09-28ユーザー承認、PhotoPanelの空表示と同系統)。 */
 function PhotoLoadErrorPlaceholder() {
   return (
     <div
@@ -67,41 +79,28 @@ function PhotoLoadErrorPlaceholder() {
   )
 }
 
-/** 比較画像の左右ラベル: 撮影日(同日同士は時刻も)+アングル。「前回/今回」は使わない。 */
-function captionOf(photo: TimelinePhoto | undefined, other: TimelinePhoto | undefined): string {
-  if (!photo) return ''
-  const l = formatPhotoDateLabel(photo.takenAt)
-  const sameDay = !!other && photoDayKey(other) === photoDayKey(photo)
-  return `${l.dateStr}${sameDay && l.timeStr ? ` ${l.timeStr}` : ''} ${angleLabelOfPhoto(photo)}`
-}
-
 export default function PhotoCompareScreen({ customerId, initialBodyPart, onClose }: Props) {
   const [photos, setPhotos] = useState<TimelinePhoto[]>([])
   const [loading, setLoading] = useState(true)
   const [pair, setPair] = useState<ComparisonPair | null>(null)
   const [urls, setUrls] = useState<{ reference?: string; current?: string }>({})
-  const [attempted, setAttempted] = useState<{ reference: boolean; current: boolean }>({ reference: false, current: false })
+  // urlsの取得試行が完了したか(pairが変わるたびfalseへ戻す)。「まだ取得中」と
+  // 「取得したがurlが無い(=失敗)」を区別し、後者の時だけプレースホルダーを出すために使う。
+  const [urlsAttempted, setUrlsAttempted] = useState(false)
+  // <img>のonErrorで検知した読み込み失敗(署名URL自体は取得できたがStorage側で失敗した場合)。
   const [imgError, setImgError] = useState<{ reference?: boolean; current?: boolean }>({})
 
   const [viewMode, setViewMode] = useState<ViewMode>('slider')
   const [sliderPercent, setSliderPercent] = useState(50)
   const [fullscreen, setFullscreen] = useState(false)
-
-  // 下部パネル: 設定対象の側・表示中の撮影日・サムネイルURL・アングル修正モード
-  const [targetSide, setTargetSide] = useState<PairSide>('current')
-  const [dayKey, setDayKey] = useState<string | null>(null)
-  const [thumbUrls, setThumbUrls] = useState<Record<string, string>>({})
-  const [angleEdit, setAngleEdit] = useState(false)
-  const [angleError, setAngleError] = useState<string | null>(null)
+  const [pickerSide, setPickerSide] = useState<PairSide | null>(null)
 
   const rootRef = useRef<HTMLDivElement | null>(null)
   const sliderAreaRef = useRef<HTMLDivElement | null>(null)
   const draggingHandleRef = useRef(false)
-  const zoomShared = useSyncedZoomPan()      // スライダー比較: 重ね合わせのため共有
-  const zoomReference = useSyncedZoomPan()   // 並列比較: 左右で独立
-  const zoomCurrent = useSyncedZoomPan()
-  const zoomOf = { reference: zoomReference, current: zoomCurrent }
+  const zoomPan = useSyncedZoomPan()
 
+  // 顧客の全写真を1回だけ取得し、初期ペアを選ぶ(既存API・既存の認可チェックをそのまま利用)。
   useEffect(() => {
     let cancelled = false
     setLoading(true)
@@ -112,6 +111,8 @@ export default function PhotoCompareScreen({ customerId, initialBodyPart, onClos
         setPair(pickInitialComparisonPair(list, initialBodyPart ?? null))
       })
       .catch(() => {
+        // 一覧取得自体が失敗した場合も「比較できる写真がまだありません」表示へフォールバック
+        // させる(loadingがtrueのまま固まらないようにするNULLチェック・ガード)。
         if (cancelled) return
         setPhotos([])
         setPair(null)
@@ -123,41 +124,36 @@ export default function PhotoCompareScreen({ customerId, initialBodyPart, onClos
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId])
 
-  // 左右それぞれ、写真が変わった側だけ署名URL取得・ズームのリセットを行う(反対側の拡大状態は保つ)。
-  const referenceId = pair?.reference.id
-  const currentId = pair?.current.id
+  // ペアが変わるたびに署名URLを取得し直し、ズーム・スライダー位置をリセットする。
   useEffect(() => {
-    setImgError(prev => ({ ...prev, reference: false }))
-    setAttempted(prev => ({ ...prev, reference: false }))
-    zoomReference.reset()
-    zoomShared.reset()
-    if (!referenceId) { setUrls(prev => ({ ...prev, reference: undefined })); return undefined }
+    setImgError({})
+    setUrlsAttempted(false)
+    if (!pair) { setUrls({}); return undefined }
     let cancelled = false
-    getBatchSignedUrls(customerId, [referenceId], 'detail')
-      .then(map => { if (!cancelled) setUrls(prev => ({ ...prev, reference: map[referenceId] })) })
-      .catch(() => { if (!cancelled) setUrls(prev => ({ ...prev, reference: undefined })) })
-      .finally(() => { if (!cancelled) setAttempted(prev => ({ ...prev, reference: true })) })
+    getBatchSignedUrls(customerId, [pair.reference.id, pair.current.id], 'detail')
+      .then(map => {
+        if (cancelled) return
+        setUrls({ reference: map[pair.reference.id], current: map[pair.current.id] })
+      })
+      .catch(() => {
+        if (cancelled) return
+        setUrls({})
+      })
+      .finally(() => {
+        if (!cancelled) setUrlsAttempted(true)
+      })
+    zoomPan.reset()
+    setSliderPercent(50)
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customerId, referenceId])
-  useEffect(() => {
-    setImgError(prev => ({ ...prev, current: false }))
-    setAttempted(prev => ({ ...prev, current: false }))
-    zoomCurrent.reset()
-    zoomShared.reset()
-    if (!currentId) { setUrls(prev => ({ ...prev, current: undefined })); return undefined }
-    let cancelled = false
-    getBatchSignedUrls(customerId, [currentId], 'detail')
-      .then(map => { if (!cancelled) setUrls(prev => ({ ...prev, current: map[currentId] })) })
-      .catch(() => { if (!cancelled) setUrls(prev => ({ ...prev, current: undefined })) })
-      .finally(() => { if (!cancelled) setAttempted(prev => ({ ...prev, current: true })) })
-    return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customerId, currentId])
+  }, [customerId, pair?.reference.id, pair?.current.id])
 
-  const referenceFailed = imgError.reference || (attempted.reference && !urls.reference)
-  const currentFailed   = imgError.current   || (attempted.current   && !urls.current)
+  // 「読み込み失敗」= onErrorで検知 or (取得試行が完了したのにurlが無い)。
+  const referenceFailed = imgError.reference || (urlsAttempted && !urls.reference)
+  const currentFailed   = imgError.current   || (urlsAttempted && !urls.current)
 
+  // ブラウザのFullscreen API(対応環境ではネイティブ全画面、非対応でもCSS側の全画面レイアウトは
+  // 常に効くため見た目上は問題ない)。ユーザーがEsc等でネイティブ全画面を抜けた場合に同期する。
   useEffect(() => {
     const handler = () => setFullscreen(!!document.fullscreenElement)
     document.addEventListener('fullscreenchange', handler)
@@ -174,47 +170,21 @@ export default function PhotoCompareScreen({ customerId, initialBodyPart, onClos
     }
   }
 
-  // ── 下部パネル ─────────────────────────────────────────────
-  const days = useMemo(() => listPhotoDays(photos), [photos])
-  // 設定対象の側が変わった/写真が変わったら、その側の撮影日タブへ追従する。
-  const targetPhotoId = pair?.[targetSide].id
-  useEffect(() => {
-    const p = pair?.[targetSide]
-    if (p) setDayKey(photoDayKey(p))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetSide, targetPhotoId])
+  // 個別写真単位の比較候補一覧(2026-09-17改訂: 撮影機会への丸め込みを行わないため、
+  // 同一日・同一visitの複数枚もすべて独立した候補として並ぶ)。
+  const photoOptions: PhotoOption[] = useMemo(
+    () => (pair ? listPhotoOptions(photos, pair.bodyPart) : []),
+    [photos, pair]
+  )
+  // 各候補の表示ラベル(同日・同時刻の写真も個別に識別できるよう、必要に応じて
+  // 時刻・連番を付ける)。photoOptionsと同じ順序・同じ長さの配列。
+  const photoOptionLabels = useMemo(() => buildPhotoOptionLabels(photoOptions), [photoOptions])
 
-  const dayPhotos = useMemo(() => (dayKey ? listPhotosOfDay(photos, dayKey) : []), [photos, dayKey])
-
-  // 表示中の日のサムネイル署名URLを取得(取得済みは再取得しない)。
-  useEffect(() => {
-    const missing = dayPhotos.map(p => p.id).filter(id => !thumbUrls[id])
-    if (missing.length === 0) return undefined
-    let cancelled = false
-    getBatchSignedUrls(customerId, missing, 'thumbnail')
-      .then(map => { if (!cancelled) setThumbUrls(prev => ({ ...prev, ...map })) })
-      .catch(() => { /* サムネイルが出ないだけで選択操作自体は可能 */ })
-    return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customerId, dayPhotos])
-
-  const selectThumbnail = (photo: TimelinePhoto) => {
-    if (!pair) return
-    setPair({ ...pair, [targetSide]: photo, bodyPart: targetSide === 'current' ? photo.bodyPart : pair.bodyPart })
+  const selectPhotoOption = (option: PhotoOption) => {
+    if (!pair || !pickerSide) return
+    setPair({ ...pair, [pickerSide]: option.photo })
+    setPickerSide(null)
   }
-
-  const changeAngle = useCallback(async (photo: TimelinePhoto, angle: PhotoAngle) => {
-    if (angleOfBodyPart(photo.bodyPart) === angle) return
-    setAngleError(null)
-    try {
-      const bodyPart = await updatePhotoAngle(customerId, photo.id, angle)
-      const patch = (p: TimelinePhoto): TimelinePhoto => (p.id === photo.id ? { ...p, bodyPart } : p)
-      setPhotos(prev => prev.map(patch))
-      setPair(prev => (prev ? { ...prev, reference: patch(prev.reference), current: patch(prev.current) } : prev))
-    } catch {
-      setAngleError('アングルを更新できませんでした')
-    }
-  }, [customerId])
 
   const handlePointerDown = (e: React.PointerEvent) => {
     e.stopPropagation()
@@ -233,67 +203,17 @@ export default function PhotoCompareScreen({ customerId, initialBodyPart, onClos
     draggingHandleRef.current = false
   }
 
-  const referenceCaption = captionOf(pair?.reference, pair?.current)
-  const currentCaption = captionOf(pair?.current, pair?.reference)
-
-  const renderImage = (side: PairSide, extra: React.CSSProperties, zoomStyle: React.CSSProperties) => {
-    const failed = side === 'reference' ? referenceFailed : currentFailed
-    const url = urls[side]
-    if (failed) return <PhotoLoadErrorPlaceholder />
-    if (!url) return null
-    return (
-      <img
-        src={url}
-        alt={side === 'reference' ? referenceCaption : currentCaption}
-        data-testid={`compare-img-${side}`}
-        style={{ ...imgBaseStyle, ...zoomStyle, ...extra }}
-        onError={() => setImgError(prev => ({ ...prev, [side]: true }))}
-      />
-    )
-  }
-
-  const renderPane = (side: PairSide) => {
-    const z = zoomOf[side]
-    return (
-      <div
-        {...z.handlers}
-        data-testid={`compare-pane-${side}`}
-        style={{ position: 'relative', flex: 1, overflow: 'hidden', touchAction: 'none' }}
-      >
-        {renderImage(side, {}, z.style)}
-        <span style={compareLabelStyle(side === 'reference' ? 'left' : 'right')}>
-          {side === 'reference' ? referenceCaption : currentCaption}
-        </span>
-        {z.isZoomed && (
-          <button
-            type="button"
-            onClick={() => z.reset()}
-            onPointerDown={e => e.stopPropagation()}
-            aria-label={`${SIDE_LABEL[side]}の拡大をリセット`}
-            data-testid={`compare-zoom-reset-${side}`}
-            style={{
-              position: 'absolute', top: '10px', [side === 'reference' ? 'left' : 'right']: '10px', zIndex: 3,
-              display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 10px', borderRadius: '999px',
-              border: 'none', background: 'rgba(20,16,12,0.65)', color: '#fff', fontSize: '12px', cursor: 'pointer',
-            }}
-          >
-            <RotateCcw size={12} />×{z.scale.toFixed(1)}
-          </button>
-        )}
-      </div>
-    )
-  }
-
-  const segBtn = (active: boolean): React.CSSProperties => ({
-    display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', border: 'none', cursor: 'pointer',
-    background: active ? PALETTE.gold : 'transparent', color: active ? '#fff' : PALETTE.text, fontSize: '12px',
-  })
+  const referenceLabel = formatPhotoDateLabel(pair?.reference.takenAt ?? new Date().toISOString())
+  const currentLabel = formatPhotoDateLabel(pair?.current.takenAt ?? new Date().toISOString())
 
   return (
     <div
       ref={rootRef}
       data-testid="photo-compare-screen"
-      style={{ position: 'fixed', inset: 0, zIndex: 450, background: PALETTE.bg, display: 'flex', flexDirection: 'column' }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 450, background: PALETTE.bg,
+        display: 'flex', flexDirection: 'column',
+      }}
     >
       {!fullscreen && (
         <div
@@ -307,28 +227,52 @@ export default function PhotoCompareScreen({ customerId, initialBodyPart, onClos
             <p style={{ margin: 0, fontSize: '16px', color: PALETTE.gold, letterSpacing: '0.01em', fontFamily: headingFont.style.fontFamily }}>
               Salon Riora
             </p>
+
             {pair && (
-              <div
+              <button
+                type="button"
+                onClick={() => setPickerSide(prev => (prev ? null : 'reference'))}
                 style={{
                   display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px',
-                  borderRadius: '999px', border: `1px solid ${PALETTE.border}`,
+                  borderRadius: '999px', border: `1px solid ${PALETTE.border}`, background: 'none', cursor: 'pointer',
                 }}
               >
                 <Calendar size={14} strokeWidth={1.8} color={PALETTE.gold} />
-                <span style={{ fontSize: '12px', color: PALETTE.text }}>{referenceCaption}</span>
-                <span style={{ fontSize: '12px', color: PALETTE.muted }}>→</span>
-                <span style={{ fontSize: '12px', color: PALETTE.text }}>{currentCaption}</span>
-              </div>
+                <span style={{ fontSize: '12px', color: PALETTE.text }}>{referenceLabel.dateStr}</span>
+                <span style={{ fontSize: '12px', color: PALETTE.muted }}>|</span>
+                <span style={{ fontSize: '12px', color: PALETTE.text }}>{currentLabel.relative}</span>
+              </button>
             )}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            {pair && (
+              <p style={{ margin: 0, fontSize: '11px', color: PALETTE.muted }}>
+                {bodyPartLabel(pair.bodyPart)}
+              </p>
+            )}
             <div style={{ display: 'flex', border: `1px solid ${PALETTE.border}`, borderRadius: '999px', overflow: 'hidden' }}>
-              <button type="button" data-testid="mode-slider" onClick={() => setViewMode('slider')} style={segBtn(viewMode === 'slider')}>
+              <button
+                type="button"
+                onClick={() => setViewMode('slider')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', border: 'none', cursor: 'pointer',
+                  background: viewMode === 'slider' ? PALETTE.gold : 'transparent',
+                  color: viewMode === 'slider' ? '#fff' : PALETTE.text, fontSize: '12px',
+                }}
+              >
                 <SlidersHorizontal size={14} strokeWidth={1.8} />
                 スライダー
               </button>
-              <button type="button" data-testid="mode-side" onClick={() => setViewMode('sideBySide')} style={segBtn(viewMode === 'sideBySide')}>
+              <button
+                type="button"
+                onClick={() => setViewMode('sideBySide')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', border: 'none', cursor: 'pointer',
+                  background: viewMode === 'sideBySide' ? PALETTE.gold : 'transparent',
+                  color: viewMode === 'sideBySide' ? '#fff' : PALETTE.text, fontSize: '12px',
+                }}
+              >
                 <Rows3 size={14} strokeWidth={1.8} style={{ transform: 'rotate(90deg)' }} />
                 並列
               </button>
@@ -337,18 +281,81 @@ export default function PhotoCompareScreen({ customerId, initialBodyPart, onClos
               type="button"
               onClick={() => { void toggleFullscreen() }}
               aria-label="全画面表示切り替え"
-              style={roundBtnStyle}
+              style={{
+                width: '36px', height: '36px', borderRadius: '50%', border: `1px solid ${PALETTE.border}`,
+                background: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+              }}
             >
               <Maximize2 size={15} strokeWidth={1.8} color={PALETTE.gold} />
             </button>
-            <button type="button" onClick={onClose} aria-label="閉じる" style={roundBtnStyle}>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="閉じる"
+              style={{
+                width: '36px', height: '36px', borderRadius: '50%', border: `1px solid ${PALETTE.border}`,
+                background: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+              }}
+            >
               <X size={16} strokeWidth={2} color={PALETTE.text} />
             </button>
           </div>
         </div>
       )}
 
-      <div style={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden', background: '#000' }}>
+      {/* 日付選択パネル(縦リスト、写真カルテ Phase 2のゴースト日付リストと同じ方針)。 */}
+      {pickerSide && pair && (
+        <div style={{
+          position: 'absolute', top: fullscreen ? '16px' : '76px', left: '24px', zIndex: 10,
+          background: PALETTE.card, border: `1px solid ${PALETTE.border}`, borderRadius: '14px',
+          boxShadow: PALETTE.shadow, padding: '12px', width: '260px', maxHeight: '320px', overflowY: 'auto',
+        }}>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+            <button
+              type="button"
+              onClick={() => setPickerSide('reference')}
+              style={{
+                flex: 1, padding: '6px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '12px',
+                background: pickerSide === 'reference' ? PALETTE.gold : PALETTE.bg,
+                color: pickerSide === 'reference' ? '#fff' : PALETTE.text,
+              }}
+            >
+              前回(左)を選ぶ
+            </button>
+            <button
+              type="button"
+              onClick={() => setPickerSide('current')}
+              style={{
+                flex: 1, padding: '6px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '12px',
+                background: pickerSide === 'current' ? PALETTE.gold : PALETTE.bg,
+                color: pickerSide === 'current' ? '#fff' : PALETTE.text,
+              }}
+            >
+              今回(右)を選ぶ
+            </button>
+          </div>
+          {photoOptions.map((o, i) => {
+            const isSelected = pickerSide === 'reference' ? o.photo.id === pair.reference.id : o.photo.id === pair.current.id
+            return (
+              <button
+                key={o.photo.id}
+                type="button"
+                onClick={() => selectPhotoOption(o)}
+                style={{
+                  display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: '8px',
+                  border: 'none', cursor: 'pointer', fontSize: '12px', marginBottom: '4px',
+                  background: isSelected ? PALETTE.gold : 'transparent',
+                  color: isSelected ? '#fff' : PALETTE.text,
+                }}
+              >
+                {photoOptionLabels[i]}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden', background: '#000' }}>
         {loading ? (
           <p style={{ position: 'absolute', inset: 0, margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '13px' }}>
             読み込み中…
@@ -360,66 +367,92 @@ export default function PhotoCompareScreen({ customerId, initialBodyPart, onClos
               同じ部位で2回以上撮影された写真が必要です。
             </p>
           </div>
-        ) : (
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={viewMode}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.18 }}
-              style={{ position: 'absolute', inset: 0 }}
+        ) : viewMode === 'slider' ? (
+          <div
+            ref={sliderAreaRef}
+            {...zoomPan.handlers}
+            style={{ position: 'absolute', inset: 0, touchAction: 'none' }}
+          >
+            {currentFailed ? (
+              <PhotoLoadErrorPlaceholder />
+            ) : urls.current && (
+              <img
+                src={urls.current}
+                alt="今回"
+                style={{ ...imgBaseStyle, ...zoomPan.style }}
+                onError={() => setImgError(prev => ({ ...prev, current: true }))}
+              />
+            )}
+            {referenceFailed ? (
+              <div style={{ ...imgBaseStyle, clipPath: `inset(0 ${100 - sliderPercent}% 0 0)` }}>
+                <PhotoLoadErrorPlaceholder />
+              </div>
+            ) : urls.reference && (
+              <img
+                src={urls.reference}
+                alt="前回"
+                style={{ ...imgBaseStyle, ...zoomPan.style, clipPath: `inset(0 ${100 - sliderPercent}% 0 0)` }}
+                onError={() => setImgError(prev => ({ ...prev, reference: true }))}
+              />
+            )}
+            <div
+              aria-hidden="true"
+              style={{
+                position: 'absolute', top: 0, bottom: 0, left: `${sliderPercent}%`,
+                width: '2px', marginLeft: '-1px', background: 'rgba(255,255,255,0.85)', pointerEvents: 'none',
+              }}
+            />
+            <div
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+              role="slider"
+              aria-label="比較スライダー"
+              aria-valuemin={5}
+              aria-valuemax={95}
+              aria-valuenow={Math.round(sliderPercent)}
+              style={{
+                position: 'absolute', top: '50%', left: `${sliderPercent}%`, transform: 'translate(-50%, -50%)',
+                width: '44px', height: '44px', borderRadius: '50%', touchAction: 'none',
+                background: '#fff', border: `2px solid ${PALETTE.gold}`, cursor: 'ew-resize',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
+              }}
             >
-              {viewMode === 'slider' ? (
-                <div
-                  ref={sliderAreaRef}
-                  {...zoomShared.handlers}
-                  data-testid="compare-slider-area"
-                  style={{ position: 'absolute', inset: 0, touchAction: 'none' }}
-                >
-                  {renderImage('current', {}, zoomShared.style)}
-                  {referenceFailed ? (
-                    <div style={{ ...imgBaseStyle, clipPath: `inset(0 ${100 - sliderPercent}% 0 0)` }}>
-                      <PhotoLoadErrorPlaceholder />
-                    </div>
-                  ) : renderImage('reference', { clipPath: `inset(0 ${100 - sliderPercent}% 0 0)` }, zoomShared.style)}
-                  <div
-                    aria-hidden="true"
-                    style={{
-                      position: 'absolute', top: 0, bottom: 0, left: `${sliderPercent}%`,
-                      width: '2px', marginLeft: '-1px', background: 'rgba(255,255,255,0.85)', pointerEvents: 'none',
-                    }}
-                  />
-                  <div
-                    onPointerDown={handlePointerDown}
-                    onPointerMove={handlePointerMove}
-                    onPointerUp={handlePointerUp}
-                    onPointerCancel={handlePointerUp}
-                    role="slider"
-                    aria-label="比較スライダー"
-                    aria-valuemin={5}
-                    aria-valuemax={95}
-                    aria-valuenow={Math.round(sliderPercent)}
-                    style={{
-                      position: 'absolute', top: '50%', left: `${sliderPercent}%`, transform: 'translate(-50%, -50%)',
-                      width: '44px', height: '44px', borderRadius: '50%', touchAction: 'none',
-                      background: '#fff', border: `2px solid ${PALETTE.gold}`, cursor: 'ew-resize',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
-                    }}
-                  >
-                    <MoveHorizontal size={18} strokeWidth={2} color={PALETTE.gold} />
-                  </div>
-                  <span style={compareLabelStyle('left')}>{referenceCaption}</span>
-                  <span style={compareLabelStyle('right')}>{currentCaption}</span>
-                </div>
-              ) : (
-                <div style={{ position: 'absolute', inset: 0, display: 'flex', gap: '2px' }}>
-                  {renderPane('reference')}
-                  {renderPane('current')}
-                </div>
+              <MoveHorizontal size={18} strokeWidth={2} color={PALETTE.gold} />
+            </div>
+            <span style={compareLabelStyle('left')}>前回</span>
+            <span style={compareLabelStyle('right')}>今回</span>
+          </div>
+        ) : (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', gap: '2px' }}>
+            <div {...zoomPan.handlers} style={{ position: 'relative', flex: 1, overflow: 'hidden', touchAction: 'none' }}>
+              {referenceFailed ? (
+                <PhotoLoadErrorPlaceholder />
+              ) : urls.reference && (
+                <img
+                  src={urls.reference}
+                  alt="前回"
+                  style={{ ...imgBaseStyle, ...zoomPan.style }}
+                  onError={() => setImgError(prev => ({ ...prev, reference: true }))}
+                />
               )}
-            </motion.div>
-          </AnimatePresence>
+              <span style={compareLabelStyle('left')}>前回</span>
+            </div>
+            <div {...zoomPan.handlers} style={{ position: 'relative', flex: 1, overflow: 'hidden', touchAction: 'none' }}>
+              {currentFailed ? (
+                <PhotoLoadErrorPlaceholder />
+              ) : urls.current && (
+                <img
+                  src={urls.current}
+                  alt="今回"
+                  style={{ ...imgBaseStyle, ...zoomPan.style }}
+                  onError={() => setImgError(prev => ({ ...prev, current: true }))}
+                />
+              )}
+              <span style={compareLabelStyle('right')}>今回</span>
+            </div>
+          </div>
         )}
 
         {fullscreen && (
@@ -437,126 +470,8 @@ export default function PhotoCompareScreen({ customerId, initialBodyPart, onClos
           </button>
         )}
       </div>
-
-      {/* 下部パネル: 設定する側 → 撮影日タブ → その日のアングル別サムネイル */}
-      {!fullscreen && pair && (
-        <div
-          data-testid="compare-bottom-panel"
-          style={{
-            flexShrink: 0, borderTop: `1px solid ${PALETTE.border}`, background: PALETTE.card,
-            padding: '10px 16px max(10px, env(safe-area-inset-bottom))', display: 'flex', flexDirection: 'column', gap: '8px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', border: `1px solid ${PALETTE.border}`, borderRadius: '999px', overflow: 'hidden' }}>
-              {(['reference', 'current'] as const).map(side => (
-                <button
-                  key={side}
-                  type="button"
-                  data-testid={`target-${side}`}
-                  onClick={() => setTargetSide(side)}
-                  style={{ ...segBtn(targetSide === side), padding: '6px 12px' }}
-                >
-                  {SIDE_LABEL[side]}に設定
-                </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              data-testid="angle-edit-toggle"
-              onClick={() => { setAngleEdit(v => !v); setAngleError(null) }}
-              style={{
-                marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', borderRadius: '999px',
-                border: `1px solid ${PALETTE.border}`, cursor: 'pointer', fontSize: '12px',
-                background: angleEdit ? PALETTE.gold : 'transparent', color: angleEdit ? '#fff' : PALETTE.text,
-              }}
-            >
-              <Pencil size={12} />アングル修正
-            </button>
-          </div>
-
-          <div role="tablist" aria-label="撮影日" data-testid="day-tabs" style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '2px' }}>
-            {days.map(d => (
-              <button
-                key={d.dayKey}
-                type="button"
-                role="tab"
-                aria-selected={d.dayKey === dayKey}
-                data-testid={`day-tab-${d.dayKey}`}
-                onClick={() => setDayKey(d.dayKey)}
-                style={{
-                  flexShrink: 0, padding: '6px 12px', borderRadius: '999px', cursor: 'pointer', fontSize: '12px',
-                  border: `1px solid ${d.dayKey === dayKey ? PALETTE.gold : PALETTE.border}`,
-                  background: d.dayKey === dayKey ? PALETTE.gold : 'transparent',
-                  color: d.dayKey === dayKey ? '#fff' : PALETTE.text,
-                }}
-              >
-                {formatDayTab(d.dayKey)}<span style={{ opacity: 0.7 }}> ({d.count})</span>
-              </button>
-            ))}
-          </div>
-
-          <div data-testid="angle-thumbs" style={{ display: 'flex', gap: '10px', overflowX: 'auto' }}>
-            {dayPhotos.map(photo => {
-              const isRef = photo.id === pair.reference.id
-              const isCur = photo.id === pair.current.id
-              const angle = angleOfBodyPart(photo.bodyPart)
-              const thumb = thumbUrls[photo.id]
-              return (
-                <div key={photo.id} style={{ flexShrink: 0, width: '84px' }}>
-                  <button
-                    type="button"
-                    data-testid={`thumb-${photo.id}`}
-                    onClick={() => selectThumbnail(photo)}
-                    aria-label={`${angleLabelOfPhoto(photo)}を${SIDE_LABEL[targetSide]}にセット`}
-                    style={{
-                      position: 'relative', display: 'block', width: '84px', height: '104px', padding: 0, overflow: 'hidden',
-                      borderRadius: '10px', cursor: 'pointer', background: '#14100c',
-                      border: `2px solid ${isRef || isCur ? PALETTE.gold : 'transparent'}`,
-                    }}
-                  >
-                    {thumb && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />
-                    )}
-                    {(isRef || isCur) && (
-                      <span style={{
-                        position: 'absolute', top: '4px', left: '4px', padding: '1px 6px', borderRadius: '6px',
-                        background: PALETTE.gold, color: '#fff', fontSize: '10px', fontWeight: 700,
-                      }}>
-                        {isRef && isCur ? '左右' : isRef ? '左' : '右'}
-                      </span>
-                    )}
-                  </button>
-                  {angleEdit ? (
-                    <select
-                      aria-label="アングルを修正"
-                      data-testid={`angle-select-${photo.id}`}
-                      value={angle}
-                      onChange={e => { void changeAngle(photo, e.target.value as PhotoAngle) }}
-                      style={{ width: '100%', marginTop: '3px', fontSize: '11px', borderRadius: '6px', border: `1px solid ${PALETTE.border}` }}
-                    >
-                      {PHOTO_ANGLES.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
-                    </select>
-                  ) : (
-                    <p style={{ margin: '3px 0 0', textAlign: 'center', fontSize: '11px', color: PALETTE.text }}>
-                      {angleLabelOfPhoto(photo)}
-                    </p>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-          {angleError && <p style={{ margin: 0, fontSize: '11px', color: '#b3402e' }}>{angleError}</p>}
-        </div>
-      )}
     </div>
   )
-}
-
-const roundBtnStyle: React.CSSProperties = {
-  width: '36px', height: '36px', borderRadius: '50%', border: `1px solid ${PALETTE.border}`,
-  background: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
 }
 
 function compareLabelStyle(side: 'left' | 'right'): React.CSSProperties {
