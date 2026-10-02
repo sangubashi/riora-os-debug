@@ -30,9 +30,12 @@ import { useCustomerStore, type CustomerRow } from '@/store/useCustomerStore'
 import { PALETTE, headingFont } from '@/components/customer/shared/PhotoCompareKit'
 import CustomerTopPage from '@/components/customer/CustomerTopPage'
 import ReservationCancelDialog from '@/components/karte/ReservationCancelDialog'
+import ReservationRescheduleDialog from '@/components/karte/ReservationRescheduleDialog'
+import { toast } from 'sonner'
+import { formatJstMonthDayTime } from '@/lib/reservations/reschedule'
 import type { ReservationWithBrainCustomer } from '@/types/database'
 import type { Customer as BSCustomer, Reservation as BSReservation, CustomerType } from '@/types'
-import { isKanaOnly, kanaSurnameStartsWith } from '@/lib/customer/kanaMatch'
+import { customerNameMatchRank } from '@/lib/customer/kanaMatch'
 import { calculateAge } from '@/lib/customer/birthDate'
 import { maskPhoneNumberMiddle } from '@/lib/customer/phoneMask'
 
@@ -121,6 +124,26 @@ const CANCEL_BUTTON_COLOR = '#78716C'
 const formatTimeJst = (iso: string) =>
   new Date(iso).toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' })
 
+function rescheduleErrorMessage(code: string): string {
+  switch (code) {
+    case 'invalid_datetime':
+      return '日付と時間を正しく選んでください。'
+    case 'past_datetime':
+      return '過去の日時には予約できません。'
+    case 'same_datetime':
+      return 'いまの予約と同じ日時です。別の日時を選んでください。'
+    case 'invalid_status':
+    case 'conflict':
+      return '予約の状態が変更されています。一覧を更新しました。'
+    case 'forbidden':
+      return 'この予約を操作する権限がありません。'
+    case 'unauthorized':
+      return 'ログインの有効期限が切れています。再ログインしてください。'
+    default:
+      return '処理に失敗しました。もう一度お試しください。'
+  }
+}
+
 function cancelErrorMessage(code: string): string {
   switch (code) {
     case 'already_cancelled':
@@ -144,8 +167,13 @@ export default function KarteEntryScreen() {
   const [selected, setSelected] = useState<{ customer: BSCustomer; reservation?: BSReservation } | null>(null)
   const {
     reservations, cancelledToday, isLoading: reservationsLoading, fetchTodayReservations,
-    cancelReservation, restoreReservation,
+    cancelReservation, restoreReservation, rescheduleReservation,
   } = useHomeStore()
+  // 別日に予約(2026-10-02): 対象・処理中・エラー・担当スタッフの別予約との重なり警告。
+  const [rescheduleTarget, setRescheduleTarget] = useState<ReservationWithBrainCustomer | null>(null)
+  const [rescheduleBusy, setRescheduleBusy] = useState(false)
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null)
+  const [rescheduleOverlap, setRescheduleOverlap] = useState(false)
   // 当日キャンセル機能(2026-10-01): 確認モーダル対象・処理中・エラー・「当日キャンセル」欄の開閉。
   const [cancelTarget, setCancelTarget] = useState<ReservationWithBrainCustomer | null>(null)
   const [restoreTarget, setRestoreTarget] = useState<ReservationWithBrainCustomer | null>(null)
@@ -175,16 +203,16 @@ export default function KarteEntryScreen() {
   const filteredCustomers = useMemo(() => {
     const rawQuery = query.trim()
     if (!rawQuery) return []
-    // 姓フリガナ前方一致(PERF-KARTE-KANA-SURNAME-1・2026-09-27ユーザー承認): 入力が
-    // ひらがな・カタカナのみの場合は、name(漢字表記)は検索対象にせず、name_kanaの
-    // 姓部分(スペースより前)への前方一致でのみ検索する(名のフリガナ・漢字名への
-    // 誤ヒットを防ぐ)。それ以外(漢字等)の入力は従来通りname(漢字表記)への部分一致
-    // で検索する(漢字検索の仕様は今回変更しない)。
-    if (isKanaOnly(rawQuery)) {
-      return customers.filter(c => kanaSurnameStartsWith(c.nameKana, rawQuery)).slice(0, 30)
+    // 部分一致検索(2026-10-02ユーザー指示で強化): ひらがな/カタカナの差と空白を無視し、姓名をまたぐ入力
+    // (例:「しもつり」→「下津 里恵(シモツ リエ)」)でも一致させる。ひらがな・カタカナのみの入力は
+    // フリガナだけを見て、漢字表記の名前への偶然の一致を避ける(詳細は kanaMatch.ts の customerNameMatchRank)。
+    // 先頭一致を先に、途中一致を後に並べる。
+    const ranked: { c: CustomerRow; rank: 0 | 1 }[] = []
+    for (const c of customers) {
+      const rank = customerNameMatchRank(c.name, c.nameKana, rawQuery)
+      if (rank !== null) ranked.push({ c, rank })
     }
-    const q = rawQuery.toLowerCase()
-    return customers.filter(c => c.name.toLowerCase().includes(q)).slice(0, 30)
+    return ranked.sort((x, y) => x.rank - y.rank).map(x => x.c).slice(0, 30)
   }, [customers, query])
 
   // 同姓同名の識別表示(2026-09-28ユーザー承認): 検索結果一覧内で漢字氏名・フリガナが
@@ -205,6 +233,29 @@ export default function KarteEntryScreen() {
     setSelected({ customer: toCustomerFromReservation(r), reservation: toReservationFromReservation(r) })
 
   const closeCancelDialogs = () => { setCancelTarget(null); setRestoreTarget(null); setCancelError(null) }
+
+  const closeRescheduleDialog = () => {
+    setRescheduleTarget(null); setRescheduleError(null); setRescheduleOverlap(false)
+  }
+
+  // 二重送信防止: rescheduleBusy中は何もしない(ボタン自体もdisabled)。
+  async function runReschedule(input: { date: string; time: string; allowOverlap: boolean }) {
+    if (!rescheduleTarget || rescheduleBusy) return
+    setRescheduleBusy(true)
+    setRescheduleError(null)
+    const result = await rescheduleReservation(rescheduleTarget, input)
+    setRescheduleBusy(false)
+    if (result.ok) {
+      const name = rescheduleTarget.brain_customer.name
+      closeRescheduleDialog()
+      setCancelledOpen(true)
+      toast.success(`${name}様を ${formatJstMonthDayTime(result.scheduledAt)} に予約しました`)
+      return
+    }
+    if (result.overlap) { setRescheduleOverlap(true); return }
+    setRescheduleOverlap(false)
+    setRescheduleError(rescheduleErrorMessage(result.error))
+  }
 
   // 二重送信防止: cancelBusy中は何もしない(ボタン自体もdisabled)。
   async function runCancelAction(kind: 'cancel' | 'restore') {
@@ -413,6 +464,19 @@ export default function KarteEntryScreen() {
                   </button>
                   <button
                     type="button"
+                    data-testid={`reschedule-${r.id}`}
+                    onClick={() => { setRescheduleError(null); setRescheduleOverlap(false); setRescheduleTarget(r) }}
+                    aria-label={`${r.brain_customer.name}様を別日に予約`}
+                    style={{
+                      flexShrink: 0, alignSelf: 'center', padding: '8px 14px', borderRadius: '999px',
+                      border: `1px solid ${PALETTE.gold}`, background: 'transparent',
+                      color: PALETTE.gold, fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+                    }}
+                  >
+                    別日に予約
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => { setCancelError(null); setCancelTarget(r) }}
                     aria-label={`${r.brain_customer.name}様の予約を変更`}
                     // 控えめなデザイン(2026-10-01): メインの「予約カードタップ(カルテ遷移)」より目立たせない。
@@ -497,6 +561,19 @@ export default function KarteEntryScreen() {
           )}
         </div>
       </div>
+
+      {rescheduleTarget && (
+        <ReservationRescheduleDialog
+          customerName={rescheduleTarget.brain_customer.name}
+          originalAt={rescheduleTarget.scheduled_at}
+          menuName={rescheduleTarget.menu}
+          busy={rescheduleBusy}
+          error={rescheduleError}
+          overlapWarning={rescheduleOverlap}
+          onSubmit={input => { void runReschedule(input) }}
+          onClose={closeRescheduleDialog}
+        />
+      )}
 
       {cancelTarget && (
         <ReservationCancelDialog

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { PDFDocument } from 'pdf-lib'
 import { getContractCourses, findContractCourse } from '../../../src/lib/contracts/courseMaster'
-import { CONTRACT_TEMPLATES, CONTRACT_SALON } from '../../../src/lib/contracts/contractTemplates'
+import { CONTRACT_TEMPLATES, CONTRACT_SALON, CONTRACT_SALON_LINES } from '../../../src/lib/contracts/contractTemplates'
 import {
   buildLineItems, calcLineAmount, isValidIsoDate, isValidQuantity, validateContractInput,
 } from '../../../src/lib/contracts/contractCalc'
@@ -53,7 +53,14 @@ describe('文言(逐語)', () => {
     expect(t.title).toBe('回数券購入申込書')
     expect(t.intro).toBe('下記の通り、回数券の購入を申し込みます。')
     expect(t.notes).toEqual(['※お申し込みいただいたコースの変更・キャンセル・返金はお受けできませんので、あらかじめご了承ください。'])
-    expect(CONTRACT_SALON).toEqual({ name: 'Salon Riora', address: '東京都中央区新富1丁目15-4 CGA 新富', phone: '070-9458-4869' })
+    expect(CONTRACT_SALON).toEqual({
+      company: '株式会社martylabo', name: 'Salon Riora', representative: '鈴木 雅子',
+      address: '東京都中央区新富1丁目15-4 CGA 新富', phone: '070-9458-4869',
+    })
+    expect(CONTRACT_SALON_LINES.map(([l, v]) => `${l}：${v}`)).toEqual([
+      '事業者：株式会社martylabo', '店舗名：Salon Riora', '代表者：鈴木 雅子',
+      '住所：東京都中央区新富1丁目15-4 CGA 新富', '電話番号：070-9458-4869',
+    ])
   })
 })
 
@@ -167,10 +174,26 @@ describe('PDF生成', () => {
     expect(height).toBeCloseTo(A4_HEIGHT_PT, 1)
     expect(doc.getTitle()).toBe('サブスクリプション申込書')
   })
-  it('回数券・4行でも1ページに収まる', async () => {
-    const item = { course_name: 'ハイドラ×ヒト幹細胞コース 3回', unit_price: 49900, quantity: 99, amount: 4940100, note: 'あ'.repeat(40) }
+  it('サブスク(注意書き4つ)に備考つき2行でも1ページに収まる', async () => {
+    const bytes = await buildContractPdf({ ...input, items: [
+      { ...input.items[0], note: '商品は店頭でお渡し・ご自宅への発送を希望' }, input.items[1] ] })
+    expect((await PDFDocument.load(bytes)).getPageCount()).toBe(1)
+  })
+  it('PDFに文書IDと内容ハッシュを表示しない(本文のテキストに含まれない)', async () => {
+    const bytes = await buildContractPdf(input)
+    const raw = Buffer.from(bytes).toString('latin1')
+    expect(raw).not.toContain(input.contractId)
+    expect(raw).not.toContain('a'.repeat(16))
+  })
+  it('回数券・4行(備考20文字・数量99)でも1ページに収まる', async () => {
+    const item = { course_name: 'ハイドラ×ヒト幹細胞コース 3回', unit_price: 49900, quantity: 99, amount: 4940100, note: 'あ'.repeat(20) }
     const bytes = await buildContractPdf({ ...input, documentType: 'ticket', items: [item, item, item, item], total: item.amount * 4 })
     expect((await PDFDocument.load(bytes)).getPageCount()).toBe(1)
+  })
+  it('極端な入力(4行すべて備考40文字)でも壊れず、2ページ以内に収まる', async () => {
+    const item = { course_name: 'ハーブピーリング＋ヒト幹細胞コース', unit_price: 17000, quantity: 99, amount: 1683000, note: 'あ'.repeat(40) }
+    const bytes = await buildContractPdf({ ...input, items: [item, item, item, item], total: item.amount * 4 })
+    expect((await PDFDocument.load(bytes)).getPageCount()).toBeLessThanOrEqual(2)
   })
   it('折り返しは幅を超えない', async () => {
     const doc = await PDFDocument.create()

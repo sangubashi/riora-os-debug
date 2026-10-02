@@ -43,3 +43,46 @@ export function kanaSurnameStartsWith(nameKana: string | null | undefined, query
   const surname = toHiragana(surnameKana(nameKana).toLowerCase())
   return surname.startsWith(toHiragana(query.toLowerCase()))
 }
+
+// ================================================================
+// 顧客検索の強化(2026-10-02ユーザー指示): ひらがな/カタカナ変換 + 部分一致 + 姓名またぎ
+//
+// 例: 「しもつり」「シモツリ」「しもつ りえ」で「下津 里恵(シモツ リエ)」様がヒットする。
+// 比較の前に、双方を 小文字化 → カタカナをひらがなへ → 空白(半角・全角)を除去 で正規化するため、
+// 姓と名の間の空白に関係なく「姓の末尾+名の先頭」のような入力にも一致する。
+// ================================================================
+
+/** 空白(半角・全角・タブ等)をすべて取り除く。 */
+export function stripSpaces(input: string): string {
+  return input.replace(/[\s　]+/g, '')
+}
+
+/** 検索用の正規化: 小文字化 → カタカナ→ひらがな → 空白除去。 */
+export function normalizeForSearch(input: string): string {
+  return stripSpaces(toHiragana(input.toLowerCase()))
+}
+
+/**
+ * 顧客名検索の一致順位。一致しなければ null、先頭一致なら 0、途中一致なら 1。
+ *  - 入力がひらがな・カタカナのみ: フリガナ(name_kana)だけを見る(漢字表記の名前に含まれる偶然の
+ *    ひらがなへの誤ヒットを避ける。2026-09-27の方針を維持)。フリガナ未登録の顧客のみ、名前を見る。
+ *  - それ以外(漢字等): 名前(name)を、空白を無視して部分一致で見る(「下津里」→「下津 里恵」)。
+ */
+export function customerNameMatchRank(
+  name: string, nameKana: string | null | undefined, query: string,
+): 0 | 1 | null {
+  const q = normalizeForSearch(query)
+  if (!q) return null
+  const kana = nameKana ? normalizeForSearch(nameKana) : ''
+  const target = isKanaOnly(stripSpaces(query))
+    ? (kana || normalizeForSearch(name))
+    : normalizeForSearch(name)
+  const idx = target.indexOf(q)
+  if (idx === -1) return null
+  return idx === 0 ? 0 : 1
+}
+
+/** 顧客名検索に一致するか(部分一致・ひらがな/カタカナ差と空白を無視)。 */
+export function customerNameMatches(name: string, nameKana: string | null | undefined, query: string): boolean {
+  return customerNameMatchRank(name, nameKana, query) !== null
+}

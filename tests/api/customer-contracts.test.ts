@@ -202,6 +202,7 @@ describe('GET /api/customers/[id]/contracts', () => {
     row.content_hash = computeContentHash({
       documentType: 'subscription', applicationDate: row.application_date, name: row.name, address: row.address,
       phoneNumber: row.phone_number, lineItems: line_items, totalAmount: 13000, signatureSha256: row.signature_sha256,
+      templateVersion: row.template_version, // 行が持つ版(この行は版1)で再計算される
     })
     return row
   }

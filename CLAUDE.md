@@ -3121,6 +3121,35 @@ iPadで紙の申込書と同じ並びに手入力→署名→A4縦PDFを生成�
 
 **この解除は上記に限る。**
 
+### `/karte` 着手済み事項（契約書PDFの事業者情報・デザイン／「別日に予約」／顧客検索の強化／テスト契約書の削除・2026-10-02ユーザー指示）
+
+1. **テスト契約書の削除(本番データ)**: 下津 里恵様の「サブスクリプション申込書」「回数券購入申込書」(テスト保存した2件)を、
+   `brain_customer_contracts`(2行、ID指定)と`customer-contracts`バケット(PDF2・署名PNG2。Storage API経由。SQLで行だけ消すと実ファイルが残るため)から削除。
+   削除後は契約書0件・バケット0ファイル。service_roleにはDELETE権限が無い設計のため、DB行は管理者SQLで削除した。
+2. **契約書PDF/紙面**: 事業者情報を「事業者：株式会社martylabo／店舗名：Salon Riora／代表者：鈴木 雅子／住所／電話番号」の5行に更新
+   (`contractTemplates.ts`の`CONTRACT_SALON`/`CONTRACT_SALON_LINES`)。文書の内容が変わるため`CONTRACT_TEMPLATE_VERSION`を2へ
+   (content_hashに含まれ、履歴の整合性確認は各行のtemplate_versionで再計算)。PDF末尾の文書ID・内容ハッシュの表示を削除
+   (content_hash自体はDBに保存して改ざん確認に使い続ける)。配色は黒・薄グレーのみ(ベージュ等を廃止)、表・本文まわりの余白を拡大
+   (`buildContractPdf.ts`、画面の紙面`ContractPaper.tsx`も同じ配色・余白)。紙面は`aspect-ratio`だと内容が増えたとき下端がはみ出すため、
+   幅から計算した最低の高さ(A4比)に変更。備考40文字×4行のような極端な入力は2ページに及ぶことがある(通常の入力は1ページ)。
+3. **「別日に予約」**(`ReservationRescheduleDialog.tsx`/`POST /api/reservations/[id]/reschedule`/`useHomeStore.rescheduleReservation`): /karteの
+   本日の予約カードに追加。日付(今日以降)と時間(5分刻み、JST)を選ぶと、①同じ顧客・担当・メニュー・所要時間で新しい日時の予約を作成、
+   ②元の予約を「変更」(status='cancelled', cancel_source='manual')にして残す(削除しない)。元の予約が手動キャンセル扱いになるため、
+   サロンボードCSVを再取込しても元の日時の予約は復活しない(reservationImportPipelineの手動キャンセル保護)。新しい予約はCSVに無いので上書きされない。
+   2つの書き込みは別のため、②が失敗したら①で作った予約を削除して戻す。担当スタッフの別予約と時間が重なる場合は409(slot_conflict)とし、
+   画面で「重なっても予約する」を選べば作成できる。変更できるのはconfirmedの予約のみ。**サロンボード側には反映されない**。
+   既存の「キャンセル」相当の操作は、店の方針(「キャンセル」の語を避ける)により既に「変更」ボタンとして存在するため、新設・改名はしていない。
+   「変更」欄の元の予約を「変更取り消し」で戻すと、新しい予約と二重になるため注意(ガードは未実装)。
+4. **顧客検索の強化**(`kanaMatch.ts`の`customerNameMatchRank`/`customerNameMatches`、/karteの`KarteEntryScreen.tsx`と顧客タブの`CustomersScreen.tsx`):
+   ひらがな/カタカナの差と空白を無視した**部分一致**に変更。姓名をまたぐ「しもつり」でも「下津 里恵(シモツ リエ)」様がヒットする。漢字は空白を無視
+   (「下津里」→「下津 里恵」)。ひらがな・カタカナのみの入力はフリガナだけを見て漢字名への偶然の一致を避ける方針(2026-09-27)は維持し、
+   フリガナ未登録の顧客のみ名前を見る。/karteは先頭一致を先に並べる。従来の`/karte`の「姓フリガナ前方一致のみ」は廃止。
+   既存の`kanaIncludes`等のexportは残置。
+- 検証: tsc・関連テスト・build。Playwright(モックAPI・一時ページは削除済み)で、検索、別日に予約(重なり警告→再送信→元の予約が変更欄へ)、
+  契約書紙面の見た目を確認。**iPad実機は未確認。**
+
+**この解除は上記に限る。**
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。

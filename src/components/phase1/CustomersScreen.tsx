@@ -8,7 +8,7 @@ import { useCustomerStore, type CustomerRow } from '@/store/useCustomerStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import CustomerBottomSheet from '@/components/customer/CustomerBottomSheet'
 import { authedFetch } from '@/lib/api/authedFetch'
-import { kanaIncludes } from '@/lib/customer/kanaMatch'
+import { customerNameMatches } from '@/lib/customer/kanaMatch'
 import type { Customer, Reservation } from '@/types'
 
 // ─── 会話履歴検索（PHASE NOTES-SEARCH-1） ───────────────────────────────────────
@@ -180,7 +180,7 @@ export default function CustomersScreen() {
   // filteredの検索条件・sortedの優先表示判定の両方で同じ基準を使う
   // (2026-09-27ユーザー承認: name_kanaのみで一致した顧客も「名前一致」扱いにする)。
   const isNameMatch = (c: CustomerRow, lowerQ: string, rawQ: string) =>
-    c.name.toLowerCase().includes(lowerQ) || kanaIncludes(c.nameKana, rawQ)
+    c.name.toLowerCase().includes(lowerQ) || customerNameMatches(c.name, c.nameKana, rawQ)
 
   const filtered = customers.filter(c => {
     if (!query.trim()) return true

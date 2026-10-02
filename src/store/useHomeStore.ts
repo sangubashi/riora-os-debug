@@ -20,6 +20,11 @@ import { authedFetch } from '@/lib/api/authedFetch'
 /** 当日キャンセル/取消の結果(2026-10-01・/karteの当日キャンセル機能)。 */
 export type ReservationCancelResult = { ok: true } | { ok: false; error: string }
 
+/** 「別日に予約」の結果(2026-10-02・/karte)。成功時は新しい予約の日時(ISO)を返す。重なりは conflicts 付き。 */
+export type ReservationRescheduleResult =
+  | { ok: true; scheduledAt: string }
+  | { ok: false; error: string; overlap?: boolean }
+
 interface HomeState {
   reservations: ReservationWithBrainCustomer[]
   /** 当日キャンセル(キャンセル日時が本日JSTの予約)。/karteの「当日キャンセル」欄用。 */
@@ -31,6 +36,11 @@ interface HomeState {
   cancelReservation:  (reservation: ReservationWithBrainCustomer) => Promise<ReservationCancelResult>
   /** 当日キャンセルを取り消して通常予約へ戻す(成功時は一覧を再取得)。 */
   restoreReservation: (reservation: ReservationWithBrainCustomer) => Promise<ReservationCancelResult>
+  /** 予約を別の日時へ移す(元の予約は「変更」へ、新しい日時の予約を作成。成功時は一覧を再取得)。 */
+  rescheduleReservation: (
+    reservation: ReservationWithBrainCustomer,
+    input: { date: string; time: string; allowOverlap?: boolean },
+  ) => Promise<ReservationRescheduleResult>
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -100,6 +110,35 @@ async function callCancelApi(
     }
     await refetch('staff', '')
     return { ok: true }
+  } catch {
+    return { ok: false, error: 'network_error' }
+  }
+}
+
+/**
+ * POST /api/reservations/[id]/reschedule を呼び、成功時は本日の予約を再取得する(2026-10-02)。
+ * 担当スタッフの別予約と重なる場合は error='slot_conflict' / overlap=true で返す(一覧は更新しない)。
+ */
+async function callRescheduleApi(
+  reservation: ReservationWithBrainCustomer,
+  input: { date: string; time: string; allowOverlap?: boolean },
+  refetch: (role: UserRole, uid: string) => Promise<void>,
+): Promise<ReservationRescheduleResult> {
+  try {
+    const res = await authedFetch(`/api/reservations/${reservation.id}/reschedule`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ ...input, brainCustomerId: reservation.brain_customer_id }),
+    })
+    const json = await res.json().catch(() => ({})) as
+      { success?: boolean; error?: string; created?: { scheduled_at: string } }
+    if (!res.ok || !json.success || !json.created) {
+      if (json.error === 'slot_conflict') return { ok: false, error: 'slot_conflict', overlap: true }
+      if (res.status === 409) await refetch('staff', '')
+      return { ok: false, error: json.error ?? 'request_failed' }
+    }
+    await refetch('staff', '')
+    return { ok: true, scheduledAt: json.created.scheduled_at }
   } catch {
     return { ok: false, error: 'network_error' }
   }
@@ -183,4 +222,5 @@ export const useHomeStore = create<HomeState>((set, get) => ({
 
   cancelReservation: (reservation) => callCancelApi(reservation, 'cancel', get().fetchTodayReservations),
   restoreReservation: (reservation) => callCancelApi(reservation, 'restore', get().fetchTodayReservations),
+  rescheduleReservation: (reservation, input) => callRescheduleApi(reservation, input, get().fetchTodayReservations),
 }))

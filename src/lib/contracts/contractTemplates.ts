@@ -36,11 +36,25 @@ export const CONTRACT_TEMPLATES: Record<ContractDocumentType, ContractTemplate> 
 export const CONTRACT_TABLE_HEADERS = ['コース名', '数量', '単価', '金額', '備考'] as const
 export const CONTRACT_TOTAL_LABEL = '合計金額'
 
+/**
+ * 事業者情報(2026-10-02ユーザー指示で更新: 事業者・代表者を追加)。
+ * 表示は「ラベル：値」の5行(contractSalonLines)。
+ */
 export const CONTRACT_SALON = {
-  name:    'Salon Riora',
-  address: '東京都中央区新富1丁目15-4 CGA 新富',
-  phone:   '070-9458-4869',
+  company:        '株式会社martylabo',
+  name:           'Salon Riora',
+  representative: '鈴木 雅子',
+  address:        '東京都中央区新富1丁目15-4 CGA 新富',
+  phone:          '070-9458-4869',
 } as const
+
+export const CONTRACT_SALON_LINES: ReadonlyArray<readonly [label: string, value: string]> = [
+  ['事業者', CONTRACT_SALON.company],
+  ['店舗名', CONTRACT_SALON.name],
+  ['代表者', CONTRACT_SALON.representative],
+  ['住所', CONTRACT_SALON.address],
+  ['電話番号', CONTRACT_SALON.phone],
+]
 
 export const CONTRACT_DOCUMENT_TYPE_LABEL: Record<ContractDocumentType, string> = {
   subscription: CONTRACT_TEMPLATES.subscription.title,
