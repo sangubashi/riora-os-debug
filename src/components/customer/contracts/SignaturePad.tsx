@@ -68,6 +68,8 @@ const SignaturePad = forwardRef<SignaturePadHandle, Props>(function SignaturePad
   const currentRef = useRef<Pt[] | null>(null)
   const trackRef = useRef<PointerTrackState>(INITIAL_POINTER_TRACK_STATE)
   const sizeRef = useRef({ w: 0, h: 0 })
+  // 描画中の差分描画用: 直前に描き終えた曲線の終点(ストロークごとに全再描画しない)。
+  const lastMidRef = useRef<Pt | null>(null)
   const [hasInk, setHasInk] = useState(false)
 
   const notify = useCallback((next: boolean) => {
@@ -124,8 +126,16 @@ const SignaturePad = forwardRef<SignaturePadHandle, Props>(function SignaturePad
     if (decision.action !== 'start') return
     e.preventDefault()
     e.currentTarget.setPointerCapture?.(e.pointerId)
-    currentRef.current = [pointOf(e)]
-    redraw()
+    const start = pointOf(e)
+    currentRef.current = [start]
+    lastMidRef.current = start
+    // 以降は追加された区間だけを描く(redrawは使わない)。描画状態(DPR変換・線の太さ等)をここで整える。
+    const ctx = canvasRef.current?.getContext('2d')
+    if (ctx) {
+      const dpr = window.devicePixelRatio || 1
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      setupCtx(ctx)
+    }
   }
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -133,20 +143,50 @@ const SignaturePad = forwardRef<SignaturePadHandle, Props>(function SignaturePad
     e.preventDefault()
     const native = e.nativeEvent as PointerEvent
     const events = typeof native.getCoalescedEvents === 'function' ? native.getCoalescedEvents() : []
-    for (const ev of events.length > 0 ? events : [native]) currentRef.current.push(pointOf(ev))
-    redraw()
+    const ctx = canvasRef.current?.getContext('2d')
+    const pts = currentRef.current
+    for (const ev of events.length > 0 ? events : [native]) {
+      const p = pointOf(ev)
+      const prev = pts[pts.length - 1]
+      pts.push(p)
+      if (!ctx || !lastMidRef.current) continue
+      // drawStrokeと同じ中点補間のquadratic曲線を、新しい区間の分だけ描く
+      const mid = { x: (prev.x + p.x) / 2, y: (prev.y + p.y) / 2 }
+      ctx.beginPath()
+      ctx.moveTo(lastMidRef.current.x, lastMidRef.current.y)
+      ctx.quadraticCurveTo(prev.x, prev.y, mid.x, mid.y)
+      ctx.stroke()
+      lastMidRef.current = mid
+    }
   }
 
   const finish = (e: React.PointerEvent<HTMLCanvasElement>, commit: boolean) => {
     const decision = decidePointerEnd(trackRef.current, e.pointerId)
     trackRef.current = decision.nextState
     if (!decision.isActivePointer) return
-    if (commit && currentRef.current && currentRef.current.length > 0) {
-      strokesRef.current = [...strokesRef.current, currentRef.current]
-      notify(true)
-    }
+    const done = currentRef.current
     currentRef.current = null
-    redraw()
+    lastMidRef.current = null
+    if (commit && done && done.length > 0) {
+      strokesRef.current = [...strokesRef.current, done]
+      notify(true)
+      // 最後の区間(最終点まで)と、1点だけのタップ(点)を仕上げる。差分描画では全体の描き直しは不要。
+      const ctx = canvasRef.current?.getContext('2d')
+      if (ctx) {
+        if (done.length === 1) {
+          drawStroke(ctx, done)
+        } else {
+          const last = done[done.length - 1]
+          const prevMid = { x: (done[done.length - 2].x + last.x) / 2, y: (done[done.length - 2].y + last.y) / 2 }
+          ctx.beginPath()
+          ctx.moveTo(prevMid.x, prevMid.y)
+          ctx.lineTo(last.x, last.y)
+          ctx.stroke()
+        }
+      }
+    } else {
+      redraw() // 取り消された(手のひら疑い・キャンセル)途中のストロークを消す
+    }
   }
 
   useImperativeHandle(ref, () => ({

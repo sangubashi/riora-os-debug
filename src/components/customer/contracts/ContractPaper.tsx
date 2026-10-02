@@ -6,6 +6,7 @@
  * 入力でき、false(確認画面)では入力済みの内容と署名画像を読み取り専用で表示する。
  * 金額は単価×数量の自動計算のみ(手入力不可)。入力フォントは16px以上(iPad Safariの自動ズーム防止)。
  */
+import { memo } from 'react'
 import { getContractCourses, findContractCourse } from '@/lib/contracts/courseMaster'
 import {
   CONTRACT_SALON, CONTRACT_TABLE_HEADERS, CONTRACT_TEMPLATES, CONTRACT_TOTAL_LABEL,
@@ -53,7 +54,8 @@ export function paperTotal(documentType: ContractDocumentType, lines: PaperLine[
   }, 0)
 }
 
-export default function ContractPaper({ documentType, values, editable, onChange, signatureUrl }: Props) {
+/** memo化: 署名パッドの描画やステップ切替など、紙面の内容に関係ない親の再描画で再レンダリングしない。 */
+function ContractPaperImpl({ documentType, values, editable, onChange, signatureUrl }: Props) {
   const tpl = CONTRACT_TEMPLATES[documentType]
   const courses = getContractCourses(documentType)
   const set = (patch: Partial<PaperValues>) => onChange?.({ ...values, ...patch })
@@ -105,7 +107,11 @@ export default function ContractPaper({ documentType, values, editable, onChange
                       aria-label={`コース名(${i + 1}行目)`}
                       data-testid={`line-course-${i}`}
                       value={l.courseId}
-                      onChange={e => setLine(i, { courseId: e.target.value, quantity: l.quantity ?? 1 })}
+                      onChange={e => {
+                        const courseId = e.target.value
+                        // 「選択してください」(未選択)に戻したら数量も空にする。選んだときは数量の既定値を1にする。
+                        setLine(i, { courseId, quantity: courseId ? (l.quantity ?? 1) : null })
+                      }}
                       style={inputStyle}
                     >
                       <option value="">選択してください</option>
@@ -207,6 +213,9 @@ export default function ContractPaper({ documentType, values, editable, onChange
     </div>
   )
 }
+
+const ContractPaper = memo(ContractPaperImpl)
+export default ContractPaper
 
 function Field({ label, value, editable, onChange, testId, inputMode }: {
   label: string; value: string; editable: boolean; onChange: (v: string) => void; testId: string

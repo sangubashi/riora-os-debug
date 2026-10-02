@@ -128,6 +128,16 @@ describe('POST /api/customers/[id]/contracts', () => {
     expect(row.total_amount).toBe(26000)
   })
 
+  it('コース未選択の行は数量が残っていても保存データ・合計に入らない', async () => {
+    const res = await post(validPayload({ lines: [
+      { courseId: null, quantity: 7, note: '' },
+      { courseId: 'sub-skin', quantity: 1, note: '' },
+    ] }))
+    expect(res.status).toBe(201)
+    expect(rec.inserted[0].line_items).toEqual([{ course_name: '選べる肌改善コース', unit_price: 16000, quantity: 1, amount: 16000, note: '' }])
+    expect(rec.inserted[0].total_amount).toBe(16000)
+  })
+
   it('正常系: 顧客ID配下のPDFと署名を上書き不可で保存し、content_hashつきで追記する', async () => {
     const res = await post(validPayload({ documentType: 'ticket', lines: [
       { courseId: 'tkt-hsc-basic-3', quantity: 1, note: '' },

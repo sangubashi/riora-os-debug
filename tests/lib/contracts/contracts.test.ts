@@ -78,6 +78,20 @@ describe('数量・金額・合計・空行', () => {
     ])
     expect(r.ok && r.items.length).toBe(1)
   })
+  it('コース未選択の行は、数量が残っていても検証・合計から完全に除外される', () => {
+    const r = buildLineItems('subscription', [
+      { courseId: null, quantity: 5, note: '' },
+      { courseId: 'sub-skin', quantity: 2, note: '' },
+      { courseId: null, quantity: 99, note: '' },
+    ])
+    expect(r.ok && r.items.length).toBe(1)
+    expect(r.ok && r.total).toBe(32000)
+    // 数量が不正でもコース未選択の行なら無視される(エラーにならない)
+    expect(buildLineItems('subscription', [
+      { courseId: null, quantity: 0, note: '' },
+      { courseId: 'sub-skin', quantity: 1, note: '' },
+    ]).ok).toBe(true)
+  })
   it('数量は1〜99の整数のみ', () => {
     for (const q of [0, 100, 1.5, -1, null]) {
       expect(buildLineItems('subscription', [{ courseId: 'sub-skin', quantity: q as number, note: '' }])).toEqual({ ok: false, error: 'invalid_quantity' })

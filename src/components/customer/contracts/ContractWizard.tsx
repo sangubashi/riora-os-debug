@@ -6,7 +6,7 @@
  * 顧客情報(氏名・住所・電話番号)は既存の顧客情報から自動入力せず、手入力する。
  * 保存後は編集・差し替え・削除できない(APIも存在しない)。保存はサーバーがPDFを生成する。
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { Check, ChevronLeft, ChevronRight, Eraser, Undo2, X } from 'lucide-react'
 import { PALETTE, headingFont } from '@/components/customer/shared/PhotoCompareKit'
 import { CONTRACT_DOCUMENT_TYPES, CONTRACT_MAX_LINES, type ContractDocumentType, type ContractFormValues } from '@/lib/contracts/contractTypes'
@@ -46,39 +46,48 @@ export default function ContractWizard({ customerId, staffId, onClose, onSaved }
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState<ContractSummary | null>(null)
   const padRef = useRef<SignaturePadHandle | null>(null)
+  // ステップ切替(申込内容→署名など)は重い再描画を伴うため transition にし、押した瞬間の
+  // フィードバック(ボタンの「準備中…」)を先に描画する。iPad Safariでの引っかかり対策。
+  const [navPending, startNav] = useTransition()
 
   useEffect(() => () => { if (signatureUrl) URL.revokeObjectURL(signatureUrl) }, [signatureUrl])
 
   const formValues: ContractFormValues | null = useMemo(() => documentType && ({
     documentType, applicationDate: values.applicationDate, name: values.name, address: values.address,
     phoneNumber: values.phoneNumber,
-    lines: values.lines.map(l => ({ courseId: l.courseId || null, quantity: l.courseId ? l.quantity : null, note: l.note })),
+    // コース未選択の行は、数量が残っていても検証・合計・送信から完全に除外する。
+    // (備考だけが入った行は、黙って捨てず「コースを選んでください」と知らせるために残す)
+    lines: values.lines
+      .filter(l => l.courseId || l.note.trim() !== '')
+      .map(l => ({ courseId: l.courseId || null, quantity: l.courseId ? l.quantity : null, note: l.note })),
   }), [documentType, values])
 
   const stepIndex = STEPS.findIndex(s => s.id === step)
 
-  function chooseType(t: ContractDocumentType) {
+  const chooseType = useCallback((t: ContractDocumentType) => {
     if (t !== documentType) setValues(emptyValues()) // 別の書類ではコース一覧が違うため入力をリセット
     setDocumentType(t)
     setError(null)
-    setStep('form')
-  }
+    startNav(() => setStep('form'))
+  }, [documentType])
 
-  function goSign() {
-    if (!formValues) return
+  const goSign = useCallback(() => {
+    if (!formValues || navPending) return
     const v = validateContractInput(formValues)
     if (!v.ok) { setError(CONTRACT_ERROR_MESSAGES[v.error]); return }
     setError(null)
-    setStep('sign')
-  }
+    startNav(() => setStep('sign'))
+  }, [formValues, navPending])
 
   async function goConfirm() {
     const blob = await padRef.current?.toPngBlob()
     if (!blob) { setError('署名してください'); return }
     setError(null)
-    setSignatureBlob(blob)
-    setSignatureUrl(prev => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob) })
-    setStep('confirm')
+    startNav(() => {
+      setSignatureBlob(blob)
+      setSignatureUrl(prev => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob) })
+      setStep('confirm')
+    })
   }
 
   async function save() {
@@ -210,11 +219,11 @@ export default function ContractWizard({ customerId, staffId, onClose, onSaved }
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', maxWidth: '720px', margin: '0 auto' }}>
           {step === 'form' && <>
             <button type="button" onClick={() => { setError(null); setStep('type') }} style={btn(false)}><ChevronLeft size={16} />書類種類へ</button>
-            <button type="button" data-testid="to-sign" onClick={goSign} style={btn(true)}>署名へ進む<ChevronRight size={16} /></button>
+            <button type="button" data-testid="to-sign" onClick={goSign} disabled={navPending} style={btn(true, navPending)}>{navPending ? '準備中…' : <>署名へ進む<ChevronRight size={16} /></>}</button>
           </>}
           {step === 'sign' && <>
             <button type="button" onClick={() => { setError(null); setStep('form') }} style={btn(false)}><ChevronLeft size={16} />申込内容へ戻る</button>
-            <button type="button" data-testid="to-confirm" onClick={() => { void goConfirm() }} disabled={!hasInk} style={btn(true, !hasInk)}>確認へ進む<ChevronRight size={16} /></button>
+            <button type="button" data-testid="to-confirm" onClick={() => { void goConfirm() }} disabled={!hasInk || navPending} style={btn(true, !hasInk || navPending)}>{navPending ? '準備中…' : <>確認へ進む<ChevronRight size={16} /></>}</button>
           </>}
           {step === 'confirm' && <>
             <button type="button" onClick={() => { setError(null); setStep('sign') }} disabled={saving} style={btn(false)}><ChevronLeft size={16} />署名をやり直す</button>
