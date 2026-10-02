@@ -11,6 +11,60 @@ import { extractStaffFromRequest } from '@/lib/auth/extractStaffFromRequest'
 import { canAccessCustomer } from '@/lib/auth/canAccessCustomer'
 import { getPhotoServiceClient } from '@/lib/photos/photoDb'
 import { verifyPhotoOwnership } from '@/lib/photos/ownership'
+import { isPhotoAngle, bodyPartOfAngle } from '@/lib/photos/photoAngle'
+
+/**
+ * PATCH — アングル修正(2026-10-02): body={angle:'front'|'right'|'left'|'forehead'|'other'}。
+ * アングルの実体は body_part のため、対応する body_part へ更新する(angle生成列は自動追従)。
+ */
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string; photoId: string }> }
+) {
+  const staff = await extractStaffFromRequest(req)
+  if (!staff) {
+    return NextResponse.json({ success: false, error: 'unauthorized' }, { status: 401 })
+  }
+
+  const { id, photoId } = await params
+  const idResult = idSchema.safeParse(id)
+  if (!idResult.success) {
+    return NextResponse.json(toValidationErrorResponse(idResult.error), { status: 400 })
+  }
+  const photoIdResult = idSchema.safeParse(photoId)
+  if (!photoIdResult.success) {
+    return NextResponse.json(toValidationErrorResponse(photoIdResult.error), { status: 400 })
+  }
+  const customerId = idResult.data
+
+  const body = await req.json().catch(() => null) as { angle?: unknown } | null
+  if (!body || !isPhotoAngle(body.angle)) {
+    return NextResponse.json({ success: false, error: 'invalid_angle' }, { status: 400 })
+  }
+
+  const accessible = await canAccessCustomer(staff.staffBrainId, customerId, staff.isAdmin)
+  if (!accessible) {
+    return NextResponse.json({ success: false, error: 'forbidden' }, { status: 403 })
+  }
+
+  const owned = await verifyPhotoOwnership(photoIdResult.data, customerId)
+  if (!owned) {
+    return NextResponse.json({ success: false, error: 'forbidden' }, { status: 403 })
+  }
+
+  const bodyPart = bodyPartOfAngle(body.angle)
+  const supabase = getPhotoServiceClient()
+  const { error } = await supabase
+    .from('brain_customer_photos')
+    .update({ body_part: bodyPart })
+    .eq('id', owned.id)
+
+  if (error) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ success: true, bodyPart })
+}
 
 export async function DELETE(
   req: NextRequest,
