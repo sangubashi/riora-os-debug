@@ -275,10 +275,30 @@ export default function VisitHistorySection({ customerId, visits, todayVisitId }
     )
   }
 
+  // 来店日に対応しない日のカルテメモ(2026-10-02: 上部のカルテメモ欄は最新1件のみ表示に
+  // 変えたため、来店記録の無い日のメモがどこにも出なくならないよう、ここで拾って表示する)。
+  const orphanMemos = memos.filter(m => !visits.some(v => isSameLocalDate(m.created_at, v.visitDate)))
+  const orphanBlock = orphanMemos.length > 0 && (
+    <div data-testid="orphan-memos" style={{ border: `1px solid ${PALETTE.border}`, borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <p style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: PALETTE.muted }}>来店記録のない日のカルテメモ</p>
+      {orphanMemos.map(memo => (
+        <div key={memo.id} style={{ border: `1px solid ${PALETTE.border}`, borderRadius: '8px', padding: '14px', background: PALETTE.bg }}>
+          <p style={{ margin: 0, fontSize: '17px', color: PALETTE.text, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{memo.content}</p>
+          <p style={{ margin: '6px 0 0', fontSize: '13px', color: PALETTE.muted }}>
+            {formatDateOnly(memo.created_at)} {formatTime(memo.created_at)}{memo.staffName ? ` ・ ${memo.staffName}` : ''}
+          </p>
+        </div>
+      ))}
+    </div>
+  )
+
   if (visits.length === 0) {
     return (
       <Card title="📅 来店履歴">
-        <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>来店記録がありません</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>来店記録がありません</p>
+          {orphanBlock}
+        </div>
       </Card>
     )
   }
@@ -539,6 +559,7 @@ export default function VisitHistorySection({ customerId, visits, todayVisitId }
             </div>
           )
         })}
+        {orphanBlock}
       </div>
 
       {editingCourseVisitId && treatmentInfo && treatmentInfo.visitId === editingCourseVisitId && (

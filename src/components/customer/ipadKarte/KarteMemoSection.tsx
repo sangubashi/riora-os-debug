@@ -9,6 +9,11 @@
  * CustomerMemoryTab.tsxを踏襲しているが、配色はIpadStaffKarteViewに合わせて
  * PhotoCompareKit.tsxのPALETTE(アイボリー×ゴールド)に統一している。
  *
+ * 【2026-10-02ユーザー依頼】上部のこのカードには「最新のカルテメモ1件」だけを表示する。
+ * 過去のメモは下の「来店履歴」(VisitHistorySection.tsx)の各来店カード内でのみ確認する
+ * (来店記録のない日のメモもそちらで拾う)。「前回の記録を見る」からも前回のカルテメモは
+ * 外し、前回の施術メモ(brain_visits.treatment_memo)のみ残した。
+ *
  * 絶対ルール: このファイルをProposalOrchestrator/FireScore/PatternEngine/LINE提案/
  * TodayFocusCardのいずれにもimportしないこと。content参照禁止
  * (src/types/customerKarteMemo.tsの絶対ルールに準拠)。
@@ -48,14 +53,6 @@ function formatDateOnly(dateStr: string): string {
   const d = new Date(dateStr)
   if (Number.isNaN(d.getTime())) return dateStr
   return d.toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' })
-}
-
-function isSameLocalDate(iso: string, other: Date): boolean {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return false
-  return d.getFullYear() === other.getFullYear()
-    && d.getMonth() === other.getMonth()
-    && d.getDate() === other.getDate()
 }
 
 export default function KarteMemoSection({
@@ -168,9 +165,10 @@ export default function KarteMemoSection({
   // 「前回のカルテメモ」= 今日すでに書いた分(あれば)を除いた直近1件(2026-09-20ユーザー承認:
   // 施術中に今日のメモを書き込んでも、参照データが常に「前回来店時のメモ」であり続けるように
   // するため)。memosはcreated_at DESCで取得済み(load()参照)。
-  const today = new Date()
-  const previousMemo = memos.find(m => !isSameLocalDate(m.created_at, today)) ?? null
-  const hasPreviousRecord = previousVisitDate !== null || previousMemo !== null || (previousTreatmentMemo?.trim().length ?? 0) > 0
+  // 最新の1件(created_atが最も新しいもの。APIの並び順に依存しない)。
+  const latestMemo = memos.reduce<CustomerKarteMemo | null>(
+    (best, m) => (!best || new Date(m.created_at).getTime() > new Date(best.created_at).getTime() ? m : best), null)
+  const hasPreviousRecord = previousVisitDate !== null || (previousTreatmentMemo?.trim().length ?? 0) > 0
 
   return (
     <Card title="📝 カルテメモ">
@@ -183,7 +181,7 @@ export default function KarteMemoSection({
           <p style={{ margin: 0, fontSize: '12px', color: PALETTE.muted }}>まだ記録されていません</p>
         )}
 
-        {!loading && memos.map(m => {
+        {!loading && (latestMemo ? [latestMemo] : []).map(m => {
           const isEditing = editingId === m.id
           const edited = m.updated_at !== m.created_at
 
@@ -288,6 +286,12 @@ export default function KarteMemoSection({
           )
         })}
 
+        {!loading && memos.length > 1 && (
+          <p style={{ margin: 0, fontSize: '11px', color: PALETTE.muted }}>
+            過去のカルテメモは、下の「来店履歴」の各来店カードで確認できます。
+          </p>
+        )}
+
         {/* 前回メモをワンタップ参照(PHASE IPAD-PREV-MEMO-1・2026-09-20ユーザー承認)。
             デフォルト閉じた状態・タップで展開。前回の施術メモ・前回のカルテメモをそのまま
             表示する(注意点等は独立項目を設けず、これらの自由記述文にすでに含まれている
@@ -318,22 +322,6 @@ export default function KarteMemoSection({
                   <p style={{ margin: 0, fontSize: '15px', color: PALETTE.text, lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                     {previousTreatmentMemo?.trim() ? previousTreatmentMemo : '記録がありません'}
                   </p>
-                </div>
-                <div>
-                  <p style={{ margin: '0 0 4px', fontSize: '11px', fontWeight: 700, color: PALETTE.muted }}>前回のカルテメモ</p>
-                  {previousMemo ? (
-                    <>
-                      <p style={{ margin: 0, fontSize: '15px', color: PALETTE.text, lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                        {previousMemo.content}
-                      </p>
-                      <p style={{ margin: '4px 0 0', fontSize: '10px', color: PALETTE.muted }}>
-                        {formatDateTime(previousMemo.created_at)}
-                        {previousMemo.staffName ? ` ・ ${previousMemo.staffName}` : ''}
-                      </p>
-                    </>
-                  ) : (
-                    <p style={{ margin: 0, fontSize: '15px', color: PALETTE.text }}>記録がありません</p>
-                  )}
                 </div>
               </div>
             )}
