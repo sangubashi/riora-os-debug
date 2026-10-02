@@ -41,6 +41,7 @@ import { getPhotoSignedUrl, getBatchSignedUrls, type TimelinePhoto } from '@/lib
 import { bodyPartLabel } from '@/lib/photos/bodyParts'
 import { usePinchZoom } from './usePinchZoom'
 import { useLongPress } from './useLongPress'
+import PhotoDayPicker, { type PickSide } from './PhotoDayPicker'
 import PhotoCompareScreen from '@/components/customer/photoCompare/PhotoCompareScreen'
 // 写真撮影・選択・削除フロー(PHASE GUEST-MODE-PHOTO-MOVE-1・Phase 0・2026-09-19)。
 // IpadStaffKarteView.tsxが使っていたものと同一のモーダル2つをそのまま再利用する
@@ -321,7 +322,10 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
 
   // 2枚が揃った瞬間、写真表示エリア(画面上部)までスクロールし直す
   // (「過去の写真」サムネイルタップ時の拡大モード切替と同じ挙動)。
+  // 日付ピッカー(PhotoDayPicker)からの選択では、写真のすぐ下で操作しているためスクロールしない。
+  const skipScrollTopRef = useRef(false)
   useEffect(() => {
+    if (skipScrollTopRef.current) { skipScrollTopRef.current = false; return }
     if (freeSelectMode && selectedPhotoA && selectedPhotoB) {
       scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
     }
@@ -479,6 +483,22 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
     } finally {
       setGalleryLoading(false)
     }
+  }
+
+  /**
+   * 撮影日付ボタン(PhotoDayPicker、2026-10-02)からの選択。自由選択モードへ入り(今表示中の
+   * 左右の写真を引き継ぐ)、指定した側だけを選んだ写真に差し替える。
+   */
+  function pickFromDayPicker(photo: TimelinePhoto, side: PickSide) {
+    skipScrollTopRef.current = true
+    if (!freeSelectMode) {
+      setFreeSelectMode(true)
+      setSelectedPhotoA(side === 'left' ? photo : leftPhoto)
+      setSelectedPhotoB(side === 'right' ? photo : rightPhoto)
+      return
+    }
+    if (side === 'left') setSelectedPhotoA(photo)
+    else setSelectedPhotoB(photo)
   }
 
   /**
@@ -804,6 +824,17 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
                   aspectRatio="4 / 5"
                 />
               </div>
+
+              {/* 撮影日付ボタン → その日のアングル一覧(2026-10-02ユーザー依頼)。大きな写真エリアの
+                  直下に置き、日付をタップすると正面・右斜め・左斜め・額…が直下に並んで展開される。 */}
+              <PhotoDayPicker
+                customerId={customerId}
+                photos={Object.values(data.photosByAngle).flat()}
+                leftPhotoId={leftPhoto?.id ?? null}
+                rightPhotoId={rightPhoto?.id ?? null}
+                knownUrls={{ ...data.photoUrls, ...thumbUrls }}
+                onPick={pickFromDayPicker}
+              />
 
               {/* 写真撮影・選択・削除(PHASE GUEST-MODE-PHOTO-MOVE-1・Phase 0・2026-09-19)。
                   IpadStaffKarteView.tsxの「写真カルテ」セクションにあった3ボタンと同じ
