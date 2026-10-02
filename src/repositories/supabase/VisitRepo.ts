@@ -43,6 +43,9 @@ export class VisitRepo implements IVisitRepo {
    * public.insert_visit_with_sequence(MD-5B migration)をRPC呼び出しし、
    * visit_count_atをDB側で原子的に採番したvisitを1件作成する(MD-5C)。
    * countByCustomer()+create()の非原子パターンは使わない(呼び出し側はvisitCountAtを渡さない)。
+   * 2026-10-02: 採番は「取込順」ではなく「来店日昇順」(visit_date, created_at, id)。過去日付を後から
+   * 取り込んでも、DB関数が顧客の全来店を振り直し、返り値は振り直し後の番号になる
+   * (migration 20261002100000_visit_count_at_by_date_order.sql)。
    */
   async createSequenced(visit: Omit<Visit, 'id' | 'visitCountAt'>): Promise<Visit> {
     const { data, error } = await this.client
