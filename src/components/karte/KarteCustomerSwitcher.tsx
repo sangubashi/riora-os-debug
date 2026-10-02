@@ -10,7 +10,7 @@
  * CustomerModeView/IpadStaffKarteView自体のロジック・見た目は変更せず、
  * 今回追加した任意propsのみで結合する。
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useReducer, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE } from '@/components/customer/shared/PhotoCompareKit'
@@ -18,6 +18,7 @@ import CustomerModeView from '@/components/customer/guestMode/CustomerModeView'
 import IpadStaffKarteView from '@/components/customer/ipadKarte/IpadStaffKarteView'
 import CustomerTopPage from '@/components/customer/CustomerTopPage'
 import type { Customer as BSCustomer } from '@/types'
+import { initialKarteViewState, reduceKarteView } from './karteViewState'
 
 interface CustomerDetail {
   id: string
@@ -51,13 +52,14 @@ interface CustomerDetailApiResponse {
   error?: string
 }
 
-type SwitcherMode = 'customer' | 'staff'
-
 export default function KarteCustomerSwitcher({ customerId }: { customerId: string }) {
   const router = useRouter()
   const [customer, setCustomer] = useState<CustomerDetail | null>(null)
   const [error, setError] = useState<'forbidden' | 'not_found' | null>(null)
-  const [mode, setMode] = useState<SwitcherMode>('customer')
+  // 画面状態(お客様用/スタッフ用・トップ表示)は karteViewState.ts の遷移に集約。スタッフ用カルテを
+  // 見てよいのは mode==='staff' のときだけで、PINを通した 'switch_to_staff' 以外では入れない。
+  const [view, dispatch] = useReducer(reduceKarteView, initialKarteViewState)
+  const { mode, staffViewMounted, showCustomerTop } = view
   // PERF-KARTE-SWITCH-CACHE-1(2026-09-21): 長押し切り替えのたびにIpadStaffKarteViewを
   // アンマウント/リマウントすると、内部のuseIpadKarteData等が同じ顧客のデータを毎回
   // 取り直してしまう(調査報告の根本原因①)。これを避けるため、スタッフ用カルテは
@@ -65,9 +67,7 @@ export default function KarteCustomerSwitcher({ customerId }: { customerId: stri
   // display:noneで隠すだけにする(お客様用カルテは元々常時マウントのまま、切り替えは
   // CSS表示のみに変更)。初回表示時(お客様用カルテのみ表示中)はスタッフ用カルテの
   // データ取得が一切走らないよう、mountするまでコンポーネント自体をレンダーしない。
-  const [staffViewMounted, setStaffViewMounted] = useState(false)
   // お客様トップページ(CustomerTopPage.tsx)への導線(2026-09-28ユーザー承認)。
-  const [showCustomerTop, setShowCustomerTop] = useState(false)
   // 「今回の施術」表示連携(2026-09-28ユーザー承認): スタッフ用カルテからお客様用カルテへ
   // 切り替えるたびにインクリメントする。CustomerModeViewは常時マウントのままのため、
   // スタッフ側でコースを保存しただけでは自動的に最新化されない(refreshCourseSignalの
@@ -78,9 +78,7 @@ export default function KarteCustomerSwitcher({ customerId }: { customerId: stri
     let cancelled = false
     setCustomer(null)
     setError(null)
-    setMode('customer')
-    setStaffViewMounted(false)
-    setShowCustomerTop(false)
+    dispatch('reset')
     setCustomerCourseRefreshSignal(0)
 
     void (async () => {
@@ -102,6 +100,13 @@ export default function KarteCustomerSwitcher({ customerId }: { customerId: stri
   }, [customerId])
 
   const backToKarte = () => router.push('/karte')
+
+  // 「お客様トップ」を開く。スタッフ用カルテから開いた場合はお客様用カルテへ戻る扱いになる(PINの再入力が必要)ため、
+  // スタッフ側で保存したコースがお客様用カルテに反映されるよう、再取得の合図も送る。
+  const showCustomerTopPage = () => {
+    if (mode === 'staff') setCustomerCourseRefreshSignal(s => s + 1)
+    dispatch('show_customer_top')
+  }
 
   if (error) {
     return (
@@ -143,8 +148,8 @@ export default function KarteCustomerSwitcher({ customerId }: { customerId: stri
           customerId={customer.id}
           customerName={customer.name}
           onClose={backToKarte}
-          onSwitchToStaffView={() => { setStaffViewMounted(true); setMode('staff') }}
-          onShowCustomerTop={() => setShowCustomerTop(true)}
+          onSwitchToStaffView={() => dispatch('switch_to_staff')}
+          onShowCustomerTop={showCustomerTopPage}
           refreshCourseSignal={customerCourseRefreshSignal}
         />
       </div>
@@ -154,20 +159,21 @@ export default function KarteCustomerSwitcher({ customerId }: { customerId: stri
             customerId={customer.id}
             customerName={customer.name}
             onClose={backToKarte}
-            onSwitchToCustomerView={() => { setMode('customer'); setCustomerCourseRefreshSignal(s => s + 1) }}
-            onShowCustomerTop={() => setShowCustomerTop(true)}
+            onSwitchToCustomerView={() => { dispatch('switch_to_customer'); setCustomerCourseRefreshSignal(s => s + 1) }}
+            onShowCustomerTop={showCustomerTopPage}
           />
         </div>
       )}
       {showCustomerTop && (
         <CustomerTopPage
           customer={toMinimalCustomerForTopPage(customer)}
-          onClose={() => setShowCustomerTop(false)}
+          onClose={() => dispatch('close_customer_top')}
           // 画面フリーズ修正(2026-09-28ユーザー承認): 既にこの顧客の詳細ページ
           // (/karte/[customerId])に居るため、「詳細ページを見る」は実際に遷移させず
           // オーバーレイを閉じるだけでよい(router.pushに任せると同一ルートへのpushが
           // no-opになり、オーバーレイが開いたまま操作不能になっていた)。
-          onGoToDetail={() => setShowCustomerTop(false)}
+          // (2026-10-02) 閉じるだけでなくお客様用カルテへ戻す: スタッフ用カルテはPINを通さないと開けない。
+          onGoToDetail={() => dispatch('go_to_detail')}
         />
       )}
     </>
