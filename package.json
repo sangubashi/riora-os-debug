@@ -16,6 +16,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.0",
     "@mediapipe/tasks-vision": "^1.0.1",
+    "@pdf-lib/fontkit": "^1.1.1",
     "@supabase/supabase-js": "^2.43.4",
     "@tanstack/react-query": "^5.100.13",
     "@upstash/ratelimit": "^2.0.8",
@@ -26,6 +27,7 @@
     "json-logic-js": "^2.0.5",
     "lucide-react": "^1.14.0",
     "next": "^16.2.6",
+    "pdf-lib": "^1.17.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "sonner": "^2.0.7",

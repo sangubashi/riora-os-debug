@@ -40,6 +40,7 @@ import { authedFetch } from '@/lib/api/authedFetch'
 import { PALETTE, headingFont } from '@/components/customer/shared/PhotoCompareKit'
 import InitialQuestionnaireCaptureModal from '@/components/customer/ipadKarte/InitialQuestionnaireCaptureModal'
 import DocumentSlotCaptureModal from '@/components/customer/ipadKarte/DocumentSlotCaptureModal'
+import ContractsSection from '@/components/customer/contracts/ContractsSection'
 import ContraindicationEditModal from '@/components/customer/ipadKarte/ContraindicationEditModal'
 import LineLinkModal from '@/components/customer/LineLinkModal'
 import LineThreadModal from '@/components/customer/LineThreadModal'
@@ -458,6 +459,9 @@ export default function CustomerTopPage({ customer, reservation, onClose, onGoTo
             <p style={{ margin: 0, fontSize: '13px', color: PALETTE.muted }}>登録されている重要事項はありません</p>
           )}
         </div>
+
+        {/* 契約書・申込書(2026-10-02ユーザー依頼: 重要事項の直下。作成導線+保存済みPDFの履歴) */}
+        <ContractsSection customerId={customer.id} cardStyle={cardStyle} />
 
         {/* 詳細ページ導線 */}
         <button

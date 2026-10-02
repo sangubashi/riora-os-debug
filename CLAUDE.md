@@ -3059,6 +3059,36 @@ brain_visitsの作成/採番ロジック、写真アップロードAPI本体(`ap
 
 **この解除は上記に限る。**
 
+### `/karte` 着手済み事項（契約書・申込書: サブスクリプション申込書／回数券購入申込書の入力・署名・PDF保存・2026-10-02ユーザー承認・未コミット／マイグレーション未適用）
+
+iPadで紙の申込書と同じ並びに手入力→署名→A4縦PDFを生成し、顧客に紐付けて保存する。対象は/karteのみ(Riora OS側・brain_menusは不使用)。
+
+- **導線**: 顧客トップページ(`CustomerTopPage.tsx`)の「重要事項」の直下に`ContractsSection`(作成ボタン+履歴)。
+  ①書類種類→②申込内容(A4の紙に直接入力)→③署名→④確認→⑤保存(`ContractWizard.tsx`)。保存後は編集・差し替え・削除不可(APIも無い)。
+- **コースは固定マスター**(`src/lib/contracts/courseMaster.ts`): サブスク5件・回数券4件。参照は`getContractCourses`/`findContractCourse`のみ
+  (将来DB化・管理画面化する場合はこの2関数を差し替える)。金額=単価×数量(手入力不可)、数量1〜99、入力行は最大4行、未使用行はPDFに出さない。
+  単価・コース名・合計は**サーバーがマスターから再計算**(クライアントの金額は無視)。保存するline_itemsは保存時点のスナップショット。
+- **文言は逐語**(`contractTemplates.ts`、テストで固定)。PDFには単価列を追加(指示の「単価」を含めるため)、署名ラベル・文書ID/ハッシュ脚注を追加。
+- **署名**(`SignaturePad.tsx`): `useFacialSchemaCanvas.ts`のdecidePointerDown/End(ペン優先・手のひら無視)を再利用、touchAction:none、
+  高DPI。書いた範囲に切り詰めた透明PNGで取得。
+- **PDF**(`buildContractPdf.ts`、サーバー側): `pdf-lib`+`@pdf-lib/fontkit`(新規package2件)、日本語はIPAexゴシック
+  (`src/lib/contracts/fonts/ipaexg.ttf`約6MB+IPAフォントライセンスv1.0全文を同梱、subset埋め込み)。`next.config.ts`の
+  `outputFileTracingIncludes`でフォントを関数にバンドル。禁則処理(句読点が行頭に来ない)あり。
+- **改ざん確認**: `content_hash`=申込内容・line_items・合計・署名画像SHA-256のSHA-256(`contentHash.ts`)。`pdf_sha256`も保存。
+  履歴取得時に再計算して`integrityOk`を返し、不一致なら履歴に注意表示。
+- **API**(`app/api/customers/[id]/contracts/route.ts`): POST(検証→ハッシュ→PDF→Storage(上書き不可)→DB追記、DB失敗時は
+  アップロード済みファイルを削除)/GET(履歴+署名付きURL)。認証は`extractStaffFromRequest`+`canAccessCustomer`、店舗共通ログイン時は
+  `resolveStaffIdOverride`の担当者をcreated_byに使う。
+- **DB/Storage(マイグレーション`20261002200000_brain_customer_contracts.sql`、作成のみ・未適用)**: `brain_customer_contracts`
+  (追記のみ: service_roleにSELECT/INSERTのみ付与、FKはON DELETE RESTRICT、RLSはservice_role限定)と、専用の非公開バケット
+  `customer-contracts`(PDF/PNGのみ許可、10MB)。`customer-photos`は変更していない。**適用前にUIを出すと保存・履歴取得は失敗する
+  (顧客トップの契約書欄が「履歴を読み込めませんでした」になる)。必ずマイグレーション適用→デプロイの順で行うこと。**
+- 検証: tsc、契約書関連ユニット/APIテスト、build。マイグレーションSQLは本番DBでロールバック前提のDOブロックにより構文・制約を検証(残留なし)。
+  Playwright(モックAPI、一時ページは削除済み)で入力〜署名〜確認〜保存〜履歴を確認。生成PDFはChromeで表示して日本語の表示・1ページ収まりを確認。
+  **iPad実機(Apple Pencil署名・Safariでのpdf閲覧)は未確認。**
+
+**この解除は上記に限る。**
+
 ## v1凍結フェーズ 安全制御ルール（最優先・常時適用）
 
 詳細・根拠・影響範囲は `docs/V1_FREEZE_SAFETY_RULES.md` を参照。ここには実行を縛る要約のみ記す。
