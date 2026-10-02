@@ -55,6 +55,22 @@ export function formatYen(n: number): string {
 
 /** 1文字ずつ幅を測って折り返す(日本語は単語区切りが無いため文字単位)。先頭行だけ幅を変えられる。 */
 export function wrapText(text: string, font: PDFFont, size: number, maxWidth: number, firstLineWidth = maxWidth): string[] {
+  return wrapOnce(text, font, size, maxWidth, firstLineWidth)
+}
+
+/**
+ * wrapTextに加え、最後の行が1〜2文字だけ(「い。」のように句読点つきの短い行)になる場合は、
+ * 行の幅を2文字分ずつ狭めて折り返し直し、前の行から数文字を下ろして最終行を読みやすくする(注意書き用)。
+ */
+export function wrapTextNoOrphan(text: string, font: PDFFont, size: number, maxWidth: number, firstLineWidth = maxWidth): string[] {
+  let lines = wrapOnce(text, font, size, maxWidth, firstLineWidth)
+  for (let shrink = 1; shrink <= 3 && lines.length > 1 && Array.from(lines[lines.length - 1]).length <= 2; shrink++) {
+    lines = wrapOnce(text, font, size, maxWidth - size * 2 * shrink, firstLineWidth - size * 2 * shrink)
+  }
+  return lines
+}
+
+function wrapOnce(text: string, font: PDFFont, size: number, maxWidth: number, firstLineWidth: number): string[] {
   const lines: string[] = []
   let current = ''
   for (const ch of Array.from(text)) {
@@ -174,20 +190,25 @@ export async function buildContractPdf(input: ContractPdfInput): Promise<Uint8Ar
 
   // ── 注意書き(「※」を行頭に出し、2行目以降を字下げ) ──
   for (const note of tpl.notes) {
-    const lines = wrapText(note, font, 10.5, NOTE_RIGHT - (NOTE_X + NOTE_INDENT), NOTE_RIGHT - NOTE_X)
+    const lines = wrapTextNoOrphan(note, font, 10.5, NOTE_RIGHT - (NOTE_X + NOTE_INDENT), NOTE_RIGHT - NOTE_X)
     ensure(lines.length * 13.5)
     lines.forEach((l, k) => draw(l, k === 0 ? NOTE_X : NOTE_X + NOTE_INDENT, 10.5, top + k * 13.5))
     top += lines.length * 13.5 + 9
   }
   top += 16
 
-  // ── 申込日(年・月・日を広い間隔で) ──
+  // ── 申込日(氏名・住所の値と同じ位置から、年・月・日を詰めて続ける) ──
   ensure(130)
   const [y, m, d] = input.applicationDate.split('-').map(Number)
   draw('申込日', LABEL_X, 11, top)
-  drawRight(String(y), 150, 11, top); draw('年', 156, 11, top)
-  drawRight(String(m), 212, 11, top); draw('月', 218, 11, top)
-  drawRight(String(d), 274, 11, top); draw('日', 280, 11, top)
+  let dateX = VALUE_X
+  for (const [num, unit] of [[y, '年'], [m, '月'], [d, '日']] as const) {
+    const numStr = String(num)
+    draw(numStr, dateX, 11, top)
+    dateX += font.widthOfTextAtSize(numStr, 11) + 2
+    draw(unit, dateX, 11, top)
+    dateX += font.widthOfTextAtSize(unit, 11) + 9
+  }
   top += 31
 
   draw('氏名：', LABEL_X, 11, top)

@@ -202,3 +202,23 @@ describe('PDF生成', () => {
     expect(doc).toBeTruthy()
   })
 })
+
+describe('注意書きの折り返し(最終行が1〜2文字だけにならない)', () => {
+  it('幅ぎりぎりで「い。」だけが残る場合は前の行から下ろす', async () => {
+    const { wrapTextNoOrphan } = await import('../../../src/lib/contracts/buildContractPdf')
+    // 1文字=10pt、1行20文字ぶん(200pt)。「あ」×21+「。」は通常の折り返しだと 2行目が「あ。」になる
+    const font = { widthOfTextAtSize: (s: string) => Array.from(s).length * 10 } as never
+    const text = 'あ'.repeat(20) + 'い。'
+    const plain = wrapText(text, font, 10, 200)
+    expect(plain[plain.length - 1].length).toBeLessThanOrEqual(2)
+    const fixed = wrapTextNoOrphan(text, font, 10, 200)
+    expect(fixed.join('')).toBe(text)
+    expect(Array.from(fixed[fixed.length - 1]).length).toBeGreaterThan(2)
+  })
+  it('通常の長文は変わらない', async () => {
+    const { wrapTextNoOrphan } = await import('../../../src/lib/contracts/buildContractPdf')
+    const font = { widthOfTextAtSize: (s: string) => Array.from(s).length * 10 } as never
+    const text = 'あ'.repeat(45)
+    expect(wrapTextNoOrphan(text, font, 10, 200)).toEqual(wrapText(text, font, 10, 200))
+  })
+})

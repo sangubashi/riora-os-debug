@@ -212,10 +212,8 @@ function ContractPaperImpl({ documentType, values, editable, onChange, signature
               </button>
             </>
           ) : (
-            <span data-testid="contract-date-text" style={{ display: 'flex', alignItems: 'baseline', gap: '0.5em' }}>
-              <span style={{ minWidth: '2.6em', textAlign: 'right' }}>{date.y}</span>年
-              <span style={{ minWidth: '3.4em', textAlign: 'right' }}>{date.m}</span>月
-              <span style={{ minWidth: '3.4em', textAlign: 'right' }}>{date.d}</span>日
+            <span data-testid="contract-date-text">
+              {date.y}年 {date.m}月 {date.d}日
             </span>
           )}
         </div>
