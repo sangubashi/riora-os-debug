@@ -6,7 +6,7 @@
  * 顧客情報(氏名・住所・電話番号)は既存の顧客情報から自動入力せず、手入力する。
  * 保存後は編集・差し替え・削除できない(APIも存在しない)。保存はサーバーがPDFを生成する。
  */
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useTransition, type MutableRefObject } from 'react'
 import { Check, ChevronLeft, ChevronRight, Eraser, Undo2, X } from 'lucide-react'
 import { PALETTE, headingFont } from '@/components/customer/shared/PhotoCompareKit'
 import { CONTRACT_DOCUMENT_TYPES, CONTRACT_MAX_LINES, type ContractDocumentType, type ContractFormValues } from '@/lib/contracts/contractTypes'
@@ -46,11 +46,13 @@ export default function ContractWizard({ customerId, staffId, onClose, onSaved }
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState<ContractSummary | null>(null)
   const padRef = useRef<SignaturePadHandle | null>(null)
+  const scrollRef = useRef<HTMLDivElement | null>(null)
   // ステップ切替(申込内容→署名など)は重い再描画を伴うため transition にし、押した瞬間の
   // フィードバック(ボタンの「準備中…」)を先に描画する。iPad Safariでの引っかかり対策。
   const [navPending, startNav] = useTransition()
 
   useEffect(() => () => { if (signatureUrl) URL.revokeObjectURL(signatureUrl) }, [signatureUrl])
+  useEffect(() => { scrollRef.current?.scrollTo({ top: 0 }) }, [step])
 
   const formValues: ContractFormValues | null = useMemo(() => documentType && ({
     documentType, applicationDate: values.applicationDate, name: values.name, address: values.address,
@@ -76,6 +78,7 @@ export default function ContractWizard({ customerId, staffId, onClose, onSaved }
     const v = validateContractInput(formValues)
     if (!v.ok) { setError(CONTRACT_ERROR_MESSAGES[v.error]); return }
     setError(null)
+    ;(document.activeElement as HTMLElement | null)?.blur?.()
     startNav(() => setStep('sign'))
   }, [formValues, navPending])
 
@@ -145,7 +148,7 @@ export default function ContractWizard({ customerId, staffId, onClose, onSaved }
         </button>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 28px' }}>
+      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 28px', WebkitOverflowScrolling: 'touch' }}>
         {step === 'type' && (
           <div style={{ maxWidth: '640px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <p style={{ margin: 0, fontSize: '15px', color: PALETTE.text }}>作成する書類を選んでください。</p>
@@ -164,39 +167,11 @@ export default function ContractWizard({ customerId, staffId, onClose, onSaved }
           </div>
         )}
 
-        {step === 'form' && documentType && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <p style={{ margin: '0 auto', maxWidth: '720px', width: '100%', fontSize: '13px', color: PALETTE.muted }}>
-              紙の申込書と同じ並びです。申込日・氏名・住所・電話番号は手で入力してください(顧客情報からの自動入力はしません)。
-              コースを選ぶと単価が表示され、数量を入れると金額が自動計算されます。
-            </p>
-            <ContractPaper documentType={documentType} values={values} editable onChange={setValues} />
-          </div>
-        )}
+        {step === 'form' && documentType && <FormStep documentType={documentType} values={values} onChange={setValues} />}
 
-        {step === 'sign' && (
-          <div style={{ maxWidth: '720px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <p style={{ margin: 0, fontSize: '15px', color: PALETTE.text }}>お客様ご本人が、下の枠に指またはApple Pencilで署名してください。</p>
-            <SignaturePad ref={padRef} height={260} onInkChange={setHasInk} />
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button type="button" onClick={() => padRef.current?.undo()} disabled={!hasInk} style={{ ...btn(false), opacity: hasInk ? 1 : 0.4 }}>
-                <Undo2 size={16} />ひとつ戻す
-              </button>
-              <button type="button" data-testid="sign-clear" onClick={() => padRef.current?.clear()} disabled={!hasInk} style={{ ...btn(false), opacity: hasInk ? 1 : 0.4 }}>
-                <Eraser size={16} />書き直す
-              </button>
-            </div>
-          </div>
-        )}
+        {step === 'sign' && <SignStep padRef={padRef} hasInk={hasInk} onInkChange={setHasInk} />}
 
-        {step === 'confirm' && documentType && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <p style={{ margin: '0 auto', maxWidth: '720px', width: '100%', fontSize: '14px', fontWeight: 700, color: PALETTE.text }}>
-              内容と署名をご確認ください。保存すると、あとから編集・差し替え・削除はできません。
-            </p>
-            <ContractPaper documentType={documentType} values={values} editable={false} signatureUrl={signatureUrl} />
-          </div>
-        )}
+        {step === 'confirm' && documentType && <ConfirmStep documentType={documentType} values={values} signatureUrl={signatureUrl} />}
 
         {step === 'done' && saved && (
           <div style={{ maxWidth: '520px', margin: '40px auto 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', textAlign: 'center' }}>
@@ -237,3 +212,59 @@ export default function ContractWizard({ customerId, staffId, onClose, onSaved }
     </div>
   )
 }
+
+// ── ステップ別コンポーネント(memo化) ─────────────────────────────────
+// 親(ContractWizard)のerror/navPending/hasInk等の更新で、紙面・署名パッドが再レンダリングされない
+// ようにする。propsは安定した参照(setState・ref・値)だけを渡す。
+
+const outlineBtn: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '13px 22px',
+  borderRadius: '999px', fontSize: '15px', fontWeight: 700, cursor: 'pointer',
+  border: `1.5px solid ${PALETTE.border}`, background: 'none', color: PALETTE.text,
+}
+
+const FormStep = memo(function FormStep({ documentType, values, onChange }: {
+  documentType: ContractDocumentType; values: PaperValues; onChange: (v: PaperValues) => void
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <p style={{ margin: '0 auto', maxWidth: '720px', width: '100%', fontSize: '13px', color: PALETTE.muted }}>
+        紙の申込書と同じ並びです。申込日・氏名・住所・電話番号は手で入力してください(顧客情報からの自動入力はしません)。
+        コースを選ぶと単価が表示され、数量を入れると金額が自動計算されます。
+      </p>
+      <ContractPaper documentType={documentType} values={values} editable onChange={onChange} />
+    </div>
+  )
+})
+
+const SignStep = memo(function SignStep({ padRef, hasInk, onInkChange }: {
+  padRef: MutableRefObject<SignaturePadHandle | null>; hasInk: boolean; onInkChange: (hasInk: boolean) => void
+}) {
+  return (
+    <div style={{ maxWidth: '720px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <p style={{ margin: 0, fontSize: '15px', color: PALETTE.text }}>お客様ご本人が、下の枠に指またはApple Pencilで署名してください。</p>
+      <SignaturePad ref={padRef} height={260} onInkChange={onInkChange} />
+      <div style={{ display: 'flex', gap: '10px' }}>
+        <button type="button" onClick={() => padRef.current?.undo()} disabled={!hasInk} style={{ ...outlineBtn, opacity: hasInk ? 1 : 0.4 }}>
+          <Undo2 size={16} />ひとつ戻す
+        </button>
+        <button type="button" data-testid="sign-clear" onClick={() => padRef.current?.clear()} disabled={!hasInk} style={{ ...outlineBtn, opacity: hasInk ? 1 : 0.4 }}>
+          <Eraser size={16} />書き直す
+        </button>
+      </div>
+    </div>
+  )
+})
+
+const ConfirmStep = memo(function ConfirmStep({ documentType, values, signatureUrl }: {
+  documentType: ContractDocumentType; values: PaperValues; signatureUrl: string | null
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <p style={{ margin: '0 auto', maxWidth: '720px', width: '100%', fontSize: '14px', fontWeight: 700, color: PALETTE.text }}>
+        内容と署名をご確認ください。保存すると、あとから編集・差し替え・削除はできません。
+      </p>
+      <ContractPaper documentType={documentType} values={values} editable={false} signatureUrl={signatureUrl} />
+    </div>
+  )
+})

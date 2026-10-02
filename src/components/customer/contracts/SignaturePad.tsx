@@ -8,8 +8,13 @@
  *
  * 署名は透明背景のPNG(書いた範囲に余白付きでトリミング)として toPngBlob() で取り出す。
  * ストロークはコンポーネント内のrefに持ち、描画中はsetStateしない(再レンダリング負荷を避ける)。
+ *
+ * 初期化の分散(2026-10-02): ステップ切替(申込内容→署名)と同じフレームで高DPIキャンバスの確保・
+ * ResizeObserver・ポインタ入力の登録を行うと切替が引っかかるため、署名枠(白い枠と案内文)だけを先に
+ * 描画し、キャンバス本体は2フレーム後(requestAnimationFrameを2回待ってから)にマウントする。
+ * 親から渡るpropsが変わらない限り再レンダリングしないようmemo化している。
  */
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import {
   INITIAL_POINTER_TRACK_STATE, decidePointerDown, decidePointerEnd, type PointerTrackState,
 } from '@/lib/facialSchema/useFacialSchemaCanvas'
@@ -61,7 +66,7 @@ function setupCtx(ctx: CanvasRenderingContext2D) {
   ctx.lineJoin = 'round'
 }
 
-const SignaturePad = forwardRef<SignaturePadHandle, Props>(function SignaturePad({ height = 220, onInkChange }, ref) {
+const SignaturePadImpl = forwardRef<SignaturePadHandle, Props>(function SignaturePad({ height = 220, onInkChange }, ref) {
   const wrapRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const strokesRef = useRef<Pt[][]>([])
@@ -71,6 +76,13 @@ const SignaturePad = forwardRef<SignaturePadHandle, Props>(function SignaturePad
   // 描画中の差分描画用: 直前に描き終えた曲線の終点(ストロークごとに全再描画しない)。
   const lastMidRef = useRef<Pt | null>(null)
   const [hasInk, setHasInk] = useState(false)
+  // キャンバスのマウントを、枠が描画された後(2フレーム後)まで遅らせる
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    let raf2 = 0
+    const raf1 = requestAnimationFrame(() => { raf2 = requestAnimationFrame(() => setReady(true)) })
+    return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2) }
+  }, [])
 
   const notify = useCallback((next: boolean) => {
     setHasInk(prev => (prev === next ? prev : next))
@@ -90,12 +102,15 @@ const SignaturePad = forwardRef<SignaturePadHandle, Props>(function SignaturePad
   }, [])
 
   // 実寸に合わせて高DPIのバッキングストアを作る(幅の変化に追従)。
+  const lastWidthRef = useRef(0)
   useEffect(() => {
     const wrap = wrapRef.current
     const canvas = canvasRef.current
-    if (!wrap || !canvas) return undefined
+    if (!ready || !wrap || !canvas) return undefined
     const resize = () => {
       const w = wrap.clientWidth
+      if (w === lastWidthRef.current && canvas.width > 1) return // 幅が同じならバッキングストアを作り直さない
+      lastWidthRef.current = w
       const dpr = window.devicePixelRatio || 1
       sizeRef.current = { w, h: height }
       canvas.width = Math.max(1, Math.round(w * dpr))
@@ -104,11 +119,11 @@ const SignaturePad = forwardRef<SignaturePadHandle, Props>(function SignaturePad
       canvas.style.height = `${height}px`
       redraw()
     }
-    resize()
+    // ResizeObserverは observe 直後に1回呼ばれるため、ここで別途 resize() は呼ばない(初期化の二重実行を避ける)
     const ro = new ResizeObserver(resize)
     ro.observe(wrap)
     return () => ro.disconnect()
-  }, [height, redraw])
+  }, [ready, height, redraw])
 
   const pointOf = (e: { clientX: number; clientY: number }): Pt => {
     const rect = canvasRef.current!.getBoundingClientRect()
@@ -230,15 +245,17 @@ const SignaturePad = forwardRef<SignaturePadHandle, Props>(function SignaturePad
         border: `1.5px solid ${PALETTE.border}`, borderRadius: '12px', overflow: 'hidden',
       }}
     >
-      <canvas
-        ref={canvasRef}
-        data-testid="signature-canvas"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={e => finish(e, true)}
-        onPointerCancel={e => finish(e, false)}
-        style={{ display: 'block', touchAction: 'none', cursor: 'crosshair' }}
-      />
+      {ready && (
+        <canvas
+          ref={canvasRef}
+          data-testid="signature-canvas"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={e => finish(e, true)}
+          onPointerCancel={e => finish(e, false)}
+          style={{ display: 'block', touchAction: 'none', cursor: 'crosshair' }}
+        />
+      )}
       {!hasInk && (
         <p style={{
           position: 'absolute', inset: 0, margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -252,4 +269,5 @@ const SignaturePad = forwardRef<SignaturePadHandle, Props>(function SignaturePad
   )
 })
 
+const SignaturePad = memo(SignaturePadImpl)
 export default SignaturePad

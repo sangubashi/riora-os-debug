@@ -6,7 +6,7 @@
  * 入力でき、false(確認画面)では入力済みの内容と署名画像を読み取り専用で表示する。
  * 金額は単価×数量の自動計算のみ(手入力不可)。入力フォントは16px以上(iPad Safariの自動ズーム防止)。
  */
-import { memo } from 'react'
+import { memo, useMemo } from 'react'
 import { getContractCourses, findContractCourse } from '@/lib/contracts/courseMaster'
 import {
   CONTRACT_SALON, CONTRACT_TABLE_HEADERS, CONTRACT_TEMPLATES, CONTRACT_TOTAL_LABEL,
@@ -57,7 +57,7 @@ export function paperTotal(documentType: ContractDocumentType, lines: PaperLine[
 /** memo化: 署名パッドの描画やステップ切替など、紙面の内容に関係ない親の再描画で再レンダリングしない。 */
 function ContractPaperImpl({ documentType, values, editable, onChange, signatureUrl }: Props) {
   const tpl = CONTRACT_TEMPLATES[documentType]
-  const courses = getContractCourses(documentType)
+  const courses = useMemo(() => getContractCourses(documentType), [documentType])
   const set = (patch: Partial<PaperValues>) => onChange?.({ ...values, ...patch })
   const setLine = (i: number, patch: Partial<PaperLine>) =>
     set({ lines: values.lines.map((l, k) => (k === i ? { ...l, ...patch } : l)) })
@@ -76,6 +76,8 @@ function ContractPaperImpl({ documentType, values, editable, onChange, signature
         background: '#FFFFFF', color: PALETTE.text, boxShadow: '0 2px 18px rgba(60,45,25,0.15)',
         padding: 'clamp(20px, 5%, 44px)', display: 'flex', flexDirection: 'column', gap: '14px',
         fontSize: '13px', lineHeight: 1.7,
+        // 紙面内の再レイアウトを外側に波及させない(影はpaint containmentで切れるため layout/style のみ)
+        contain: 'layout style',
       }}
     >
       <h2 style={{ margin: 0, textAlign: 'center', fontSize: '22px', fontWeight: 700 }}>{tpl.title}</h2>
@@ -217,7 +219,7 @@ function ContractPaperImpl({ documentType, values, editable, onChange, signature
 const ContractPaper = memo(ContractPaperImpl)
 export default ContractPaper
 
-function Field({ label, value, editable, onChange, testId, inputMode }: {
+const Field = memo(function Field({ label, value, editable, onChange, testId, inputMode }: {
   label: string; value: string; editable: boolean; onChange: (v: string) => void; testId: string
   inputMode?: 'tel' | 'text'
 }) {
@@ -232,4 +234,4 @@ function Field({ label, value, editable, onChange, testId, inputMode }: {
       ) : <span style={{ wordBreak: 'break-word' }}>{value}</span>}
     </div>
   )
-}
+})
