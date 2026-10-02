@@ -44,7 +44,7 @@ export const CONTRACT_SALON = {
   company:        '株式会社martylabo',
   name:           'Salon Riora',
   representative: '鈴木 雅子',
-  address:        '東京都中央区新富1丁目15-4 CGA 新富',
+  address:        '東京都中央区新富1丁目15-4 CGA 新富 401',
   phone:          '070-9458-4869',
 } as const
 

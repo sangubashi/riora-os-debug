@@ -55,11 +55,11 @@ describe('文言(逐語)', () => {
     expect(t.notes).toEqual(['※お申し込みいただいたコースの変更・キャンセル・返金はお受けできませんので、あらかじめご了承ください。'])
     expect(CONTRACT_SALON).toEqual({
       company: '株式会社martylabo', name: 'Salon Riora', representative: '鈴木 雅子',
-      address: '東京都中央区新富1丁目15-4 CGA 新富', phone: '070-9458-4869',
+      address: '東京都中央区新富1丁目15-4 CGA 新富 401', phone: '070-9458-4869',
     })
     expect(CONTRACT_SALON_LINES.map(([l, v]) => `${l}：${v}`)).toEqual([
       '事業者：株式会社martylabo', '店舗名：Salon Riora', '代表者：鈴木 雅子',
-      '住所：東京都中央区新富1丁目15-4 CGA 新富', '電話番号：070-9458-4869',
+      '住所：東京都中央区新富1丁目15-4 CGA 新富 401', '電話番号：070-9458-4869',
     ])
   })
 })

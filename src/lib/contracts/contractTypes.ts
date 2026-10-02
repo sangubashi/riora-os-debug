@@ -27,8 +27,8 @@ export const CONTRACT_PHONE_MAX_LENGTH = 20
 /** 署名PNGの上限(1MB)。 */
 export const CONTRACT_SIGNATURE_MAX_BYTES = 1024 * 1024
 
-/** 文書レイアウト/文言のバージョン(content_hashに含め、将来の変更と区別できるようにする)。2: 事業者情報を更新(2026-10-02)。 */
-export const CONTRACT_TEMPLATE_VERSION = 2
+/** 文書レイアウト/文言のバージョン(content_hashに含め、将来の変更と区別できるようにする)。2: 事業者情報を更新、3: 事業者住所に部屋番号(401)を追加(2026-10-02)。 */
+export const CONTRACT_TEMPLATE_VERSION = 3
 
 /** 保存時点のスナップショット(将来マスター価格が変わっても過去の契約書の内容は変わらない)。 */
 export interface ContractLineItem {
