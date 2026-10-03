@@ -98,8 +98,8 @@ function useThumbUrls(
 }
 
 const cardStyle: React.CSSProperties = {
-  marginTop: '16px', background: PALETTE.card, border: `1px solid ${PALETTE.border}`,
-  borderRadius: '16px', padding: '16px 0 14px', boxShadow: PALETTE.shadow,
+  marginTop: '16px', background: PALETTE.bg, border: `1px solid ${PALETTE.border}`,
+  borderRadius: '16px', padding: '16px 0 14px',
 }
 
 const cardTitleStyle: React.CSSProperties = {
