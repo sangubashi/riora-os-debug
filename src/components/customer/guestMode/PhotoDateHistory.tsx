@@ -64,6 +64,8 @@ interface Props {
   onSetCompareTarget: (photo: TimelinePhoto) => void
   /** 比較対象(1枚目/2枚目)からこの写真を外すだけ(モードは変えない)。 */
   onRemoveCompareTarget: (photo: TimelinePhoto) => void
+  /** 自由選択モードを終了する(選択中の1/2もクリアする。上部の「🔀 自由選択」をOFFにするのと同じ)。 */
+  onEndFreeSelect: () => void
 }
 
 /** 表示する写真のサムネイルURLを、足りない分だけ取得する。 */
@@ -106,13 +108,15 @@ const cardTitleStyle: React.CSSProperties = {
 
 /** 写真の横スクロール1列(1枚ずつ独立表示)。 */
 function PhotoRow({
-  photos, urls, freeSelectMode, pinSlotOf, onTap,
+  photos, urls, freeSelectMode, pinSlotOf, onTap, onOpenMenu,
 }: {
   photos: TimelinePhoto[]
   urls: Record<string, string>
   freeSelectMode: boolean
   pinSlotOf: (photoId: string) => 1 | 2 | null
   onTap: (photo: TimelinePhoto) => void
+  /** 操作メニューを開く(自由選択モード中は、タップが直接の選択になるため、この「⋯」から開く)。 */
+  onOpenMenu: (photo: TimelinePhoto) => void
 }) {
   // 同じ日に同じ角度が複数枚ある場合のみ、撮影時刻を併記して見分けられるようにする。
   const angleCounts = new Map<string, number>()
@@ -132,7 +136,7 @@ function PhotoRow({
         const pinSlot = pinSlotOf(photo.id)
         const name = `${label}${time ? ` ${time}` : ''}`
         return (
-          <div key={photo.id} style={{ flex: '0 0 auto', width: '132px' }}>
+          <div key={photo.id} style={{ position: 'relative', flex: '0 0 auto', width: '132px' }}>
             <button
               type="button"
               onClick={() => onTap(photo)}
@@ -168,6 +172,27 @@ function PhotoRow({
                 </span>
               )}
             </button>
+            {freeSelectMode && (
+              <button
+                type="button"
+                onClick={() => onOpenMenu(photo)}
+                aria-label={`${name}の写真の操作メニューを開く`}
+                style={{
+                  position: 'absolute', top: '0', right: '0', width: '44px', height: '44px',
+                  background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                <span
+                  style={{
+                    width: '26px', height: '26px', borderRadius: '50%', background: 'rgba(20,16,12,0.65)',
+                    color: '#fff', fontSize: '16px', lineHeight: '26px', textAlign: 'center',
+                  }}
+                >
+                  ⋯
+                </span>
+              </button>
+            )}
             <p style={{ margin: '5px 0 0', fontSize: '12px', color: PALETTE.text, textAlign: 'center' }}>
               {label}
               {time && <span style={{ color: PALETTE.muted }}> {time}</span>}
@@ -184,13 +209,16 @@ function PhotoRow({
  * ボタンは全て高さ52px(iPadで押しやすい44px以上)。背景タップ・「閉じる」で閉じる。
  */
 function PhotoActionMenu({
-  photo, pinSlot, onClose, onOpenPhoto, onStartFreeSelect, onSetCompareTarget, onRemoveCompareTarget,
+  photo, pinSlot, freeSelectMode, onClose, onOpenPhoto, onStartFreeSelect, onEndFreeSelect,
+  onSetCompareTarget, onRemoveCompareTarget,
 }: {
   photo: TimelinePhoto
   pinSlot: 1 | 2 | null
+  freeSelectMode: boolean
   onClose: () => void
   onOpenPhoto: (photo: TimelinePhoto) => void
   onStartFreeSelect: () => void
+  onEndFreeSelect: () => void
   onSetCompareTarget: (photo: TimelinePhoto) => void
   onRemoveCompareTarget: (photo: TimelinePhoto) => void
 }) {
@@ -229,9 +257,15 @@ function PhotoActionMenu({
         >
           {pinSlot ? '比較対象から外す' : '比較対象に設定'}
         </button>
-        <button type="button" style={buttonStyle} onClick={run(onStartFreeSelect)}>
-          自由選択モードで選ぶ
-        </button>
+        {freeSelectMode ? (
+          <button type="button" style={buttonStyle} onClick={run(onEndFreeSelect)}>
+            自由選択モードを終了
+          </button>
+        ) : (
+          <button type="button" style={buttonStyle} onClick={run(onStartFreeSelect)}>
+            自由選択モードで選ぶ
+          </button>
+        )}
         <button
           type="button"
           onClick={onClose}
@@ -257,7 +291,7 @@ function usePhotoTap(p: Pick<Props, 'freeSelectMode' | 'pinSlotOf' | 'onSelectFo
       else p.onSelectForCompare(photo)
     } else setMenuPhoto(photo)
   }
-  return { menuPhoto, closeMenu: () => setMenuPhoto(null), onTap }
+  return { menuPhoto, closeMenu: () => setMenuPhoto(null), openMenu: setMenuPhoto, onTap }
 }
 
 /** 今日(JST)の撮影日キー。 */
@@ -268,7 +302,7 @@ function todayJstKey(): string {
 /** 「今日撮影した写真」。今日(JST)撮影した写真が無ければ何も表示しない。 */
 export function TodayPhotos(props: Props) {
   const { customerId, photos, knownUrls, onThumbsLoaded, freeSelectMode, pinSlotOf } = props
-  const { menuPhoto, closeMenu, onTap } = usePhotoTap(props)
+  const { menuPhoto, closeMenu, openMenu, onTap } = usePhotoTap(props)
   const todayPhotos = useMemo(() => {
     const today = todayJstKey()
     return groupPhotosByJstDate(photos).find(g => g.dateKey === today)?.photos ?? []
@@ -280,14 +314,16 @@ export function TodayPhotos(props: Props) {
   return (
     <div style={cardStyle}>
       <p style={cardTitleStyle}>今日撮影した写真</p>
-      <PhotoRow photos={todayPhotos} urls={merged} freeSelectMode={freeSelectMode} pinSlotOf={pinSlotOf} onTap={onTap} />
+      <PhotoRow photos={todayPhotos} urls={merged} freeSelectMode={freeSelectMode} pinSlotOf={pinSlotOf} onTap={onTap} onOpenMenu={openMenu} />
       {menuPhoto && (
         <PhotoActionMenu
           photo={menuPhoto}
           pinSlot={pinSlotOf(menuPhoto.id)}
+          freeSelectMode={freeSelectMode}
           onClose={closeMenu}
           onOpenPhoto={props.onOpenPhoto}
           onStartFreeSelect={props.onStartFreeSelect}
+          onEndFreeSelect={props.onEndFreeSelect}
           onSetCompareTarget={props.onSetCompareTarget}
           onRemoveCompareTarget={props.onRemoveCompareTarget}
         />
@@ -299,7 +335,7 @@ export function TodayPhotos(props: Props) {
 /** 「過去の写真」。今日より前の撮影日チップ → 選んだ日の写真を全部表示。 */
 export default function PhotoDateHistory(props: Props) {
   const { customerId, photos, knownUrls, onThumbsLoaded, freeSelectMode, pinSlotOf } = props
-  const { menuPhoto, closeMenu, onTap } = usePhotoTap(props)
+  const { menuPhoto, closeMenu, openMenu, onTap } = usePhotoTap(props)
   const groups = useMemo(() => {
     const today = todayJstKey()
     return groupPhotosByJstDate(photos).filter(g => g.dateKey !== today)
@@ -353,15 +389,17 @@ export default function PhotoDateHistory(props: Props) {
       </div>
 
       {activeGroup && (
-        <PhotoRow photos={activeGroup.photos} urls={merged} freeSelectMode={freeSelectMode} pinSlotOf={pinSlotOf} onTap={onTap} />
+        <PhotoRow photos={activeGroup.photos} urls={merged} freeSelectMode={freeSelectMode} pinSlotOf={pinSlotOf} onTap={onTap} onOpenMenu={openMenu} />
       )}
       {menuPhoto && (
         <PhotoActionMenu
           photo={menuPhoto}
           pinSlot={pinSlotOf(menuPhoto.id)}
+          freeSelectMode={freeSelectMode}
           onClose={closeMenu}
           onOpenPhoto={props.onOpenPhoto}
           onStartFreeSelect={props.onStartFreeSelect}
+          onEndFreeSelect={props.onEndFreeSelect}
           onSetCompareTarget={props.onSetCompareTarget}
           onRemoveCompareTarget={props.onRemoveCompareTarget}
         />

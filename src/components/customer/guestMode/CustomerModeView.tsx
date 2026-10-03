@@ -384,6 +384,13 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
     if (selectedPhotoB?.id === photo.id) setSelectedPhotoB(null)
   }
 
+  /** 自由選択モードを終了する。上部の「🔀 自由選択」をOFFにするのと同じく、選択中の1/2もクリアする。 */
+  function endFreeSelect() {
+    setFreeSelectMode(false)
+    setSelectedPhotoA(null)
+    setSelectedPhotoB(null)
+  }
+
   function selectPhotoForCompare(photo: TimelinePhoto) {
     if (selectedPhotoA?.id === photo.id) { setSelectedPhotoA(null); return }
     if (selectedPhotoB?.id === photo.id) { setSelectedPhotoB(null); return }
@@ -691,6 +698,7 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
                 onStartFreeSelect={() => setFreeSelectMode(true)}
                 onSetCompareTarget={setAsCompareTarget}
                 onRemoveCompareTarget={removeCompareTarget}
+                onEndFreeSelect={endFreeSelect}
               />
 
               {/* 写真撮影・選択・削除(PHASE GUEST-MODE-PHOTO-MOVE-1・Phase 0・2026-09-19)。
@@ -759,6 +767,7 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
                 onStartFreeSelect={() => setFreeSelectMode(true)}
                 onSetCompareTarget={setAsCompareTarget}
                 onRemoveCompareTarget={removeCompareTarget}
+                onEndFreeSelect={endFreeSelect}
               />
 
               {/* 今回の施術 / 次回の目安 */}
