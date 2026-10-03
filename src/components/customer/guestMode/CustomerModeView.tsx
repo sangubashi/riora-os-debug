@@ -374,6 +374,16 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
     selectPhotoForCompare(photo)
   }
 
+  /**
+   * 比較対象(1枚目/2枚目)からこの写真を外すだけ。自由選択モードの状態は変えない
+   * (selectPhotoForCompareのトグル解除はモードをONにする経路でも呼ばれるため、
+   * 「外す」専用にモードを触らない関数を分けた)。
+   */
+  function removeCompareTarget(photo: TimelinePhoto) {
+    if (selectedPhotoA?.id === photo.id) setSelectedPhotoA(null)
+    if (selectedPhotoB?.id === photo.id) setSelectedPhotoB(null)
+  }
+
   function selectPhotoForCompare(photo: TimelinePhoto) {
     if (selectedPhotoA?.id === photo.id) { setSelectedPhotoA(null); return }
     if (selectedPhotoB?.id === photo.id) { setSelectedPhotoB(null); return }
@@ -680,6 +690,7 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
                 onSelectForCompare={selectPhotoForCompare}
                 onStartFreeSelect={() => setFreeSelectMode(true)}
                 onSetCompareTarget={setAsCompareTarget}
+                onRemoveCompareTarget={removeCompareTarget}
               />
 
               {/* 写真撮影・選択・削除(PHASE GUEST-MODE-PHOTO-MOVE-1・Phase 0・2026-09-19)。
@@ -747,6 +758,7 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
                 onSelectForCompare={selectPhotoForCompare}
                 onStartFreeSelect={() => setFreeSelectMode(true)}
                 onSetCompareTarget={setAsCompareTarget}
+                onRemoveCompareTarget={removeCompareTarget}
               />
 
               {/* 今回の施術 / 次回の目安 */}

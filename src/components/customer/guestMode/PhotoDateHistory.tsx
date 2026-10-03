@@ -62,6 +62,8 @@ interface Props {
   onStartFreeSelect: () => void
   /** 自由選択モードをONにした上で、この写真をselectPhotoForCompareする。 */
   onSetCompareTarget: (photo: TimelinePhoto) => void
+  /** 比較対象(1枚目/2枚目)からこの写真を外すだけ(モードは変えない)。 */
+  onRemoveCompareTarget: (photo: TimelinePhoto) => void
 }
 
 /** 表示する写真のサムネイルURLを、足りない分だけ取得する。 */
@@ -182,7 +184,7 @@ function PhotoRow({
  * ボタンは全て高さ52px(iPadで押しやすい44px以上)。背景タップ・「閉じる」で閉じる。
  */
 function PhotoActionMenu({
-  photo, pinSlot, onClose, onOpenPhoto, onStartFreeSelect, onSetCompareTarget,
+  photo, pinSlot, onClose, onOpenPhoto, onStartFreeSelect, onSetCompareTarget, onRemoveCompareTarget,
 }: {
   photo: TimelinePhoto
   pinSlot: 1 | 2 | null
@@ -190,6 +192,7 @@ function PhotoActionMenu({
   onOpenPhoto: (photo: TimelinePhoto) => void
   onStartFreeSelect: () => void
   onSetCompareTarget: (photo: TimelinePhoto) => void
+  onRemoveCompareTarget: (photo: TimelinePhoto) => void
 }) {
   const buttonStyle: React.CSSProperties = {
     width: '100%', minHeight: '52px', padding: '0 16px', borderRadius: '12px', cursor: 'pointer',
@@ -222,7 +225,7 @@ function PhotoActionMenu({
         <button
           type="button"
           style={{ ...buttonStyle, ...(pinSlot ? {} : { border: `1.5px solid ${PALETTE.gold}` }) }}
-          onClick={run(() => onSetCompareTarget(photo))}
+          onClick={run(() => (pinSlot ? onRemoveCompareTarget(photo) : onSetCompareTarget(photo)))}
         >
           {pinSlot ? '比較対象から外す' : '比較対象に設定'}
         </button>
@@ -245,11 +248,14 @@ function PhotoActionMenu({
  * サムネイルタップの共通処理。自由選択モード中はメニューなしで直接 selectPhotoForCompare、
  * 通常モードでは操作メニューを開く。
  */
-function usePhotoTap(p: Pick<Props, 'freeSelectMode' | 'onSelectForCompare'>) {
+function usePhotoTap(p: Pick<Props, 'freeSelectMode' | 'pinSlotOf' | 'onSelectForCompare' | 'onRemoveCompareTarget'>) {
   const [menuPhoto, setMenuPhoto] = useState<TimelinePhoto | null>(null)
   const onTap = (photo: TimelinePhoto) => {
-    if (p.freeSelectMode) p.onSelectForCompare(photo)
-    else setMenuPhoto(photo)
+    if (p.freeSelectMode) {
+      // 既に選択中(1/2)の写真を再タップしたら選択解除、未選択なら選択(先入れ先出し)。
+      if (p.pinSlotOf(photo.id)) p.onRemoveCompareTarget(photo)
+      else p.onSelectForCompare(photo)
+    } else setMenuPhoto(photo)
   }
   return { menuPhoto, closeMenu: () => setMenuPhoto(null), onTap }
 }
@@ -283,6 +289,7 @@ export function TodayPhotos(props: Props) {
           onOpenPhoto={props.onOpenPhoto}
           onStartFreeSelect={props.onStartFreeSelect}
           onSetCompareTarget={props.onSetCompareTarget}
+          onRemoveCompareTarget={props.onRemoveCompareTarget}
         />
       )}
     </div>
@@ -356,6 +363,7 @@ export default function PhotoDateHistory(props: Props) {
           onOpenPhoto={props.onOpenPhoto}
           onStartFreeSelect={props.onStartFreeSelect}
           onSetCompareTarget={props.onSetCompareTarget}
+          onRemoveCompareTarget={props.onRemoveCompareTarget}
         />
       )}
     </div>
