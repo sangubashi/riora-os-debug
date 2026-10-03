@@ -24,6 +24,9 @@ const PAPER_INK = '#000000'
 const PAPER_SUB = '#555555'
 const PAPER_INPUT_LINE = '#BDBDBD'
 const RULE = '1.5px solid #000'
+// PDF(buildContractPdf.ts)と同じ使い分け: 本文=明朝(IPAex明朝相当)、タイトル・表の項目ヘッダー・署名見出し=ゴシック。
+const FONT_MINCHO = '"IPAexMincho", "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "MS PMincho", serif'
+const FONT_GOTHIC = '"IPAexGothic", "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic", YuGothic, Meiryo, sans-serif'
 
 export interface PaperLine { courseId: string; quantity: number | null; note: string }
 
@@ -89,10 +92,10 @@ function ContractPaperImpl({ documentType, values, editable, onChange, signature
         background: '#FFFFFF', color: PAPER_INK, boxShadow: '0 2px 18px rgba(0,0,0,0.14)',
         padding: 'clamp(28px, 9% , 64px) clamp(24px, 9.5%, 64px) clamp(28px, 6%, 48px)',
         display: 'flex', flexDirection: 'column', gap: 'clamp(16px, 3.2vw, 26px)',
-        fontSize: '13px', lineHeight: 1.7,
+        fontSize: '13px', lineHeight: 1.7, fontFamily: FONT_MINCHO,
       }}
     >
-      <h2 style={{ margin: '0 0 6px', textAlign: 'left', fontSize: 'clamp(22px, 4.4vw, 30px)', fontWeight: 400, letterSpacing: '0.02em' }}>
+      <h2 style={{ margin: '0 0 6px', fontFamily: FONT_GOTHIC, textAlign: 'left', fontSize: 'clamp(22px, 4.4vw, 30px)', fontWeight: 400, letterSpacing: '0.02em' }}>
         {tpl.title}
       </h2>
       <p style={{ margin: 0, fontSize: '12.5px' }}>{tpl.intro}</p>
@@ -104,7 +107,7 @@ function ContractPaperImpl({ documentType, values, editable, onChange, signature
         <thead>
           <tr>
             {CONTRACT_TABLE_HEADERS.map(h => (
-              <th key={h} style={{ ...cell, height: '40px', fontWeight: 400, fontSize: '12.5px' }}>{h}</th>
+              <th key={h} style={{ ...cell, fontFamily: FONT_GOTHIC, height: '40px', fontWeight: 400, fontSize: '12.5px' }}>{h}</th>
             ))}
           </tr>
         </thead>
@@ -228,7 +231,7 @@ function ContractPaperImpl({ documentType, values, editable, onChange, signature
           {CONTRACT_SALON_LINES.map(([label, value]) => <div key={label}>{label}：{value}</div>)}
         </div>
         <div data-testid="contract-signature-box" style={{ border: RULE, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '4px', minHeight: '110px' }}>
-          <span style={{ fontSize: '11px' }}>署名</span>
+          <span style={{ fontSize: '11px', fontFamily: FONT_GOTHIC }}>署名</span>
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '70px' }}>
             {signatureUrl ? (
               // eslint-disable-next-line @next/next/no-img-element

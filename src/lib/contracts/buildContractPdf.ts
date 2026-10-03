@@ -1,8 +1,9 @@
 /**
  * buildContractPdf.ts — 契約書・申込書のA4縦PDF生成(サーバー専用、pdf-lib + fontkit)。
  *
- * 日本語は IPAex ゴシック(src/lib/contracts/fonts/ipaexg.ttf、IPAフォントライセンスv1.0、
- * 同ディレクトリにライセンス全文を同梱)を埋め込む(subset)。文言は contractTemplates.ts の
+ * 日本語は IPAex 明朝(本文: ipaexm.ttf)と IPAex ゴシック(見出し: ipaexg.ttf)を埋め込む(subset、
+ * IPAフォントライセンスv1.0、src/lib/contracts/fonts/ にライセンス全文を同梱)。
+ * ゴシック=文書タイトル・表の項目ヘッダー・署名見出し、明朝=それ以外の本文全般。文言は contractTemplates.ts の
  * 定数のみを使い、ここでは言い換えない。
  *
  * 入力はサーバーが検証・マスターから再計算済みの値だけを受け取る(クライアントの金額は信用しない)。
@@ -41,12 +42,14 @@ export interface ContractPdfInput {
   contentHash:     string
 }
 
-let fontBytesCache: Buffer | null = null
-function loadFontBytes(): Buffer {
-  if (!fontBytesCache) {
-    fontBytesCache = fs.readFileSync(path.join(process.cwd(), 'src/lib/contracts/fonts/ipaexg.ttf'))
+const fontBytesCache = new Map<string, Buffer>()
+function loadFontBytes(fileName: 'ipaexg.ttf' | 'ipaexm.ttf'): Buffer {
+  let bytes = fontBytesCache.get(fileName)
+  if (!bytes) {
+    bytes = fs.readFileSync(path.join(process.cwd(), 'src/lib/contracts/fonts', fileName))
+    fontBytesCache.set(fileName, bytes)
   }
-  return fontBytesCache
+  return bytes
 }
 
 export function formatYen(n: number): string {
@@ -112,7 +115,8 @@ const BOTTOM_LIMIT = 40
 export async function buildContractPdf(input: ContractPdfInput): Promise<Uint8Array> {
   const doc = await PDFDocument.create()
   doc.registerFontkit(fontkit)
-  const font = await doc.embedFont(loadFontBytes(), { subset: true })
+  const gothic = await doc.embedFont(loadFontBytes('ipaexg.ttf'), { subset: true }) // 見出し・強調
+  const font = await doc.embedFont(loadFontBytes('ipaexm.ttf'), { subset: true })   // 本文(明朝)
   const signature = await doc.embedPng(input.signaturePng)
 
   doc.setTitle(CONTRACT_TEMPLATES[input.documentType].title)
@@ -131,8 +135,8 @@ export async function buildContractPdf(input: ContractPdfInput): Promise<Uint8Ar
     }
   }
   /** textTop = 文字の上端のページ上端からの距離。 */
-  const draw = (s: string, x: number, size: number, textTop: number) => {
-    page.drawText(s, { x, y: A4_HEIGHT_PT - textTop - size * 0.86, size, font, color: INK })
+  const draw = (s: string, x: number, size: number, textTop: number, f: PDFFont = font) => {
+    page.drawText(s, { x, y: A4_HEIGHT_PT - textTop - size * 0.86, size, font: f, color: INK })
   }
   const drawRight = (s: string, rightX: number, size: number, textTop: number) => {
     draw(s, rightX - font.widthOfTextAtSize(s, size), size, textTop)
@@ -145,7 +149,7 @@ export async function buildContractPdf(input: ContractPdfInput): Promise<Uint8Ar
   }
 
   // ── タイトル・導入文(左揃え) ──
-  draw(tpl.title, TITLE_X, 22, top)
+  draw(tpl.title, TITLE_X, 22, top, gothic)
   top += 22 + 39
   draw(tpl.intro, TABLE_X + 1, 10, top)
   top += 10 + 15
@@ -158,7 +162,7 @@ export async function buildContractPdf(input: ContractPdfInput): Promise<Uint8Ar
   ensure(headerH)
   rect(TABLE_X, top, TABLE_W, headerH)
   for (let i = 1; i < colX.length; i++) vline(colX[i], top, headerH)
-  CONTRACT_TABLE_HEADERS.forEach((h, i) => draw(h, colX[i] + PAD_X, 10, top + (headerH - 10) / 2))
+  CONTRACT_TABLE_HEADERS.forEach((h, i) => draw(h, colX[i] + PAD_X, 10, top + (headerH - 10) / 2, gothic))
   top += headerH
 
   for (let r = 0; r < CONTRACT_MAX_LINES; r++) {
@@ -231,7 +235,7 @@ export async function buildContractPdf(input: ContractPdfInput): Promise<Uint8Ar
   CONTRACT_SALON_LINES.forEach(([label, value], k) => draw(`${label}：${value}`, BOX_X + 13, 10, top + 12 + k * 15))
 
   rect(SIGN_X, top, SIGN_W, boxH)
-  draw('署名', SIGN_X + 9, 9, top + 8)
+  draw('署名', SIGN_X + 9, 9, top + 8, gothic)
   const areaW = SIGN_W - 20
   const areaH = boxH - 34
   const scale = Math.min(areaW / signature.width, areaH / signature.height, 1)
