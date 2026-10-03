@@ -43,7 +43,7 @@ export interface ContractPdfInput {
 }
 
 const fontBytesCache = new Map<string, Buffer>()
-function loadFontBytes(fileName: 'ipaexg.ttf' | 'ipaexm.ttf' | 'ShipporiMincho-Bold.ttf'): Buffer {
+function loadFontBytes(fileName: 'ipaexg.ttf' | 'ipaexm.ttf'): Buffer {
   let bytes = fontBytesCache.get(fileName)
   if (!bytes) {
     bytes = fs.readFileSync(path.join(process.cwd(), 'src/lib/contracts/fonts', fileName))
@@ -112,15 +112,14 @@ const SIGN_X = 372
 const SIGN_W = TABLE_X + TABLE_W - SIGN_X // 表の右端にそろえる
 const BOTTOM_LIMIT = 40
 
-/** タイトルの字間(em)。0.05〜0.08em の範囲。 */
-const TITLE_LETTER_SPACING_EM = 0.06
+/** タイトルの文字サイズ(pt)。 */
+const TITLE_SIZE = 26
 
 export async function buildContractPdf(input: ContractPdfInput): Promise<Uint8Array> {
   const doc = await PDFDocument.create()
   doc.registerFontkit(fontkit)
   const gothic = await doc.embedFont(loadFontBytes('ipaexg.ttf'), { subset: true }) // 見出し・強調
   const font = await doc.embedFont(loadFontBytes('ipaexm.ttf'), { subset: true })   // 本文(明朝)
-  const titleFont = await doc.embedFont(loadFontBytes('ShipporiMincho-Bold.ttf'), { subset: true }) // タイトル(しっぽり明朝 Bold・SIL OFL)
   const signature = await doc.embedPng(input.signaturePng)
 
   doc.setTitle(CONTRACT_TEMPLATES[input.documentType].title)
@@ -142,13 +141,14 @@ export async function buildContractPdf(input: ContractPdfInput): Promise<Uint8Ar
   const draw = (s: string, x: number, size: number, textTop: number, f: PDFFont = font) => {
     page.drawText(s, { x, y: A4_HEIGHT_PT - textTop - size * 0.86, size, font: f, color: INK })
   }
-  /** 字間(letter-spacing)を空けて描く。pdf-libには字間指定が無いため1文字ずつ送る。 */
-  const drawSpaced = (s: string, x: number, size: number, textTop: number, f: PDFFont, spacingEm: number) => {
-    let cx = x
-    for (const ch of s) {
-      draw(ch, cx, size, textTop, f)
-      cx += f.widthOfTextAtSize(ch, size) + size * spacingEm
-    }
+  /**
+   * 太字(Bold)。IPAex明朝には太字のウェイトが無いため、同じ文字を横に少しずらして重ね描きする
+   * (文字間隔・字送りは標準のまま。1文字ずつの位置調整はしない)。
+   */
+  const drawBold = (s: string, x: number, size: number, textTop: number, f: PDFFont = font) => {
+    const d = size * 0.018
+    draw(s, x, size, textTop, f)
+    draw(s, x + d, size, textTop, f)
   }
   const drawRight = (s: string, rightX: number, size: number, textTop: number) => {
     draw(s, rightX - font.widthOfTextAtSize(s, size), size, textTop)
@@ -161,8 +161,8 @@ export async function buildContractPdf(input: ContractPdfInput): Promise<Uint8Ar
   }
 
   // ── タイトル・導入文(左揃え) ──
-  drawSpaced(tpl.title, TITLE_X, 22, top, titleFont, TITLE_LETTER_SPACING_EM)
-  top += 22 + 39
+  drawBold(tpl.title, TITLE_X, TITLE_SIZE, top, font)
+  top += TITLE_SIZE + 35
   draw(tpl.intro, TABLE_X + 1, 10, top)
   top += 10 + 15
 
