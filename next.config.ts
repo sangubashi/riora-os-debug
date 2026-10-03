@@ -37,6 +37,16 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      // iPad用「Rioraカルテ」(/karte)のmanifest。スマホ用/manifest.jsonとは別PWA。
+      {
+        source: '/karte.webmanifest',
+        headers: [
+          {
+            key:   'Content-Type',
+            value: 'application/manifest+json',
+          },
+        ],
+      },
     ]
   },
 }
