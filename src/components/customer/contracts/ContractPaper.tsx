@@ -10,6 +10,7 @@
  * 入力フォントは16px以上(iPad Safariの自動ズーム防止)。
  */
 import { memo, useMemo } from 'react'
+import { Shippori_Mincho } from 'next/font/google'
 import { getContractCourses, findContractCourse } from '@/lib/contracts/courseMaster'
 import {
   CONTRACT_SALON_LINES, CONTRACT_TABLE_HEADERS, CONTRACT_TEMPLATES, CONTRACT_TOTAL_LABEL,
@@ -25,6 +26,9 @@ const PAPER_SUB = '#555555'
 const PAPER_INPUT_LINE = '#BDBDBD'
 const RULE = '1.5px solid #000'
 // PDF(buildContractPdf.ts)と同じ使い分け: 本文=明朝(IPAex明朝相当)、タイトル・表の項目ヘッダー・署名見出し=ゴシック。
+/** 申込書タイトル用: しっぽり明朝。日本語グリフもunicode-rangeで必要分だけ読み込むため preload:false。 */
+const titleFont = Shippori_Mincho({ weight: ['600', '700'], display: 'swap', preload: false })
+
 const FONT_MINCHO = '"IPAexMincho", "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "MS PMincho", serif'
 const FONT_GOTHIC = '"IPAexGothic", "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic", YuGothic, Meiryo, sans-serif'
 
@@ -95,7 +99,7 @@ function ContractPaperImpl({ documentType, values, editable, onChange, signature
         fontSize: '13px', lineHeight: 1.7, fontFamily: FONT_MINCHO,
       }}
     >
-      <h2 style={{ margin: '0 0 6px', fontFamily: FONT_GOTHIC, textAlign: 'left', fontSize: 'clamp(22px, 4.4vw, 30px)', fontWeight: 400, letterSpacing: '0.02em' }}>
+      <h2 style={{ margin: '0 0 6px', fontFamily: `${titleFont.style.fontFamily}, ${FONT_GOTHIC}`, textAlign: 'left', fontSize: 'clamp(22px, 4.4vw, 30px)', fontWeight: 700, letterSpacing: '0.06em' }}>
         {tpl.title}
       </h2>
       <p style={{ margin: 0, fontSize: '12.5px' }}>{tpl.intro}</p>
