@@ -43,6 +43,7 @@ import {
 import type { ComparisonPair } from '@/lib/photos/comparisonSelection'
 import { bodyPartLabel } from '@/lib/photos/bodyParts'
 import { useSyncedZoomPan } from '@/hooks/useSyncedZoomPan'
+import { useIndependentZoomPan } from '@/hooks/useIndependentZoomPan'
 import { PALETTE, headingFont } from '@/components/customer/shared/PhotoCompareKit'
 
 type ViewMode = 'slider' | 'sideBySide'
@@ -99,6 +100,10 @@ export default function PhotoCompareScreen({ customerId, initialBodyPart, onClos
   const sliderAreaRef = useRef<HTMLDivElement | null>(null)
   const draggingHandleRef = useRef(false)
   const zoomPan = useSyncedZoomPan()
+  // 並列モード専用: 左(前回)・右(今回)を完全に独立してズーム・パンする(2026-10-03)。
+  // sliderモードは従来どおりzoomPan(useSyncedZoomPan)のみを使う。
+  const zoomLeft = useIndependentZoomPan()
+  const zoomRight = useIndependentZoomPan()
 
   // 顧客の全写真を1回だけ取得し、初期ペアを選ぶ(既存API・既存の認可チェックをそのまま利用)。
   useEffect(() => {
@@ -143,10 +148,21 @@ export default function PhotoCompareScreen({ customerId, initialBodyPart, onClos
         if (!cancelled) setUrlsAttempted(true)
       })
     zoomPan.reset()
+    zoomLeft.reset()
+    zoomRight.reset()
     setSliderPercent(50)
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId, pair?.reference.id, pair?.current.id])
+
+  // 並列モードへ入るたびに左右のズーム状態を初期化する(並列側の古いズーム状態を持ち越さない)。
+  // slider側のzoomPanには一切触れない。
+  useEffect(() => {
+    if (viewMode !== 'sideBySide') return
+    zoomLeft.reset()
+    zoomRight.reset()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode])
 
   // 「読み込み失敗」= onErrorで検知 or (取得試行が完了したのにurlが無い)。
   const referenceFailed = imgError.reference || (urlsAttempted && !urls.reference)
@@ -426,27 +442,29 @@ export default function PhotoCompareScreen({ customerId, initialBodyPart, onClos
           </div>
         ) : (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', gap: '2px' }}>
-            <div {...zoomPan.handlers} style={{ position: 'relative', flex: 1, overflow: 'hidden', touchAction: 'none' }}>
+            <div {...zoomLeft.handlers} style={{ position: 'relative', flex: 1, overflow: 'hidden', touchAction: 'none' }}>
               {referenceFailed ? (
                 <PhotoLoadErrorPlaceholder />
               ) : urls.reference && (
                 <img
                   src={urls.reference}
                   alt="前回"
-                  style={{ ...imgBaseStyle, ...zoomPan.style }}
+                  style={{ ...imgBaseStyle, ...zoomLeft.style }}
+                  onLoad={e => zoomLeft.setNaturalSize(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)}
                   onError={() => setImgError(prev => ({ ...prev, reference: true }))}
                 />
               )}
               <span style={compareLabelStyle('left')}>前回</span>
             </div>
-            <div {...zoomPan.handlers} style={{ position: 'relative', flex: 1, overflow: 'hidden', touchAction: 'none' }}>
+            <div {...zoomRight.handlers} style={{ position: 'relative', flex: 1, overflow: 'hidden', touchAction: 'none' }}>
               {currentFailed ? (
                 <PhotoLoadErrorPlaceholder />
               ) : urls.current && (
                 <img
                   src={urls.current}
                   alt="今回"
-                  style={{ ...imgBaseStyle, ...zoomPan.style }}
+                  style={{ ...imgBaseStyle, ...zoomRight.style }}
+                  onLoad={e => zoomRight.setNaturalSize(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)}
                   onError={() => setImgError(prev => ({ ...prev, current: true }))}
                 />
               )}
