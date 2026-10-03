@@ -200,6 +200,12 @@ export interface CustomerModeData {
    */
   photosByAngle: Record<string, TimelinePhoto[]>
   /**
+   * 全角度(旧データ・未知のbody_partを含む)の生の写真配列(taken_at DESC・既存API順そのまま)。
+   * 「過去の写真」(撮影日チップ→その日の写真を全部表示)用。photosByAngleは4角度にしか
+   * 振り分けないため、旧データ(face_left45等)はこちらからのみ参照できる。
+   */
+  allPhotos: TimelinePhoto[]
+  /**
    * photoId → signed URL('detail'品質)。角度ごとの「今回・前回・初回」代表写真のみ
    * 事前取得済み(比較モードのショートカット切替が即座に表示できるようにするため)。
    * それ以外の撮影機会をライトボックスで開いた場合は、CustomerModeView側で
@@ -247,6 +253,7 @@ export interface CustomerModeData {
 const EMPTY_DATA: CustomerModeData = {
   loading: true,
   photosByAngle: {},
+  allPhotos: [],
   photoUrls: {},
   currentMenuName: null,
   currentSkinTags: [],
@@ -325,6 +332,7 @@ export function useCustomerModeData(customerId: string): UseCustomerModeDataResu
       setData({
         loading: false,
         photosByAngle,
+        allPhotos: photos,
         photoUrls,
         currentMenuName,
         currentSkinTags,
@@ -351,7 +359,7 @@ export function useCustomerModeData(customerId: string): UseCustomerModeDataResu
   const refetchPhotos = useCallback(async () => {
     const photos = await listCustomerPhotosTimeline(customerId)
     const { photosByAngle, photoUrls } = await computePhotosByAngle(customerId, photos)
-    setData(prev => ({ ...prev, photosByAngle, photoUrls }))
+    setData(prev => ({ ...prev, photosByAngle, allPhotos: photos, photoUrls }))
   }, [customerId])
 
   const refetchTodayCourseOptions = useCallback(async () => {

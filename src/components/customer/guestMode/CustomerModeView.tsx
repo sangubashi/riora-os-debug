@@ -42,6 +42,7 @@ import { bodyPartLabel } from '@/lib/photos/bodyParts'
 import { usePinchZoom } from './usePinchZoom'
 import { useLongPress } from './useLongPress'
 import PhotoCompareScreen from '@/components/customer/photoCompare/PhotoCompareScreen'
+import PhotoDateHistory from './PhotoDateHistory'
 // 写真撮影・選択・削除フロー(PHASE GUEST-MODE-PHOTO-MOVE-1・Phase 0・2026-09-19)。
 // IpadStaffKarteView.tsxが使っていたものと同一のモーダル2つをそのまま再利用する
 // (customerId/onClose等のpropsのみで完結する自己完結コンポーネントのため、呼び出し元を
@@ -856,6 +857,16 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
                 </div>
               )}
 
+              {/* 過去の写真(撮影日チップ → その日の写真を全部表示)。写真の撮影・追加・削除ボタンの
+                  下、「今回の施術」の上。全角度(旧データ含む)の写真をtaken_atのJST日付でまとめる。
+                  タップは既存のライトボックス(openPhotoInLightbox)をそのまま使う。 */}
+              <PhotoDateHistory
+                customerId={customerId}
+                photos={data.allPhotos}
+                knownUrls={data.photoUrls}
+                onOpenPhoto={photo => { void openPhotoInLightbox(photo) }}
+              />
+
               {/* 今回の施術 / 次回の目安 */}
               <div
                 style={{
@@ -976,7 +987,7 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
                   ギャラリー化・2026-09-22ユーザー要望)。ギャラリー内の個別写真タップで
                   さらにライトボックス(ピンチズーム対応)の単独拡大表示を開く。 */}
               {occasions.length > 0 && (
-                <Card title="過去の写真">
+                <Card title="角度別の過去の写真(比較用)">
                   <div
                     style={{
                       display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: '8px',
