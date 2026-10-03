@@ -42,7 +42,7 @@ import { bodyPartLabel } from '@/lib/photos/bodyParts'
 import { usePinchZoom } from './usePinchZoom'
 import { useLongPress } from './useLongPress'
 import PhotoCompareScreen from '@/components/customer/photoCompare/PhotoCompareScreen'
-import PhotoDateHistory from './PhotoDateHistory'
+import PhotoDateHistory, { TodayPhotos } from './PhotoDateHistory'
 // 写真撮影・選択・削除フロー(PHASE GUEST-MODE-PHOTO-MOVE-1・Phase 0・2026-09-19)。
 // IpadStaffKarteView.tsxが使っていたものと同一のモーダル2つをそのまま再利用する
 // (customerId/onClose等のpropsのみで完結する自己完結コンポーネントのため、呼び出し元を
@@ -805,6 +805,15 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
                   aspectRatio="4 / 5"
                 />
               </div>
+
+              {/* 今日撮影した写真: 大きな比較写真の直下に、今日(JST)撮影した写真を横並びで全部表示。
+                  今日の写真が無ければ何も表示しない。タップは既存のライトボックス。 */}
+              <TodayPhotos
+                customerId={customerId}
+                photos={data.allPhotos}
+                knownUrls={data.photoUrls}
+                onOpenPhoto={photo => { void openPhotoInLightbox(photo) }}
+              />
 
               {/* 写真撮影・選択・削除(PHASE GUEST-MODE-PHOTO-MOVE-1・Phase 0・2026-09-19)。
                   IpadStaffKarteView.tsxの「写真カルテ」セクションにあった3ボタンと同じ
