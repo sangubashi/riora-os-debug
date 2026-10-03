@@ -32,13 +32,10 @@ import {
   buildPreviousComparison,
   buildFirstComparison,
   hasDistinctFirstOccasion,
-  occasionKey,
   type BodyPartPhotoGroup,
   type ComparisonBasis,
-  type PhotoOccasion,
 } from '@/lib/photos/comparisonSelection'
 import { getPhotoSignedUrl, getBatchSignedUrls, type TimelinePhoto } from '@/lib/photos/photoApiClient'
-import { bodyPartLabel } from '@/lib/photos/bodyParts'
 import { usePinchZoom } from './usePinchZoom'
 import { useLongPress } from './useLongPress'
 import PhotoCompareScreen from '@/components/customer/photoCompare/PhotoCompareScreen'
@@ -88,8 +85,6 @@ const logoFont = Playfair_Display({ subsets: ['latin'], weight: '600', style: 'i
 const SHOW_HOMECARE = false
 const SHOW_NEXT_VISIT_ESTIMATE = false
 
-/** 高画質(detail)の先読み結果を保持する最大枚数(古いものから破棄・iPadのメモリ対策)。 */
-const DETAIL_PRELOAD_MAX = 16
 /**
  * 先読みしたdetail URLを再利用してよい期間。detailの署名付きURLの有効期限は60分
  * (SIGNED_URL_EXPIRY_DETAIL_SEC)のため、余裕を持って30分とする。
@@ -182,19 +177,6 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
     lightboxReqRef.current += 1
     setLightboxPhoto(null)
   }
-  /** 「過去の写真」タップ時の同日写真一覧(ギャラリー、2026-09-22ユーザー要望)。
-   *  角度(正面/右斜め/左斜め/額)をまたいで同一撮影機会の写真をすべて集めたもの。
-   *  グリッド内の個別写真をタップするとlightboxPhotoが別途開く(ギャラリー自体は
-   *  閉じない。ライトボックスを閉じればギャラリーへ戻れる)。 */
-  const [galleryOccasion, setGalleryOccasion] = useState<{
-    dateLabel: string | null
-    visitCountAt: number | null
-    photos: TimelinePhoto[]
-  } | null>(null)
-  // ギャラリーを開く前の一括プリロード中フラグ(2026-09-29ユーザー承認)。
-  // openSameDayGallery()が全画像のURL取得・プリロードを終えるまでモーダルを開かない
-  // ようにしたため、その待ち時間の間だけこのフラグでスピナーを表示する。
-  const [galleryLoading, setGalleryLoading] = useState(false)
   // スクロール領域への参照。「過去の写真」サムネイルタップ時に拡大モードの表示(上部)まで
   // スクロールを戻すために使う(お客様用カルテ再構成・2026-09-14)。
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -252,10 +234,11 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
   const [photoCaptureIntent, setPhotoCaptureIntent] = useState<PhotoCaptureIntent | null>(null)
   const [photoManageOpen, setPhotoManageOpen] = useState(false)
 
-  // 「過去の写真」サムネイル一覧用のsigned URL(お客様用カルテ再構成・2026-09-14)。
-  // 現在選択中の角度の撮影機会(occasions)ごとの代表写真をまとめて取得する
-  // (角度タブに連動。角度を切り替えるたびに取り直す)。
+  // 「今日撮影した写真」「過去の写真」(PhotoDateHistory.tsx)が取得したサムネイルURL。
+  // ライトボックスを開くとき、高画質URLの取得が終わるまでの先行表示(cached)に使う。
   const [thumbUrls, setThumbUrls] = useState<Record<string, string>>({})
+  const onThumbsLoaded = (urls: Record<string, string>) => setThumbUrls(prev => ({ ...prev, ...urls }))
+  const knownPhotoUrls = useMemo(() => ({ ...thumbUrls, ...data.photoUrls }), [thumbUrls, data.photoUrls])
 
   // 写真の自由選択比較(お客様用カルテ自由選択比較・2026-09-15・設計確定)。
   // 「前回↔今回」「初回↔今回」ショートカットとは独立した第3の選択肢で、来店回・角度を
@@ -277,21 +260,6 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
   const occasions = useMemo(() => groupByOccasion(angleGroup.photos), [angleGroup])
   const isComparable = occasions.length >= 2
   const showFirstShortcut = hasDistinctFirstOccasion(angleGroup)
-
-  // 「過去の写真」サムネイル: 現在の角度の撮影機会ごとに代表写真のsigned URLをまとめて取得する。
-  // photoUrls(前回/今回/初回として既に事前取得済みのもの)は再利用し、不足分だけ取りに行く。
-  useEffect(() => {
-    const missingIds = occasions
-      .map(o => representativePhoto(o).id)
-      .filter(id => !data.photoUrls[id] && !thumbUrls[id])
-    if (missingIds.length === 0) return
-    let cancelled = false
-    void getBatchSignedUrls(customerId, missingIds, 'thumbnail').then(urls => {
-      if (!cancelled && Object.keys(urls).length > 0) setThumbUrls(prev => ({ ...prev, ...urls }))
-    })
-    return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [occasions, customerId])
 
   // 比較モード: 「前回↔今回」「初回↔今回」ショートカット切替。既存のcomparisonSelection.ts
   // 公開関数のみを使い、比較ロジック自体は変更しない。
@@ -388,100 +356,6 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
     }
   }
 
-  // 同日ギャラリーが開いたら、その中の写真の高画質(detail)URLをバックグラウンドで取得し、
-  // 画像オブジェクトで先読みする(2026-10-01)。ギャラリー内の写真をタップして拡大したとき、
-  // サムネイル→高画質の差し替え(リロードのような見え方)を起こさず、最初から高画質を表示する。
-  // 比較選択モード中はタップが「選択」になり拡大しないため先読みしない(通信量の節約)。
-  useEffect(() => {
-    if (!galleryOccasion || freeSelectMode) return
-    const map = detailPreloadRef.current
-    const now = Date.now()
-    const ids = galleryOccasion.photos
-      .map(p => p.id)
-      .filter(id => {
-        const entry = map.get(id)
-        return !entry || now - entry.at >= DETAIL_PRELOAD_REUSE_MS
-      })
-    if (ids.length === 0) return
-    let cancelled = false
-    void getBatchSignedUrls(customerId, ids, 'detail')
-      .then(urls => {
-        if (cancelled) return
-        for (const [id, url] of Object.entries(urls)) {
-          const img = new Image()
-          img.decoding = 'async'
-          img.src = url
-          map.delete(id) // 再挿入して「最新」の位置へ
-          map.set(id, { url, img, at: Date.now() })
-        }
-        // 保持枚数の上限を超えた分は古いものから破棄する(iPadのメモリ対策)。
-        while (map.size > DETAIL_PRELOAD_MAX) {
-          const oldest = map.keys().next().value
-          if (oldest === undefined) break
-          map.delete(oldest)
-        }
-      })
-      .catch(() => { /* 先読みの失敗は無視(拡大時に従来どおり取得する) */ })
-    return () => { cancelled = true }
-  }, [galleryOccasion, freeSelectMode, customerId])
-
-  /**
-   * 「過去の写真」サムネイルタップ: 単独拡大ではなく、同一撮影機会(同じvisit、無ければ
-   * 同じ日付)の写真を角度(正面/右斜め/左斜め/額)を問わず全て集めた一覧(ギャラリー)を開く
-   * (2026-09-22ユーザー要望: 「その日に撮影された写真が一目でまとめて確認できること」を
-   * 優先)。photosByAngleは既にlistCustomerPhotosTimeline()で取得済みの全角度分の写真を
-   * 角度別に振り分けたものなので、新規APIコールは不要でクライアント側の絞り込みのみで済む。
-   * ギャラリー内の個別写真タップでさらにライトボックス拡大する(openPhotoInLightbox)。
-   *
-   * 【2026-09-29改訂: サムネイル表示遅延の解消】従来はモーダルを先に開いてから
-   * 未取得分のURLを取りに行っていたため、代表写真(1枚目、既に事前取得済み)は
-   * 即時表示される一方、同一撮影機会内のそれ以外の写真(2枚目以降)はURL取得完了まで
-   * 空白のまま遅れて表示されていた。この関数をasync化し、撮影機会内の全画像URLを
-   * Promise.allで並列・一括取得(getBatchSignedUrlsは元々1回のリクエストで複数IDを
-   * まとめて処理するAPI)した上で、さらにブラウザの画像デコードまで完了させてから
-   * (=プリロード)モーダルを開くようにした。これによりモーダルが開いた瞬間には
-   * 全ての画像が即座に表示できる状態になる。待ち時間はgalleryLoadingのスピナーで示す。
-   */
-  async function openSameDayGallery(o: PhotoOccasion) {
-    const repPhoto = representativePhoto(o)
-    const key = occasionKey(repPhoto)
-    const allPhotos = Object.values(data.photosByAngle).flat()
-    const order = new Map(CUSTOMER_MODE_ANGLES.map((a, i) => [a.id as string, i]))
-    const samePhotos = allPhotos
-      .filter(p => occasionKey(p) === key)
-      .sort((a, b) => (order.get(a.bodyPart) ?? 99) - (order.get(b.bodyPart) ?? 99))
-
-    setGalleryLoading(true)
-    try {
-      const missingIds = samePhotos.map(p => p.id).filter(id => !data.photoUrls[id] && !thumbUrls[id])
-      let fetchedUrls: Record<string, string> = {}
-      if (missingIds.length > 0) {
-        fetchedUrls = await getBatchSignedUrls(customerId, missingIds, 'thumbnail')
-        if (Object.keys(fetchedUrls).length > 0) setThumbUrls(prev => ({ ...prev, ...fetchedUrls }))
-      }
-
-      const urlFor = (p: TimelinePhoto) => data.photoUrls[p.id] ?? thumbUrls[p.id] ?? fetchedUrls[p.id]
-      await Promise.all(samePhotos.map(p => {
-        const url = urlFor(p)
-        if (!url) return Promise.resolve()
-        return new Promise<void>(resolve => {
-          const img = new Image()
-          img.onload = () => resolve()
-          img.onerror = () => resolve()
-          img.src = url
-        })
-      }))
-
-      setGalleryOccasion({
-        dateLabel: formatVisitDateLabel(repPhoto.visitDate ?? repPhoto.takenAt),
-        visitCountAt: repPhoto.visitCountAt,
-        photos: samePhotos,
-      })
-    } finally {
-      setGalleryLoading(false)
-    }
-  }
-
   /**
    * 比較対象へのピン留め/解除(先入れ先出し: 1枚目を追い出し、2枚目だった写真を
    * 1枚目へ繰り上げ、新しい写真を2枚目にすることで「常に直近タップした2枚」を維持する)。
@@ -489,6 +363,17 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
    * (例: 施術前/施術後)からもそれぞれ独立に選べる(2026-09-28ユーザー承認、
    * 同日複数枚比較への選択ロジック拡張)。
    */
+  /** 比較対象としての選択状態(1=1枚目・2=2枚目・null=未選択)。サムネイルの金枠+番号バッジ用。 */
+  function pinSlotOf(photoId: string): 1 | 2 | null {
+    return selectedPhotoA?.id === photoId ? 1 : selectedPhotoB?.id === photoId ? 2 : null
+  }
+
+  /** 操作メニューの「比較対象に設定」: 自由選択モードをONにした上で、既存のselectPhotoForCompareに渡す。 */
+  function setAsCompareTarget(photo: TimelinePhoto) {
+    setFreeSelectMode(true)
+    selectPhotoForCompare(photo)
+  }
+
   function selectPhotoForCompare(photo: TimelinePhoto) {
     if (selectedPhotoA?.id === photo.id) { setSelectedPhotoA(null); return }
     if (selectedPhotoB?.id === photo.id) { setSelectedPhotoB(null); return }
@@ -500,30 +385,6 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
       setSelectedPhotoA(selectedPhotoB)
       setSelectedPhotoB(photo)
     }
-  }
-
-  /**
-   * 「過去の写真」サムネイルタップ: 自由選択モード中は比較対象へのピン留め/解除、
-   * それ以外は同日写真一覧(ギャラリー)表示(お客様用カルテ自由選択比較・2026-09-15・
-   * 設計確定、2026-09-22ギャラリー化)。
-   *
-   * 【2026-09-28改訂】自由選択モード中に撮影機会内の写真が2枚以上(例: 施術前/施術後を
-   * 同日に撮影)ある場合、従来は`representativePhoto(o)`(最新の1枚)しか選べなかった
-   * ため、同日の別の1枚(施術前など)を比較対象に選ぶ手段が無かった。この場合はギャラリーを
-   * 開き、個別写真タップで選べるようにする(ギャラリー側の分岐は下記onClick参照)。
-   * 撮影機会内が1枚のみの場合は、従来通りその場で直接ピン留めする(不要なギャラリーを
-   * 経由させない)。
-   */
-  function onThumbnailTap(o: PhotoOccasion) {
-    if (!freeSelectMode) {
-      void openSameDayGallery(o)
-      return
-    }
-    if (o.photos.length > 1) {
-      void openSameDayGallery(o)
-      return
-    }
-    selectPhotoForCompare(representativePhoto(o))
   }
 
   return (
@@ -811,8 +672,14 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
               <TodayPhotos
                 customerId={customerId}
                 photos={data.allPhotos}
-                knownUrls={data.photoUrls}
+                knownUrls={knownPhotoUrls}
+                onThumbsLoaded={onThumbsLoaded}
+                freeSelectMode={freeSelectMode}
+                pinSlotOf={pinSlotOf}
                 onOpenPhoto={photo => { void openPhotoInLightbox(photo) }}
+                onSelectForCompare={selectPhotoForCompare}
+                onStartFreeSelect={() => setFreeSelectMode(true)}
+                onSetCompareTarget={setAsCompareTarget}
               />
 
               {/* 写真撮影・選択・削除(PHASE GUEST-MODE-PHOTO-MOVE-1・Phase 0・2026-09-19)。
@@ -872,8 +739,14 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
               <PhotoDateHistory
                 customerId={customerId}
                 photos={data.allPhotos}
-                knownUrls={data.photoUrls}
+                knownUrls={knownPhotoUrls}
+                onThumbsLoaded={onThumbsLoaded}
+                freeSelectMode={freeSelectMode}
+                pinSlotOf={pinSlotOf}
                 onOpenPhoto={photo => { void openPhotoInLightbox(photo) }}
+                onSelectForCompare={selectPhotoForCompare}
+                onStartFreeSelect={() => setFreeSelectMode(true)}
+                onSetCompareTarget={setAsCompareTarget}
               />
 
               {/* 今回の施術 / 次回の目安 */}
@@ -990,88 +863,6 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
                 </Card>
               )}
 
-              {/* 過去の写真 — 現在選択中の角度タブに連動したサムネイル一覧(お客様用カルテ
-                  再構成・2026-09-14)。タップすると同日写真一覧(ギャラリー、角度をまたいで
-                  同一撮影機会の写真を全て表示)を開く(拡大モード廃止・2026-09-20ユーザー承認、
-                  ギャラリー化・2026-09-22ユーザー要望)。ギャラリー内の個別写真タップで
-                  さらにライトボックス(ピンチズーム対応)の単独拡大表示を開く。 */}
-              {occasions.length > 0 && (
-                <Card title="角度別の過去の写真(比較用)">
-                  <div
-                    style={{
-                      display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: '8px',
-                    }}
-                  >
-                    {occasions.map(o => {
-                      const photo = representativePhoto(o)
-                      const url = data.photoUrls[photo.id] ?? thumbUrls[photo.id]
-                      const dateLabel = formatVisitDateLabel(photo.visitDate ?? photo.takenAt)
-                      // キャプション(写真の下・PhotoPanelと同じ「画像の外に表示」方針に揃える)。
-                      // 既に取得済みのdateLabel/visitCountAtのみを使い、新規fetchは行わない。
-                      // 日付が取れない場合のみ来店回数を代わりに出す。
-                      const captionText = dateLabel
-                        ?? (photo.visitCountAt != null ? (photo.visitCountAt === 1 ? '初回' : `${photo.visitCountAt}回目`) : null)
-                      // 自由選択モード中のピン留め状態(1=1枚目・2=2枚目・null=未選択)。
-                      // 撮影機会内の代表写真(photo)自体だけでなく、その機会内の別の1枚
-                      // (ギャラリー経由で選んだ施術前/施術後等)が選択中でもここに反映する
-                      // (2026-09-28ユーザー承認、同日複数枚比較への選択ロジック拡張)。
-                      const pinSlot: 1 | 2 | null =
-                        selectedPhotoA && o.photos.some(p => p.id === selectedPhotoA.id) ? 1
-                        : selectedPhotoB && o.photos.some(p => p.id === selectedPhotoB.id) ? 2
-                        : null
-                      return (
-                        <div key={o.key}>
-                          <button
-                            type="button"
-                            onClick={() => onThumbnailTap(o)}
-                            aria-label={
-                              freeSelectMode
-                                ? (pinSlot ? `${dateLabel ?? ''}の写真の選択を解除` : `${dateLabel ?? ''}の写真を比較対象に選ぶ`)
-                                : `${dateLabel ?? ''}に撮影した写真の一覧を表示`
-                            }
-                            style={{
-                              position: 'relative', aspectRatio: '1 / 1', borderRadius: '10px', overflow: 'hidden',
-                              padding: 0, cursor: 'pointer', background: '#EFE8DA', width: '100%',
-                              border: pinSlot ? `2px solid ${PALETTE.gold}` : `1px solid ${PALETTE.border}`,
-                            }}
-                          >
-                            {url ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={url}
-                                alt=""
-                                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                              />
-                            ) : (
-                              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <ImageOff size={16} strokeWidth={1.3} color={PALETTE.gold} />
-                              </div>
-                            )}
-                            {pinSlot && (
-                              <span
-                                style={{
-                                  position: 'absolute', top: '4px', left: '4px', width: '18px', height: '18px',
-                                  borderRadius: '50%', background: PALETTE.gold, color: '#FFFFFF',
-                                  fontSize: '10px', fontWeight: 700,
-                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                }}
-                              >
-                                {pinSlot}
-                              </span>
-                            )}
-                          </button>
-                          {captionText && (
-                            <p style={{ margin: '4px 0 0', fontSize: '10px', color: PALETTE.muted, textAlign: 'center' }}>
-                              {captionText}
-                            </p>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </Card>
-              )}
-
               {/* 顔シェーマ(顔シェーマ機能READ ONLY設計・Phase 0、2026-09-21ユーザー承認・Phase 6)。
                   読み取り専用。記録が無い顧客にはカード自体を出さない(過去の写真/来店履歴と同じ方針、
                   判定はFacialSchemaViewer内部で行う)。 */}
@@ -1085,134 +876,6 @@ export default function CustomerModeView({ customerId, customerName, onClose, on
           )}
         </div>
       </div>
-
-      {/* ── ギャラリー画像の一括プリロード中スピナー(2026-09-29ユーザー承認)。 ── */}
-      {galleryLoading && (
-        <div
-          style={{
-            position: 'fixed', inset: 0, zIndex: 310, background: 'rgba(30,24,16,0.85)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <Loader2 size={32} color="#fff" className="animate-spin" />
-        </div>
-      )}
-
-      {/* ── 同日写真一覧(ギャラリー、2026-09-22ユーザー要望)。「過去の写真」サムネイルタップ時に
-          単独拡大ではなくまず開く一覧。角度(正面/右斜め/左斜め/額)をまたいで同一撮影機会の
-          写真をグリッドで並べ、ひと目で比較できるようにする。グリッド内の個別写真タップで
-          さらにlightboxPhoto(下記、ピンチズーム対応の全画面拡大)を開く(zIndexはこちらが
-          下・ライトボックスが上なので、ライトボックスを閉じればこのギャラリーへ戻る)。 ── */}
-      {galleryOccasion && (
-        <div
-          onClick={() => setGalleryOccasion(null)}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 310, background: 'rgba(30,24,16,0.85)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px',
-          }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              background: PALETTE.bg, borderRadius: '18px', width: '100%', maxWidth: '720px',
-              maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
-            }}
-          >
-            <div style={{
-              flexShrink: 0, padding: '16px 20px', borderBottom: `1px solid ${PALETTE.border}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
-            }}>
-              <div>
-                <p style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: PALETTE.text, fontFamily: headingFont.style.fontFamily }}>
-                  {galleryOccasion.dateLabel ?? '撮影日不明'}
-                  {galleryOccasion.visitCountAt != null && (
-                    <span style={{ fontSize: '13px', fontWeight: 700, marginLeft: '8px' }}>
-                      ({galleryOccasion.visitCountAt === 1 ? '初回のご来店' : `第${galleryOccasion.visitCountAt}回ご来店`})
-                    </span>
-                  )}
-                </p>
-                <p style={{ margin: '2px 0 0', fontSize: '12px', color: PALETTE.muted }}>
-                  撮影枚数: {galleryOccasion.photos.length}枚
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setGalleryOccasion(null)}
-                aria-label="閉じる"
-                style={{
-                  flexShrink: 0, width: '36px', height: '36px', borderRadius: '50%',
-                  background: PALETTE.card, border: `1px solid ${PALETTE.border}`, color: PALETTE.text,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                }}
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div style={{
-              padding: '16px 20px', overflowY: 'auto',
-              display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '12px',
-            }}>
-              {galleryOccasion.photos.map(photo => {
-                const url = data.photoUrls[photo.id] ?? thumbUrls[photo.id]
-                // 自由選択モード中のピン留め状態(1=1枚目・2=2枚目・null=未選択)。ギャラリーは
-                // 同一撮影機会の個別写真(例: 施術前/施術後)を区別して選べる唯一の経路のため、
-                // ここでも外側のサムネイル一覧と同じ表示・操作パターンを踏襲する。
-                const pinSlot: 1 | 2 | null =
-                  photo.id === selectedPhotoA?.id ? 1 : photo.id === selectedPhotoB?.id ? 2 : null
-                return (
-                  <button
-                    key={photo.id}
-                    type="button"
-                    onClick={() => {
-                      if (freeSelectMode) { selectPhotoForCompare(photo); return }
-                      void openPhotoInLightbox(photo)
-                    }}
-                    aria-label={
-                      freeSelectMode
-                        ? (pinSlot ? `${bodyPartLabel(photo.bodyPart)}の写真の選択を解除` : `${bodyPartLabel(photo.bodyPart)}の写真を比較対象に選ぶ`)
-                        : `${bodyPartLabel(photo.bodyPart)}の写真を拡大表示`
-                    }
-                    style={{
-                      position: 'relative', aspectRatio: '4 / 5', borderRadius: '10px', overflow: 'hidden',
-                      padding: 0, cursor: 'pointer', background: '#EFE8DA',
-                      border: pinSlot ? `2px solid ${PALETTE.gold}` : `1px solid ${PALETTE.border}`,
-                    }}
-                  >
-                    {url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                    ) : (
-                      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <ImageOff size={18} strokeWidth={1.3} color={PALETTE.gold} />
-                      </div>
-                    )}
-                    <span style={{
-                      position: 'absolute', left: 0, right: 0, bottom: 0,
-                      background: 'rgba(20,16,12,0.65)', color: '#fff', fontSize: '11px', fontWeight: 600,
-                      padding: '4px 6px', textAlign: 'center',
-                    }}>
-                      {bodyPartLabel(photo.bodyPart)}
-                    </span>
-                    {pinSlot && (
-                      <span
-                        style={{
-                          position: 'absolute', top: '4px', left: '4px', width: '18px', height: '18px',
-                          borderRadius: '50%', background: PALETTE.gold, color: '#FFFFFF',
-                          fontSize: '10px', fontWeight: 700,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        }}
-                      >
-                        {pinSlot}
-                      </span>
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── 拡大表示(ピンチズーム対応、拡大モード廃止・2026-09-20ユーザー承認)。
           2026-09-22ユーザー要望により、撮影日等のキャプション表示と読み込み中/
