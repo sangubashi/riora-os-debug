@@ -454,7 +454,7 @@ export default function PhotoCompareScreen({ customerId, initialBodyPart, onClos
                   onError={() => setImgError(prev => ({ ...prev, reference: true }))}
                 />
               )}
-              <span style={compareLabelStyle('left')}>前回</span>
+              <span style={compareLabelStyle('left')}>{photoDateOrDash(pair?.reference.takenAt)}</span>
             </div>
             <div {...zoomRight.handlers} style={{ position: 'relative', flex: 1, overflow: 'hidden', touchAction: 'none' }}>
               {currentFailed ? (
@@ -468,7 +468,7 @@ export default function PhotoCompareScreen({ customerId, initialBodyPart, onClos
                   onError={() => setImgError(prev => ({ ...prev, current: true }))}
                 />
               )}
-              <span style={compareLabelStyle('right')}>今回</span>
+              <span style={compareLabelStyle('right')}>{photoDateOrDash(pair?.current.takenAt)}</span>
             </div>
           </div>
         )}
@@ -490,6 +490,12 @@ export default function PhotoCompareScreen({ customerId, initialBodyPart, onClos
       </div>
     </div>
   )
+}
+
+/** 並列表示の写真下ラベル用: 撮影日を YYYY/MM/DD で返す。日付が無い・不正なら "-"。 */
+function photoDateOrDash(takenAt: string | null | undefined): string {
+  if (!takenAt || Number.isNaN(new Date(takenAt).getTime())) return '-'
+  return formatPhotoDateLabel(takenAt).dateStr
 }
 
 function compareLabelStyle(side: 'left' | 'right'): React.CSSProperties {
