@@ -437,8 +437,8 @@ export default function PhotoCompareScreen({ customerId, initialBodyPart, onClos
             >
               <MoveHorizontal size={18} strokeWidth={2} color={PALETTE.gold} />
             </div>
-            <span style={compareLabelStyle('left')}>前回</span>
-            <span style={compareLabelStyle('right')}>今回</span>
+            <span style={compareLabelStyle('left')}>{photoDateOrDash(pair?.reference.takenAt)}</span>
+            <span style={compareLabelStyle('right')}>{photoDateOrDash(pair?.current.takenAt)}</span>
           </div>
         ) : (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', gap: '2px' }}>
